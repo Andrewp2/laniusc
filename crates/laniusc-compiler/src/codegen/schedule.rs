@@ -2,17 +2,17 @@
 //!
 //! Semantic lowering creates one `TargetScheduleKey` per semantic instruction.
 //! This component owns one compiler-graph radix-sort schedule whose pipelines,
-//! uniforms, bind groups, and counted scans are all materialized before record.
+//! uniforms and bind groups are all materialized before record. A digit
+//! records three dispatches: per-block bucket counts, one workgroup per bucket
+//! scanning its column of block counts, and the stable scatter, which adds
+//! the smaller buckets' totals.
 
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
-use super::{
-    lowering_ir::{TargetScheduleKey, TargetScheduleRadixLayout},
-    scan::{GpuResidentExclusiveScan, GraphScanContract},
-};
+use super::lowering_ir::{TargetScheduleKey, TargetScheduleRadixLayout};
 use crate::gpu::{
-    buffers::{DynamicUniformBuffer, LaniusBuffer, dynamic_uniforms_from_vals},
+    buffers::{DynamicUniformBuffer, LaniusBuffer, dynamic_uniforms_from_vals, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
     operations::ComputeOperation,
@@ -31,8 +31,8 @@ struct ScheduleParams {
 
 struct ScheduleStep {
     key_step: u32,
-    direction: usize,
     histogram: ComputeOperation,
+    buckets: ComputeOperation,
     scatter: ComputeOperation,
 }
 
@@ -42,14 +42,13 @@ struct ScheduleStep {
 pub(crate) struct GpuStableScheduleSorter {
     steps: Vec<ScheduleStep>,
     target_capacity: u32,
-    scans: [GpuResidentExclusiveScan; 2],
     _radix_params: DynamicUniformBuffer<ScheduleParams>,
+    _bucket_params: LaniusBuffer<ScheduleParams>,
     order: LaniusBuffer<u32>,
     _order_tmp: LaniusBuffer<u32>,
-    _slot_count: LaniusBuffer<u32>,
     _histogram: LaniusBuffer<u32>,
     _global_prefix: LaniusBuffer<u32>,
-    _scan_total: LaniusBuffer<u32>,
+    _bucket_total: LaniusBuffer<u32>,
 }
 
 impl GpuStableScheduleSorter {
@@ -81,63 +80,9 @@ impl GpuStableScheduleSorter {
         let max_blocks = target_capacity.div_ceil(256);
         let slot_capacity = max_blocks.saturating_mul(256);
         let order_tmp = alias("lir.semantic.schedule_order_tmp", target_capacity)?;
-        let slot_count = alias("lir.semantic.schedule_slot_count", 1)?;
         let histogram = alias("lir.semantic.schedule_histogram", slot_capacity)?;
         let global_prefix = alias("lir.semantic.schedule_global_prefix", slot_capacity)?;
-        let scan_total = alias("lir.semantic.schedule_scan_total", 1)?;
-
-        let scan_contract = |direction: &str| GraphScanContract {
-            local_pass: if direction == "even" {
-                "lir.semantic.schedule.scan.local.even"
-            } else {
-                "lir.semantic.schedule.scan.local.odd"
-            },
-            block_prefix_pass: if direction == "even" {
-                "lir.semantic.schedule.scan.block_prefix.even"
-            } else {
-                "lir.semantic.schedule.scan.block_prefix.odd"
-            },
-            apply_pass: if direction == "even" {
-                "lir.semantic.schedule.scan.apply.even"
-            } else {
-                "lir.semantic.schedule.scan.apply.odd"
-            },
-            count: "lir.semantic.schedule_slot_count",
-            input: "lir.semantic.schedule_histogram",
-            local: "lir.semantic.schedule_scan_local",
-            block_sum: "lir.semantic.schedule_scan_block_sum",
-            block_prefix: "lir.semantic.schedule_scan_block_prefix",
-            output: "lir.semantic.schedule_global_prefix",
-            total: "lir.semantic.schedule_scan_total",
-        };
-        let scans = [
-            GpuResidentExclusiveScan::new(
-                device,
-                kernels,
-                graph,
-                workspace,
-                allocations,
-                scan_contract("even"),
-                slot_capacity,
-                &slot_count,
-                &histogram,
-                &global_prefix,
-                &scan_total,
-            )?,
-            GpuResidentExclusiveScan::new(
-                device,
-                kernels,
-                graph,
-                workspace,
-                allocations,
-                scan_contract("odd"),
-                slot_capacity,
-                &slot_count,
-                &histogram,
-                &global_prefix,
-                &scan_total,
-            )?,
-        ];
+        let bucket_total = alias("lir.semantic.schedule_bucket_total", 256)?;
 
         let radix_values = (0..radix_layout.steps)
             .map(|key_step| ScheduleParams {
@@ -154,15 +99,30 @@ impl GpuStableScheduleSorter {
         resources.graph_buffer(graph, "lir.semantic.schedule", keys)?;
         resources.graph_buffer(graph, "lir.semantic.schedule_order", order)?;
         resources.graph_buffer(graph, "lir.semantic.schedule_order_tmp", &order_tmp)?;
-        resources.graph_buffer(graph, "lir.semantic.schedule_slot_count", &slot_count)?;
         resources.graph_buffer(graph, "lir.semantic.schedule_histogram", &histogram)?;
         resources.graph_buffer(graph, "lir.semantic.schedule_global_prefix", &global_prefix)?;
+        resources.graph_buffer(graph, "lir.semantic.schedule_bucket_total", &bucket_total)?;
+        let bucket_params = uniform_from_val(
+            device,
+            "lir.target.schedule.bucket.params",
+            &ScheduleParams {
+                target_capacity,
+                max_blocks,
+                key_step: 0,
+                reserved: radix_layout.packed_bits,
+            },
+        );
         resources.add("gParams", radix_params.binding());
+        resources.add("gBuckets", bucket_params.as_entire_binding());
         let context = (graph, allocations);
         let initial_direction = usize::from(radix_layout.steps % 2 != 0);
         let histogram_names = [
             "lir.semantic.schedule.histogram.even",
             "lir.semantic.schedule.histogram.odd",
+        ];
+        let bucket_names = [
+            "lir.semantic.schedule.scan.buckets.even",
+            "lir.semantic.schedule.scan.buckets.odd",
         ];
         let scatter_names = [
             "lir.semantic.schedule.scatter.even",
@@ -170,6 +130,7 @@ impl GpuStableScheduleSorter {
         ];
         let histogram_kernel =
             kernels.dynamic_uniform_kernel("codegen/lir/schedule/histogram", "gParams");
+        let bucket_kernel = kernels.kernel("codegen/lir/schedule/bucket_prefix");
         let scatter_kernel =
             kernels.dynamic_uniform_kernel("codegen/lir/schedule/scatter", "gParams");
         let steps = (0..radix_layout.steps as usize)
@@ -178,7 +139,6 @@ impl GpuStableScheduleSorter {
                 let offsets = vec![radix_params.dynamic_offset(step)];
                 Ok(ScheduleStep {
                     key_step: step as u32,
-                    direction,
                     histogram: ComputeOperation::direct_with_offsets(
                         device,
                         &context,
@@ -187,6 +147,15 @@ impl GpuStableScheduleSorter {
                         histogram_kernel,
                         target_capacity,
                         offsets.clone(),
+                    )?,
+                    // One workgroup per bucket.
+                    buckets: ComputeOperation::direct(
+                        device,
+                        &context,
+                        &resources,
+                        bucket_names[direction],
+                        bucket_kernel,
+                        256 * 256,
                     )?,
                     scatter: ComputeOperation::direct_with_offsets(
                         device,
@@ -204,14 +173,13 @@ impl GpuStableScheduleSorter {
         Ok(Self {
             steps,
             target_capacity,
-            scans,
             _radix_params: radix_params,
+            _bucket_params: bucket_params,
             order: order.clone(),
             _order_tmp: order_tmp,
-            _slot_count: slot_count,
             _histogram: histogram,
             _global_prefix: global_prefix,
-            _scan_total: scan_total,
+            _bucket_total: bucket_total,
         })
     }
 
@@ -250,7 +218,7 @@ impl GpuStableScheduleSorter {
                 format!("lowering.semantic.schedule.digit.{digit}.histogram.done"),
                 encoder,
             );
-            self.scans[step.direction].record(encoder)?;
+            step.buckets.record(encoder)?;
             stamp(
                 format!("lowering.semantic.schedule.digit.{digit}.scan.done"),
                 encoder,

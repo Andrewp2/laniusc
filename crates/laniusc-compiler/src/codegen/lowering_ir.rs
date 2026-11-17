@@ -364,13 +364,9 @@ struct ScheduleGraphResources {
     keys: ResourceId,
     order: ResourceId,
     order_tmp: ResourceId,
-    slot_count: ResourceId,
     histogram: ResourceId,
     global_prefix: ResourceId,
-    scan_local: ResourceId,
-    scan_block_sum: ResourceId,
-    scan_block_prefix: ResourceId,
-    scan_total: ResourceId,
+    bucket_total: ResourceId,
 }
 
 fn add_schedule_graph_passes(
@@ -382,18 +378,14 @@ fn add_schedule_graph_passes(
 ) -> Result<(), String> {
     let names = [
         "lir.semantic.schedule.histogram.even",
-        "lir.semantic.schedule.scan.local.even",
-        "lir.semantic.schedule.scan.block_prefix.even",
-        "lir.semantic.schedule.scan.apply.even",
+        "lir.semantic.schedule.scan.buckets.even",
         "lir.semantic.schedule.scatter.even",
         "lir.semantic.schedule.histogram.odd",
-        "lir.semantic.schedule.scan.local.odd",
-        "lir.semantic.schedule.scan.block_prefix.odd",
-        "lir.semantic.schedule.scan.apply.odd",
+        "lir.semantic.schedule.scan.buckets.odd",
         "lir.semantic.schedule.scatter.odd",
     ];
     let mut directions = Vec::with_capacity(2);
-    for base in [0usize, 5usize] {
+    for base in [0usize, 3usize] {
         let (order_in, order_out) = if base == 0 {
             (resources.order, resources.order_tmp)
         } else {
@@ -408,7 +400,6 @@ fn add_schedule_graph_passes(
                     PassAccess::read("target_lir_total", resources.total),
                     PassAccess::read("target_schedule_key", resources.keys),
                     PassAccess::initialize_read_write("target_schedule_order_in", order_in),
-                    PassAccess::write("target_schedule_slot_count", resources.slot_count),
                     PassAccess::write("target_schedule_histogram", resources.histogram),
                 ],
             },
@@ -417,10 +408,10 @@ fn add_schedule_graph_passes(
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_input", resources.histogram),
-                    PassAccess::write("scan_local_prefix", resources.scan_local),
-                    PassAccess::write("scan_block_sum", resources.scan_block_sum),
+                    PassAccess::read("target_lir_total", resources.total),
+                    PassAccess::read("target_schedule_histogram", resources.histogram),
+                    PassAccess::write("target_schedule_global_prefix", resources.global_prefix),
+                    PassAccess::write("target_schedule_bucket_total", resources.bucket_total),
                 ],
             },
             PassDesc {
@@ -428,38 +419,17 @@ fn add_schedule_graph_passes(
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_block_sum", resources.scan_block_sum),
-                    PassAccess::write("scan_block_prefix", resources.scan_block_prefix),
-                ],
-            },
-            PassDesc {
-                name: names[base + 3],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_local_prefix", resources.scan_local),
-                    PassAccess::read("scan_block_prefix", resources.scan_block_prefix),
-                    PassAccess::write("scan_output_prefix", resources.global_prefix),
-                    PassAccess::write("scan_total", resources.scan_total),
-                ],
-            },
-            PassDesc {
-                name: names[base + 4],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
                     PassAccess::read("target_lir_total", resources.total),
                     PassAccess::read("target_schedule_key", resources.keys),
                     PassAccess::read("target_schedule_order_in", order_in),
                     PassAccess::read("target_schedule_global_prefix", resources.global_prefix),
+                    PassAccess::read("target_schedule_bucket_total", resources.bucket_total),
                     PassAccess::write("target_schedule_order_out", order_out),
                 ],
             },
         ]);
     }
-    let mut body = Vec::with_capacity(10);
+    let mut body = Vec::with_capacity(6);
     let starts_in_temporary = radix_steps % 2 != 0;
     if starts_in_temporary {
         body.extend(directions[1].clone());
@@ -5239,11 +5209,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let schedule_blocks = schedule_capacity.max(1).div_ceil(256);
     let schedule_slots = schedule_blocks.saturating_mul(256);
-    let schedule_slot_count = graph.add_resource(workspace(
-        "lir.semantic.schedule_slot_count",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
     let schedule_histogram = graph.add_resource(workspace(
         "lir.semantic.schedule_histogram",
         ResourceDomain::SemanticInstructions,
@@ -5254,25 +5219,10 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(schedule_slots),
     ))?;
-    let schedule_scan_local = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_local",
+    let schedule_bucket_total = graph.add_resource(workspace(
+        "lir.semantic.schedule_bucket_total",
         ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots),
-    ))?;
-    let schedule_scan_block_sum = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_block_sum",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
-    ))?;
-    let schedule_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_block_prefix",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
-    ))?;
-    let schedule_scan_total = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_total",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(1),
+        LoweringCapacities::bytes::<u32>(256),
     ))?;
     let byte_lengths = graph.add_resource(workspace(
         match target {
@@ -5916,13 +5866,9 @@ fn lowering_compiler_graph_builder(
         keys: semantic_schedule,
         order: schedule_order,
         order_tmp: schedule_order_tmp,
-        slot_count: schedule_slot_count,
         histogram: schedule_histogram,
         global_prefix: schedule_global_prefix,
-        scan_local: schedule_scan_local,
-        scan_block_sum: schedule_scan_block_sum,
-        scan_block_prefix: schedule_scan_block_prefix,
-        scan_total: schedule_scan_total,
+        bucket_total: schedule_bucket_total,
     };
     add_schedule_graph_passes(
         &mut graph,

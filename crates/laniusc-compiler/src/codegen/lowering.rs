@@ -2656,7 +2656,7 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_stably_sorts_wasm_schedule_across_scan_block_tiles() {
+    fn physical_gpu_stably_sorts_wasm_schedule_across_bucket_scan_tiles() {
         let gpu = device::global();
         let radix_layout = TargetScheduleRadixLayout::packed_width();
         let count = 70_000u32;
@@ -2688,47 +2688,12 @@ mod tests {
             storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_a", count as usize);
         let order_b =
             storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_b", count as usize);
-        let slot_count = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.slot_count", 1);
         let histogram =
             storage_rw_for_array::<u32>(&gpu.device, "test.schedule.histogram", slots as usize);
         let global_prefix =
             storage_rw_for_array::<u32>(&gpu.device, "test.schedule.global_prefix", slots as usize);
-        let scan_local =
-            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.scan_local", slots as usize);
-        let scan_blocks = slots.div_ceil(256);
-        let scan_block_sum = storage_rw_for_array::<u32>(
-            &gpu.device,
-            "test.schedule.scan_block_sum",
-            scan_blocks as usize,
-        );
-        let scan_block_prefix = storage_rw_for_array::<u32>(
-            &gpu.device,
-            "test.schedule.scan_block_prefix",
-            scan_blocks as usize,
-        );
-        let scan_total = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.scan_total", 1);
+        let bucket_total = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.bucket_total", 256);
 
-        let scan_params = uniform_from_val(
-            &gpu.device,
-            "test.schedule.scan_params",
-            &ScanParams {
-                n_items: slots,
-                n_blocks: scan_blocks,
-                scan_step: 0,
-            },
-        );
-        let block_prefix_params = uniform_from_val(
-            &gpu.device,
-            "test.schedule.block_prefix_params",
-            &ScanHierarchyParams {
-                n_items: slots,
-                n_blocks: scan_blocks,
-                level_divisor: 1,
-                level_offset: 0,
-                parent_divisor: 0,
-                parent_offset: 0,
-            },
-        );
         let histogram_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.histogram",
@@ -2743,52 +2708,11 @@ mod tests {
             "codegen/lir/schedule/scatter",
         )
         .unwrap();
-        let scan_local_pass = make_pass_data_from_shader_key(
+        let bucket_pass = make_pass_data_from_shader_key(
             &gpu.device,
-            "test.schedule.scan.local",
+            "test.schedule.buckets",
             "main",
-            "scan/counted/00_local",
-        )
-        .unwrap();
-        let scan_block_prefix_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.scan.block_prefix",
-            "main",
-            "scan/counted/04_block_prefix",
-        )
-        .unwrap();
-        let scan_apply_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.scan.apply",
-            "main",
-            "scan/counted/02_apply",
-        )
-        .unwrap();
-        let scan_local_group = make_group(
-            &gpu.device,
-            &scan_local_pass,
-            "test.schedule.scan.local.group",
-            &[
-                ("gScan", scan_params.as_entire_binding()),
-                ("scan_count", slot_count.as_entire_binding()),
-                ("scan_input", histogram.as_entire_binding()),
-                ("scan_local_prefix", scan_local.as_entire_binding()),
-                ("scan_block_sum", scan_block_sum.as_entire_binding()),
-            ],
-        )
-        .unwrap();
-        let scan_apply_group = make_group(
-            &gpu.device,
-            &scan_apply_pass,
-            "test.schedule.scan.apply.group",
-            &[
-                ("gScan", scan_params.as_entire_binding()),
-                ("scan_count", slot_count.as_entire_binding()),
-                ("scan_local_prefix", scan_local.as_entire_binding()),
-                ("scan_block_prefix", scan_block_prefix.as_entire_binding()),
-                ("scan_output_prefix", global_prefix.as_entire_binding()),
-                ("scan_total", scan_total.as_entire_binding()),
-            ],
+            "codegen/lir/schedule/bucket_prefix",
         )
         .unwrap();
 
@@ -2822,7 +2746,6 @@ mod tests {
                     ("target_lir_total", target_total.as_entire_binding()),
                     ("target_schedule_key", keys.as_entire_binding()),
                     ("target_schedule_order_in", input.as_entire_binding()),
-                    ("target_schedule_slot_count", slot_count.as_entire_binding()),
                     ("target_schedule_histogram", histogram.as_entire_binding()),
                 ],
             )
@@ -2840,26 +2763,26 @@ mod tests {
                         "target_schedule_global_prefix",
                         global_prefix.as_entire_binding(),
                     ),
+                    ("target_schedule_bucket_total", bucket_total.as_entire_binding()),
                     ("target_schedule_order_out", output.as_entire_binding()),
                 ],
             )
             .unwrap();
             record_direct(&mut encoder, &histogram_pass, &histogram_group, count).unwrap();
-            record_direct(&mut encoder, &scan_local_pass, &scan_local_group, slots).unwrap();
-            let block_prefix_group = make_group(
+            let bucket_group = make_group(
                 &gpu.device,
-                &scan_block_prefix_pass,
-                "test.schedule.scan.block_prefix.group",
+                &bucket_pass,
+                "test.schedule.buckets.group",
                 &[
-                    ("gHierarchy", block_prefix_params.as_entire_binding()),
-                    ("scan_count", slot_count.as_entire_binding()),
-                    ("scan_block_sum", scan_block_sum.as_entire_binding()),
-                    ("scan_block_prefix", scan_block_prefix.as_entire_binding()),
+                    ("gBuckets", params.as_entire_binding()),
+                    ("target_lir_total", target_total.as_entire_binding()),
+                    ("target_schedule_histogram", histogram.as_entire_binding()),
+                    ("target_schedule_global_prefix", global_prefix.as_entire_binding()),
+                    ("target_schedule_bucket_total", bucket_total.as_entire_binding()),
                 ],
             )
             .unwrap();
-            record_direct(&mut encoder, &scan_block_prefix_pass, &block_prefix_group, 1).unwrap();
-            record_direct(&mut encoder, &scan_apply_pass, &scan_apply_group, slots).unwrap();
+            record_direct(&mut encoder, &bucket_pass, &bucket_group, 256 * 256).unwrap();
             record_direct(&mut encoder, &scatter_pass, &scatter_group, count).unwrap();
         }
         let readback = readback_bytes(
