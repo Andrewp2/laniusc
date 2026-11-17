@@ -107,6 +107,7 @@ void collect_predicate(uint row)
     for (uint ordinal = 0u; ordinal < BOUND_PREDICATE_ARGUMENTS; ordinal++)
         bound_predicate_rows[out_base + 9u + ordinal] = ordinal < count
             ? dependency_type(dependency_predicate_argument(first + ordinal)) : CT_NONE;
+    bound_mark_owner(uint3(library, unit, local));
 }
 
 [shader("compute")]

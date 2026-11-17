@@ -3050,7 +3050,10 @@ fn build_graph(
     // the dependency rows are collected again in every round, after the
     // counts return to the local rows' (`bound_inference_local_counts`).
     graph_resources!(graph, Workspace {
-        bound_inference_counts as "bound_inference_counts" in Calls => 16;
+        // Three counts, a spare word, then the owner filter
+        // (BOUND_COUNT_WORDS in bound_tables.slang). The local copy keeps
+        // only the counts.
+        bound_inference_counts as "bound_inference_counts" in Calls => (4 + 256) * 4;
         bound_inference_local_counts as "bound_inference_local_counts" in Calls => 16;
         bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
         bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
