@@ -375,7 +375,64 @@ uint psw_plan_spans(uint point)
 // records larger templates and runs the same point again. A finish point
 // overflows only while finishing; the host resets the state to running and
 // records the finish point again, which repeats the same quiescence test.
-public void psw_plan()
+// Planning decisions and the span records of this point, for every lane:
+// lane 0 plans, the lanes fill the point's slots (one slot per lane).
+groupshared uint psw_g_spans[PSW_SPANS * 2u];
+groupshared uint psw_g_overflow;
+groupshared uint psw_g_planned;
+groupshared uint psw_g_running;
+public static const uint PSW_PLAN_LANES = 256u;
+
+// One planning point over one workgroup (every lane calls it: barriers).
+public void psw_plan(uint lane)
+{
+    if (lane == 0u) { psw_g_planned = psw_plan_point(); psw_g_overflow = 0u; }
+    AllMemoryBarrierWithGroupSync();
+    if (lane < PSW_SPANS * 2u) psw_g_spans[lane] = trait_solver_wave[PSW_SPAN_RECORDS + lane];
+    uint stride = trait_solver_wave[PSW_SLOT_WORDS];
+    uint rows = trait_solver_wave[PSW_CHUNK_ROWS];
+    uint slot_first = trait_solver_wave_plan.slot_first;
+    uint slot_end = trait_solver_wave_plan.slot_end;
+    GroupMemoryBarrierWithGroupSync();
+    // A span longer than its recorded chunk steps stops here, before any
+    // step of this point runs.
+    for (uint slot = slot_first + lane; slot < slot_end; slot += PSW_PLAN_LANES)
+    {
+        uint base = slot * stride;
+        uint span = trait_solver_wave_slots[base + PSW_SLOT_SPAN];
+        uint count = psw_g_spans[span * 2u + 1u];
+        if (count > trait_solver_wave_slots[base + PSW_SLOT_LIMIT]) InterlockedMax(psw_g_overflow, count);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (lane == 0u) psw_g_running = psw_plan_stop(psw_g_planned, psw_g_overflow) ? 1u : 0u;
+    GroupMemoryBarrierWithGroupSync();
+    bool running = psw_g_running != 0u;
+    for (uint slot = slot_first + lane; slot < slot_end; slot += PSW_PLAN_LANES)
+    {
+        uint base = slot * stride;
+        uint span = trait_solver_wave_slots[base + PSW_SLOT_SPAN];
+        uint chunk = trait_solver_wave_slots[base + PSW_SLOT_CHUNK];
+        uint first = psw_g_spans[span * 2u];
+        uint count = select(running, psw_g_spans[span * 2u + 1u], 0u);
+        // Chunk c - 1 of the span, as the host's chunk loop cut it.
+        uint skip = select(chunk == 0u, 0u, min((chunk - 1u) * rows, count));
+        uint rows_here = select(chunk == 0u, count, min(count - skip, rows));
+        uint threads = trait_solver_wave_slots[base + PSW_SLOT_THREADS];
+        trait_solver_wave_slots[base + PSW_SLOT_FIRST] = first + skip;
+        trait_solver_wave_slots[base + PSW_SLOT_COUNT] = rows_here;
+        uint groups = select(threads == 1u, rows_here,
+            (rows_here >> 8u) + select((rows_here & 255u) != 0u, 1u, 0u));
+        uint one = trait_solver_wave_slots[base + PSW_SLOT_ONE];
+        if (one != 0u && running && psw_g_spans[(one - 1u) * 2u + 1u] != 0u)
+            groups = max(groups, 1u);
+        trait_solver_wave_slots[base + PSW_SLOT_ARGS] = groups;
+        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 1u] = 1u;
+        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 2u] = 1u;
+    }
+}
+
+// The decisions of one point (lane 0): the spans, and what was planned.
+uint psw_plan_point()
 {
     uint point = trait_solver_wave_plan.point;
     // The queue commit is set by a queue point's planner and made by the
@@ -409,23 +466,17 @@ public void psw_plan()
         for (uint span = PSW_SPAN_QUEUE; span < PSW_SPAN_FINISH_ROOTS; span++) psw_span(span, 0u, 0u);
         psw_plan_spans(PSW_POINT_QUEUE);
     }
+    return planned;
+}
+
+// After the slots' overflow test (lane 0): the stop, the round count and
+// the queue commit. True when this point's steps run.
+bool psw_plan_stop(uint planned, uint overflow)
+{
+    uint point = trait_solver_wave_plan.point;
     // The finish steps run only after the finish point that ended the solve.
     bool finishing = planned == PSW_PLANNED_FINISH;
 
-    uint stride = trait_solver_wave[PSW_SLOT_WORDS];
-    uint rows = trait_solver_wave[PSW_CHUNK_ROWS];
-    uint slot_first = trait_solver_wave_plan.slot_first;
-    uint slot_end = trait_solver_wave_plan.slot_end;
-    // A span longer than its recorded chunk steps stops here, before any
-    // step of this point runs.
-    uint overflow = 0u;
-    for (uint slot = slot_first; slot < slot_end; slot++)
-    {
-        uint base = slot * stride;
-        uint span = trait_solver_wave_slots[base + PSW_SLOT_SPAN];
-        uint count = trait_solver_wave[PSW_SPAN_RECORDS + span * 2u + 1u];
-        if (count > trait_solver_wave_slots[base + PSW_SLOT_LIMIT]) overflow = max(overflow, count);
-    }
     if (overflow != 0u && (trait_solver_wave[PSW_STOP] == PSW_RUNNING || finishing))
     {
         trait_solver_wave[PSW_STOP] = PSW_OVERFLOW;
@@ -442,26 +493,5 @@ public void psw_plan()
     if ((point == PSW_POINT_QUEUE || point == PSW_POINT_QUEUE_ROUND) && running &&
         trait_solver_wave[PSW_SPAN_RECORDS + PSW_SPAN_EMITTED_ONE * 2u + 1u] != 0u)
         trait_solver_wave[PSW_QUEUE_COMMIT] = 1u;
-    for (uint slot = slot_first; slot < slot_end; slot++)
-    {
-        uint base = slot * stride;
-        uint span = trait_solver_wave_slots[base + PSW_SLOT_SPAN];
-        uint chunk = trait_solver_wave_slots[base + PSW_SLOT_CHUNK];
-        uint first = trait_solver_wave[PSW_SPAN_RECORDS + span * 2u];
-        uint count = select(running, trait_solver_wave[PSW_SPAN_RECORDS + span * 2u + 1u], 0u);
-        // Chunk c - 1 of the span, as the host's chunk loop cut it.
-        uint skip = select(chunk == 0u, 0u, min((chunk - 1u) * rows, count));
-        uint rows_here = select(chunk == 0u, count, min(count - skip, rows));
-        uint threads = trait_solver_wave_slots[base + PSW_SLOT_THREADS];
-        trait_solver_wave_slots[base + PSW_SLOT_FIRST] = first + skip;
-        trait_solver_wave_slots[base + PSW_SLOT_COUNT] = rows_here;
-        uint groups = select(threads == 1u, rows_here,
-            (rows_here >> 8u) + select((rows_here & 255u) != 0u, 1u, 0u));
-        uint one = trait_solver_wave_slots[base + PSW_SLOT_ONE];
-        if (one != 0u && running && trait_solver_wave[PSW_SPAN_RECORDS + (one - 1u) * 2u + 1u] != 0u)
-            groups = max(groups, 1u);
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS] = groups;
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 1u] = 1u;
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 2u] = 1u;
-    }
+    return running;
 }

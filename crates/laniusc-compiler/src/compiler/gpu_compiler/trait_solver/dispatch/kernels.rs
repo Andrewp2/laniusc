@@ -793,7 +793,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         WAVE_PLAN_PHASE,
         "type_checker/trait_solver/entries/70_plan_solver_wave",
-        1,
+        256,
     ),
     // The finish point's batch stages: call reduction, then the receipt.
     (18, "type_checker/trait_solver/entries/18_reduce_calls", 256),
