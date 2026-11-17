@@ -472,8 +472,7 @@ gen fn evens(limit: i32) -> i32 {
         assert!(text.contains("fn next(&mut self) -> core::option::Option<i32> { return self.step(EvensResume::Next); }"), "{text}");
         assert!(text.ends_with("Resume::Next); }\n}\n\n"), "{text}");
         // The machine rules accept the result.
-        let outcome = machines::expand(&[text.as_str()], &[machines::FILE_GENERATORS]).unwrap();
-        assert!(matches!(outcome, Some(machines::Outcome::Expanded(files)) if files[0].is_some()));
+        assert!(crate::compiler::desugar::accepts(&text));
     }
 
     /// Two generators in one file, and one in a second file: each keeps the
@@ -526,8 +525,7 @@ fn after() -> i32 { return 3; }
         assert!(text.contains("state Yield2(__lanius_gen_r: i32) {"), "{text}");
         assert!(text.contains("goto Yield2(r) with core::option::Some(999);"), "{text}");
         assert!(text.contains("state Yield0 {\n        OnceResume::Next -> {  goto Done"), "{text}");
-        let outcome = machines::expand(&[text.as_str()], &[machines::FILE_GENERATORS]).unwrap();
-        assert!(matches!(outcome, Some(machines::Outcome::Expanded(files)) if files[0].is_some()));
+        assert!(crate::compiler::desugar::accepts(&text));
     }
 
     #[test]

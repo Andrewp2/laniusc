@@ -49,6 +49,10 @@ pub struct LexParams {
     pub skip2: u32,
     /// Fourth token kind excluded from final kept-token output.
     pub skip3: u32,
+    /// End of the byte region after the source where the desugaring writes
+    /// the text of generated tokens (`compiler::desugar`). The lexer reads
+    /// only the first `n` bytes.
+    pub extent: u32,
 }
 
 #[derive(Clone, Copy, ShaderType, Default)]
