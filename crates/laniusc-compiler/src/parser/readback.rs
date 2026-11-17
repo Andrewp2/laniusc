@@ -227,7 +227,7 @@ fn reset_rows_outside_family(
     links: &mut [&mut Vec<u32>],
     counts: &mut [&mut Vec<u32>],
 ) {
-    let mut reset = |words: &mut Vec<u32>, default: u32| {
+    let reset = |words: &mut Vec<u32>, default: u32| {
         for (node, word) in words.iter_mut().enumerate() {
             if !in_family(node) {
                 *word = default;

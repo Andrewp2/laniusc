@@ -3,6 +3,16 @@
 // Type argument lists are right-recursive. First arguments seed the owning type
 // expression and path segment, and later arguments point at their previous
 // argument. Pointer jumping preserves the list identity and computes ordinals.
+//
+// Only argument value rows are written: types, literals, unary expressions,
+// constant argument roots and positive magnitudes. The argument arrays are
+// undefined on every other row, and readers test the row's kind first. The
+// walk records go to both ping-pong buffers. An argument links only to another
+// argument. The pass also marks the arguments
+// with an owner or a link and counts them per block, in the layout of
+// parser/hir/list/rank/prefix_00_local.slang, so the list compaction that
+// follows lists them for the walk. One workgroup covers one block of 256 rows;
+// the dispatch covers every block of the tree.
 
 import generated_parse_production_ids;
 
@@ -37,6 +47,16 @@ RWStructuredBuffer<uint> hir_type_arg_application_token;
 RWStructuredBuffer<uint> hir_type_arg_link_a;
 RWStructuredBuffer<uint> hir_type_arg_rank_a;
 RWStructuredBuffer<uint> hir_type_arg_previous;
+RWStructuredBuffer<uint> hir_type_arg_owner_b;
+RWStructuredBuffer<uint> hir_type_arg_link_b;
+RWStructuredBuffer<uint> hir_type_arg_rank_b;
+RWStructuredBuffer<uint> hir_list_rank_flag;
+RWStructuredBuffer<uint> hir_list_rank_block_sum;
+
+static const uint FLAG_WORDS_PER_BLOCK = 8u;
+groupshared uint g_flag_words[FLAG_WORDS_PER_BLOCK];
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_LITERAL_EXPR = 23u;
 
 static const uint INVALID = 0xffffffffu;
 static const uint OWNER_NODE_MASK = 0x7fffffffu;
@@ -48,9 +68,9 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 
-uint linear_thread_id(uint3 dtid)
+uint linear_group_id(uint3 gid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return gid.x + gid.y * MAX_GROUPS_X;
 }
 
 uint active_node_count()
@@ -247,14 +267,17 @@ uint first_arg_for_type_owner(uint owner)
         is_constant_operand_root(node_kind[first])) ? argument_row(first) : INVALID;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// Whether the row holds a type argument's value, or a constant argument's root:
+// the rows whose argument arrays are defined.
+bool argument_value_row(uint node)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirType.n)
-        return;
+    uint kind = hir_kind[node];
+    return kind == HIR_TYPE || kind == HIR_LITERAL_EXPR || kind == HIR_UNARY_EXPR ||
+        is_constant_operand_root(node_kind[node]) || is_positive_magnitude(node);
+}
 
+void seed_argument(uint node)
+{
     hir_type_arg_owner_a[node] = INVALID;
     hir_type_arg_application_owner[node] = INVALID;
     hir_type_arg_application_token[node] = INVALID;
@@ -262,7 +285,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_type_arg_rank_a[node] = 0u;
     hir_type_arg_previous[node] = INVALID;
 
-    if (!valid_node(node) || argument_row(node) != node)
+    if (argument_row(node) != node)
         return;
     // A positive magnitude takes its wrapper's place in the argument list.
     bool positive = is_positive_magnitude(node);
@@ -304,5 +327,43 @@ void main(uint3 dtid: SV_DispatchThreadID)
             hir_type_arg_rank_a[node] = 1u;
             hir_type_arg_previous[node] = previous;
         }
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
+{
+    uint block_i = linear_group_id(gid);
+    uint lane = ltid.x;
+    uint node = block_i * WG_SIZE + lane;
+
+    if (lane < FLAG_WORDS_PER_BLOCK)
+        g_flag_words[lane] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (valid_node(node) && argument_value_row(node))
+    {
+        seed_argument(node);
+        // Both ping-pong buffers: the walk reads a link's target from either.
+        uint owner = hir_type_arg_owner_a[node];
+        uint link = hir_type_arg_link_a[node];
+        hir_type_arg_owner_b[node] = owner;
+        hir_type_arg_link_b[node] = link;
+        hir_type_arg_rank_b[node] = hir_type_arg_rank_a[node];
+        if (owner != INVALID || link != INVALID)
+            InterlockedOr(g_flag_words[lane >> 5u], 1u << (lane & 31u));
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint word_i = block_i * FLAG_WORDS_PER_BLOCK + lane;
+    if (lane < FLAG_WORDS_PER_BLOCK && word_i < (gHirType.n + 31u) / 32u)
+        hir_list_rank_flag[word_i] = g_flag_words[lane];
+    if (lane == 0u)
+    {
+        uint total = 0u;
+        for (uint w = 0u; w < FLAG_WORDS_PER_BLOCK; ++w)
+            total += countbits(g_flag_words[w]);
+        hir_list_rank_block_sum[block_i] = total;
     }
 }

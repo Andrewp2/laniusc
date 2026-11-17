@@ -109,9 +109,6 @@ pub(in crate::parser) struct ParserClearOperations {
     source_file_token_end: ClearBufferOperation,
     hir_type_path_leaf_link_b: ClearBufferOperation,
     hir_walk_state: ClearBufferOperation,
-    hir_type_arg_owner_b: ClearBufferOperation,
-    hir_type_arg_link_b: ClearBufferOperation,
-    hir_type_arg_rank_b: ClearBufferOperation,
     hir_item_kind: ClearBufferOperation,
     hir_path_root_owner: ClearBufferOperation,
     hir_path_segment_count: ClearBufferOperation,
@@ -169,15 +166,6 @@ impl ParserClearOperations {
 
     pub(in crate::parser) fn record_hir_walk_state(&self, encoder: &mut wgpu::CommandEncoder) {
         self.hir_walk_state.record(encoder);
-    }
-
-    pub(in crate::parser) fn record_hir_type_arg_secondary_rows(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        self.hir_type_arg_owner_b.record(encoder);
-        self.hir_type_arg_link_b.record(encoder);
-        self.hir_type_arg_rank_b.record(encoder);
     }
 
     pub(in crate::parser) fn record_hir_item_kind(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -476,17 +464,6 @@ impl ParserCompilerGraph {
                 .map(|_| clear(name, binding, buffer))
                 .transpose()
         };
-        let raw_tree_bytes = u64::from(buffers.tree_capacity) * 4;
-        let clear_tree_range = |name, binding, buffer| {
-            ClearBufferOperation::range(
-                &self.materialized,
-                name,
-                binding,
-                buffer,
-                0,
-                raw_tree_bytes,
-            )
-        };
         let mut phase_clears = std::collections::HashMap::new();
         let mut phase_clear =
             |name: &'static str,
@@ -765,21 +742,6 @@ impl ParserCompilerGraph {
                 HIR_WALK_STATE_CLEAR,
                 "hir_walk_state",
                 &buffers.hir_walk_state,
-            )?,
-            hir_type_arg_owner_b: clear_tree_range(
-                hir::TYPE_ARG_OWNER_B_CLEAR,
-                "hir_type_arg_owner_b",
-                &buffers.hir_type_arg_owner_b,
-            )?,
-            hir_type_arg_link_b: clear_tree_range(
-                hir::TYPE_ARG_LINK_B_CLEAR,
-                "hir_type_arg_link_b",
-                &buffers.hir_type_arg_link_b,
-            )?,
-            hir_type_arg_rank_b: clear_tree_range(
-                hir::TYPE_ARG_RANK_B_CLEAR,
-                "hir_type_arg_rank_b",
-                &buffers.hir_type_arg_rank_b,
             )?,
             hir_item_kind: clear(
                 hir::ITEM_KIND_CLEAR,
@@ -3832,7 +3794,6 @@ mod tests {
             "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
             "hir_type_arg_links",
-            "hir_type_arg_rank_prefix_00_local",
             "hir_type_arg_rank_prefix_01_blocks",
             "hir_type_arg_rank_compact_scatter",
             "hir_type_arg_rank_step.a_to_b",

@@ -434,31 +434,15 @@ impl GpuParser {
                 // relation published by hir_type_path_leaf_scatter. The
                 // identity passes above also provide the required storage
                 // visibility boundary after the optional dependency batch.
-                self.passes
-                    .hir_type_arg_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // The links pass also lists the arguments with an owner or a
+                // link, so it covers every block of the tree.
+                self.passes.hir_type_arg_links.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
-                bufs.clear_operations()
-                    .record_hir_type_arg_secondary_rows(ctx.encoder);
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_type_fields_params,
-                        &bufs.hir_type_arg_owner_a,
-                        &bufs.hir_type_arg_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::TypeArguments,
-                    )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_type_arg_rank_prefix_local",
-                );
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(

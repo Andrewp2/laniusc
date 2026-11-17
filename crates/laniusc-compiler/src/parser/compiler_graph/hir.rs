@@ -240,9 +240,6 @@ pub(in crate::parser) const PATH_SEGMENT_COUNT_CLEAR: &str = "parser.hir_path_se
 pub(in crate::parser) const STRING_DECODED_LEN_CLEAR: &str = "parser.hir_string_decoded_len.clear";
 pub(in crate::parser) const STRING_DATA_WORDS_CLEAR: &str = "parser.hir_string_data_words.clear";
 pub(in crate::parser) const CALL_ARG_COUNT_CLEAR: &str = "parser.hir_call_arg_count.clear";
-pub(in crate::parser) const TYPE_ARG_OWNER_B_CLEAR: &str = "parser.hir_type_arg_owner_b.clear";
-pub(in crate::parser) const TYPE_ARG_LINK_B_CLEAR: &str = "parser.hir_type_arg_link_b.clear";
-pub(in crate::parser) const TYPE_ARG_RANK_B_CLEAR: &str = "parser.hir_type_arg_rank_b.clear";
 pub(in crate::parser) const CANONICAL_VARIANT_CLEAR: &str = "parser.hir_canonical.variants.clear";
 pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_CLEAR: &str =
     "parser.hir_canonical.variant_payloads.clear";
@@ -1160,24 +1157,17 @@ fn register_type_argument_ranking(
             "hir_type_arg_link_a",
             "hir_type_arg_rank_a",
             "hir_type_arg_previous",
+            "hir_type_arg_owner_b",
+            "hir_type_arg_link_b",
+            "hir_type_arg_rank_b",
+            "hir_list_rank_flag",
+            "hir_list_rank_block_sum",
         ],
     )?;
-    indirect(graph, "hir_type_arg_links", "tree_active_dispatch_args")?;
 
-    for (name, resource) in [
-        (TYPE_ARG_OWNER_B_CLEAR, "hir_type_arg_owner_b"),
-        (TYPE_ARG_LINK_B_CLEAR, "hir_type_arg_link_b"),
-        (TYPE_ARG_RANK_B_CLEAR, "hir_type_arg_rank_b"),
-    ] {
-        clear(graph, name, CompilerPhase::Hir, &[(resource, resource)])?;
-    }
-    register_list_rank_compaction(
-        graph,
-        passes,
-        invocation,
-        "hir_type_arg_owner_a",
-        "hir_type_arg_link_a",
-    )?;
+    // The links pass marks the arguments with an owner or a link itself; the
+    // scan and the compact scatter list them.
+    register_list_rank_listing(graph, passes, invocation)?;
     register_list_rank_propagation(
         graph,
         capacity,
