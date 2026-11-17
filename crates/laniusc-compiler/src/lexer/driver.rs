@@ -22,7 +22,7 @@ use crate::{
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
     lexer::{
-        passes::{LexerPasses, record_all_passes},
+        passes::{LexerPasses, record_all_passes, record_desugar_passes, record_lexer_passes},
         tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind},
         types::{GpuToken, LexicalFailure, Token},
         util::{read_tokens_from_mapped, u32_from_first_4},
@@ -62,6 +62,18 @@ impl GpuLexer {
     /// Releases reusable source/token buffers and bind groups while retaining
     /// the lexer pipelines, immutable tables and the source-pack capacity
     /// floor that the next allocation covers.
+    /// The desugaring of this lexer, for the tests that read its runs.
+    #[cfg(test)]
+    pub(crate) fn desugaring(&self) -> &std::sync::Arc<crate::compiler::desugar::Desugaring> {
+        &self.passes.desugaring
+    }
+
+    /// Frees the desugaring's buffers and bind groups. They bind this
+    /// lexer's buffers, so they go first when a compiler trims its storage.
+    pub(crate) fn release_desugar_buffers(&self) {
+        self.passes.desugaring.release_resident_buffers();
+    }
+
     pub fn release_current_resident_buffers(&self) {
         *self
             .buffers
@@ -194,7 +206,7 @@ impl GpuLexer {
             }
         }
 
-        let passes = LexerPasses::new(&device)?;
+        let passes = LexerPasses::new(&device, &queue)?;
 
         Ok(Self {
             device,
@@ -701,6 +713,7 @@ impl GpuLexer {
         #[cfg(not(feature = "gpu-debug"))]
         let maybe_dbg: Option<&mut crate::lexer::debug::DebugOutput> = None;
 
+        let encoder_span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.record.encoder");
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -720,6 +733,7 @@ impl GpuLexer {
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(&mut enc, "compile.source_pack.start");
         }
+        drop(encoder_span);
 
         {
             let mut timer_ref = maybe_timer.as_mut();
@@ -728,7 +742,7 @@ impl GpuLexer {
                 .bg_cache
                 .lock()
                 .expect("GpuLexer.bg_cache mutex poisoned");
-            let ctx = crate::gpu::passes_core::PassContext {
+            let mut ctx = crate::gpu::passes_core::PassContext {
                 device: &self.device,
                 encoder: &mut enc,
                 buffers: &*bufs,
@@ -736,18 +750,55 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_lexer_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, &mut ctx, &self.passes)?;
+        }
+        // The lexer's passes go to the GPU before the host records the
+        // desugaring, so the GPU lexes while the host records and encodes
+        // the rounds.
+        let lexer_commands = enc.finish();
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "lex.source-pack.tokens",
+            lexer_commands,
+            use_scopes,
+            "source-pack resident lexer passes",
+        );
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-source-pack-desugar-enc"),
+            });
+        {
+            let mut timer_ref = maybe_timer.as_mut();
+            let mut dbg_ref: Option<&mut crate::lexer::debug::DebugOutput> = None;
+            let mut cache_guard = self
+                .bg_cache
+                .lock()
+                .expect("GpuLexer.bg_cache mutex poisoned");
+            let mut ctx = crate::gpu::passes_core::PassContext {
+                device: &self.device,
+                encoder: &mut enc,
+                buffers: &*bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref,
+                bg_cache: Some(&mut *cache_guard),
+            };
+            record_desugar_passes(&mut ctx, &self.passes)?;
         }
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(&mut enc, "lexer.source_pack.done");
         }
         bufs.record_count_readback(&mut enc);
+        let finish_span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.record.desugar_finish");
+        let lex_commands = enc.finish();
+        drop(finish_span);
 
-        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+        crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
             "lex.source-pack.resident-without-count-wait",
-            enc.finish(),
+            lex_commands,
             use_scopes,
             "source-pack resident lex without a count wait",
         );

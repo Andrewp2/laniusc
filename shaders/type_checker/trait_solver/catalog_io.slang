@@ -164,8 +164,11 @@ public bool ts_write_batch_receipt(SolverStatus status)
 
 // Called once before any other catalog writer. Malformed output layout leaves
 // the host-initialized receipt UNPROCESSED, which is never an accepted catalog.
-public SolverStatus ts_admit_output_layout()
+// The checks before the per-table layout items: header, output words and
+// the work index counts.
+public SolverStatus ts_admit_output_layout_globals(out uint work_rows, out uint work_buckets)
 {
+    work_rows = 0u; work_buckets = 0u;
     // Both initializers call this before publishing BUILDING. Descriptor readers
     // only prove bounds and cannot supply the protocol/epoch admission gate.
     if (!ts_header_is_valid()) return ts_invalid(1u, TS_INVALID, TS_INVALID);
@@ -173,49 +176,76 @@ public SolverStatus ts_admit_output_layout()
     trait_solver_output.GetDimensions(output_words, stride);
     if (trait_solver_params.output_word_count > output_words)
         return ts_limit(20u, 2u, trait_solver_params.output_word_count, output_words);
-    uint work_rows; uint work_buckets;
     if (!ts_work_counts(work_rows, work_buckets)) return ts_invalid(19u, 6u, TS_INVALID);
-    for (uint table = 0u; table < TS_OUTPUT_TABLES; table++)
+    return ts_ok();
+}
+// Output layout items, in admission order: item table * TS_LAYOUT_ITEMS
+// checks the table's own row, item + 8 + source its overlap with input
+// table `source` in the catalog arena, item + 32 + prior its overlap with an
+// earlier output table. True when the item fails, with its status (see
+// ts_directory_item). Requires ts_admit_output_layout_globals.
+public static const uint TS_LAYOUT_ITEMS = 64u;
+public bool ts_output_layout_item(uint key, uint work_rows, uint work_buckets, out SolverStatus status)
+{
+    status = ts_ok();
+    uint table = key / TS_LAYOUT_ITEMS;
+    uint item = key % TS_LAYOUT_ITEMS;
+    bool source_item = item >= 8u && item < 8u + TS_TABLES;
+    bool prior_item = item >= 32u && item < 32u + table;
+    if (table >= TS_OUTPUT_TABLES || (item != 0u && !source_item && !prior_item)) return false;
+    SolverOutputTable current;
+    bool described = ts_output_descriptor(table, current);
+    uint end = current.offset + current.capacity * current.width;
+    if (item == 0u)
     {
-        SolverOutputTable current;
-        if (!ts_output_descriptor(table, current)) return ts_invalid(1u, table, TS_INVALID);
+        if (!described) { status = ts_invalid(1u, table, TS_INVALID); return true; }
         uint expected = 0u;
         if (table == 0u || table == 10u) expected = 1u;
-        else if (table == 1u || table == 11u) { if (!ts_catalog_count(9u, expected)) return ts_invalid(1u, table, TS_INVALID); }
-        else if (table == 2u) { if (!ts_table_count(13u, expected)) return ts_invalid(1u, table, TS_INVALID); }
-        else if (table == 3u || table == 5u) { if (!ts_table_count(16u, expected)) return ts_invalid(1u, table, TS_INVALID); }
-        else if (table == 4u) { if (!ts_table_count(15u, expected)) return ts_invalid(1u, table, TS_INVALID); }
+        else if (table == 1u || table == 11u) { if (!ts_catalog_count(9u, expected)) { status = ts_invalid(1u, table, TS_INVALID); return true; } }
+        else if (table == 2u) { if (!ts_table_count(13u, expected)) { status = ts_invalid(1u, table, TS_INVALID); return true; } }
+        else if (table == 3u || table == 5u) { if (!ts_table_count(16u, expected)) { status = ts_invalid(1u, table, TS_INVALID); return true; } }
+        else if (table == 4u) { if (!ts_table_count(15u, expected)) { status = ts_invalid(1u, table, TS_INVALID); return true; } }
         else if (table == 6u) expected = work_rows;
         else if (table == 7u || table == 12u) expected = work_buckets;
-        else if (table == 8u) { if (!ts_table_count(14u, expected)) return ts_invalid(1u, table, TS_INVALID); }
+        else if (table == 8u) { if (!ts_table_count(14u, expected)) { status = ts_invalid(1u, table, TS_INVALID); return true; } }
         else if (table == 9u)
         {
             uint assumptions;
             if (!ts_table_count(14u, assumptions) || !ts_bucket_count(assumptions, expected))
-                return ts_invalid(19u, table, TS_INVALID);
+            { status = ts_invalid(19u, table, TS_INVALID); return true; }
         }
-        if (current.count != expected) return ts_invalid(19u, table, current.count);
-        uint end = current.offset + current.capacity * current.width;
-        if (current.arena == 0u && current.capacity != 0u)
-        {
-            if (current.offset < 4u) return ts_invalid(1u, table, TS_INVALID);
-            for (uint source = 0u; source < TS_TABLES; source++)
-            {
-                SolverTable input;
-                if (!ts_descriptor(source, input)) return ts_invalid(1u, source, TS_INVALID);
-                if (input.catalog_count != 0u && current.offset < input.catalog_offset + input.catalog_count * input.width &&
-                    input.catalog_offset < end) return ts_invalid(1u, table, source);
-            }
-        }
-        for (uint prior = 0u; prior < table; prior++)
-        {
-            SolverOutputTable other;
-            if (!ts_output_descriptor(prior, other)) return ts_invalid(1u, prior, TS_INVALID);
-            if (current.arena == other.arena && current.capacity != 0u && other.capacity != 0u &&
-                current.offset < other.offset + other.capacity * other.width && other.offset < end)
-                return ts_invalid(1u, table, prior);
-        }
+        if (current.count != expected) { status = ts_invalid(19u, table, current.count); return true; }
+        if (current.arena == 0u && current.capacity != 0u && current.offset < 4u)
+        { status = ts_invalid(1u, table, TS_INVALID); return true; }
+        return false;
     }
+    if (!described) return false;
+    if (source_item)
+    {
+        if (current.arena != 0u || current.capacity == 0u || current.offset < 4u) return false;
+        uint source = item - 8u;
+        SolverTable input;
+        if (!ts_descriptor(source, input)) { status = ts_invalid(1u, source, TS_INVALID); return true; }
+        if (input.catalog_count != 0u && current.offset < input.catalog_offset + input.catalog_count * input.width &&
+            input.catalog_offset < end) { status = ts_invalid(1u, table, source); return true; }
+        return false;
+    }
+    uint prior = item - 32u;
+    SolverOutputTable other;
+    if (!ts_output_descriptor(prior, other)) { status = ts_invalid(1u, prior, TS_INVALID); return true; }
+    if (current.arena == other.arena && current.capacity != 0u && other.capacity != 0u &&
+        current.offset < other.offset + other.capacity * other.width && other.offset < end)
+    { status = ts_invalid(1u, table, prior); return true; }
+    return false;
+}
+public SolverStatus ts_admit_output_layout()
+{
+    uint work_rows; uint work_buckets;
+    SolverStatus status = ts_admit_output_layout_globals(work_rows, work_buckets);
+    if (status.state != TS_VALID) return status;
+    [loop]
+    for (uint key = 0u; key < TS_OUTPUT_TABLES * TS_LAYOUT_ITEMS; key++)
+        if (ts_output_layout_item(key, work_rows, work_buckets, status)) return status;
     return ts_ok();
 }
 

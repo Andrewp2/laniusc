@@ -92,7 +92,8 @@ impl CatalogKernels {
             (7, count(10)),
             (8, clear_count),
             (9, count(9)),
-            (10, count(9)),
+            // One workgroup per implementation (catalog_index.slang).
+            (10, count(9).checked_mul(256).ok_or_else(|| anyhow!("coherence rows overflow"))?),
             (11, 1),
         ];
         ensure!(
@@ -108,7 +109,8 @@ impl CatalogKernels {
             if index == IMPLEMENTATION_HEADS + 1 {
                 continue; // recorded with its heads below
             }
-            let threads = if matches!(phase, 0 | 11) { 1 } else { 256 };
+            // Initialization (0) admits in one workgroup (admission_group.slang).
+            let threads = if phase == 11 { 1 } else { 256 };
             let (steps, chunk) = if index == IMPLEMENTATION_HEADS {
                 (&self.passes[index..index + 2], THREAD_SCRATCH_SLOTS)
             } else {
@@ -143,6 +145,11 @@ impl CatalogKernels {
 /// INTERIM: the table holds per-thread walker stacks moved out of local
 /// memory. Trait solver on canonical type IDs (plan P7) deletes them.
 pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
+/// Kernels whose workgroup takes COHERENCE_CHECKERS thread-scratch slots
+/// (from its dispatch-local group index): coherence runs one workgroup per
+/// implementation (catalog_index.slang TS_COHERENCE_CHECKERS).
+const GROUP_SLOT_KERNELS: &[&str] = &["type_checker/trait_solver/entries/10_check_coherence"];
+const COHERENCE_CHECKERS: u32 = 8;
 /// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
 pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
 
@@ -267,8 +274,11 @@ fn record_phase_with_resources(
     } else {
         None
     };
-    // Audit lanes take no scratch slot, so they run over their whole span.
-    let max_rows = if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
+    // Audit lanes take no scratch slot, so they run over their whole span. A
+    // group-slot kernel takes one slot per workgroup.
+    let max_rows = if scratch.is_some() && GROUP_SLOT_KERNELS.contains(&pass.shader_id.as_str()) {
+        max_rows.min(THREAD_SCRATCH_SLOTS / COHERENCE_CHECKERS * threads)
+    } else if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
         max_rows.min(THREAD_SCRATCH_SLOTS)
     } else {
         max_rows
@@ -469,39 +479,16 @@ const BATCH_KEYS: [&str; 4] = [
 ];
 // Table IDs are paired with literal keys so the phase contract is checked
 // against BatchPlan's ordered input inventory before loading any batch shader.
-const BATCH_ADMISSION_KEYS: [(usize, &str); 11] = [
-    (1, "type_checker/trait_solver/entries/32_01_admit_atoms"),
-    (5, "type_checker/trait_solver/entries/32_05_admit_nodes"),
-    (6, "type_checker/trait_solver/entries/32_06_admit_edges"),
-    (7, "type_checker/trait_solver/entries/32_07_admit_roots"),
-    (
-        11,
-        "type_checker/trait_solver/entries/32_11_admit_environments",
-    ),
-    (
-        12,
-        "type_checker/trait_solver/entries/32_12_admit_bindings",
-    ),
-    (
-        13,
-        "type_checker/trait_solver/entries/32_13_admit_contexts",
-    ),
-    (
-        14,
-        "type_checker/trait_solver/entries/32_14_admit_assumptions",
-    ),
-    (
-        15,
-        "type_checker/trait_solver/entries/32_15_admit_calls",
-    ),
-    (
-        16,
-        "type_checker/trait_solver/entries/32_16_admit_obligations",
-    ),
-    (
-        17,
-        "type_checker/trait_solver/entries/32_17_admit_evidence",
-    ),
+const BATCH_ADMISSION_KEYS: [(&[usize], &str); 8] = [
+    // The value graph's batch rows in one dispatch (phase 33).
+    (&[1, 5, 6, 7], "type_checker/trait_solver/entries/32_01_admit_value_rows"),
+    (&[11], "type_checker/trait_solver/entries/32_11_admit_environments"),
+    (&[12], "type_checker/trait_solver/entries/32_12_admit_bindings"),
+    (&[13], "type_checker/trait_solver/entries/32_13_admit_contexts"),
+    (&[14], "type_checker/trait_solver/entries/32_14_admit_assumptions"),
+    (&[15], "type_checker/trait_solver/entries/32_15_admit_calls"),
+    (&[16], "type_checker/trait_solver/entries/32_16_admit_obligations"),
+    (&[17], "type_checker/trait_solver/entries/32_17_admit_evidence"),
 ];
 pub(super) struct BatchKernels {
     passes: Vec<PassData>,
@@ -512,7 +499,7 @@ impl BatchKernels {
         ensure!(
             BATCH_ADMISSION_KEYS
                 .iter()
-                .map(|(table, _)| *table)
+                .flat_map(|(tables, _)| tables.iter().copied())
                 .eq(super::BATCH_INPUT_TABLES),
             "batch shader table order differs from the retained input plan"
         );
@@ -541,7 +528,8 @@ impl BatchKernels {
             &self.passes[0],
             12,
             Span::new(0, 1)?,
-            1,
+            // One workgroup (admission_group.slang).
+            256,
             catalog,
             input,
             output,
@@ -567,13 +555,21 @@ impl BatchKernels {
         // Complete admission of every new input row precedes any consumer.
         // dispatch_first includes the immutable catalog prefix for mixed tables.
         // Preserved old suffix rows were admitted in earlier successful receipts.
-        for ((table, _), pass) in BATCH_ADMISSION_KEYS.iter().zip(&self.admit_rows) {
+        // A kernel of several tables runs over their whole batch suffixes, in
+        // table order, when any of them has new rows.
+        for ((tables, _), pass) in BATCH_ADMISSION_KEYS.iter().zip(&self.admit_rows) {
+            let span = match tables {
+                [table] => plan.input_spans[*table],
+                _ if tables.iter().all(|&t| plan.input_spans[t].count == 0) => Span::default(),
+                _ => Span::new(0, tables.iter().try_fold(0u32, |sum, &t| sum.checked_add(plan.suffix_rows[t]))
+                    .ok_or_else(|| anyhow::anyhow!("batch value rows overflow"))?)?,
+            };
             record_phase_with_proof(
                 device,
                 encoder,
                 pass,
-                32 + *table as u32,
-                plan.input_spans[*table],
+                32 + tables[0] as u32,
+                span,
                 256,
                 catalog,
                 input,
@@ -694,7 +690,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
         "type_checker/trait_solver/entries/40_initialize_proof_store",
-        1,
+        256,
     ),
     (
         41,
@@ -806,11 +802,11 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         WAVE_PLAN_PHASE,
         "type_checker/trait_solver/entries/70_plan_solver_wave",
-        1,
+        256,
     ),
     // The finish point's batch stages: call reduction, then the receipt.
     (18, "type_checker/trait_solver/entries/18_reduce_calls", 256),
-    (19, "type_checker/trait_solver/entries/19_finish_batch", 1),
+    (19, "type_checker/trait_solver/entries/19_finish_batch", 256),
 ];
 
 pub(super) struct ProofKernels {

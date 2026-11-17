@@ -4,7 +4,7 @@
 
 use std::{
     collections::{HashMap, hash_map::Entry},
-    sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
 use anyhow::{Context, Result};
@@ -24,14 +24,22 @@ const BUCKET_BYTES: usize = 4 * 1024 * 16;
 
 pub(in crate::compiler) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
 
+/// The workgroup counts of one dispatch: given, or read from a buffer.
+#[derive(Clone, Copy)]
+enum Launch<'a> {
+    Direct(u32, u32, u32),
+    Indirect(&'a wgpu::Buffer, u64),
+}
+
 pub(in crate::compiler) struct Gpu<'a> {
     pub(in crate::compiler) device: &'a wgpu::Device,
     pub(in crate::compiler) queue: &'a wgpu::Queue,
+    pub(super) resident: &'a Resident,
 }
 
-/// The buffers and bind groups the desugaring keeps between builds.
+/// The buffers and bind groups one lexer's desugaring keeps between builds.
 #[derive(Default)]
-struct Resident {
+pub(super) struct Resident {
     buffers: CapacityBufferCache,
     state: Mutex<ResidentState>,
 }
@@ -45,11 +53,25 @@ struct ResidentState {
     groups: HashMap<(String, Vec<(&'static str, [u64; 3])>), Arc<wgpu::BindGroup>>,
 }
 
-static RESIDENT: LazyLock<Resident> = LazyLock::new(Resident::default);
-
 impl Resident {
     fn state(&self) -> MutexGuard<'_, ResidentState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Frees the buffers and bind groups. The next build allocates them
+    /// again.
+    pub(super) fn release(&self) {
+        *self.state() = ResidentState::default();
+        self.buffers.clear();
+    }
+
+    /// Drops the bind groups whose buffer the lexer, the parser or this pool
+    /// has replaced: a bind group keeps its buffers alive.
+    pub(super) fn drop_stale_bind_groups(&self) {
+        let live = live_tracked_allocation_ids();
+        self.state()
+            .groups
+            .retain(|(_, bindings), _| bindings.iter().all(|(_, binding)| live.contains(&binding[0])));
     }
 }
 
@@ -67,13 +89,6 @@ impl ResidentState {
     }
 }
 
-/// Frees the buffers of the desugaring, for a resident compiler that trims
-/// its idle storage. The next build allocates them again.
-pub(crate) fn release_resident_buffers() {
-    *RESIDENT.state() = ResidentState::default();
-    RESIDENT.buffers.clear();
-}
-
 /// The allocation, offset and size a binding names, when it is a buffer the
 /// compiler tracks.
 fn binding_identity(resource: &wgpu::BindingResource<'_>) -> Option<[u64; 3]> {
@@ -82,13 +97,6 @@ fn binding_identity(resource: &wgpu::BindingResource<'_>) -> Option<[u64; 3]> {
     };
     let (allocation, _, _) = tracked_buffer_identity(binding.buffer)?;
     Some([allocation, binding.offset, binding.size.map_or(0, std::num::NonZeroU64::get)])
-}
-
-/// Drops the bind groups whose buffer the lexer, the parser or this pool has
-/// replaced: a bind group keeps its buffers alive.
-pub(in crate::compiler) fn drop_stale_bind_groups() {
-    let live = live_tracked_allocation_ids();
-    RESIDENT.state().groups.retain(|(_, bindings), _| bindings.iter().all(|(_, binding)| live.contains(&binding[0])));
 }
 
 impl Gpu<'_> {
@@ -108,8 +116,8 @@ impl Gpu<'_> {
         bytes: usize,
         usage: wgpu::BufferUsages,
     ) -> LaniusBuffer<u8> {
-        let capacity = RESIDENT.state().take(label, bytes);
-        RESIDENT.buffers.binding_capacity(self.device, label, capacity, usage | STORAGE)
+        let capacity = self.resident.state().take(label, bytes);
+        self.resident.buffers.binding_capacity(self.device, label, capacity, usage | STORAGE)
     }
 
     /// A storage buffer keyed by `label` that starts with `words`.
@@ -125,7 +133,7 @@ impl Gpu<'_> {
     where
         T: encase::ShaderType + encase::internal::WriteInto,
     {
-        RESIDENT.buffers.uniform(self.device, self.queue, label, value)
+        self.resident.buffers.uniform(self.device, self.queue, label, value)
     }
 
     /// Records one dispatch whose workgroup counts are the three words at
@@ -139,9 +147,7 @@ impl Gpu<'_> {
         args: &LaniusBuffer<u8>,
         triple: u32,
     ) -> Result<()> {
-        self.record(encoder, pass, label, bindings, |compute| {
-            compute.dispatch_workgroups_indirect(&args.buffer, args.byte_offset + u64::from(triple) * 12);
-        })
+        self.record(encoder, pass, label, bindings, Launch::Indirect(&args.buffer, args.byte_offset + u64::from(triple) * 12))
     }
 
     /// Records one dispatch of one lane per element.
@@ -155,7 +161,7 @@ impl Gpu<'_> {
     ) -> Result<()> {
         let (x, y, z) =
             passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
-        self.record(encoder, pass, label, bindings, |compute| compute.dispatch_workgroups(x, y, z))
+        self.record(encoder, pass, label, bindings, Launch::Direct(x, y, z))
     }
 
     fn record(
@@ -164,7 +170,7 @@ impl Gpu<'_> {
         pass: &PassData,
         label: &str,
         bindings: &[Binding<'_>],
-        dispatch: impl FnOnce(&mut wgpu::ComputePass<'_>),
+        launch: Launch<'_>,
     ) -> Result<()> {
         passes_core::bind_group::validate_exact_binding_names(pass, 0, bindings)
             .with_context(|| format!("bind {label}"))?;
@@ -173,7 +179,7 @@ impl Gpu<'_> {
                 .map(Arc::new)
         };
         let group = {
-            let mut state = RESIDENT.state();
+            let mut state = self.resident.state();
             let identity: Option<Vec<_>> =
                 bindings.iter().map(|(name, resource)| Some((*name, binding_identity(resource)?))).collect();
             match identity {
@@ -184,6 +190,15 @@ impl Gpu<'_> {
                 },
             }
         };
+        // Inside the desugaring's batch (`record_batched`) the dispatch joins
+        // one ordered compute pass; wgpu still gives it its own usage scope.
+        let deferred = match launch {
+            Launch::Direct(x, y, z) => passes_core::defer_compute_direct(pass, &group, (x, y, z), label),
+            Launch::Indirect(args, offset) => passes_core::defer_compute_indirect(pass, &group, args, offset, &[], label),
+        };
+        if deferred {
+            return Ok(());
+        }
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
@@ -192,7 +207,10 @@ impl Gpu<'_> {
         compute.set_bind_group(0, Some(group.as_ref()), &[]);
         passes_core::record_compute_dispatch();
         if !passes_core::debug_operation_skipped() {
-            dispatch(&mut compute);
+            match launch {
+                Launch::Direct(x, y, z) => compute.dispatch_workgroups(x, y, z),
+                Launch::Indirect(args, offset) => compute.dispatch_workgroups_indirect(args, offset),
+            }
         }
         drop(compute);
         // A profiled job needs one timestamp per dispatch.

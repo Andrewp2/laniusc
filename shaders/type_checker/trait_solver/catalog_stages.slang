@@ -4,14 +4,18 @@ import type_checker.trait_solver.catalog_index;
 
 public void ts_catalog_initialize()
 {
+    ts_catalog_initialize_admitted(ts_admit_output_layout(), ts_admit_directories());
+}
+// Catalog initialization with the output layout and directory admission
+// statuses (ts_admit_group).
+public void ts_catalog_initialize_admitted(SolverStatus layout, SolverStatus directories)
+{
     // Host reset CatalogStatus to UNPROCESSED at a trusted output address first.
     // If the claimed layout itself is unsafe, leave that receipt unprocessed.
-    SolverStatus layout = ts_admit_output_layout();
     if (layout.state != TS_VALID) return;
     SolverStatus blank = ts_ok(); blank.state = TS_CATALOG_BUILDING;
     ts_write_status(0u, 0u, blank);
-    SolverStatus status = ts_admit_directories();
-    if (status.state != TS_VALID) ts_catalog_failure(status);
+    if (directories.state != TS_VALID) ts_catalog_failure(directories);
 }
 public void ts_catalog_clear_work(uint local)
 {
@@ -139,16 +143,6 @@ public void ts_catalog_build_implementations(uint local)
         ts_catalog_failure(status);
         if (index + 1u >= max(publications, 1u)) return;
     }
-}
-public void ts_catalog_check_coherence(uint local)
-{
-    if (!ts_catalog_is_building()) return;
-    uint implementations; uint row;
-    if (!ts_catalog_count(9u, implementations) || !ts_dispatch_row(local, implementations, row)) return;
-    SolverStatus status;
-    if (ts_bind_scratch(local, row, status)) status = ts_check_impl_coherence(row);
-    ts_write_status(1u, row, status);
-    ts_catalog_failure(status);
 }
 public void ts_catalog_freeze()
 {

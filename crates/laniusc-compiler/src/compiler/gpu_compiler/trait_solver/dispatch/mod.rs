@@ -1595,6 +1595,8 @@ const BATCH_INPUT_TABLES: [usize; 11] = [1, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17]
 #[derive(Clone)]
 struct BatchPlan {
     input_spans: [Span; TABLE_COUNT],
+    /// Rows of each table's batch suffix, prior and new.
+    suffix_rows: [u32; TABLE_COUNT],
     contexts: Span,
     calls: Span,
     obligations: Span,
@@ -1719,6 +1721,7 @@ impl BatchPlan {
         }
         Ok(Self {
             input_spans,
+            suffix_rows: layout.input_suffix_counts,
             contexts: submission.context_span,
             calls: submission.call_span,
             obligations: submission.obligation_span,

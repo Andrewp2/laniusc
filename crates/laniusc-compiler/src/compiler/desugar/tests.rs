@@ -1,6 +1,9 @@
 //! Tests of the desugaring in the token stream.
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Mutex, PoisonError},
+};
 
 use super::*;
 use crate::lexer::driver::GpuLexer;
@@ -79,9 +82,7 @@ fn desugar_or_reject(sources: &[&str]) -> Result<Desugared, RuleError> {
                     .clone()
                     .reinterpret::<u8>(bufs.parser_feature_flags.byte_size);
                 let last = LAST_RUN
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .clone()
+                    .with(|last| last.borrow().clone())
                     .filter(|last| last.sizes.is_some());
                 let mut reads = vec![
                     (&count_bytes, 0, 1),
@@ -93,7 +94,7 @@ fn desugar_or_reject(sources: &[&str]) -> Result<Desugared, RuleError> {
                 if let Some(sizes) = last.as_ref().and_then(|last| last.sizes.as_ref()) {
                     reads.push((sizes, 0, ROUNDS * SIZE_WORDS));
                 }
-                let mut words = read_words(&reads, None).expect("read the tokens");
+                let mut words = read_words(&lexer.desugaring().gpu(), &reads, None).expect("read the tokens");
                 // The region of every round, from the first.
                 let region = last.map(|last| {
                     let sizes = words.get(5).map(Vec::as_slice).unwrap_or(&[]);
@@ -679,7 +680,7 @@ fn library_sources_start_no_closure() {
         without_desugaring(|| {
             pollster::block_on(test_lexer().with_resident_source_pack_tokens(sources, |_, _, bufs| {
                 let flags = bufs.parser_feature_flags.clone().reinterpret::<u8>(bufs.parser_feature_flags.byte_size);
-                read_words(&[(&flags, 0, 1)], None).expect("read the feature word")[0][0]
+                read_words(&test_lexer().desugaring().gpu(), &[(&flags, 0, 1)], None).expect("read the feature word")[0][0]
             }))
         })
         .expect("lex")

@@ -107,31 +107,59 @@ public SolverStatus ts_admit_implementation_coverage(uint implementation, OwnedC
 
 // All heads already passed full coverage/shape admission. An early NoMatch is
 // consequently a semantic result; malformed unused branches cannot hide here.
+// The pair's NoMatch decisions made without traversal state: false when a
+// row read fails, else `disjoint` when the heads cannot overlap.
+public bool ts_implementation_heads_disjoint(uint left, uint right, out uint4 a, out uint4 aa,
+    out uint4 b, out uint nodes, out uint atoms, out bool disjoint)
+{
+    disjoint = false; uint4 ba;
+    if (!ts_read4(9u, left, 0u, a) || !ts_read4(9u, left, 4u, aa) ||
+        !ts_read4(9u, right, 0u, b) || !ts_read4(9u, right, 4u, ba) ||
+        !ts_catalog_count(5u, nodes) || !ts_catalog_count(1u, atoms))
+        return false;
+    if (a.z != b.z || aa.y != ba.y) { disjoint = true; return true; }
+    // Implementations of one trait share a coherence chain; most differ at
+    // the self type or at a trait argument, where the traversal's step at
+    // that root returns NoMatch. Decide those without the per-pair state
+    // setup, which reads both inventories. Root 0 is the self type, roots
+    // 1..n the trait arguments (ts_implementation_root).
+    bool arguments = aa.y <= 32u && ts_row_span(7u, aa.x, aa.y) && ts_row_span(7u, ba.x, ba.y);
+    [loop]
+    for (uint ordinal = 0u; ordinal <= select(arguments, aa.y, 0u) && !disjoint; ordinal++)
+    {
+        uint2 left_root; uint2 right_root;
+        disjoint = ts_read_root(select(ordinal == 0u, a.w, aa.x + ordinal - 1u), left_root) &&
+            ts_read_root(select(ordinal == 0u, b.w, ba.x + ordinal - 1u), right_root) &&
+            owned_constraint_roots_disjoint<OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
+                left_root, right_root, uint2(nodes, nodes), atoms);
+    }
+    return true;
+}
+
 public SolverStatus ts_implementation_heads_overlap(uint left, uint right,
     OwnedConstraintLimits limits, out bool overlap)
 {
     overlap = false;
-    uint4 a; uint4 aa; uint4 b; uint4 ba; uint nodes; uint atoms;
-    if (!ts_read4(9u, left, 0u, a) || !ts_read4(9u, left, 4u, aa) ||
-        !ts_read4(9u, right, 0u, b) || !ts_read4(9u, right, 4u, ba) ||
-        !ts_catalog_count(5u, nodes) || !ts_catalog_count(1u, atoms))
+    uint4 a; uint4 aa; uint4 b; uint nodes; uint atoms; bool disjoint;
+    if (!ts_implementation_heads_disjoint(left, right, a, aa, b, nodes, atoms, disjoint))
         return ts_invalid(1u, left, right);
-    if (a.z != b.z || aa.y != ba.y) return ts_ok();
-    // Implementations of one trait share a coherence chain; most differ at
-    // the self type, where the traversal's first step returns NoMatch. Decide
-    // those without the per-pair state setup, which reads both inventories.
-    uint2 a0; uint2 b0;
-    if (ts_read_root(a.w, a0) && ts_read_root(b.w, b0) &&
-        owned_constraint_roots_disjoint<OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
-            a0, b0, uint2(nodes, nodes), atoms))
-        return ts_ok();
+    if (disjoint) return ts_ok();
+    return ts_implementation_heads_match(left, right, uint4(a.y, b.y, aa.y, nodes), atoms, limits, overlap);
+}
+
+// The traversal of a pair ts_implementation_heads_disjoint left open: heads
+// (left head, right head, argument count, nodes) as that test read them.
+public SolverStatus ts_implementation_heads_match(uint left, uint right, uint4 heads, uint atoms,
+    OwnedConstraintLimits limits, out bool overlap)
+{
+    overlap = false;
     OwnedConstraintState state;
     // Both heads live in the one catalog graph: share its code for both sides.
     OwnedConstraintStatus status = owned_overlap_begin_pair<
         OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
-        a.y, b.y, nodes, nodes, atoms, limits, owned_constraint_frame(0u), state);
+        heads.x, heads.y, heads.w, heads.w, atoms, limits, owned_constraint_frame(0u), state);
     [loop]
-    for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= aa.y; i++)
+    for (uint i = 0u; status.state == OWNED_CONSTRAINT_MATCHED && i <= heads.z; i++)
     {
         uint2 ar; uint2 br;
         if (!ts_implementation_root(left, i, ar) || !ts_implementation_root(right, i, br))
