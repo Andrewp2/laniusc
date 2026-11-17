@@ -873,12 +873,12 @@ pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
 /// structure_dominator_tour_step.slang, structure_dominator_depth_step.slang
 /// and ssa_value_resolve_step.slang). A round multiplies the covered distance
 /// by at least this factor.
-pub(crate) const POINTER_JUMP_HOPS: u32 = 16;
+pub(crate) const POINTER_JUMP_HOPS: u32 = 64;
 
 /// Pairs of multi-hop pointer-jump rounds that reach the root of every chain
-/// in a relation of `rows` rows: a pair covers `POINTER_JUMP_HOPS^2 = 2^8`
-/// times the distance, so `ceil(bits(rows) / 8)` pairs cover
-/// `256^pairs > rows` links.
+/// in a relation of `rows` rows: a pair covers `POINTER_JUMP_HOPS^2 = 2^12`
+/// times the distance, so `ceil(bits(rows) / 12)` pairs cover
+/// `4096^pairs > rows` links.
 pub(crate) fn pointer_jump_hop_pairs(rows: u32) -> u32 {
     const BITS_PER_PAIR: u32 = 2 * POINTER_JUMP_HOPS.trailing_zeros();
     (u32::BITS - rows.max(1).leading_zeros()).div_ceil(BITS_PER_PAIR)
@@ -10928,8 +10928,8 @@ mod tests {
             );
             assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
             let hop_pairs = pointer_jump_hop_pairs(rows);
-            assert!(256u128.pow(hop_pairs) > u128::from(rows), "{rows}");
-            assert!(hop_pairs == 1 || 256u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
+            assert!(4096u128.pow(hop_pairs) > u128::from(rows), "{rows}");
+            assert!(hop_pairs == 1 || 4096u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
         }
         for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
             let fresh = |hir: u32| {
@@ -10949,8 +10949,8 @@ mod tests {
             }
             let small = retained.job_jump_pairs(5_000, target);
             let job = fresh(5_000);
-            assert!(256u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
-            assert!(256u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
+            assert!(4096u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
+            assert!(4096u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
             assert!(
                 256u64.pow(small.dominator_tour)
                     > 2 * u64::from(job.optimization_block_capacity())
