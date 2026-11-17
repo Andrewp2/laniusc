@@ -207,17 +207,6 @@ pub(super) struct ScanParams {
     pub(super) scan_step: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(super) struct ScanHierarchyParams {
-    pub(super) n_items: u32,
-    pub(super) n_blocks: u32,
-    pub(super) level_divisor: u32,
-    pub(super) level_offset: u32,
-    pub(super) parent_divisor: u32,
-    pub(super) parent_offset: u32,
-}
-
 struct SemanticPasses {
     status_clear: PassData,
     project: PassData,
@@ -227,7 +216,6 @@ struct SemanticPasses {
     value_uses_mark: PassData,
     count: PassData,
     scan_local: PassData,
-    scan_block_prefix: PassData,
     scan_apply: PassData,
     schedule: PassData,
     scatter: PassData,
@@ -263,7 +251,6 @@ impl SemanticPasses {
             value_uses_mark: load("codegen/lir/semantic/value_uses_mark"),
             count: load("codegen/lir/semantic/count"),
             scan_local: load("scan/counted/00_local"),
-            scan_block_prefix: load("scan/counted/04_block_prefix"),
             scan_apply: load("scan/counted/02_apply"),
             schedule: load("codegen/lir/semantic/schedule"),
             scatter: load("codegen/lir/semantic/scatter"),
@@ -1305,10 +1292,6 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.call_arg_scan.block_prefix",
-                passes.scan_block_prefix.reflection.as_ref(),
-            ),
-            (
                 "lir.semantic.call_arg_scan.apply",
                 passes.scan_apply.reflection.as_ref(),
             ),
@@ -1339,10 +1322,6 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.scan.local",
                 passes.scan_local.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.scan.block_prefix",
-                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.scan.apply",
@@ -1376,10 +1355,6 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.param_scan.block_prefix",
-                passes.scan_block_prefix.reflection.as_ref(),
-            ),
-            (
                 "lir.semantic.param_scan.apply",
                 passes.scan_apply.reflection.as_ref(),
             ),
@@ -1400,10 +1375,6 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.function_scan.block_prefix",
-                passes.scan_block_prefix.reflection.as_ref(),
-            ),
-            (
                 "lir.semantic.function_scan.apply",
                 passes.scan_apply.reflection.as_ref(),
             ),
@@ -1422,10 +1393,6 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.local_scan.local",
                 passes.scan_local.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.local_scan.block_prefix",
-                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.local_scan.apply",
@@ -1627,13 +1594,11 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.function_scan.local",
-                block_prefix_pass: "lir.semantic.function_scan.block_prefix",
                 apply_pass: "lir.semantic.function_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.function_flags",
                 local: "lir.semantic.function_scan_local",
                 block_sum: "lir.semantic.function_scan_block_sum",
-                block_prefix: "lir.semantic.function_scan_block_prefix",
                 output: "lir.semantic.function_prefix",
                 total: "lir.semantic.function_total",
             },
@@ -1651,13 +1616,11 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.param_scan.local",
-                block_prefix_pass: "lir.semantic.param_scan.block_prefix",
                 apply_pass: "lir.semantic.param_scan.apply",
                 count: "hir.param_count",
                 input: "lir.semantic.param_flags",
                 local: "lir.semantic.param_scan_local",
                 block_sum: "lir.semantic.param_scan_block_sum",
-                block_prefix: "lir.semantic.param_scan_block_prefix",
                 output: "lir.semantic.param_prefix",
                 total: "lir.semantic.param_total",
             },
@@ -1675,13 +1638,11 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.local_scan.local",
-                block_prefix_pass: "lir.semantic.local_scan.block_prefix",
                 apply_pass: "lir.semantic.local_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.local_flags",
                 local: "lir.semantic.local_scan_local",
                 block_sum: "lir.semantic.local_scan_block_sum",
-                block_prefix: "lir.semantic.local_scan_block_prefix",
                 output: "lir.semantic.local_prefix",
                 total: "lir.semantic.local_total",
             },
@@ -1699,13 +1660,11 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.call_arg_scan.local",
-                block_prefix_pass: "lir.semantic.call_arg_scan.block_prefix",
                 apply_pass: "lir.semantic.call_arg_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.call_arg_counts_by_hir",
                 local: "lir.semantic.call_arg_scan_local",
                 block_sum: "lir.semantic.call_arg_scan_block_sum",
-                block_prefix: "lir.semantic.call_arg_scan_block_prefix",
                 output: "lir.semantic.call_arg_prefix_by_hir",
                 total: "lir.semantic.call_arg_total",
             },
@@ -1723,13 +1682,11 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.scan.local",
-                block_prefix_pass: "lir.semantic.scan.block_prefix",
                 apply_pass: "lir.semantic.scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.count_by_hir",
                 local: "lir.semantic.scan_local",
                 block_sum: "lir.semantic.scan_block_sum",
-                block_prefix: "lir.semantic.scan_block_prefix",
                 output: "lir.semantic.offset_by_hir",
                 total: "lir.semantic.total",
             },
@@ -2882,8 +2839,8 @@ mod tests {
             });
         sorter.record(&mut encoder).unwrap();
         let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
-        // Histogram, local scan, block prefix, apply and scatter per digit.
-        assert_eq!(activity.compute_passes, 4 * 5);
+        // Histogram, local scan, apply and scatter per digit.
+        assert_eq!(activity.compute_passes, 4 * 4);
         assert_eq!(
             (activity.pipelines, activity.buffers_created, activity.buffers_released),
             (0, 0, 0),

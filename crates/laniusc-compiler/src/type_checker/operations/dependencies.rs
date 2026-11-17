@@ -4,9 +4,6 @@ macro_rules! dependency_scan_passes {
     ($label:literal) => {
         PrefixScanGraphPasses {
             local: $label,
-            hierarchy_up_first: concat!($label, ".hierarchy_up.first"),
-            hierarchy_up_rest: concat!($label, ".hierarchy_up.rest"),
-            hierarchy_down: concat!($label, ".hierarchy_down"),
             apply: concat!($label, ".apply"),
         }
     };

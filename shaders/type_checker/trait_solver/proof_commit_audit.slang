@@ -1,12 +1,30 @@
 // Shared words of the grid-wide commit audits. A commit stage runs as audit
-// lanes, one per owner row over the whole grid, and then one thread that
-// reads their verdict here and publishes or reports the failure.
+// lanes, one per owner row over the whole grid, in one dispatch. Its last
+// workgroup to finish then runs one committing thread that reads their
+// verdict here and publishes or reports the failure.
 //
 // Protocol. The header's verdict words are zero when a stage's first audit
 // lane runs: the host zeroes the header before a solver attempt, and every
 // committing thread resets them, whether or not it commits. A stage's
 // dispatches are recorded together, so no other stage's lanes run between its
 // audit and its commit.
+//
+// The last workgroup (pca_last_group). Every workgroup of the dispatch, once
+// all of its lanes are done, passes a barrier with device-scope release
+// semantics, then its lane 0 adds one to PCA_ARRIVED. The workgroup whose
+// add returns the dispatch's workgroup count minus one is the last; its lane
+// 0 passes a device-scope acquire barrier and commits. The adds are atomic
+// read-modify-writes on one word, so by the Vulkan memory model's fence
+// synchronization every lane's accesses before its workgroup's release
+// happen before the commit. The lanes write the header only with atomics
+// and the commit reads it only with atomics (pca_word), so it reads them
+// without relying on cache coherence of plain loads. Everything else the
+// commit reads was written by earlier dispatches, except the batch receipt,
+// which lanes may fail in the same dispatch: a commit after such lanes reads
+// it with an atomic (ts_batch_is_building_atomic). The planner launches one
+// workgroup when the commit's one-row span is planned and the lanes have no
+// row (PSW_SLOT_ONE), and none when it is not, as the separate one-thread
+// commit ran before. The commit resets PCA_ARRIVED with the other words.
 //
 // Claims. An exact cover needs every destination row owned once. Each owner
 // stamps its rows with the audit's tag, one claim word per row. A row that
@@ -32,12 +50,41 @@ public static const uint PCA_LIMIT = 3u;      // PCA_LIMIT_* flags
 public static const uint PCA_PUBLISHED = 4u;  // the phase whose commit let its later lanes run
 public static const uint PCA_TOTALS = 5u;     // rows claimed in each of five tables
 public static const uint PCA_CONFLICTS = 10u; // complement of each table's lowest row with two owners
+public static const uint PCA_ARRIVED = 15u;   // workgroups of the stage's dispatch whose lanes are done
 public static const uint PCA_HEADER = 16u;    // claim words follow
 
 static const uint PCA_LIMIT_TOTAL = 1u;       // a count passed 32 bits
 static const uint PCA_LIMIT_CLAIMS = 2u;      // a row has no claim word
 
-public uint pca_word(uint word) { return trait_solver_commit_audit[word]; }
+// A header word for the committing thread, read with an atomic.
+public uint pca_word(uint word)
+{
+    uint value;
+    InterlockedOr(trait_solver_commit_audit[word], 0u, value);
+    return value;
+}
+// The phase whose commit let its later lanes run, for those lanes: written
+// by an earlier dispatch.
+public uint pca_published() { return trait_solver_commit_audit[PCA_PUBLISHED]; }
+// Called by every lane of every workgroup of a grid-wide dispatch, in
+// workgroup-uniform control flow: true for lane 0 of the last workgroup,
+// which then commits (see the protocol above). A dispatch of `rows` lanes
+// has max(1, ceil(rows / 256)) workgroups of 256 lanes.
+public bool pca_last_group(uint lane)
+{
+    uint rows = trait_solver_params.dispatch_count;
+    uint groups = max(1u, (rows >> 8u) + select((rows & 255u) != 0u, 1u, 0u));
+    AllMemoryBarrierWithGroupSync();
+    if (lane != 0u) return false;
+    uint arrived;
+    InterlockedAdd(trait_solver_commit_audit[PCA_ARRIVED], 1u, arrived);
+    if (arrived + 1u != groups) return false;
+    DeviceMemoryBarrier();
+    return true;
+}
+// The arrivals' reset by a last workgroup whose commit keeps no other
+// header word.
+public void pca_reset_arrivals() { trait_solver_commit_audit[PCA_ARRIVED] = 0u; }
 public uint pca_tag() { return trait_solver_commit_audit[PCA_EPOCH] + 1u; }
 // Records an owner whose own rows are invalid. Complements make the lowest
 // row the largest word and leave zero for none.

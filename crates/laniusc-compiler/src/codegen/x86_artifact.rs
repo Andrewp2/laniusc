@@ -235,13 +235,11 @@ impl GpuX86ArtifactStage {
             allocations,
             GraphScanContract {
                 local_pass: "lir.target.byte_scan.local",
-                block_prefix_pass: "lir.target.byte_scan.block_prefix",
                 apply_pass: "lir.target.byte_scan.apply",
                 count: "lir.x86.total",
                 input: "lir.x86.byte_lengths",
                 local: "lir.target.byte_scan_local",
                 block_sum: "lir.target.byte_scan_block_sum",
-                block_prefix: "lir.target.byte_scan_block_prefix",
                 output: "lir.x86.byte_offsets",
                 total: "lir.x86.body_length",
             },

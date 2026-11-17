@@ -387,20 +387,12 @@ impl GpuTypeChecker {
             &module_record_scan_workspace.block_sum,
         );
         resources.buffer(
-            "module_record_scan_prefix_a",
-            &module_record_scan_workspace.block_prefix,
-        );
-        resources.buffer(
             "module_value_scan_local_prefix",
             &module_value_scan_workspace.local_prefix,
         );
         resources.buffer(
             "module_value_scan_block_sum",
             &module_value_scan_workspace.block_sum,
-        );
-        resources.buffer(
-            "module_value_scan_prefix_a",
-            &module_value_scan_workspace.block_prefix,
         );
         resources.buffer("type_instance_decl_token", &type_instance_decl_token);
         resources.buffer(

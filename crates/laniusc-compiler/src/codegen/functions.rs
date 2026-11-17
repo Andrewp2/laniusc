@@ -125,13 +125,11 @@ impl GpuTargetFunctionTable {
             allocations,
             GraphScanContract {
                 local_pass: "lir.target.function_scan.local",
-                block_prefix_pass: "lir.target.function_scan.block_prefix",
                 apply_pass: "lir.target.function_scan.apply",
                 count: "lir.opt.total",
                 input: "lir.target.function_flags",
                 local: "lir.target.function_scan_local",
                 block_sum: "lir.target.function_scan_block_sum",
-                block_prefix: "lir.target.function_scan_block_prefix",
                 output: "lir.target.function_prefix",
                 total: "lir.target.function_count",
             },

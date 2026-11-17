@@ -508,7 +508,7 @@ public void pps_stage_commit_normalized_goals()
 public void pps_stage_mark_normalized_goals(uint local)
 {
     uint works; uint work; uint4 key;
-    if (pca_word(PCA_PUBLISHED) != 47u || !pps_count(PPS_WORK, works) ||
+    if (pca_published() != 47u || !pps_count(PPS_WORK, works) ||
         !ts_dispatch_row(local, works, work)) return;
     if (!pps_read4(PPS_WORK, work, 0u, key) || (key.z == PPS_WORK_GOAL_VALIDATED &&
         !pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_NORMALIZED)))

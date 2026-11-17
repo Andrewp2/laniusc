@@ -1,15 +1,17 @@
 use super::super::*;
 
 pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
-    /// Generic and constant claim offsets, one paired scan.
+    /// Generic and constant claim offsets, one paired scan. Its apply writes
+    /// both claim indexes' dispatch arguments.
     pub claim_scans: PrefixScanPairOperation,
     pub emit_claims: ComputeOperation,
     pub generic_index: CallClaimIndexOperation,
     pub validate_generic: ComputeOperation,
     pub mark_required: ComputeOperation,
+    /// Its apply writes the required-binding dispatch arguments.
     pub required_scan: PrefixScanOperation,
-    pub required_dispatch: ComputeOperation,
-    pub required_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    /// The dispatch uniforms of the claim and required-binding scan applies.
+    pub dispatch_params: [LaniusBuffer<CountDispatchParams>; 2],
     pub validate_required: ComputeOperation,
     pub const_index: CallClaimIndexOperation,
     pub publish_const_environment: ComputeOperation,
@@ -29,8 +31,7 @@ pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
     validate_generic: ComputeOperation,
     mark_required: ComputeOperation,
     required_scan: PrefixScanOperation,
-    required_dispatch: ComputeOperation,
-    _required_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    _dispatch_params: [LaniusBuffer<CountDispatchParams>; 2],
     validate_required: ComputeOperation,
     const_index: CallClaimIndexOperation,
     publish_const_environment: ComputeOperation,
@@ -46,8 +47,7 @@ impl CallGenericClaimValidationOperation {
             validate_generic: build.validate_generic,
             mark_required: build.mark_required,
             required_scan: build.required_scan,
-            required_dispatch: build.required_dispatch,
-            _required_dispatch_params: build.required_dispatch_params,
+            _dispatch_params: build.dispatch_params,
             validate_required: build.validate_required,
             const_index: build.const_index,
             publish_const_environment: build.publish_const_environment,
@@ -65,7 +65,6 @@ impl CallGenericClaimValidationOperation {
         self.generic_index.record(encoder)?;
         self.mark_required.record(encoder)?;
         self.required_scan.record(encoder)?;
-        self.required_dispatch.record(encoder)?;
         self.const_index.record(encoder)?;
         // Every reader of argument constant bindings loads this selection.
         self.publish_const_environment.record(encoder)
