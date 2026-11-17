@@ -1144,6 +1144,9 @@ fn scan_work(gpu: &Gpu<'_>, label: &str, rows: usize) -> [LaniusBuffer<u8>; 2] {
 /// Records the desugaring after the lexer's token build.
 pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Result<()> {
     if SUSPENDED.with(|s| s.get()) {
+        // This recording overwrites the lexer's tokens, so the last run can
+        // no longer be explained from them.
+        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = None;
         return Ok(());
     }
     let device = crate::gpu::device::global();

@@ -46,8 +46,8 @@ pub(super) fn desugar_pack(sources: &[&str]) -> Result<Desugared, String> {
     })
 }
 
-/// The tests read the last run after the lexer is free, so one test
-/// desugars at a time.
+/// The tests read the last run after the lexer is free, and every test lex
+/// overwrites the lexer's tokens, so one test lexes at a time.
 static TEST_RUNS: Mutex<()> = Mutex::new(());
 
 pub(super) fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
@@ -274,6 +274,7 @@ fn a_rejected_machine_names_its_file_and_line() {
 /// The token table of the constant strings is the GPU lexer's.
 #[test]
 fn the_constant_token_table_matches_the_lexer() {
+    let _one = one_at_a_time();
     let lexer = test_lexer();
     for &text in machines::constant_strings() {
         let tokens =
@@ -638,6 +639,7 @@ fn generators_stay_in_their_subset() {
 /// machine keywords the lexer reads where the strings put them.
 #[test]
 fn the_generator_and_closure_token_tables_match_the_lexer() {
+    let _one = one_at_a_time();
     let lexer = test_lexer();
     for (strings, keyword) in [generators::constant_strings(), closures::constant_strings()] {
     for &text in strings {
@@ -661,6 +663,7 @@ fn the_generator_and_closure_token_tables_match_the_lexer() {
 /// starts one, and a build of the library records no closure round.
 #[test]
 fn library_sources_start_no_closure() {
+    let _one = one_at_a_time();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     lani_files(&root.join("stdlib"), &mut files);
