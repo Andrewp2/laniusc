@@ -1,0 +1,149 @@
+// `gen fn` (M5): functions that yield, as machines.
+import core::option;
+
+enum OddSquaresResume { Next }
+machine OddSquares on OddSquaresResume -> core::option::Option<i64> {
+    limit: i64,
+    start Start;
+    state Start {
+        OddSquaresResume::Next -> { let limit: i64 = self.limit; let i: i64 = 0;
+    while (i < limit) {
+        if (i % 2 == 1) { goto Yield0(i) with core::option::Some(i * i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_i: i64) {
+        OddSquaresResume::Next -> { let limit: i64 = self.limit; let i: i64 = __lanius_gen_i; { {  } i += 1; } while (i < limit) {
+        if (i % 2 == 1) { goto Yield0(i) with core::option::Some(i * i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    final state Done {
+        OddSquaresResume::Next -> stay with core::option::None(),
+    }
+}
+fn odd_squares(limit: i64) -> OddSquares { return odd_squares_start(limit); }
+impl OddSquares {
+    fn next(&mut self) -> core::option::Option<i64> { return self.step(OddSquaresResume::Next); }
+}
+
+
+// Nested loops, a local of the outer loop's body, a yield after the loops.
+enum CellsResume { Next }
+machine Cells on CellsResume -> core::option::Option<i32> {
+    rows: i32,
+    cols: i32,
+    start Start;
+    state Start {
+        CellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = 0;
+    while (r < rows) {
+        let c: i32 = 0;
+        while (c < cols) {
+            goto Yield0(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1;
+    }
+    goto Yield1(r) with core::option::Some(999); goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_r: i32, __lanius_gen_c: i32) {
+        CellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = __lanius_gen_r; { let c: i32 = __lanius_gen_c; { c += 1; } while (c < cols) {
+            goto Yield0(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }r += 1; } while (r < rows) {
+        let c: i32 = 0;
+        while (c < cols) {
+            goto Yield0(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1;
+    }goto Yield1(r) with core::option::Some(999); goto Done with core::option::None(); },
+    }
+    state Yield1(__lanius_gen_r: i32) {
+        CellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = __lanius_gen_r;  goto Done with core::option::None(); },
+    }
+    final state Done {
+        CellsResume::Next -> stay with core::option::None(),
+    }
+}
+fn cells(rows: i32, cols: i32) -> Cells { return cells_start(rows, cols); }
+impl Cells {
+    fn next(&mut self) -> core::option::Option<i32> { return self.step(CellsResume::Next); }
+}
+
+
+// An early return, and an if/else around yields.
+enum SignsResume { Next }
+machine Signs on SignsResume -> core::option::Option<i32> {
+    limit: i32,
+    start Start;
+    state Start {
+        SignsResume::Next -> { let limit: i32 = self.limit; let i: i32 = 0 - 2;
+    while (i <= limit) {
+        if (i == 3) { goto Done with core::option::None(); }
+        if (i < 0) { goto Yield0(i) with core::option::Some(0 - 1); } else { goto Yield1(i) with core::option::Some(i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_i: i32) {
+        SignsResume::Next -> { let limit: i32 = self.limit; let i: i32 = __lanius_gen_i; { {  } i += 1; } while (i <= limit) {
+        if (i == 3) { goto Done with core::option::None(); }
+        if (i < 0) { goto Yield0(i) with core::option::Some(0 - 1); } else { goto Yield1(i) with core::option::Some(i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    state Yield1(__lanius_gen_i: i32) {
+        SignsResume::Next -> { let limit: i32 = self.limit; let i: i32 = __lanius_gen_i; { {  } i += 1; } while (i <= limit) {
+        if (i == 3) { goto Done with core::option::None(); }
+        if (i < 0) { goto Yield0(i) with core::option::Some(0 - 1); } else { goto Yield1(i) with core::option::Some(i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    final state Done {
+        SignsResume::Next -> stay with core::option::None(),
+    }
+}
+fn signs(limit: i32) -> Signs { return signs_start(limit); }
+impl Signs {
+    fn next(&mut self) -> core::option::Option<i32> { return self.step(SignsResume::Next); }
+}
+
+
+fn main() -> i32 {
+    let squares: OddSquares = odd_squares(10);
+    let total: i64 = 0;
+    while (true) {
+        match (squares.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    // 1 + 9 + 25 + 49 + 81
+    if (total != 165) { return 1; }
+    // Exhausted: every later next is None.
+    if (core::option::is_some(squares.next())) { return 2; }
+
+    let grid: Cells = cells(2, 3);
+    let count: i32 = 0;
+    let weighted: i32 = 0;
+    while (true) {
+        match (grid.next()) {
+            Some(v) -> { count += 1; weighted += v * count; continue; },
+            None -> { break; },
+        };
+    }
+    // 0,1,2,10,11,12,999 weighted by position
+    if (count != 7 || weighted != 0 * 1 + 1 * 2 + 2 * 3 + 10 * 4 + 11 * 5 + 12 * 6 + 999 * 7) { return 3; }
+
+    let s: Signs = signs(10);
+    let seen: i32 = 0;
+    while (true) {
+        match (s.next()) {
+            Some(v) -> { seen = seen * 10 + v + 1; continue; },
+            None -> { break; },
+        };
+    }
+    // -1, -1, 0, 1, 2 then return at 3: digits 0,0,1,2,3
+    if (seen != 123) { return 4; }
+    return 0;
+}

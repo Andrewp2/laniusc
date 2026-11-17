@@ -45,6 +45,49 @@ use crate::gpu::{
     readback::{PagedReadback, ReadbackRegion},
 };
 
+/// Batch tables whose row counts a retained submission may take from the GPU
+/// (record_gpu_batch_counts): the value-graph suffixes and tables 11-16.
+const GPU_COUNTED_TABLES: [usize; 10] = [1, 5, 6, 7, 11, 12, 13, 14, 15, 16];
+/// Output tables whose row count equals an input table's
+/// (catalog_io.slang, ts_admit_output_layout): (output, input).
+const GPU_COUNTED_OUTPUTS: [(usize, usize); 5] = [(2, 13), (3, 16), (4, 15), (5, 16), (8, 14)];
+
+/// Records copies of a retained batch's row counts from the GPU into its
+/// directory, so the solve takes them at dispatch time: `source` holds one
+/// count per input table, table `t` at word `first_word + t`, written by
+/// commands recorded before this call in the same submission.
+///
+/// The host plans the submission with upper bounds instead of counts
+/// (`ProgramPacket::prepare_retained_submission(bounds)`): every table's
+/// offset and capacity, the output layout and resets, the dispatch sizes
+/// and the proof store come from the bounds. Each copied count replaces its
+/// bound in the input directory (`DIRECTORY_WORD + 6 t + 3`) and in the
+/// output directory of the tables that mirror it (`OUTPUT_DIRECTORY_WORD +
+/// 5 o + 2`). Every solver kernel bounds its rows by these directory words
+/// (`ts_table_count`), and batch initialization (12) rejects a count above
+/// its capacity or an assumption count whose bucket count differs from the
+/// bound's, so a wrong count fails the batch instead of reading other rows.
+/// The host never reads the rows of such a solve: run it deferred.
+pub(super) fn record_gpu_batch_counts(
+    encoder: &mut wgpu::CommandEncoder,
+    input: &Arena,
+    source: &LaniusBuffer<u32>,
+    first_word: u64,
+) -> Result<()> {
+    // The producer's dispatches may still be batched: they go first.
+    passes_core::flush_deferred_compute(encoder);
+    let word = |index: u64| index * 4;
+    for table in GPU_COUNTED_TABLES {
+        let to = u64::from(DIRECTORY_WORD) + table as u64 * 6 + 3;
+        source.copy_to(encoder, word(first_word + table as u64), &input.buffer, word(to), 4);
+    }
+    for (output, table) in GPU_COUNTED_OUTPUTS {
+        let to = u64::from(OUTPUT_DIRECTORY_WORD) + output as u64 * 5 + 2;
+        source.copy_to(encoder, word(first_word + table as u64), &input.buffer, word(to), 4);
+    }
+    Ok(())
+}
+
 /// Constructed only after reading the exact proof arena and output arenas bound
 /// to one submission. No public constructor accepts arbitrary receipt bytes.
 /// It retains small receipts and root rows, never the complete proof graph.

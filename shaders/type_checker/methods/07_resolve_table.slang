@@ -1,5 +1,6 @@
 import type_checker.constant_parameter_slots;
-// Collect local candidates into the common cross-inventory transaction.
+// Reset each method call's candidate record, then collect local candidates
+// into the common cross-inventory transaction.
 //
 // Source refs are frozen before reset. This pass never writes callable or
 // return facts; imported contributors can replace any deeper local candidate.
@@ -42,8 +43,13 @@ StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<uint> method_call_source_ref_tag;
 StructuredBuffer<uint> method_call_receiver_hir;
-StructuredBuffer<uint> method_call_selection_owned;
+RWStructuredBuffer<uint> method_call_selection_owned;
 RWStructuredBuffer<MethodCandidate> method_candidate;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_context_owner_by_token;
+RWStructuredBuffer<uint> call_context_arg_mask;
+RWStructuredBuffer<uint> call_context_constant_mask;
 StructuredBuffer<uint> method_call_source_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_site_module_id;
@@ -216,13 +222,46 @@ void collect_bucket(uint token, uint bucket, uint tag, uint payload, uint actual
     if (link != 0u) summary.state = METHOD_CANDIDATE_INVALID;
 }
 
+// Opens the transaction's record for `token`: every later contributor reads
+// the token's record and context masks only after this lane's reset. Returns
+// whether the token is a method call this transaction selects.
+bool reset_candidate(uint token)
+{
+    // A record whose state is NO_MATCH is the empty record: every producer
+    // writes method_candidate_empty() or a record with another state (or a
+    // copy of one), and 01_clear empties every record at the job's start.
+    // Reading the state word alone keeps the reset from rewriting the whole
+    // token range each transaction.
+    if (method_candidate[token].state != METHOD_CANDIDATE_NO_MATCH)
+        method_candidate[token] = method_candidate_empty();
+    if (method_call_name_id[token] == INVALID) return false;
+    // Earlier direct-call resolution owns free and module-qualified functions.
+    // Previous method winners remain eligible for replacement in later rounds.
+    if (method_call_selection_owned[token] == 0u &&
+        (call_fn_index[token] != INVALID ||
+         call_dependency_library_id[token] != INVALID)) return false;
+    method_call_selection_owned[token] = 1u;
+    uint context = call_context_owner_by_token[token];
+    uint count; uint stride;
+    call_context_arg_mask.GetDimensions(count, stride);
+    if (context < count)
+    {
+        call_context_arg_mask[context] = 0u;
+        call_context_constant_mask[context] = 0u;
+    }
+    return true;
+}
+
+// The reset and the local table lookup share one lane per token: the reset
+// writes only the token's own record and ownership and its call's context
+// masks, which the lookup does not read.
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id(dtid);
-    if (token >= active_token_count() || method_call_selection_owned[token] == 0u ||
-        method_call_name_id[token] == INVALID || !inference_item_active(token)) return;
+    if (token >= active_token_count() || !inference_item_active(token)) return;
+    if (!reset_candidate(token)) return;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
     // An external canonical receiver (a bare imported generic qualifier,

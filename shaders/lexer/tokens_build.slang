@@ -117,6 +117,8 @@ static const uint PARSER_FEATURES_OF_MACHINE_OUTPUT = PARSER_FEATURE_MACHINES |
     PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES | PARSER_FEATURE_STRUCTS |
     PARSER_FEATURE_PREDICATES | PARSER_FEATURE_MEMBERS | PARSER_FEATURE_ARRAYS |
     PARSER_FEATURE_REFERENCES;
+// A generator desugars to a machine (crates/laniusc-compiler/src/compiler/desugar).
+static const uint PARSER_FEATURE_GENERATORS = 0x00002000u;
 
 uint parser_features_for_lexical_token(uint kind)
 {
@@ -140,6 +142,8 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_TYPE_ALIASES;
     if (kind == TK_MACHINE)
         flags |= PARSER_FEATURES_OF_MACHINE_OUTPUT;
+    if (kind == TK_GEN || kind == TK_YIELD)
+        flags |= PARSER_FEATURE_GENERATORS | PARSER_FEATURES_OF_MACHINE_OUTPUT;
     // A transition outside a machine is an error the desugaring reports.
     if (kind == TK_GOTO || kind == TK_STAY)
         flags |= PARSER_FEATURE_MACHINES;

@@ -2,12 +2,10 @@
 //! (docs/state-machines-design.md, docs/language-ergonomics.md).
 //!
 //! Every rewrite runs on the GPU. Closures become structs and impls
-//! (`closures`). A `gen fn` becomes a `machine` (`generators`), from the
-//! parse tree of the machine pass, which also rejects the reserved
-//! `__lanius_` prefix (R5) outside the files a rewrite wrote (`machines`).
-//! A `machine` item is not rewritten here: the frontend desugars it in its
-//! token stream (crate::compiler::desugar), which also checks the rules that
-//! need the machine's shape. A segment table maps each rewritten byte back
+//! (`closures`). A lex of the result rejects the reserved `__lanius_` prefix
+//! (R5) outside the files a rewrite wrote (`machines`). A `gen fn` and a
+//! `machine` item are not rewritten here: the frontend desugars them in its
+//! token stream (crate::compiler::desugar), which also checks their rules. A segment table maps each rewritten byte back
 //! to the source, so diagnostics point at the source.
 
 use std::{
@@ -19,7 +17,6 @@ use std::{
 use super::{CompileError, Diagnostic, diagnostic_label_from_source_span};
 
 pub(in crate::compiler) mod closures;
-mod generators;
 pub(in crate::compiler) mod machines;
 
 /// Identifiers starting with this prefix are reserved for elaborated code.
@@ -85,7 +82,6 @@ fn registry() -> &'static Mutex<HashMap<blake3::Hash, Arc<Elaborated>>> {
 /// that trims its idle storage. The next run allocates them again.
 pub(crate) fn release_resident_buffers() {
     closures::release_resident_buffers();
-    machines::release_resident_buffers();
 }
 
 /// The original text and span behind a span of elaborated text, if `source`
@@ -159,8 +155,8 @@ impl Pending {
     }
 }
 
-/// `elaborate_source` for the files of one load. Closures, then generators,
-/// then machines are rewritten on the GPU, each in one run over all the
+/// `elaborate_source` for the files of one load. Closures are rewritten and
+/// the reserved names checked on the GPU, each in one run over all the
 /// files.
 pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<String>, CompileError> {
     Ok(elaborate(sources, None)?.expect("a load without a batch limit is always elaborated"))
@@ -280,40 +276,24 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         }
     }
 
-    // Machines, and the rules every file follows: the reserved names, and
-    // no transition outside a machine. When a file declares a generator the
-    // pass rewrites the generators into machines instead, and runs again on
-    // the result.
-    // Only the files with a machine's or a generator's token, or a reserved
-    // name, can break these rules or need the machine pass
-    // (docs/state-machines-design.md, "Selecting the files to rewrite").
+    // The reserved names, in the files with a reserved name or a machine's
+    // or a generator's token (docs/state-machines-design.md, "Selecting the
+    // files to rewrite").
     let candidates = with(closures::SELECT_MACHINES);
     if !candidates.is_empty() {
         let texts: Vec<&str> = candidates.iter().map(|&index| files[index].text()).collect();
         let flags: Vec<u32> = candidates.iter().map(|&index| files[index].flags).collect();
         let outcome = machines::expand(&texts, &flags).map_err(|err| {
             super::compiler_execution_failed_error(
-                "the compiler stopped while expanding machines",
-                "expand machines",
+                "the compiler stopped while checking reserved names",
+                "check reserved names",
                 err,
             )
         })?;
-        match outcome {
-            Some(machines::Outcome::Unparsed) if batch_limit.is_some() => return Ok(None),
-            Some(machines::Outcome::Unparsed) | None => {}
-            Some(machines::Outcome::Invalid(invalid)) => {
-                let file = &files[candidates[invalid.file]];
-                let (text, start, len) = file.source_span(invalid.start, invalid.len);
-                return Err(machine_diagnostic(&file.path, text, start, len, invalid));
-            }
-            Some(machines::Outcome::Generators(outputs)) => {
-                for (index, output) in candidates.iter().zip(outputs) {
-                    if let Some(output) = output {
-                        files[*index].flags |= machines::FILE_GENERATORS;
-                        files[*index].push(output);
-                    }
-                }
-            }
+        if let Some(machines::Outcome::Invalid(invalid)) = outcome {
+            let file = &files[candidates[invalid.file]];
+            let (text, start, len) = file.source_span(invalid.start, invalid.len);
+            return Err(machine_diagnostic(&file.path, text, start, len, invalid));
         }
     }
 
@@ -365,18 +345,14 @@ pub machine Door on Input -> Reply {
 }
 ";
 
-    /// A generator becomes a machine, and the frontend desugars that
-    /// machine (crate::compiler::desugar).
+    /// A generator is not rewritten here: the frontend desugars it in its
+    /// token stream (crate::compiler::desugar).
     #[test]
-    fn a_generator_becomes_a_machine_the_rules_accept() {
+    fn a_generator_is_left_for_the_frontend() {
         let source = "import core::option;\ngen fn evens(limit: i32) -> i32 {\n    let i: i32 = 0;\n    while (i < limit) {\n        yield i;\n        i += 2;\n    }\n}\n";
         let text = elaborate_source(Path::new("evens.lani"), source.to_string()).unwrap();
-        assert!(text.contains("machine Evens on EvensResume -> core::option::Option<i32> {"), "{text}");
+        assert_eq!(text, source);
         assert!(crate::compiler::desugar::accepts(&text), "{text}");
-        let at = text.find("__lanius_gen_i").unwrap();
-        let (elaborated, start, _) = original_span(&text, at, 14).unwrap();
-        assert_eq!(elaborated.original(), source);
-        assert!(start < source.len());
     }
 
     /// The selection of `closures::select` leaves out the files with no

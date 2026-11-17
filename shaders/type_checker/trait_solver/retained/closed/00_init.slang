@@ -8,5 +8,5 @@ void main(uint3 id:SV_DispatchThreadID)
     if (i<cw_config[1]) cw_param[i]=RT_INVALID;
     if (i<cw_config[6]) cw_atom_slots[i]=0u;
     if (i<cw_terms()) cw_reach[i]=0u;
-    if (i<32u) cw_state[i]=i==1u ? RT_INVALID : 0u;
+    if (i<CW_STATE_WORDS) cw_state[i]=i==1u ? RT_INVALID : 0u;
 }

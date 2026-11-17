@@ -3,7 +3,7 @@ import type_checker.trait_solver.retained.closed.common;
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
-    uint i=cw_lane(id); if (i>=cw_lanes()) return;
+    uint i=cw_lane(id); if (i>=cw_lanes() || cw_state[CW_FAULT]!=0u) return;
     uint atom_ids=cw_config[10]; uint use_map=cw_config[11];
     if (i==0u && cw_state[12]!=0u)
     {

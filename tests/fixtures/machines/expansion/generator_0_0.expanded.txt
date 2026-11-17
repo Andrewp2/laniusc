@@ -1,0 +1,27 @@
+import core::option;
+enum EvensResume { Next }
+machine Evens on EvensResume -> core::option::Option<i32> {
+    limit: i32,
+    start Start;
+    state Start {
+        EvensResume::Next -> { let limit: i32 = self.limit; let i: i32 = 0;
+    while (i < limit) {
+        goto Yield0(i) with core::option::Some(i);
+        i += 2;
+    } goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_i: i32) {
+        EvensResume::Next -> { let limit: i32 = self.limit; let i: i32 = __lanius_gen_i; { i += 2; } while (i < limit) {
+        goto Yield0(i) with core::option::Some(i);
+        i += 2;
+    } goto Done with core::option::None(); },
+    }
+    final state Done {
+        EvensResume::Next -> stay with core::option::None(),
+    }
+}
+fn evens(limit: i32) -> Evens { return evens_start(limit); }
+impl Evens {
+    fn next(&mut self) -> core::option::Option<i32> { return self.step(EvensResume::Next); }
+}
+

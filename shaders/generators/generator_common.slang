@@ -1,7 +1,8 @@
-// Shared layout of the generator expansion. A `gen fn` becomes a `machine`
-// with one state per `yield`, a function that constructs it and an impl with
-// `next`. The kernels read the parse tree into per-token records, then every
-// piece of the machine's text is written by a thread of its own.
+// Shared layout of the generator round of the desugaring. A `gen fn`
+// becomes a `machine` with one state per `yield`, a function that constructs
+// it and an impl with `next`. The kernels read the token stream into
+// per-token records (read.slang), then every piece of the machine's text is
+// written by a thread of its own.
 module generator_common;
 
 import byte_packing;
@@ -28,8 +29,10 @@ public static const uint GR_KIND = 5u;
 public static const uint GR_CLOSE = 6u;
 
 // Roles. A role sits on the first token of its construct: `gen`, a
-// parameter's name, `let`, `yield`, the `;` of a yield statement, and the
-// `{` and `}` of a block.
+// parameter's name, `let`, `yield` and `return` at a statement position, the
+// `;` of a yield statement, and the `{` and `}` of a block. Statement
+// positions are those of a generator's body and of the blocks of its
+// `while` and `if` statements.
 public static const uint GROLE_GEN = 1u;
 public static const uint GROLE_PARAM = 2u;
 public static const uint GROLE_LET = 3u;
@@ -37,6 +40,7 @@ public static const uint GROLE_YIELD = 4u;
 public static const uint GROLE_YIELD_END = 5u;
 public static const uint GROLE_BLOCK = 6u;
 public static const uint GROLE_CLOSE = 7u;
+public static const uint GROLE_RETURN = 8u;
 
 // Block kinds. A yield sits only in a generator's body and in the blocks of
 // its `while` and `if` statements.
@@ -49,16 +53,6 @@ public static const uint GF_PUBLIC = 1u;
 public static const uint GF_GENERIC = 2u;
 public static const uint GF_NO_TYPE = 4u;
 public static const uint GF_WHERE = 8u;
-
-// Piece kinds. A piece row is `(length, kind, value, anchor token)`: a copy
-// of source bytes from `value`, constant string `value`, the decimal digits
-// of `value`, the CamelCase form of the anchor token, or the snake_case form
-// of that.
-public static const uint PIECE_COPY = 0u;
-public static const uint PIECE_CONST = 1u;
-public static const uint PIECE_NUMBER = 2u;
-public static const uint PIECE_CAMEL = 4u;
-public static const uint PIECE_CAMEL_SNAKE = 5u;
 
 // No well-formed program reaches these. They bound the loops of a kernel.
 public static const uint MAX_LIST = 65536u;
@@ -167,31 +161,25 @@ public bool same_token_text(StructuredBuffer<uint> tokens, ByteAddressBuffer byt
     return true;
 }
 
-// Where a token is: the generator whose body holds it, and whether it is a
-// statement position of that body. `scan_a.w` is the depth in all brackets,
-// `scan1` the inclusive prefix sums of generators, yields, loop depth and
-// the depth in the blocks of a generator's body, `while` and `if`. A token
-// is at a statement position when those blocks are its only brackets.
+// Where a token is: the generator whose body holds it. `scan1` holds the
+// inclusive prefix sums of generators, yields, loop depth and the depth in
+// the blocks of a generator's body, `while` and `if`.
 public struct GenPlace
 {
     public uint gen;
     public uint open;
     public uint close;
     public bool inside;
-    public bool eligible;
-    public uint level;
 };
 
-public GenPlace gen_place(StructuredBuffer<uint> records, StructuredBuffer<uint4> scan_a, StructuredBuffer<uint4> scan1,
-                          StructuredBuffer<uint> gens, uint token)
+public GenPlace gen_place(StructuredBuffer<uint> records, StructuredBuffer<uint4> scan1, StructuredBuffer<uint> gens,
+                          uint token)
 {
     GenPlace place;
     place.gen = GN_NONE;
     place.open = 0u;
     place.close = 0u;
     place.inside = false;
-    place.eligible = false;
-    place.level = 0u;
     uint ordinal = scan1[token].x;
     if (ordinal == 0u)
         return place;
@@ -201,11 +189,7 @@ public GenPlace gen_place(StructuredBuffer<uint> records, StructuredBuffer<uint4
     place.gen = gen;
     place.open = open;
     place.close = end - 1u;
-    if (open == 0u || token <= open || token + 1u >= end)
-        return place;
-    place.inside = true;
-    place.level = scan1[token].w - scan1[open].w;
-    place.eligible = scan_a[token].w - scan_a[open].w == place.level;
+    place.inside = open != 0u && token > open && token + 1u < end;
     return place;
 }
 
@@ -225,72 +209,4 @@ public void generator_error(RWStructuredBuffer<uint> status, RWStructuredBuffer<
     }
     uint prior;
     InterlockedMin(status[0u], key, prior);
-}
-
-public bool ascii_upper(uint c)
-{
-    return c >= 65u && c <= 90u;
-}
-
-public bool ascii_lower(uint c)
-{
-    return c >= 97u && c <= 122u;
-}
-
-public bool ascii_digit(uint c)
-{
-    return c >= 48u && c <= 57u;
-}
-
-// As in shaders/machines/machine_common.slang: the machine pass names the
-// constructor of a machine by the snake_case form of the machine's name.
-public bool snake_boundary(uint previous, uint current, uint next)
-{
-    if (!ascii_upper(current))
-        return false;
-    return ascii_lower(previous) || ascii_digit(previous) || (ascii_upper(previous) && ascii_lower(next));
-}
-
-// The CamelCase form of the `len` bytes at `start`: the parts between `_`
-// joined, each with its first letter in upper case. With `snake`, the
-// snake_case form of that. Returns byte `want` of the form, or the form's
-// length when `want` is `GN_NONE`.
-public uint camel_text(ByteAddressBuffer bytes, uint start, uint len, bool snake, uint want)
-{
-    uint out = 0u;
-    uint previous = 0u;
-    uint current = 0u;
-    bool upper_next = true;
-    len = min(len, MAX_NAME);
-    for (uint i = 0u; i <= len; i += 1u)
-    {
-        uint next = 0u;
-        if (i < len)
-        {
-            uint c = byte_address_load_u8(bytes, start + i);
-            if (c == 95u)
-            {
-                upper_next = true;
-                continue;
-            }
-            next = (upper_next && ascii_lower(c)) ? c - 32u : c;
-            upper_next = false;
-        }
-        // `current` has its successor now: 0 at the end of the name.
-        if (current != 0u)
-        {
-            if (snake && snake_boundary(previous, current, next))
-            {
-                if (out == want)
-                    return 95u;
-                out += 1u;
-            }
-            if (out == want)
-                return (snake && ascii_upper(current)) ? current + 32u : current;
-            out += 1u;
-            previous = current;
-        }
-        current = next;
-    }
-    return want == GN_NONE ? out : 0u;
 }
