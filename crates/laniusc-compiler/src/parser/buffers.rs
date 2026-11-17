@@ -251,66 +251,54 @@ impl ParserBuffers {
             .min(buffer.byte_size)
     }
 
-    /// Restores the rows visible to the current job. Fixed-size summaries and
-    /// arena allocations are cleared in full; explicitly declared token-,
-    /// packed-stream-, and tree-indexed allocations clear only their active
-    /// logical prefix.
+    /// Builds the job reset for the allocations outside the compiler graph
+    /// workspace. The graph's slots are left to `clear_job_storage`, which
+    /// clears only the zero-initialized resources in them.
     pub(crate) fn install_job_storage_reset(&mut self) {
+        let graph_allocations = self.compiler_graph.workspace_allocation_ids();
+        self.job_storage_reset_buffers = self
+            .resettable_buffers
+            .iter()
+            .enumerate()
+            .filter(|(_, buffer)| {
+                Self::clears_before_job(buffer)
+                    && !graph_allocations.contains(&buffer.allocation_id)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let buffers = self
+            .job_storage_reset_buffers
+            .iter()
+            .map(|&index| self.resettable_buffers[index].clone())
+            .collect::<Vec<_>>();
         self.job_storage_reset = Some(
             self.compiler_graph
-                .job_storage_reset_operation(&self.resettable_buffers)
+                .job_storage_reset_operation(&buffers)
                 .expect("parser job reset must match the compiler graph"),
         );
     }
 
-    /// Returns the bytes cleared: zero when the clear after the last job
-    /// already zeroed the storage. The type checker and lowering write this
-    /// storage too, always after a parser recording, so a recording marks
-    /// it written.
+    /// Records the job's reset inside the job's own recording and returns the
+    /// bytes it clears. Every other parser byte is written before it is read,
+    /// so only the zero-initialized graph resources and the small allocations
+    /// outside the graph workspace are cleared. Token-, packed-stream- and
+    /// tree-indexed allocations clear only their active prefix.
     pub(crate) fn clear_job_storage(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         active_tree_capacity: u32,
     ) -> u64 {
-        if self
-            .job_storage_zeroed
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-        {
-            return 0;
-        }
-        self.job_storage_reset
-            .as_ref()
-            .expect("parser job reset was not installed")
-            .record_ranges(
-                encoder,
-                self.resettable_buffers.iter().map(|buffer| {
-                    Self::clears_before_job(buffer)
-                        .then(|| self.active_reset_bytes(buffer, active_tree_capacity))
-                        .unwrap_or(0)
-                }),
-            )
-    }
-
-    /// Zeroes the job storage in full, so the next job of any size starts
-    /// without its own clear. The caller submits `encoder` after a job's last
-    /// readback and before any other parser recording: the clear then runs
-    /// while the daemon waits for a request, not inside the next compile.
-    pub(crate) fn clear_job_storage_after_job(&self, encoder: &mut wgpu::CommandEncoder) -> u64 {
-        let cleared = self
+        let outside_graph = self
             .job_storage_reset
             .as_ref()
             .expect("parser job reset was not installed")
             .record_ranges(
                 encoder,
-                self.resettable_buffers.iter().map(|buffer| {
-                    Self::clears_before_job(buffer)
-                        .then_some(buffer.byte_size)
-                        .unwrap_or(0)
+                self.job_storage_reset_buffers.iter().map(|&index| {
+                    self.active_reset_bytes(&self.resettable_buffers[index], active_tree_capacity)
                 }),
             );
-        self.job_storage_zeroed
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        cleared
+        outside_graph.saturating_add(self.compiler_graph.record_zero_initialized_reset(encoder))
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
@@ -333,9 +321,9 @@ impl ParserBuffers {
         limit: usize,
     ) -> Vec<(&str, u64)> {
         let mut rows = self
-            .resettable_buffers
+            .job_storage_reset_buffers
             .iter()
-            .filter(|buffer| Self::clears_before_job(buffer))
+            .map(|&index| &self.resettable_buffers[index])
             .map(|buffer| {
                 (
                     buffer.label.as_ref(),
@@ -1916,7 +1904,7 @@ impl ParserBuffers {
             copy_operations,
             clear_operations: std::sync::OnceLock::new(),
             job_storage_reset: None,
-            job_storage_zeroed: std::sync::atomic::AtomicBool::new(false),
+            job_storage_reset_buffers: Vec::new(),
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
