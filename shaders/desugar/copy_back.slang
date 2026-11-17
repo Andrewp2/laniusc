@@ -1,18 +1,12 @@
-// Per token of the new stream: its row and file into the lexer's buffers.
+// Per token of the new stream: its row and file into the lexer's buffers,
+// where the next round and the parser read them.
 import gpu_index;
 import desugar_common;
 
-struct TokenOut
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
 StructuredBuffer<uint> sizes;
-StructuredBuffer<TokenOut> spliced;
+StructuredBuffer<TokenRow> spliced;
 StructuredBuffer<uint> spliced_file;
-RWStructuredBuffer<TokenOut> tokens_out;
+RWStructuredBuffer<TokenRow> tokens_out;
 RWStructuredBuffer<uint> token_file_id;
 
 [shader("compute")]

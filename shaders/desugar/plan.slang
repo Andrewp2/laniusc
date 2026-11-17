@@ -1,14 +1,21 @@
 // One thread: the sizes, indirect dispatches and kernel parameters of the
-// next stage of the desugaring, from the counts the stage before it wrote
-// (desugar_common.slang). Each mode runs once per build, in order.
+// next stage of one round of the desugaring, from the counts the stage
+// before it wrote (desugar_common.slang). The host records each mode once
+// per round, in order, with the round's slices of `sizes`, `args` and
+// `blocks`.
+import generated_token_ids;
 import desugar_common;
 
 struct PlanParams
 {
     uint mode;
-    uint piece_cap;
+    uint feature;   // the feature bit of the round
+    uint first;     // 1 for the first round the host recorded
     uint token_cap; // rows of the per-token buffers
+    uint piece_cap; // rows of the piece buffers
     uint out_cap;   // rows of the spliced token buffers
+    uint slot;      // the round's slice of `sizes`
+    uint previous;  // the slice of the round before it
 };
 
 struct LexParams
@@ -28,20 +35,63 @@ ConstantBuffer<LexParams> gLex;
 RWStructuredBuffer<uint> token_count;
 RWStructuredBuffer<uint> parser_feature_flags;
 StructuredBuffer<uint> lex_error_offset;
+// The sizes of every round: the round's own slice at `gPlan.slot`, the
+// round before it at `gPlan.previous`.
 RWStructuredBuffer<uint> sizes;
 RWStructuredBuffer<uint> args;
 RWStructuredBuffer<uint> blocks;
-StructuredBuffer<uint4> scan_a;
-StructuredBuffer<uint4> count_scan0;
-StructuredBuffer<uint4> count_scan1;
 StructuredBuffer<uint> status;
+// Prefix sums of the round's feature, by mode.
+StructuredBuffer<uint4> feat_a;
+StructuredBuffer<uint4> feat_b;
+StructuredBuffer<uint4> feat_c;
+StructuredBuffer<uint4> fpiece_scan;
 StructuredBuffer<uint4> piece_scan;
 StructuredBuffer<uint4> region_scan;
 StructuredBuffer<uint4> splice_scan;
 
-static const uint INFO_WORDS = 3u;
-static const uint STATE_ROW_WORDS = 8u;
-static const uint REC_WORDS = 6u;
+// Modes shared by every round.
+static const uint PLAN_START = 0u;
+static const uint PLAN_PLACE = 1u;
+static const uint PLAN_REGION = 2u;
+static const uint PLAN_SPLICE = 3u;
+static const uint PLAN_FINISH = 4u;
+// Machines.
+static const uint PLAN_M_MACHINES = 8u;
+static const uint PLAN_M_PIECES = 9u;
+
+// Machine layout: dispatches and parameter blocks from A_FEATURE and
+// P_FEATURE (desugar.rs mirrors them).
+static const uint MA_TOKENS = 16u;
+static const uint MA_TOKEN_SCAN = 17u;
+static const uint MA_TOKEN_SCAN_ONE = 18u;
+static const uint MA_RECORD_WORDS = 19u;
+static const uint MA_LIVE = 20u;
+static const uint MA_LIVE_SCAN = 21u;
+static const uint MA_LIVE_SCAN_ONE = 22u;
+static const uint MA_INFO_WORDS = 23u;
+static const uint MA_STATES = 24u;
+static const uint MA_STATE_WORDS = 25u;
+static const uint MA_WRITE = 26u;
+static const uint MP_TOKENS = 16u;
+static const uint MP_CLEAR_RECORDS = 17u;
+static const uint MP_SCAN_TOKENS = 18u;
+static const uint MP_LIVE = 21u;
+static const uint MP_LISTS_A = 22u;
+static const uint MP_LISTS_B = 23u;
+static const uint MP_SCAN_LIVE = 24u;
+static const uint MP_CLEAR_INFO = 27u;
+static const uint MP_CLEAR_STATES = 28u;
+static const uint MP_RESOLVE = 29u;
+static const uint MP_CHECK = 30u;
+static const uint MP_STATES = 31u;
+static const uint MP_STATE_CHECK = 32u;
+static const uint MP_COUNT = 33u;
+static const uint MP_WRITE = 34u;
+static const uint M_STATUS_WORDS = 4u;
+static const uint M_INFO_WORDS = 3u;
+static const uint M_STATE_ROW_WORDS = 8u;
+static const uint M_REC_WORDS = 6u;
 
 void set_groups(uint triple, uint groups)
 {
@@ -87,166 +137,232 @@ void raise_flag(uint flag)
     parser_feature_flags[0] = parser_feature_flags[0] | flag;
 }
 
+bool status_failed(uint words)
+{
+    for (uint w = 0u; w < words; w += 1u)
+    {
+        if (status[w] != DESUGAR_NO_ERROR)
+            return true;
+    }
+    return false;
+}
+
+// The run asks for more room: the host grows `need` and runs it again.
+void overflow(uint need_word, uint need)
+{
+    sizes[gPlan.slot * SIZE_WORDS + need_word] = need;
+    raise_flag(DESUGAR_REGION_OVERFLOW);
+}
+
+// The round's pieces are written: the expansion of their token ranges.
+void expand(uint fpieces)
+{
+    if (fpieces == 0u)
+        return;
+    if (fpieces > gPlan.piece_cap)
+    {
+        overflow(S_NEED_PIECES, fpieces);
+        return;
+    }
+    sizes[gPlan.slot * SIZE_WORDS + S_FPIECES] = fpieces;
+    scan(P_EXPAND_SCAN_0, A_EXPAND_SCAN, A_EXPAND_SCAN_ONE, fpieces);
+}
+
+// Common start of a round: its region follows the region of the round
+// before it. False when the round has nothing to do.
+bool start_round()
+{
+    for (uint i = 0u; i < SIZE_WORDS; i += 1u)
+        sizes[gPlan.slot * SIZE_WORDS + i] = 0u;
+    for (uint i = 0u; i < ARG_TRIPLES * 3u; i += 1u)
+        args[i] = 0u;
+    for (uint i = 0u; i < BLOCKS; i += 1u)
+        block(i, 0u, 0u, 0u, 0u);
+    // Four bytes past the padded source (desugar.rs).
+    uint first_base = ((gLex.n + 3u) & ~3u) + 4u;
+    uint base = first_base;
+    if (gPlan.first == 0u)
+        base = (sizes[gPlan.previous * SIZE_WORDS + S_REGION_BASE] + sizes[gPlan.previous * SIZE_WORDS + S_REGION] + 3u) & ~3u;
+    uint cap = gLex.extent > base ? gLex.extent - base : 0u;
+    sizes[gPlan.slot * SIZE_WORDS + S_REGION_BASE] = base;
+    sizes[gPlan.slot * SIZE_WORDS + S_REGION_CAP] = cap;
+    sizes[gPlan.slot * SIZE_WORDS + S_ANCHOR_BASE] = base - first_base;
+    uint flags = parser_feature_flags[0];
+    if ((flags & gPlan.feature) == 0u || (flags & DESUGAR_STOPS) != 0u || lex_error_offset[0] != 0u)
+        return false;
+    uint tokens = token_count[0];
+    // Without a region the run cannot write its text; the host runs the
+    // build again with one. The splice has a row past the last token.
+    if (cap == 0u || tokens + 1u > gPlan.token_cap)
+    {
+        overflow(S_NEED_TOKENS, tokens + 1u);
+        return false;
+    }
+    sizes[gPlan.slot * SIZE_WORDS + S_TOKENS] = tokens;
+    return true;
+}
+
+void start_machines()
+{
+    uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_TOKENS];
+    block(MP_TOKENS, tokens, 0u, 0u, 0u);
+    block(MP_CLEAR_RECORDS, tokens * M_REC_WORDS, 0u, 0u, 0u);
+    set_lanes(MA_TOKENS, tokens);
+    set_lanes(MA_RECORD_WORDS, tokens * M_REC_WORDS);
+    scan(MP_SCAN_TOKENS, MA_TOKEN_SCAN, MA_TOKEN_SCAN_ONE, tokens);
+}
+
+// feat_a: the inclusive prefix sums of machines, states, transitions and
+// bracket depth.
+void plan_machines()
+{
+    uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_TOKENS];
+    if (tokens == 0u)
+        return;
+    uint4 last = feat_a[tokens - 1u];
+    uint machine_count = last.x;
+    uint state_count = last.y;
+    uint transition_count = last.z;
+    // A transition outside a machine is an error the rules report.
+    uint live = machine_count > 0u || transition_count > 0u ? tokens : 0u;
+    if (live == 0u)
+        return;
+    // The machine and state rows hold a quarter of the token rows.
+    uint machine_cap = gPlan.token_cap / 4u + 1u;
+    if (machine_count > machine_cap || state_count > machine_cap)
+    {
+        overflow(S_NEED_TOKENS, max(machine_count, state_count) * 4u);
+        return;
+    }
+    sizes[gPlan.slot * SIZE_WORDS + S_F0] = machine_count;
+    sizes[gPlan.slot * SIZE_WORDS + S_F1] = state_count;
+    sizes[gPlan.slot * SIZE_WORDS + S_F2] = transition_count;
+    sizes[gPlan.slot * SIZE_WORDS + S_LIVE] = live;
+    block(MP_LIVE, live, 0u, 0u, 0u);
+    block(MP_LISTS_A, live, 0u, 0u, 0u);
+    block(MP_LISTS_B, live, 1u, 0u, 0u);
+    block(MP_CLEAR_INFO, max(machine_count, 1u) * M_INFO_WORDS, 0u, 0u, 0u);
+    block(MP_CLEAR_STATES, max(state_count, 1u) * M_STATE_ROW_WORDS, 0u, 0u, 0u);
+    block(MP_RESOLVE, live, machine_count, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
+    block(MP_CHECK, live, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
+    block(MP_STATES, state_count, 0u, 0u, 0u);
+    block(MP_STATE_CHECK, state_count, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
+    block(MP_COUNT, live, 0u, 0u, 0u);
+    set_lanes(MA_LIVE, live);
+    set_lanes(MA_INFO_WORDS, max(machine_count, 1u) * M_INFO_WORDS);
+    set_lanes(MA_STATES, state_count);
+    set_lanes(MA_STATE_WORDS, max(state_count, 1u) * M_STATE_ROW_WORDS);
+    scan(MP_SCAN_LIVE, MA_LIVE_SCAN, MA_LIVE_SCAN_ONE, live);
+}
+
+// feat_b and feat_c: the inclusive prefix sums of the piece counts.
+void plan_machine_pieces()
+{
+    uint live = sizes[gPlan.slot * SIZE_WORDS + S_LIVE];
+    if (live == 0u)
+        return;
+    if (status_failed(M_STATUS_WORDS))
+    {
+        raise_flag(DESUGAR_RULE_ERROR);
+        return;
+    }
+    uint fpieces = sum4(feat_b[live - 1u]) + sum4(feat_c[live - 1u]);
+    block(MP_WRITE, live, 1u, 0u, 0u);
+    set_lanes(MA_WRITE, fpieces == 0u || fpieces > gPlan.piece_cap ? 0u : live);
+    expand(fpieces);
+}
+
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void main()
 {
     uint mode = gPlan.mode;
-    if (mode == PLAN_TOKENS)
+    if (mode == PLAN_START)
     {
-        for (uint i = 0u; i < SIZE_WORDS; i += 1u)
-            sizes[i] = 0u;
-        for (uint i = 0u; i < ARG_TRIPLES * 3u; i += 1u)
-            args[i] = 0u;
-        for (uint i = 0u; i < BLOCKS; i += 1u)
-            block(i, 0u, 0u, 0u, 0u);
-        // Four bytes past the padded source (desugar.rs).
-        uint base = ((gLex.n + 3u) & ~3u) + 4u;
-        uint cap = gLex.extent > base ? gLex.extent - base : 0u;
-        sizes[S_REGION_BASE] = base;
-        sizes[S_REGION_CAP] = cap;
-        sizes[S_PIECE_CAP] = gPlan.piece_cap;
-        bool machines = (parser_feature_flags[0] & FEATURE_MACHINES) != 0u && lex_error_offset[0] == 0u;
-        if (!machines)
+        if (!start_round())
             return;
-        uint tokens = token_count[0];
-        // Without a region the run cannot write its text; the host runs the
-        // build again with one.
-        if (cap == 0u || tokens > gPlan.token_cap)
-        {
-            sizes[S_NEED_TOKENS] = tokens;
-            raise_flag(DESUGAR_REGION_OVERFLOW);
-            return;
-        }
-        sizes[S_TOKENS] = tokens;
-        block(P_TOKENS, tokens, 0u, 0u, 0u);
-        block(P_CLEAR_RECORDS, tokens * REC_WORDS, 0u, 0u, 0u);
-        set_lanes(A_TOKENS, tokens);
-        set_lanes(A_RECORD_WORDS, tokens * REC_WORDS);
-        scan(P_SCAN_TOKENS_0, A_TOKEN_SCAN, A_TOKEN_SCAN_ONE, tokens);
+        if (gPlan.feature == FEATURE_MACHINES)
+            start_machines();
         return;
     }
-    if (mode == PLAN_MACHINES)
+    if (mode == PLAN_M_MACHINES)
     {
-        uint tokens = sizes[S_TOKENS];
-        if (tokens == 0u)
-            return;
-        uint4 last = scan_a[tokens - 1u];
-        uint machine_count = last.x;
-        uint state_count = last.y;
-        uint transition_count = last.z;
-        // A transition outside a machine is an error the rules report.
-        uint live = machine_count > 0u || transition_count > 0u ? tokens : 0u;
-        if (live == 0u)
-            return;
-        // The machine and state rows hold a quarter of the token rows.
-        uint machine_cap = gPlan.token_cap / 4u + 1u;
-        if (machine_count > machine_cap || state_count > machine_cap)
-        {
-            sizes[S_NEED_TOKENS] = max(machine_count, state_count) * 4u;
-            raise_flag(DESUGAR_REGION_OVERFLOW);
-            return;
-        }
-        sizes[S_MACHINES] = machine_count;
-        sizes[S_STATES] = state_count;
-        sizes[S_TRANSITIONS] = transition_count;
-        sizes[S_LIVE] = live;
-        block(P_LIVE, live, 0u, 0u, 0u);
-        block(P_LISTS_A, live, 0u, 0u, 0u);
-        block(P_LISTS_B, live, 1u, 0u, 0u);
-        block(P_CLEAR_INFO, max(machine_count, 1u) * INFO_WORDS, 0u, 0u, 0u);
-        block(P_CLEAR_STATES, max(state_count, 1u) * STATE_ROW_WORDS, 0u, 0u, 0u);
-        block(P_RESOLVE, live, machine_count, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
-        block(P_CHECK, live, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
-        block(P_STATES, state_count, 0u, 0u, 0u);
-        block(P_STATE_CHECK, state_count, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
-        block(P_COUNT, live, 0u, 0u, 0u);
-        set_lanes(A_LIVE, live);
-        set_lanes(A_INFO_WORDS, max(machine_count, 1u) * INFO_WORDS);
-        set_lanes(A_STATES, state_count);
-        set_lanes(A_STATE_WORDS, max(state_count, 1u) * STATE_ROW_WORDS);
-        scan(P_SCAN_LIVE_0, A_LIVE_SCAN, A_LIVE_SCAN_ONE, live);
+        plan_machines();
         return;
     }
-    if (mode == PLAN_PIECES)
+    if (mode == PLAN_M_PIECES)
     {
-        uint live = sizes[S_LIVE];
-        if (live == 0u)
+        plan_machine_pieces();
+        return;
+    }
+    if (mode == PLAN_PLACE)
+    {
+        uint fpieces = sizes[gPlan.slot * SIZE_WORDS + S_FPIECES];
+        if (fpieces == 0u)
             return;
-        for (uint w = 0u; w < DESUGAR_STATUS_WORDS; w += 1u)
+        uint pieces = fpiece_scan[fpieces - 1u].x;
+        if (pieces > gPlan.piece_cap)
         {
-            if (status[w] != DESUGAR_NO_ERROR)
-            {
-                raise_flag(DESUGAR_RULE_ERROR);
-                return;
-            }
-        }
-        uint pieces = sum4(count_scan0[live - 1u]) + sum4(count_scan1[live - 1u]);
-        if (pieces > sizes[S_PIECE_CAP])
-        {
-            sizes[S_NEED_PIECES] = pieces;
-            raise_flag(DESUGAR_REGION_OVERFLOW);
+            overflow(S_NEED_PIECES, pieces);
             return;
         }
         if (pieces == 0u)
             return;
-        sizes[S_PIECES] = pieces;
-        block(P_WRITE, live, 1u, 0u, 0u);
-        set_lanes(A_WRITE, live);
-        scan(P_SCAN_PIECES_0, A_PIECE_SCAN, A_PIECE_SCAN_ONE, pieces);
+        sizes[gPlan.slot * SIZE_WORDS + S_PIECES] = pieces;
+        set_lanes(A_PIECES, pieces);
+        scan(P_PIECE_SCAN_0, A_PIECE_SCAN, A_PIECE_SCAN_ONE, pieces);
         return;
     }
     if (mode == PLAN_REGION)
     {
-        uint pieces = sizes[S_PIECES];
+        uint pieces = sizes[gPlan.slot * SIZE_WORDS + S_PIECES];
         if (pieces == 0u)
             return;
         uint region = piece_scan[pieces - 1u].x;
-        if (region > sizes[S_REGION_CAP])
+        if (region > sizes[gPlan.slot * SIZE_WORDS + S_REGION_CAP])
         {
-            sizes[S_NEED_REGION] = region;
-            raise_flag(DESUGAR_REGION_OVERFLOW);
+            overflow(S_NEED_REGION, sizes[gPlan.slot * SIZE_WORDS + S_ANCHOR_BASE] + region);
             return;
         }
         if (region == 0u)
             return;
-        sizes[S_REGION] = region;
-        block(P_EMIT, region, pieces, sizes[S_REGION_BASE], sizes[S_TOKENS]);
+        sizes[gPlan.slot * SIZE_WORDS + S_REGION] = region;
         set_lanes(A_REGION_WORDS, (region + 3u) / 4u);
         set_lanes(A_REGION_BYTES, region);
-        scan(P_SCAN_REGION_0, A_REGION_SCAN, A_REGION_SCAN_ONE, region);
+        scan(P_REGION_SCAN_0, A_REGION_SCAN, A_REGION_SCAN_ONE, region);
         return;
     }
     if (mode == PLAN_SPLICE)
     {
-        uint region = sizes[S_REGION];
+        uint region = sizes[gPlan.slot * SIZE_WORDS + S_REGION];
         if (region == 0u)
             return;
         uint generated = region_scan[region - 1u].x;
-        uint tokens = sizes[S_TOKENS];
-        sizes[S_GENERATED] = generated;
-        sizes[S_SPLICED] = tokens;
+        uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_TOKENS];
+        sizes[gPlan.slot * SIZE_WORDS + S_GENERATED] = generated;
+        sizes[gPlan.slot * SIZE_WORDS + S_SPLICED] = tokens;
         set_lanes(A_GENERATED, generated);
-        set_lanes(A_SPLICE, tokens);
-        scan(P_SCAN_SPLICE_0, A_SPLICE_SCAN, A_SPLICE_SCAN_ONE, tokens);
+        set_lanes(A_SPLICE, tokens + 1u);
+        set_lanes(A_KEPT, tokens);
+        scan(P_SPLICE_SCAN_0, A_SPLICE_SCAN, A_SPLICE_SCAN_ONE, tokens + 1u);
         return;
     }
     if (mode == PLAN_FINISH)
     {
-        uint tokens = sizes[S_SPLICED];
-        if (tokens == 0u)
+        uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_SPLICED];
+        if (sizes[gPlan.slot * SIZE_WORDS + S_GENERATED] == 0u)
             return;
-        uint out = splice_scan[tokens - 1u].x;
+        uint4 through = splice_scan[tokens];
+        uint out = through.x + through.y;
         if (out > gPlan.out_cap)
         {
-            sizes[S_NEED_OUT] = out;
-            raise_flag(DESUGAR_REGION_OVERFLOW);
-            sizes[S_SPLICED] = 0u;
-            set_lanes(A_SPLICE, 0u);
+            overflow(S_NEED_OUT, out);
+            sizes[gPlan.slot * SIZE_WORDS + S_SPLICED] = 0u;
+            set_lanes(A_KEPT, 0u);
             set_lanes(A_GENERATED, 0u);
             return;
         }
-        sizes[S_OUT] = out;
+        sizes[gPlan.slot * SIZE_WORDS + S_OUT] = out;
         set_lanes(A_OUT, out);
         token_count[0] = out;
     }
