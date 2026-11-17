@@ -7,10 +7,16 @@ use laniusc_compiler::{
         ExplicitSourceLibraryPaths,
         ExplicitSourcePackPathManifest,
         GpuCompiler,
+        ResidentEmitFault,
         RetainedNativeBuild,
         frontend_check_count,
     },
-    type_checker::program_retention::{counts, discovery::DiscoveryCapacity, substitution::SubstitutionCapacity},
+    type_checker::program_retention::{
+        counts,
+        discovery::DiscoveryCapacity,
+        projection::ProjectionGateFault,
+        substitution::SubstitutionCapacity,
+    },
 };
 
 use crate::common;
@@ -1040,6 +1046,86 @@ fn retained_native_schema_rounds_retry_with_grown_capacity() {
         }
         std::fs::remove_dir_all(directory).ok();
     });
+}
+
+/// The instance lowering recorded before the projection's check readback is
+/// discarded when its gate fails, and the batch is lowered again after the
+/// readback with the capacities the check reported. The next build's early
+/// lowering stands.
+fn early_lowering_gate_retries(fault: ProjectionGateFault, name: &'static str) {
+    common::run_with_timeout(name, move || {
+        let directory=std::env::temp_dir().join(format!("lanius-{name}-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::default()).unwrap();
+        // The resident link plans behind the early lowering and reads the
+        // object a discarded lowering parked next to the one that stands.
+        build.native_link=Some(laniusc_compiler::compiler::NativeLinkOptions::default());
+        for pass in 0..2 {
+            build.set_projection_gate_fault_for_test(if pass==0 { fault } else { ProjectionGateFault::None });
+            let path=directory.join(format!("out-{pass}"));
+            pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(&manifest,&mut build,&path)).unwrap();
+            let elf=std::fs::read(&path).unwrap();
+            let projection=&build.report.projection;
+            eprintln!("pass {pass}: early {} discarded {}",projection.early_lowerings,projection.early_discarded);
+            assert!(projection.early_lowerings>0,"pass {pass} records the batch early");
+            if pass==0 {
+                assert_eq!(projection.early_discarded,projection.early_lowerings,"every early lowering fails its gate");
+            } else {
+                assert!(projection.early_discarded<projection.early_lowerings,"the last early lowering stands");
+            }
+            assert!(build.report.resident_link,"pass {pass} links on the GPU");
+            let output=common::run_x86_64_elf_output(name,name,&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+fn resident_emit_fault(fault: ResidentEmitFault, name: &'static str) {
+    common::run_with_timeout(name, move || {
+        let directory=std::env::temp_dir().join(format!("lanius-{name}-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::default()).unwrap();
+        build.native_link=Some(laniusc_compiler::compiler::NativeLinkOptions::default());
+        let mut images=Vec::new();
+        for pass in 0..2 {
+            build.test_resident_emit_fault=if pass==0 { fault } else { ResidentEmitFault::None };
+            let path=directory.join(format!("out-{pass}"));
+            pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(&manifest,&mut build,&path)).unwrap();
+            // A failed gate links on the host; a short capacity records the
+            // emit again on the GPU.
+            let resident=pass==1 || fault==ResidentEmitFault::Capacity;
+            assert_eq!(build.report.resident_link,resident,"pass {pass}");
+            let elf=std::fs::read(&path).unwrap();
+            let output=common::run_x86_64_elf_output(name,name,&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+            images.push(elf);
+        }
+        assert!(images[0]==images[1],"the retried link writes the same executable");
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_resident_emit_links_on_the_host_after_a_failed_gate() {
+    resident_emit_fault(ResidentEmitFault::Gate, "retained_emit_gate");
+}
+
+#[test]
+fn retained_native_resident_emit_retries_after_a_capacity_failure() {
+    resident_emit_fault(ResidentEmitFault::Capacity, "retained_emit_capacity");
+}
+
+#[test]
+fn retained_native_early_lowering_retries_after_a_failed_gate() {
+    early_lowering_gate_retries(ProjectionGateFault::Fail, "retained_early_gate");
+}
+
+#[test]
+fn retained_native_early_lowering_retries_after_a_capacity_failure() {
+    early_lowering_gate_retries(ProjectionGateFault::Capacity, "retained_early_capacity");
 }
 
 #[test]

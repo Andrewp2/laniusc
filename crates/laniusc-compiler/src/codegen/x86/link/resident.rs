@@ -9,15 +9,18 @@
 //! `(library, unit)`. The link then runs in two submissions
 //! (`shaders/codegen/x86/link/resident/`):
 //!
-//! 1. Before the host finalizes: plan the text copies and section bases,
-//!    place every symbol (applying the discovery routes to provisional uses,
-//!    as the finalizer does), index the definitions and C bindings, and mark
-//!    the C names the program references. A worker thread reads the totals
-//!    and those names, resolves the names against the shared libraries and
-//!    packs the dynamic rows while the host finalizes.
-//! 2. After finalization: write the Lanius dynamic symbol rows, gather the
-//!    section bytes, write the ELF dynamic parts and apply the relocations.
-//!    The host reads the finished image.
+//! 1. Before the host finalizes, in one submission: plan the text copies
+//!    and section bases, place every symbol (applying the discovery routes to
+//!    provisional uses, as the finalizer does), index the definitions and C
+//!    bindings and mark the C names the program references; resolve those
+//!    names against the exports of the link's libraries, which the host
+//!    lists and uploads as system inputs, and write the dynamic writer's rows
+//!    (`rl_cnames.slang`); then emit: write the Lanius dynamic symbol rows,
+//!    gather the section bytes, write the ELF dynamic parts and apply the
+//!    relocations, with dispatches the GPU sizes. The host reads the status
+//!    of all of it in one readback.
+//! 2. After finalization: copy the image, at its exact length, to a
+//!    readback. The host writes it out.
 //!
 //! Every check the host link makes has a GPU counterpart that sets an error
 //! bit. Any error, a C driver link, or a store that does not hold the build's
@@ -30,26 +33,28 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 
 use super::super::{GpuX86Linker, TailSpan, native};
-use super::dynamic::{X86DynamicImage, X86DynamicMain};
+use super::dynamic::{DynamicCounts, MAX_NAME_STRIDE, X86DynamicImage, dynamic_layout};
 use crate::{
     compiler::NativeCFunction,
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{PassData, bind_group, flush_deferred_compute, record_or_defer_compute_direct},
+        passes_core::{
+            PassData,
+            PendingReadbackMap,
+            bind_group,
+            flush_deferred_compute,
+            record_or_defer_compute_direct,
+            record_or_defer_compute_indirect_offset,
+        },
     },
 };
 
-const SLOT_WORDS: usize = 20;
+const SLOT_WORDS: usize = 21;
 const META_WORDS: u64 = 32;
 const OBJECT_WORDS: usize = 24;
 const SYMBOL_WORDS: usize = 8;
 const STATUS_WORDS: usize = 64;
-const ST_TEXT_LEN: usize = 0;
-const ST_RODATA_LEN: usize = 1;
-const ST_DEF_COUNT: usize = 2;
 const ST_NAME_STRIDE: usize = 3;
-const ST_ENTRY_OBJECT: usize = 4;
-const ST_MAIN_OFFSET: usize = 5;
 const ST_ERRORS: usize = 16;
 // Object plan words (rl_common.slang `OB_*`) the host checks.
 const OB_TEXT_LEN: usize = 0;
@@ -521,77 +526,51 @@ pub(crate) struct ResidentRoutes<'a> {
     pub route_capacity: u32,
 }
 
-/// The finished executable in a mapped readback buffer.
+/// The finished executable in a readback of its exact length. The emit
+/// status came with the plan readback (`finish_resident_dynamic`).
 pub(crate) struct ResidentImage {
     device: wgpu::Device,
-    /// The image in order; each chunk's copy has its own submission.
-    chunks: Vec<ImageChunk>,
-    len: usize,
-}
-
-struct ImageChunk {
     buffer: LaniusBuffer<u8>,
     len: usize,
-    /// Until the chunk is mapped.
-    map: Option<crate::gpu::passes_core::PendingReadbackMap>,
+    /// Until the readback is mapped.
+    map: Option<PendingReadbackMap>,
 }
-
-/// Chunks of the image readback (`ResidentImage`).
-const IMAGE_CHUNKS: u64 = 4;
-const IMAGE_CHUNK_LABELS: [&str; IMAGE_CHUNKS as usize] = [
-    "rb.codegen.x86.link.resident.image.0",
-    "rb.codegen.x86.link.resident.image.1",
-    "rb.codegen.x86.link.resident.image.2",
-    "rb.codegen.x86.link.resident.image.3",
-];
 
 impl ResidentImage {
     pub(crate) fn len(&self) -> usize {
         self.len
     }
 
-    /// Hands each chunk to `consume` in order as soon as it is mapped.
-    pub(crate) fn for_each_chunk<E>(
-        &mut self,
-        mut consume: impl FnMut(&[u8]) -> std::result::Result<(), E>,
-    ) -> Result<std::result::Result<(), E>> {
-        for chunk in &mut self.chunks {
-            if let Some(map) = chunk.map.take() {
-                crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
-            }
-            let view = chunk.buffer.buffer.slice(..chunk.len as u64).get_mapped_range();
-            if let Err(error) = consume(&view) {
-                return Ok(Err(error));
-            }
+    /// Waits for the image readback. Always true: the emit status was read
+    /// with the plan.
+    pub(crate) fn finish(&mut self) -> Result<bool> {
+        if let Some(map) = self.map.take() {
+            let _wait = TailSpan::new("tail.native.resident.wait_emit");
+            crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
         }
-        Ok(Ok(()))
+        Ok(true)
     }
 
-    pub(crate) fn to_vec(&mut self) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(self.len);
-        self.for_each_chunk(|chunk| {
-            bytes.extend_from_slice(chunk);
-            Ok::<(), std::convert::Infallible>(())
-        })?
-        .unwrap_or_else(|never| match never {});
-        Ok(bytes)
+    /// Hands the image to `consume`; `finish` must have returned true.
+    pub(crate) fn with_bytes<R>(&self, consume: impl FnOnce(&[u8]) -> R) -> R {
+        assert!(self.map.is_none(), "the resident image is read after finish");
+        let view = self.buffer.buffer.slice(..self.len as u64).get_mapped_range();
+        consume(&view)
     }
 }
 
 impl Drop for ResidentImage {
     fn drop(&mut self) {
-        for chunk in &mut self.chunks {
-            if let Some(map) = chunk.map.take() {
-                // A chunk nobody read: finish its map so the buffer can be
-                // unmapped and reused.
-                let _ = crate::gpu::passes_core::finish_readback_map(
-                    &self.device,
-                    map,
-                    std::time::Duration::from_secs(30),
-                );
-            }
-            chunk.buffer.buffer.unmap();
+        if let Some(map) = self.map.take() {
+            // Nobody waited: finish the map so the buffer can be unmapped and
+            // reused.
+            let _ = crate::gpu::passes_core::finish_readback_map(
+                &self.device,
+                map,
+                std::time::Duration::from_secs(30),
+            );
         }
+        self.buffer.buffer.unmap();
     }
 }
 
@@ -670,36 +649,97 @@ fn dispatch(
     Ok(())
 }
 
-/// What the host derives from the plan readback: the plan words, the import
-/// index of each C name slot, the dynamic writer's rows and the image length.
-struct Prepared {
-    words: Vec<u32>,
-    import_count: u32,
-    import_of_name: Vec<u32>,
-    rows: super::dynamic::X86DynamicRows,
-    total: u32,
+/// The plan readback: the link status words, the C-name status words
+/// (`rl_dynamic_rows.slang`, from `CN_BITS`), the dynamic writer's status,
+/// then the pending object's plan words.
+const RB_NAMES: usize = STATUS_WORDS;
+const RB_DYNAMIC: usize = RB_NAMES + NAME_STATUS_WORDS;
+const RB_PENDING: usize = RB_DYNAMIC + 4;
+const NAME_STATUS_WORDS: usize = 8;
+const NAMES_BITS: usize = 0;
+const NAMES_TOTAL: usize = 1;
+const NAMES_NEED_DYN: usize = 2;
+const NAMES_NEED_STRINGS: usize = 3;
+const NAMES_NEED_OUTPUT: usize = 4;
+const BIT_CAPACITY: u32 = 16;
+/// `cn_out` (`rl_dynamic_rows.slang`): gRL words 8 to 15, gDyn, four
+/// indirect dispatches, then the status words.
+const CN_OUT_WORDS: usize = 52;
+const CN_DYN: u64 = 8;
+const CN_ARGS: u64 = 32;
+const CN_BITS: u64 = 44;
+const CN_INPUT_WORDS: usize = 8;
+const CN_MAX_INPUTS: usize = 64;
+const GATE_ON: u32 = 1;
+const GATE_FORCE_FAIL: u32 = 2;
+const DYN_PARAMS: usize = 24;
+
+/// A fault the tests force on the resident emit.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResidentEmitFault {
+    #[default]
+    None,
+    /// The C-name step's gate fails, so the host links.
+    Gate,
+    /// The first emit's output is one word long, so the host records it again.
+    Capacity,
 }
 
-/// A link whose first submission is in flight (`begin_resident_dynamic`). A
-/// worker waits for the plan readback and resolves the referenced C names
-/// while the host finalizes.
-pub(crate) struct ResidentPlan {
+/// What the emit may write: output words, dynamic row words, string bytes.
+#[derive(Clone, Copy, Debug)]
+struct TailCaps {
+    output_words: u32,
+    dyn_words: u32,
+    string_bytes: u32,
+}
+
+/// The C-name match's inputs and results (`rl_cnames.slang`).
+struct NameBuffers {
     params: [u32; 16],
-    symbol_cap_total: u32,
-    reloc_cap_total: u32,
+    bytes: LaniusBuffer<u8>,
+    rows: LaniusBuffer<u32>,
+    versions: LaniusBuffer<u32>,
+    inputs: LaniusBuffer<u32>,
+    names: LaniusBuffer<u32>,
+    name_hash: LaniusBuffer<u32>,
+    matches: LaniusBuffer<u32>,
+    scratch: LaniusBuffer<u32>,
+    out: LaniusBuffer<u32>,
+}
+
+/// The emit's buffers, sized by `TailCaps`.
+struct TailBuffers {
+    gdyn: LaniusBuffer<u32>,
+    dyn_words: LaniusBuffer<u32>,
+    output: LaniusBuffer<u32>,
+    strings: LaniusBuffer<u32>,
+    dyn_status: LaniusBuffer<u32>,
+}
+
+/// A link whose plan, C-name resolution and emit are in flight
+/// (`begin_resident_dynamic`).
+pub(crate) struct ResidentPlan {
+    device: wgpu::Device,
+    params: [u32; 16],
     buffers: LinkBuffers,
-    prepared: Option<std::thread::JoinHandle<Result<Option<Prepared>>>>,
+    names: NameBuffers,
+    tail: TailBuffers,
+    readback: LaniusBuffer<u8>,
+    read_bytes: u64,
+    /// Until the plan readback is mapped.
+    map: Option<PendingReadbackMap>,
     pending: Option<PendingObject>,
+    max_output_bytes: usize,
 }
 
 /// The last object of a plan recorded before the host read it back: its
-/// slot, where its plan words start in the plan readback, and its lengths
-/// once the host has them ([`ResidentPlan::confirm_pending`]).
+/// slot and its lengths once the host has them
+/// ([`ResidentPlan::confirm_pending`]).
 struct PendingObject {
     store: Arc<GpuX86LinkStore>,
     generation: u64,
     slot: usize,
-    words_at: usize,
     expected: Option<[u32; 4]>,
 }
 
@@ -721,81 +761,44 @@ impl ResidentPlan {
         }
         committed
     }
+
+    /// Waits for the plan readback and returns its words.
+    fn read(&mut self) -> Result<Vec<u32>> {
+        if let Some(map) = self.map.take() {
+            crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
+        }
+        let words = words_of(&self.readback.buffer.slice(..self.read_bytes).get_mapped_range());
+        self.readback.buffer.unmap();
+        Ok(words)
+    }
 }
 
 impl Drop for ResidentPlan {
     /// An abandoned plan still leaves its readback unmapped for the next link.
     fn drop(&mut self) {
-        if let Some(worker) = self.prepared.take() {
-            let _ = worker.join();
+        if let Some(map) = self.map.take() {
+            let _ = crate::gpu::passes_core::finish_readback_map(
+                &self.device,
+                map,
+                std::time::Duration::from_secs(30),
+            );
+            self.readback.buffer.unmap();
         }
     }
 }
 
-/// The worker of a `ResidentPlan`.
-fn prepare(
-    device: wgpu::Device,
-    first: LaniusBuffer<u8>,
-    first_bytes: usize,
-    pending: crate::gpu::passes_core::PendingReadbackMap,
-    names: Vec<String>,
-    options: native::NativeLinkOptions,
-    object_count: u32,
-) -> Result<Option<Prepared>> {
-    crate::gpu::passes_core::finish_readback_map(&device, pending, std::time::Duration::from_secs(30))?;
-    let words = words_of(&first.buffer.slice(..first_bytes as u64).get_mapped_range());
-    first.buffer.unmap();
-    let _span = TailSpan::new("tail.native.resident.prepare");
-    if words[ST_ERRORS] != 0 {
-        log::debug!("resident x86 link plan failed: error bits {:#x}", words[ST_ERRORS]);
-        return Ok(None);
-    }
-    let referenced = names
-        .iter()
-        .zip(&words[STATUS_WORDS..])
-        .filter(|(_, flag)| **flag != 0)
-        .map(|(name, _)| name.as_str())
-        .collect::<Vec<_>>();
-    let imports = match native::resolve::resolve_native_imports(&referenced, &options) {
-        Ok(native::NativeResolution::Dynamic(imports)) => imports,
-        _ => return Ok(None),
-    };
-    let import_index = imports
-        .imports
-        .iter()
-        .enumerate()
-        .map(|(index, import)| (import.name.as_str(), index as u32))
-        .collect::<std::collections::HashMap<_, _>>();
-    let import_of_name = names
-        .iter()
-        .map(|name| import_index.get(name.as_str()).copied().unwrap_or(u32::MAX))
-        .collect::<Vec<_>>();
-    let image = X86DynamicImage::new(
-        &imports,
-        object_count,
-        X86DynamicMain {
-            object_index: words[ST_ENTRY_OBJECT],
-            text_offset: words[ST_MAIN_OFFSET],
-            byte_len: crate::codegen::x86::GPU_X86_CRT_MAIN_BRIDGE_BYTES,
-        },
-    )?;
-    let (rows, total) = image.resident_rows(
-        words[ST_TEXT_LEN],
-        words[ST_RODATA_LEN],
-        words[ST_DEF_COUNT],
-        words[ST_NAME_STRIDE],
-        words[ST_MAIN_OFFSET],
-    )?;
-    if total as usize > options.max_output_bytes {
-        return Ok(None);
-    }
-    Ok(Some(Prepared {
-        words,
-        import_count: imports.imports.len() as u32,
-        import_of_name,
-        rows,
-        total,
-    }))
+fn dispatch_indirect(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    label: &'static str,
+    args: &LaniusBuffer<u32>,
+    offset: u64,
+    resources: &[(&str, wgpu::BindingResource<'_>)],
+) -> Result<()> {
+    let group = bind_group::create_bind_group_from_bindings(device, Some(label), pass, 0, resources)?;
+    record_or_defer_compute_indirect_offset(encoder, pass, &group, label, args, offset);
+    Ok(())
 }
 
 impl GpuX86Linker {
@@ -838,6 +841,7 @@ impl GpuX86Linker {
         bindings: &[NativeCFunction],
         options: &native::NativeLinkOptions,
         routes: ResidentRoutes<'_>,
+        fault: ResidentEmitFault,
     ) -> Result<Option<ResidentPlan>> {
         if !cfg!(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))
             || objects.len() + usize::from(pending.is_some()) == 0
@@ -847,6 +851,24 @@ impl GpuX86Linker {
         let Ok(foreign) = native::validate_bindings(bindings) else {
             return Ok(None);
         };
+        // The libraries the link reads, as the GNU linker finds them.
+        let inputs_span = TailSpan::new("tail.native.resident.inputs");
+        let inputs = match native::resolve::packed_link_inputs(options) {
+            Ok(native::resolve::PackedInputs::Inputs(inputs)) if inputs.len() <= CN_MAX_INPUTS => inputs,
+            Ok(native::resolve::PackedInputs::Inputs(inputs)) => {
+                log::debug!("resident x86 link: {} inputs exceed the GPU name match", inputs.len());
+                return Ok(None);
+            }
+            Ok(native::resolve::PackedInputs::Driver(reason)) => {
+                log::debug!("resident x86 link: the C driver links: {reason}");
+                return Ok(None);
+            }
+            Err(error) => {
+                log::debug!("resident x86 link inputs: {error:#}");
+                return Ok(None);
+            }
+        };
+        drop(inputs_span);
         let _span = TailSpan::new("tail.native.resident.record");
         let store = self.resident_store(device, queue);
         let mut state = store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -896,6 +918,7 @@ impl GpuX86Linker {
         // Slot table (rl_common.slang).
         let mut slot_words = Vec::with_capacity(objects.len() * SLOT_WORDS);
         let (mut symbol_cap_total, mut reloc_cap_total, mut text_cap_max) = (0u64, 0u64, 0u32);
+        let (mut text_cap_sum, mut rodata_cap_sum) = (0u64, 0u64);
         for (object, &index) in objects.iter().zip(&chosen) {
             let slot = &state.slots[index];
             let [reloc, runtime, undefined, definitions, text, rodata] = slot.caps;
@@ -921,10 +944,13 @@ impl GpuX86Linker {
                 object.symbol_count,
                 checked_u32(slot.base[6], "identity word")?,
                 u32::from(slot.identities),
+                checked_u32(slot.base[0], "metadata word")?,
             ]);
             symbol_cap_total += u64::from(undefined) + u64::from(definitions);
             reloc_cap_total += u64::from(reloc) + u64::from(runtime);
             text_cap_max = text_cap_max.max(text);
+            text_cap_sum += u64::from(text);
+            rodata_cap_sum += u64::from(rodata);
         }
         let symbol_cap_total = checked_u32(symbol_cap_total, "symbol capacity")?;
         let reloc_cap_total = checked_u32(reloc_cap_total, "relocation capacity")?;
@@ -964,6 +990,139 @@ impl GpuX86Linker {
             0,
         ];
 
+        // The candidate imports: __libc_start_main, then the bound names in
+        // byte order, as `resolve_native_imports` orders them, with the name
+        // slot `rl_undefined` marks.
+        let start_main = native::resolve::LIBC_START_MAIN;
+        let mut candidates = Vec::with_capacity(names.len() + 1);
+        candidates.push((start_main, names.binary_search(&start_main).ok()));
+        candidates.extend(names.iter().enumerate().filter(|(_, name)| **name != start_main).map(|(slot, name)| (*name, Some(slot))));
+        if candidates.iter().any(|(name, _)| name.as_bytes().contains(&0)) {
+            return Ok(None);
+        }
+        // Every input's exports and versions, then the candidates and the
+        // sonames, in one byte buffer (rl_cnames.slang).
+        let mut name_bytes = Vec::new();
+        let (mut rows, mut versions, mut input_words) = (Vec::new(), Vec::new(), Vec::with_capacity(inputs.len() * CN_INPUT_WORDS));
+        let mut wild_row = u32::MAX;
+        let mut string_bound = 1u64;
+        for input in &inputs {
+            let table = &input.table;
+            let row_base = rows.len() / 3;
+            if wild_row == u32::MAX
+                && let Some(row) = table.rows.chunks_exact(3).position(|row| row[1] == u32::MAX)
+            {
+                wild_row = checked_u32((row_base + row) as u64, "name row")?;
+            }
+            input_words.extend_from_slice(&[
+                checked_u32(row_base as u64, "name row")?,
+                checked_u32(table.rows.len() as u64 / 3, "name row")?,
+                checked_u32(name_bytes.len() as u64, "name byte")?,
+                checked_u32(versions.len() as u64 / 2, "version")?,
+                checked_u32(table.versions.len() as u64 / 2, "version")?,
+                0,
+                input.soname.as_ref().map_or(0, |soname| soname.len() as u32),
+                u32::from(input.soname.is_none()),
+            ]);
+            string_bound += table.versions.chunks_exact(2).map(|version| u64::from(version[1]) + 1).sum::<u64>();
+            rows.extend_from_slice(&table.rows);
+            versions.extend_from_slice(&table.versions);
+            name_bytes.extend_from_slice(&table.bytes);
+        }
+        let mut candidate_rows = Vec::with_capacity(candidates.len() * 3);
+        for (name, slot) in &candidates {
+            candidate_rows.extend_from_slice(&[
+                checked_u32(name_bytes.len() as u64, "name byte")?,
+                name.len() as u32,
+                slot.map_or(u32::MAX, |slot| slot as u32),
+            ]);
+            string_bound += name.len() as u64 + 1;
+            name_bytes.extend_from_slice(name.as_bytes());
+        }
+        for (index, input) in inputs.iter().enumerate() {
+            if let Some(soname) = &input.soname {
+                input_words[index * CN_INPUT_WORDS + 5] = checked_u32(name_bytes.len() as u64, "name byte")?;
+                string_bound += soname.len() as u64 + 1;
+                name_bytes.extend_from_slice(soname.as_bytes());
+            }
+        }
+        checked_u32(name_bytes.len() as u64, "name byte")?;
+        let candidate_count = candidates.len() as u32;
+        let input_count = inputs.len() as u32;
+        let row_count = checked_u32(rows.len() as u64 / 3, "name row")?;
+        let version_count = checked_u32(versions.len() as u64 / 2, "version")?;
+        let name_size = (2 * candidate_count).max(64).next_power_of_two();
+        // What the emit can write, from the capacities: every output length
+        // grows with each count.
+        let import_text_bound = u64::from(X86DynamicImage::import_text_len(candidates.len())?);
+        let (_, output_bound) = dynamic_layout(DynamicCounts {
+            imports: candidates.len() as u64,
+            strings: string_bound,
+            verneed_rows: u64::from(input_count + version_count),
+            needed: u64::from(input_count),
+            text_len: text_cap_sum + import_text_bound,
+            rodata_len: rodata_cap_sum,
+            symbols: u64::from(symbol_cap_total),
+            stride: MAX_NAME_STRIDE,
+        });
+        let output_limit = (options.max_output_bytes as u64)
+            .min(device.limits().max_storage_buffer_binding_size as u64)
+            .div_ceil(4);
+        let caps = TailCaps {
+            output_words: if fault == ResidentEmitFault::Capacity {
+                1
+            } else {
+                checked_u32(output_bound.div_ceil(4).min(output_limit), "output")?
+            },
+            dyn_words: checked_u32(
+                2 * u64::from(candidate_count)
+                    + u64::from(input_count)
+                    + 4 * u64::from(input_count + version_count)
+                    + u64::from(symbol_cap_total) * SYMBOL_WORDS as u64,
+                "dynamic rows",
+            )?,
+            string_bytes: checked_u32(string_bound, "string table")?,
+        };
+        let gate = if fault == ResidentEmitFault::Gate { GATE_FORCE_FAIL } else { GATE_ON };
+        let names_buffers = NameBuffers {
+            params: [
+                candidate_count,
+                input_count,
+                row_count,
+                version_count,
+                name_size - 1,
+                wild_row,
+                gate,
+                0,
+                0,
+                0,
+                symbol_cap_total,
+                reloc_cap_total,
+                names.len() as u32,
+                crate::codegen::x86::GPU_X86_CRT_MAIN_BRIDGE_BYTES,
+                0,
+                0,
+            ],
+            bytes: self.reusable_input_bytes_with_capacity(device, queue, "codegen.x86.link.resident.cn_bytes", &name_bytes, 4),
+            rows: self.reusable_input_u32(device, queue, "codegen.x86.link.resident.cn_rows", &rows),
+            versions: self.reusable_input_u32(device, queue, "codegen.x86.link.resident.cn_versions", &versions),
+            inputs: self.reusable_input_u32(device, queue, "codegen.x86.link.resident.cn_inputs", &input_words),
+            names: self.reusable_input_u32(device, queue, "codegen.x86.link.resident.cn_names", &candidate_rows),
+            name_hash: self.link_storage(device, "codegen.x86.link.resident.cn_name_hash", name_size as usize),
+            matches: self.link_storage(device, "codegen.x86.link.resident.cn_match", candidates.len() * 3),
+            scratch: self.link_storage(
+                device,
+                "codegen.x86.link.resident.cn_scratch",
+                candidates.len() * 2 + versions.len() / 2 * 3,
+            ),
+            out: self.reusable_storage_u32(
+                device,
+                "codegen.x86.link.resident.cn_out",
+                CN_OUT_WORDS,
+                wgpu::BufferUsages::INDIRECT,
+            ),
+        };
+
         let buffers = LinkBuffers {
             store: state.chunks[0].buffers.clone(),
             routes: routes.routes.clone(),
@@ -996,89 +1155,183 @@ impl GpuX86Linker {
             (&buffers.small_hash, small_size as usize * 2),
             (&buffers.bind_hash, hash_size as usize),
             (&buffers.name_ref, names.len().max(1)),
+            (&names_buffers.name_hash, name_size as usize),
+            (&names_buffers.matches, candidates.len() * 3),
+            (&names_buffers.scratch, candidates.len() * 2 + versions.len() / 2 * 3),
+            (&names_buffers.out, CN_OUT_WORDS),
         ] {
             encoder.clear_buffer_counted(&buffer.buffer, buffer.byte_offset, Some(words as u64 * 4));
         }
         let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
-        // The dynamic writer's buffers are sized after the plan; the first
-        // submission binds them at their retained capacity.
-        let dyn_words = self.link_storage(device, "codegen.x86.link.resident.dyn_words", 1);
-        let output = self.link_storage(device, "codegen.x86.link.resident.output", 1);
-        let resources = buffers.resources(&gparams, &dyn_words, &output);
-        for (pass, label, lanes) in [
-            (&self.rl_bind_pass, "codegen.x86.link.resident.bind", binding_count),
-            (&self.rl_compare_pass, "codegen.x86.link.resident.compare", compare_lanes),
-            (&self.rl_plan_pass, "codegen.x86.link.resident.plan", 1),
-            (&self.rl_define_pass, "codegen.x86.link.resident.define", symbol_cap_total),
-            (&self.rl_insert_pass, "codegen.x86.link.resident.insert", symbol_cap_total),
-            (&self.rl_undefined_pass, "codegen.x86.link.resident.undefined", symbol_cap_total),
-        ] {
-            dispatch(device, &mut encoder, pass, label, lanes, &resources)?;
+        {
+            // The plan's kernels bind the emit's buffers at their retained
+            // capacity; the emit binds them again at its own.
+            let dyn_words = self.link_storage(device, "codegen.x86.link.resident.dyn_words", 1);
+            let output = self.link_storage(device, "codegen.x86.link.resident.output", 1);
+            let resources = buffers.resources(&gparams, &dyn_words, &output);
+            for (pass, label, lanes) in [
+                (&self.rl_bind_pass, "codegen.x86.link.resident.bind", binding_count),
+                (&self.rl_compare_pass, "codegen.x86.link.resident.compare", compare_lanes),
+                (&self.rl_plan_pass, "codegen.x86.link.resident.plan", 1),
+                (&self.rl_define_pass, "codegen.x86.link.resident.define", symbol_cap_total),
+                (&self.rl_insert_pass, "codegen.x86.link.resident.insert", symbol_cap_total),
+                (&self.rl_undefined_pass, "codegen.x86.link.resident.undefined", symbol_cap_total),
+            ] {
+                dispatch(device, &mut encoder, pass, label, lanes, &resources)?;
+            }
         }
-        drop(resources);
-        flush_deferred_compute(&mut encoder);
-        // The pending object's plan words follow the status and the names.
-        let pending_words_at = STATUS_WORDS + names.len();
-        let first_bytes = (pending_words_at + if pending.is_some() { OBJECT_WORDS } else { 0 }) * 4;
-        let first = self.reusable_readback(device, "rb.codegen.x86.link.resident.plan", first_bytes);
-        encoder.copy_buffer_counted(
-            &buffers.status.buffer,
-            buffers.status.byte_offset,
-            &first.buffer,
-            0,
-            STATUS_WORDS as u64 * 4,
-        );
-        if !names.is_empty() {
-            encoder.copy_buffer_counted(
-                &buffers.name_ref.buffer,
-                buffers.name_ref.byte_offset,
-                &first.buffer,
-                STATUS_WORDS as u64 * 4,
-                names.len() as u64 * 4,
-            );
+        let gcn = self.name_params(device, queue, &names_buffers, caps, gate);
+        {
+            let resources = name_resources(&names_buffers, &gcn, &buffers, None);
+            dispatch(device, &mut encoder, &self.rl_name_hash_pass, "codegen.x86.link.resident.name_hash", candidate_count, &resources)?;
+            dispatch(device, &mut encoder, &self.rl_import_match_pass, "codegen.x86.link.resident.import_match", row_count, &resources)?;
         }
-        if pending.is_some() {
-            let object = (objects.len() - 1) * OBJECT_WORDS;
-            encoder.copy_buffer_counted(
-                &buffers.objects.buffer,
-                buffers.objects.byte_offset + object as u64 * 4,
-                &first.buffer,
-                pending_words_at as u64 * 4,
-                OBJECT_WORDS as u64 * 4,
-            );
-        }
+        let read_bytes = ((RB_PENDING + if pending.is_some() { OBJECT_WORDS } else { 0 }) * 4) as u64;
+        let readback = self.reusable_readback(device, "rb.codegen.x86.link.resident.plan", read_bytes as usize);
+        let pending_object = pending.map(|_| objects.len() - 1);
+        let tail = self.record_tail(
+            device,
+            queue,
+            &mut encoder,
+            TailRecord { buffers: &buffers, names: &names_buffers, gparams: &gparams, readback: &readback },
+            caps,
+            gate,
+            pending_object,
+        )?;
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.plan", encoder.finish());
-        let plan_read = crate::gpu::passes_core::begin_readback_map(
-            &first.buffer.slice(..first_bytes as u64),
+        let map = crate::gpu::passes_core::begin_readback_map(
+            &readback.buffer.slice(..read_bytes),
             "codegen.x86.link.resident.plan",
         );
-        let worker = {
-            let device = device.clone();
-            let names = names.iter().map(|name| (*name).to_owned()).collect();
-            let options = options.clone();
-            std::thread::Builder::new()
-                .name("laniusc-resident-link".into())
-                .spawn(move || prepare(device, first, first_bytes, plan_read, names, options, object_count))
-                .context("spawn the resident x86 link worker")?
-        };
         Ok(Some(ResidentPlan {
+            device: device.clone(),
             params,
-            symbol_cap_total,
-            reloc_cap_total,
             buffers,
-            prepared: Some(worker),
+            names: names_buffers,
+            tail,
+            readback,
+            read_bytes,
+            map: Some(map),
             pending: pending.map(|pending| PendingObject {
                 store: pending.store.clone(),
                 generation: pending.generation,
                 slot: pending.slot,
-                words_at: pending_words_at,
                 expected: None,
             }),
+            max_output_bytes: options.max_output_bytes,
         }))
     }
 
-    /// Completes a link `begin_resident_dynamic` started: writes the image
-    /// from the worker's rows and reads it back.
+    /// The C-name step's parameters with the emit's capacities and gate.
+    fn name_params(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        names: &NameBuffers,
+        caps: TailCaps,
+        gate: u32,
+    ) -> LaniusBuffer<u32> {
+        let mut params = names.params;
+        params[6] = gate;
+        params[7] = caps.output_words;
+        params[8] = caps.dyn_words;
+        params[9] = caps.string_bytes;
+        self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.cn_params", &params)
+    }
+
+    /// Records the dynamic rows (`rl_dynamic_rows.slang`), the emit behind
+    /// them with the dispatches they size, and the copies of every status
+    /// word (and of the pending object's plan words) to the plan readback.
+    fn record_tail(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        record: TailRecord<'_>,
+        caps: TailCaps,
+        gate: u32,
+        pending_object: Option<usize>,
+    ) -> Result<TailBuffers> {
+        let TailRecord { buffers, names, gparams, readback } = record;
+        let gcn = self.name_params(device, queue, names, caps, gate);
+        let string_words = caps.string_bytes.div_ceil(4).max(1) as usize;
+        let tail = TailBuffers {
+            gdyn: self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.dyn_params", &[0; DYN_PARAMS]),
+            dyn_words: self.link_storage(device, "codegen.x86.link.resident.dyn_words", caps.dyn_words as usize),
+            output: self.link_storage(device, "codegen.x86.link.resident.output", caps.output_words as usize),
+            strings: self.link_storage(device, "codegen.x86.link.resident.strings", string_words),
+            dyn_status: self.link_storage(device, "codegen.x86.link.resident.dyn_status", 4),
+        };
+        queue.write_buffer_counted(
+            &tail.dyn_status.buffer,
+            tail.dyn_status.byte_offset,
+            super::super::support::u32_words_bytes(&[1, 0, u32::MAX, 0]),
+        );
+        encoder.clear_buffer_counted(&tail.strings.buffer, tail.strings.byte_offset, Some(string_words as u64 * 4));
+        {
+            let resources = name_resources(names, &gcn, buffers, Some(&tail));
+            dispatch(device, encoder, &self.rl_dynamic_rows_pass, "codegen.x86.link.resident.dynamic_rows", 1, &resources)?;
+        }
+        flush_deferred_compute(encoder);
+        // gRL words 8 to 15 and gDyn, as the GPU wrote them.
+        encoder.copy_buffer_counted(&names.out.buffer, names.out.byte_offset, &gparams.buffer, gparams.byte_offset + 32, 32);
+        encoder.copy_buffer_counted(
+            &names.out.buffer,
+            names.out.byte_offset + CN_DYN * 4,
+            &tail.gdyn.buffer,
+            tail.gdyn.byte_offset,
+            DYN_PARAMS as u64 * 4,
+        );
+        {
+            let resources = buffers.resources(gparams, &tail.dyn_words, &tail.output);
+            let args = &names.out;
+            dispatch_indirect(device, encoder, &self.rl_dynsym_pass, "codegen.x86.link.resident.dynsym", args, CN_ARGS * 4, &resources)?;
+            dispatch_indirect(device, encoder, &self.rl_gather_pass, "codegen.x86.link.resident.gather", args, CN_ARGS * 4 + 12, &resources)?;
+            let dynamic = [
+                ("gDyn", tail.gdyn.as_entire_binding()),
+                ("dynamic_words", tail.dyn_words.as_entire_binding()),
+                ("dynamic_strings", tail.strings.as_entire_binding()),
+                ("out_words", tail.output.as_entire_binding()),
+                ("link_relocation_status", tail.dyn_status.as_entire_binding()),
+            ];
+            dispatch_indirect(
+                device,
+                encoder,
+                &self.elf_dynamic_write_pass,
+                "codegen.x86.link.resident.dynamic_write",
+                args,
+                CN_ARGS * 4 + 24,
+                &dynamic,
+            )?;
+            dispatch_indirect(device, encoder, &self.rl_reloc_pass, "codegen.x86.link.resident.reloc", args, CN_ARGS * 4 + 36, &resources)?;
+        }
+        flush_deferred_compute(encoder);
+        encoder.copy_buffer_counted(&buffers.status.buffer, buffers.status.byte_offset, &readback.buffer, 0, STATUS_WORDS as u64 * 4);
+        encoder.copy_buffer_counted(
+            &names.out.buffer,
+            names.out.byte_offset + CN_BITS * 4,
+            &readback.buffer,
+            RB_NAMES as u64 * 4,
+            NAME_STATUS_WORDS as u64 * 4,
+        );
+        encoder.copy_buffer_counted(&tail.dyn_status.buffer, tail.dyn_status.byte_offset, &readback.buffer, RB_DYNAMIC as u64 * 4, 16);
+        if let Some(object) = pending_object {
+            encoder.copy_buffer_counted(
+                &buffers.objects.buffer,
+                buffers.objects.byte_offset + (object * OBJECT_WORDS * 4) as u64,
+                &readback.buffer,
+                RB_PENDING as u64 * 4,
+                OBJECT_WORDS as u64 * 4,
+            );
+        }
+        Ok(tail)
+    }
+
+    /// Completes a link `begin_resident_dynamic` started: reads the status
+    /// of the plan, the C-name step and the emit, records the emit again
+    /// when only its capacity was short, and copies the image at its exact
+    /// length to a readback. `ResidentImage::finish` waits for it. `None`
+    /// when the host has to link.
     pub(crate) fn finish_resident_dynamic(
         &self,
         device: &wgpu::Device,
@@ -1086,21 +1339,63 @@ impl GpuX86Linker {
         mut plan: ResidentPlan,
     ) -> Result<Option<ResidentImage>> {
         let wait = TailSpan::new("tail.native.resident.wait_plan");
-        let worker = plan.prepared.take().expect("the plan worker is running");
-        let prepared = worker
-            .join()
-            .map_err(|_| anyhow::anyhow!("the resident x86 link worker panicked"))??;
+        let first = plan.read()?;
         drop(wait);
-        let Some(Prepared { words, import_count, import_of_name, rows, total }) = prepared else {
+        let mut words = first.clone();
+        let names_word = |words: &[u32], word: usize| words[RB_NAMES + word];
+        if words[ST_ERRORS] == 0 && names_word(&words, NAMES_BITS) == BIT_CAPACITY {
+            let _span = TailSpan::new("tail.native.resident.retry");
+            let caps = TailCaps {
+                output_words: names_word(&words, NAMES_NEED_OUTPUT),
+                dyn_words: names_word(&words, NAMES_NEED_DYN),
+                string_bytes: names_word(&words, NAMES_NEED_STRINGS),
+            };
+            if u64::from(caps.output_words) * 4 > plan.max_output_bytes.next_multiple_of(4) as u64 {
+                return Ok(None);
+            }
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("codegen.x86.link.resident.retry.encoder"),
+            });
+            encoder.clear_buffer_counted(&plan.names.out.buffer, plan.names.out.byte_offset, Some(CN_OUT_WORDS as u64 * 4));
+            let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &plan.params);
+            plan.tail = self.record_tail(
+                device,
+                queue,
+                &mut encoder,
+                TailRecord { buffers: &plan.buffers, names: &plan.names, gparams: &gparams, readback: &plan.readback },
+                caps,
+                GATE_ON,
+                None,
+            )?;
+            crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.retry", encoder.finish());
+            plan.map = Some(crate::gpu::passes_core::begin_readback_map(
+                &plan.readback.buffer.slice(..plan.read_bytes),
+                "codegen.x86.link.resident.plan",
+            ));
+            words = plan.read()?;
+        }
+        let failed = words[ST_ERRORS] != 0
+            || names_word(&words, NAMES_BITS) != 0
+            || words[ST_EMIT_ERRORS] != 0
+            || words[RB_DYNAMIC] != 1
+            || words[RB_DYNAMIC + 1] != 0;
+        if failed {
+            log::debug!(
+                "resident x86 link failed: errors {:#x}, C names {:#x}, emit errors {:#x}, dynamic status {:?}",
+                words[ST_ERRORS],
+                names_word(&words, NAMES_BITS),
+                words[ST_EMIT_ERRORS],
+                &words[RB_DYNAMIC..RB_DYNAMIC + 4],
+            );
             return Ok(None);
-        };
+        }
         // The slot holds the object the host published for the pending unit
         // (rl_plan.slang checks the other objects).
         if let Some(pending) = &plan.pending {
             let Some([text_len, rodata_len, relocations, symbols]) = pending.expected else {
                 return Ok(None);
             };
-            let Some(object) = words.get(pending.words_at..pending.words_at + OBJECT_WORDS) else {
+            let Some(object) = first.get(RB_PENDING..RB_PENDING + OBJECT_WORDS) else {
                 return Ok(None);
             };
             let word = |index: usize| u64::from(object[index]);
@@ -1113,164 +1408,63 @@ impl GpuX86Linker {
                 return Ok(None);
             }
         }
-        let rodata_len = words[ST_RODATA_LEN];
-        let text_len_total = rows.params[12];
-        let output_words = total.div_ceil(4);
-        let mut params = plan.params;
-        params[8] = import_count;
-        params[9] = text_len_total;
-        params[10] = total;
-        params[11] = rows.params[19];
-        params[13] = 0x78 / 4;
-        params[14] = (0x78 + text_len_total + rodata_len).div_ceil(4);
-
-        let span = TailSpan::new("tail.native.resident.record_emit");
-        let buffers = &plan.buffers;
-        let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
-        if !import_of_name.is_empty() {
-            queue.write_buffer_counted(
-                &buffers.import_of_name.buffer,
-                buffers.import_of_name.byte_offset,
-                super::super::support::u32_words_bytes(&import_of_name),
-            );
-        }
-        let dyn_word_count = rows.words.len() + words[ST_DEF_COUNT] as usize * SYMBOL_WORDS;
-        let dyn_words = self.link_storage(device, "codegen.x86.link.resident.dyn_words", dyn_word_count);
-        queue.write_buffer_counted(
-            &dyn_words.buffer,
-            dyn_words.byte_offset,
-            super::super::support::u32_words_bytes(&rows.words),
-        );
-        let output = self.link_storage(device, "codegen.x86.link.resident.output", output_words as usize);
-        let strings = self.reusable_input_bytes_with_capacity(
-            device,
-            queue,
-            "codegen.x86.link.resident.strings",
-            &rows.strings,
-            4,
-        );
-        let gdyn = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.dyn_params", &rows.params);
-        let dyn_status = self.link_storage(device, "codegen.x86.link.resident.dyn_status", 4);
-        queue.write_buffer_counted(
-            &dyn_status.buffer,
-            dyn_status.byte_offset,
-            super::super::support::u32_words_bytes(&[1, 0, u32::MAX, 0]),
-        );
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("codegen.x86.link.resident.emit.encoder"),
-        });
-        encoder.clear_buffer_counted(&output.buffer, output.byte_offset, Some(u64::from(output_words) * 4));
-        {
-            let resources = buffers.resources(&gparams, &dyn_words, &output);
-            dispatch(
-                device,
-                &mut encoder,
-                &self.rl_dynsym_pass,
-                "codegen.x86.link.resident.dynsym",
-                plan.symbol_cap_total,
-                &resources,
-            )?;
-            dispatch(
-                device,
-                &mut encoder,
-                &self.rl_gather_pass,
-                "codegen.x86.link.resident.gather",
-                params[14] - params[13],
-                &resources,
-            )?;
-            let dynamic = [
-                ("gDyn", gdyn.as_entire_binding()),
-                ("dynamic_words", dyn_words.as_entire_binding()),
-                ("dynamic_strings", strings.as_entire_binding()),
-                ("out_words", output.as_entire_binding()),
-                ("link_relocation_status", dyn_status.as_entire_binding()),
-            ];
-            dispatch(
-                device,
-                &mut encoder,
-                &self.elf_dynamic_write_pass,
-                "codegen.x86.link.resident.dynamic_write",
-                rows.element_count,
-                &dynamic,
-            )?;
-            dispatch(
-                device,
-                &mut encoder,
-                &self.rl_reloc_pass,
-                "codegen.x86.link.resident.reloc",
-                plan.reloc_cap_total,
-                &resources,
-            )?;
-        }
-        flush_deferred_compute(&mut encoder);
-        // The status in one small readback with the emit, then the image in
-        // chunks of their own submissions: the host writes one chunk while
-        // the GPU copies the next.
-        let image_bytes = u64::from(output_words) * 4;
-        let status_bytes = (STATUS_WORDS + 4) * 4;
-        let status = self.reusable_readback(device, "rb.codegen.x86.link.resident.status", status_bytes);
-        encoder.copy_buffer_counted(
-            &buffers.status.buffer,
-            buffers.status.byte_offset,
-            &status.buffer,
-            0,
-            STATUS_WORDS as u64 * 4,
-        );
-        encoder.copy_buffer_counted(
-            &dyn_status.buffer,
-            dyn_status.byte_offset,
-            &status.buffer,
-            STATUS_WORDS as u64 * 4,
-            16,
-        );
-        crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.emit", encoder.finish());
-        let status_slice = status.buffer.slice(..status_bytes as u64);
-        let status_map = crate::gpu::passes_core::begin_readback_map(&status_slice, "codegen.x86.link.resident.emit");
-        let chunk_bytes = image_bytes.div_ceil(IMAGE_CHUNKS).next_multiple_of(4).max(4);
-        let mut chunks = Vec::with_capacity(IMAGE_CHUNKS as usize);
-        let mut at = 0;
-        while at < u64::from(total) {
-            let bytes = chunk_bytes.min(image_bytes - at);
-            let buffer = self.reusable_readback(
-                device,
-                IMAGE_CHUNK_LABELS[chunks.len()],
-                bytes as usize,
-            );
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("codegen.x86.link.resident.image.encoder"),
-            });
-            encoder.copy_buffer_counted(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
-            crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
-            let len = (u64::from(total) - at).min(bytes);
-            let map = crate::gpu::passes_core::begin_readback_map(
-                &buffer.buffer.slice(..len),
-                "codegen.x86.link.resident.image",
-            );
-            chunks.push(ImageChunk { buffer, len: len as usize, map: Some(map) });
-            at += bytes;
-        }
-        drop(span);
-
-        let wait = TailSpan::new("tail.native.resident.wait_emit");
-        crate::gpu::passes_core::finish_readback_map(device, status_map, std::time::Duration::from_secs(30))?;
-        drop(wait);
-        let tail = words_of(&status_slice.get_mapped_range());
-        status.buffer.unmap();
-        // Dropping the image on a failed emit finishes the chunk maps.
-        let image = ResidentImage { device: device.clone(), chunks, len: total as usize };
-        if tail[ST_ERRORS] != 0
-            || tail[ST_EMIT_ERRORS] != 0
-            || tail[STATUS_WORDS] != 1
-            || tail[STATUS_WORDS + 1] != 0
-        {
-            log::debug!(
-                "resident x86 link emit failed: errors {:#x}, emit errors {:#x}, dynamic status {:?}",
-                tail[ST_ERRORS],
-                tail[ST_EMIT_ERRORS],
-                &tail[STATUS_WORDS..],
-            );
+        let total = names_word(&words, NAMES_TOTAL);
+        if total as usize > plan.max_output_bytes {
             return Ok(None);
         }
-        Ok(Some(image))
+        let span = TailSpan::new("tail.native.resident.record_image");
+        let image_bytes = u64::from(total.div_ceil(4)) * 4;
+        let readback = self.reusable_readback(device, "rb.codegen.x86.link.resident.image", image_bytes as usize);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("codegen.x86.link.resident.image.encoder"),
+        });
+        encoder.copy_buffer_counted(&plan.tail.output.buffer, plan.tail.output.byte_offset, &readback.buffer, 0, image_bytes);
+        crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
+        let map = crate::gpu::passes_core::begin_readback_map(
+            &readback.buffer.slice(..image_bytes),
+            "codegen.x86.link.resident.image",
+        );
+        drop(span);
+        // The caller waits (`ResidentImage::finish`) after it prepares the
+        // output file.
+        Ok(Some(ResidentImage { device: device.clone(), buffer: readback, len: total as usize, map: Some(map) }))
     }
+}
+
+/// The buffers `record_tail` binds and copies into.
+struct TailRecord<'a> {
+    buffers: &'a LinkBuffers,
+    names: &'a NameBuffers,
+    gparams: &'a LaniusBuffer<u32>,
+    readback: &'a LaniusBuffer<u8>,
+}
+
+/// Bindings of the C-name kernels; the dynamic rows also bind the emit's
+/// row, string and status buffers.
+fn name_resources<'a>(
+    names: &'a NameBuffers,
+    gcn: &'a LaniusBuffer<u32>,
+    buffers: &'a LinkBuffers,
+    tail: Option<&'a TailBuffers>,
+) -> Vec<(&'static str, wgpu::BindingResource<'a>)> {
+    let mut resources = vec![
+        ("gCN", gcn.as_entire_binding()),
+        ("cn_bytes", names.bytes.as_entire_binding()),
+        ("cn_rows", names.rows.as_entire_binding()),
+        ("cn_versions", names.versions.as_entire_binding()),
+        ("cn_inputs", names.inputs.as_entire_binding()),
+        ("cn_names", names.names.as_entire_binding()),
+        ("cn_name_hash", names.name_hash.as_entire_binding()),
+        ("cn_match", names.matches.as_entire_binding()),
+        ("cn_out", names.out.as_entire_binding()),
+        ("rl_status", buffers.status.as_entire_binding()),
+        ("rl_name_ref", buffers.name_ref.as_entire_binding()),
+        ("cn_scratch", names.scratch.as_entire_binding()),
+        ("cn_import_of_name", buffers.import_of_name.as_entire_binding()),
+    ];
+    if let Some(tail) = tail {
+        resources.push(("cn_dyn_words", tail.dyn_words.as_entire_binding()));
+        resources.push(("cn_strings", tail.strings.as_entire_binding()));
+    }
+    resources
 }

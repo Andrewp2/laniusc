@@ -132,6 +132,45 @@ rank order behind one root row. Every call, also inside one batch, is a
 dependency symbol call to the route's identity, so a call names the same
 symbol in every batch, and the linker resolves calls across batches.
 
+### Lowering behind the check
+
+When the plan predicts one batch, the batch and its lowering are recorded
+before the check is read back, so the GPU lowers while the host waits for the
+check. The check's readback is mapped after its submission, the lowering's
+submissions follow it, and the host waits for the map last. In a native build
+the finalizer and the resident link plan are submitted behind that lowering
+(`retained_native.rs`, `InstanceLowerer`).
+
+- **Sizes.** The batch kernels and the lowering are sized from the plan's
+  totals, which bound every batch: rows + 1, tokens + 1, and the largest side
+  table total. The string pool uses the string column's capacity. The
+  configuration words `PJ_CFG_ROW_CAP`, `PJ_CFG_TOKEN_CAP` and
+  `PJ_CFG_SIDE_CAP` hold these sizes, and `08b_string_bytes` stops at the
+  string column's length.
+- **Gate.** `09_batch_finish` passes the batch only when the check reached
+  `CHECKED` and the batch fits those sizes. Otherwise it publishes zero
+  lowering counts, so the lowering recorded behind it finds no rows. It writes
+  its verdict to status word 60 (`PJ_S_GATE`), which comes back in the check's
+  readback.
+- **Host.** After the check loop, the host keeps the lowering when the verdict
+  passed, the check produced one batch and the batch's tokens fit. It then
+  reads the lowering back as before (`BatchLowerer::finish`). If the check
+  loop runs again (a substitution rerun, schema rounds resumed, layout or
+  pattern rounds grown) or the gate failed, the host drops the lowering
+  (`BatchLowerer::discard`). It then lowers the batch after the readback with
+  the sizes the check reported, and grows the columns to them. A discarded
+  native lowering also submits the finalizer again, because the finalizer may
+  have read root readiness before the check certified it.
+- **Tests.** `retained_native_early_lowering_retries_after_a_failed_gate` and
+  `retained_native_early_lowering_retries_after_a_capacity_failure` force
+  each failure in the first build (`ProjectionGateFault`). The executable
+  still exits 42, and the second build keeps its early lowering.
+  `ProjectionReport::early_lowerings` and `early_discarded` count both
+  outcomes.
+
+`LANIUS_PROJECTION_TRACE` turns the early lowering off, because it reads the
+batch columns before lowering.
+
 The host driver is `type_checker::program_retention::projection::RetainedProjection`.
 `run(compiler, store, inputs, options)` returns `Objects { objects, report }`
 or `Rejected { error, report }`. `ProjectionError` carries the code, detail,
