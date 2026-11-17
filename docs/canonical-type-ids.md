@@ -428,7 +428,12 @@ Each job interns into one table, so an ID stays valid for the whole job.
 - **Late** (`03_rearm`, then rounds). It is recorded before
   `semantic_artifact.generic_native_words`. `03_rearm` sets every candidate
   that is `CT_NONE` or `CT_UNKNOWN` back to `CT_PENDING` and keeps the rest,
-  and round 0 skips every candidate that is not pending. This stage
+  and round 0 skips every candidate that is not pending. A candidate that is
+  still empty (a row without a kind, an atom without a value, a projection
+  without an operand) gets `CT_NONE` from `03_rearm` directly, the reference
+  interning would give it, so round 0 does not intern the empty slots of the
+  capacity-sized tables (5.4 million candidates on the settings app, about
+  11,000 records). This stage
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
