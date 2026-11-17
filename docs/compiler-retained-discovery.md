@@ -226,17 +226,18 @@ solver route, finds the required symbol in the implementation's sorted method
 table, and converts the selected implementation bindings to retained terms.
 No host code reads proof rows or constructs an environment.
 
-Proof conversion uses one lane per reached proof node and bounded-arity child
-reads. Marking and bottom-up translation are fixed-point loops. Each round
-sets a changed flag, and a round after one without change skips its work.
-Three flags rotate by round modulo 3, so a round clears the next round's
-flag without racing its own readers. The environment and finish passes run
-only after the last recorded round of both loops changed nothing. Otherwise
-they set `MR_PENDING`, and the host records twice as many further rounds in
-the next batch. The first batch has 8 rounds of each loop, and the bound is
-65 of each, where the environment pass runs regardless, as before. The
-settings app converges in the first batch: 23 dispatches and one readback
-per wave instead of 135. A lane per call interns the complete
+Proof conversion reads proof nodes with bounded-arity child reads. Marking
+(`02_expand`) and bottom-up translation (`03_terms`) are fixed-point loops,
+each one dispatch of one 256-lane workgroup. The lanes stride over the proof
+nodes, and a workgroup barrier separates levels. Each level sets a changed
+flag, and the loop stops at a level whose predecessor changed nothing, or
+after 65 levels (proof depth is at most 64), where the environment pass runs
+regardless, as before. Three flags rotate by level modulo 3, so a level
+clears the next level's flag without racing its own readers. Translation
+reads one value buffer and writes the other by level parity, and a level
+without change leaves both equal. `MR_PENDING` stays clear. The settings app
+records 7 dispatches and one readback per wave (21 before, 135 before
+that). A lane per call interns the complete
 implementation-method ENV, using exact parameter identities for inherited
 impl bindings. Capacity overflow rolls back newly interned terms and retries
 after growing the store.

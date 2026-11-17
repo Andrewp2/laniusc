@@ -204,9 +204,7 @@ The host records 16 waves by default
 the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
 the waves and runs every count pass again, as it does for a full unit
 table. Every wave binds the same buffers, so the host creates one bind
-group per closure pass and reuses it for all waves. The method routes create
-one bind group per (kernel, config slot) for their fixed-point rounds.
-`02_count`, `06_fill_terms` and `reference` treat an unmarked term
+group per closure pass and reuses it for all waves. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
 closed.
 
