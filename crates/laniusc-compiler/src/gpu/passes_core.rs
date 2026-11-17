@@ -2988,6 +2988,26 @@ pub mod bind_group {
         bind_group
     }
 
+    /// The entries of `resources` that the kernel's bind groups bind: the
+    /// reflected parameters of its `sets` descriptor sets that keep a binding
+    /// index. A resource map may name more buffers than one kernel binds;
+    /// only the bound ones reach the GPU.
+    pub(crate) fn reflected_resource_subset<'a>(
+        reflection: &SlangReflection,
+        sets: usize,
+        resources: &HashMap<String, wgpu::BindingResource<'a>>,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        (0..sets.max(1))
+            .flat_map(|set| reflected_parameters_for_set(reflection, set))
+            .filter(|parameter| parameter.binding.index.is_some())
+            .filter_map(|parameter| {
+                resources
+                    .get(&parameter.name)
+                    .map(|resource| (parameter.name.clone(), resource.clone()))
+            })
+            .collect()
+    }
+
     fn reflected_parameters_for_set(
         reflection: &SlangReflection,
         set_index: usize,
@@ -3398,6 +3418,15 @@ pub trait CompilerGraphBuffers {
         resources: &HashMap<String, wgpu::BindingResource<'_>>,
         dispatch_args: Option<&LaniusBuffer<u32>>,
     ) -> Result<(), anyhow::Error>;
+
+    /// Proves that every buffer a dispatch binds (`bound`, the bindings its
+    /// kernel keeps) that views the graph's workspace storage is a declared
+    /// access of the operation.
+    fn validate_bound_storage(
+        &self,
+        operation: &'static str,
+        bound: &HashMap<String, wgpu::BindingResource<'_>>,
+    ) -> Result<(), anyhow::Error>;
 }
 
 #[derive(Default)]
@@ -3529,6 +3558,14 @@ impl BindGroupCache {
             return Ok(groups.clone());
         }
         graph_buffers.validate_compiler_pass(operation, resources, dispatch_args)?;
+        graph_buffers.validate_bound_storage(
+            operation,
+            &bind_group::reflected_resource_subset(
+                &pass.reflection,
+                pass.bind_group_layouts.len(),
+                resources,
+            ),
+        )?;
         let groups = pass
             .bind_group_layouts
             .iter()
@@ -3624,6 +3661,14 @@ where
 
     let resources = pass.create_resource_map(buffers);
     buffers.validate_compiler_pass(operation, &resources, dispatch_args)?;
+    buffers.validate_bound_storage(
+        operation,
+        &bind_group::reflected_resource_subset(
+            &pd.reflection,
+            pd.bind_group_layouts.len(),
+            &resources,
+        ),
+    )?;
 
     let mut bind_groups = Vec::with_capacity(pd.bind_group_layouts.len());
     for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
@@ -3663,6 +3708,22 @@ pub(crate) fn record_reflected_compute(
 ) -> Result<(), anyhow::Error> {
     record_compiler_operation(invocation);
     graph_buffers.validate_compiler_pass(invocation, resources, None)?;
+    // Cached bind groups were checked when they were built.
+    let cached = cache.as_ref().is_some_and(|cache| {
+        cache
+            .get(&kernel.shader_id, invocation)
+            .is_some_and(|groups| groups.len() == kernel.bind_group_layouts.len())
+    });
+    if !cached {
+        graph_buffers.validate_bound_storage(
+            invocation,
+            &bind_group::reflected_resource_subset(
+                &kernel.reflection,
+                kernel.bind_group_layouts.len(),
+                resources,
+            ),
+        )?;
+    }
     let validation = validation_scope(device, validation_scopes_enabled());
     let bind_groups = if let Some(cache) = cache {
         cache.reflected_for_pass_data(device, invocation, kernel, resources)?
