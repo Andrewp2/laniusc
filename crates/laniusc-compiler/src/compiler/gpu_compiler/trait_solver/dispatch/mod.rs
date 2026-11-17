@@ -622,14 +622,15 @@ impl GpuTraitSolver {
                     vec![
                         WavePiece::whole(WavePoint::Selected),
                         WavePiece::whole(WavePoint::Expanded),
-                        WavePiece::whole(WavePoint::Queue),
+                        WavePiece::groups(WavePoint::Queue, 0, 1),
                     ],
                     Hook::ReadyProofs,
                 ));
-                // Each round ends at a finish point: a quiescent solve
-                // finishes there.
+                // The queue point plans again from unchanged counters. Each
+                // round ends at a finish point: a quiescent solve finishes
+                // there.
                 cuts.push_back((
-                    vec![WavePiece::whole(WavePoint::Emitted), WavePiece::whole(WavePoint::Finish)],
+                    vec![WavePiece::groups(WavePoint::Queue, 1, usize::MAX), WavePiece::whole(WavePoint::Finish)],
                     Hook::None,
                 ));
             }
@@ -752,7 +753,7 @@ impl GpuTraitSolver {
                 let regular = self.template(templates, packet, submission, &pieces(later), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
-            // Queue rounds go in one submit: each records 13 dispatches.
+            // Queue rounds go in one submit: each records 10 dispatches.
             if queue_rounds != 0 {
                 let queue = self.template(templates, packet, submission, &pieces(&WavePoint::QUEUE_ROUND), 1, state, demand)?;
                 submits.push(vec![queue; queue_rounds as usize]);

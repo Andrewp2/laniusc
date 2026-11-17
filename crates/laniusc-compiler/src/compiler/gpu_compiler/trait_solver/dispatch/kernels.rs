@@ -672,13 +672,14 @@ const COMMIT_STAGES: [(u32, &[&str]); 4] = [
     (55, &[AUDIT_SUBSTITUTIONS, COMMIT_SUBSTITUTIONS]),
 ];
 /// Lanes that use no thread-scratch slot: one dispatch over the whole span.
-const WHOLE_SPAN_KERNELS: [&str; 6] = [
+const WHOLE_SPAN_KERNELS: [&str; 7] = [
     AUDIT_TERMS,
     AUDIT_GOALS,
     MARK_GOALS,
     AUDIT_WORK,
     WRITE_GOAL_INDEX,
     AUDIT_SUBSTITUTIONS,
+    PROOF_EDGE_ROWS,
 ];
 fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
     COMMIT_STAGES.iter().find(|(entry, _)| *entry == phase).map(|(_, keys)| *keys)
@@ -939,8 +940,9 @@ pub(super) enum WavePoint {
     Round = 1,
     Selected = 2,
     Expanded = 3,
+    /// After work admission: ready-proof emission (58) over the queue span,
+    /// then the emitted steps over the same rows. Word 5 is unused.
     Queue = 4,
-    Emitted = 5,
     /// After the recorded rounds: the quiescence test, then the finish.
     Finish = 6,
     /// The start of a queue round (`QUEUE_ROUND`): a round start that stops
@@ -956,32 +958,29 @@ pub(super) enum WavePoint {
     LaterRound = 9,
 }
 impl WavePoint {
-    pub const ROUND: [WavePoint; 5] = [
+    pub const ROUND: [WavePoint; 4] = [
         WavePoint::Round,
         WavePoint::Selected,
         WavePoint::Expanded,
         WavePoint::Queue,
-        WavePoint::Emitted,
     ];
     /// A round without Work: its Round, Selected and Expanded points plan
     /// nothing, so it runs only the queue steps. A queue round records just
     /// those, after a round start that checks that no Work is pending; that
     /// planner also plans the queue point.
-    pub const QUEUE_ROUND: [WavePoint; 2] = [WavePoint::QueueRound, WavePoint::Emitted];
+    pub const QUEUE_ROUND: [WavePoint; 1] = [WavePoint::QueueRound];
     /// A full round with the normalization of one Work kind.
-    pub const OPENING_ROUND: [WavePoint; 5] = [
+    pub const OPENING_ROUND: [WavePoint; 4] = [
         WavePoint::OpeningRound,
         WavePoint::Selected,
         WavePoint::Expanded,
         WavePoint::Queue,
-        WavePoint::Emitted,
     ];
-    pub const LATER_ROUND: [WavePoint; 5] = [
+    pub const LATER_ROUND: [WavePoint; 4] = [
         WavePoint::LaterRound,
         WavePoint::Selected,
         WavePoint::Expanded,
         WavePoint::Queue,
-        WavePoint::Emitted,
     ];
     /// A round start of a full round.
     pub fn starts_full_round(self) -> bool {
@@ -1078,7 +1077,7 @@ impl WaveSpan {
     /// Every admitted Work, for the commit audits: one step over the whole
     /// span, however long.
     fn is_whole(self) -> bool {
-        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork)
+        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork | WaveSpan::ProofEdges)
     }
 }
 
@@ -1151,9 +1150,11 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
             groups
         }
-        // The queue point's steps; the queue round's Emitted point follows.
-        WavePoint::Queue | WavePoint::QueueRound => vec![(Queue, vec![stage(58)?])],
-        WavePoint::Emitted => vec![
+        // Ready-proof emission, then the emitted steps over the same queue
+        // rows. The edge admission takes the edges 58 reserved, one thread
+        // per queue row, in one dispatch.
+        WavePoint::Queue | WavePoint::QueueRound => vec![
+            (Queue, vec![stage(58)?]),
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
             (EmittedQueue, vec![(ASSUMPTION_PROOFS, IMPLEMENTATION_PROOF_PHASE)]),
             (ProofEdges, vec![(PROOF_EDGE_ROWS, IMPLEMENTATION_PROOF_PHASE)]),

@@ -429,7 +429,7 @@ rounds, or no round for a check without source obligations.
 
 - Work is admitted only at the first work and at a full round's expansion, so
   a round without Work runs only its queue steps. A queue round records just
-  those (13 dispatches against 44 for a full round). Its round start stops the
+  those (10 dispatches against 43 for a full round). Its round start stops the
   solve with `FULL_ROUND` before any step when Work is pending.
 - Original Works exist only before the first work and prerequisite Works only
   after an expansion. The opening round normalizes only original Works and
@@ -438,7 +438,10 @@ rounds, or no round for a check without source obligations.
 - After `FULL_ROUND` the host records full rounds from that round start (with
   both Work kinds if a kind check stopped it). When the finish point finds
   queue rows left, the host records twice as many queue rounds.
-- The reduction queue's commit after the emitted steps is made by the next
+- The queue point plans ready-proof emission and the emitted steps after it
+  over the same queue rows. The proof-edge admission finds the edges that
+  emission reserved in the store, so no planner runs between them. The
+  reduction queue's commit after the emitted steps is made by the next
   planner, and a queue round's start also plans its queue point.
 
 One readback per submit returns the solver state and every result row. Wave templates are built once per job and reused

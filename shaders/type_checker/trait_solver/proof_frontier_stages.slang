@@ -306,8 +306,19 @@ public void pps_stage_admit_assumption_proofs(uint local)
     if (ts_bind_scratch(local, row, status)) status = pps_admit_ready_assumption_proof(row);
     ts_batch_failure(status);
 }
+// The proof edges the ready events of one queue span reserved (58), with one
+// thread per queue row: thread t admits pending rows t, t + n, ... of n
+// threads. No step between 58 and this one reserves or admits an edge, so
+// the pending rows are exactly those edges.
 public void pps_stage_admit_proof_edge_rows(uint local)
-{ uint row; if (pps_stage_row(local, PPS_PROOF_EDGES, row)) ts_batch_failure(pps_admit_proof_edge_row(row)); }
+{
+    uint threads = trait_solver_params.dispatch_count;
+    uint4 span; uint accepted;
+    if (local >= threads || !pps_building() || !ts_batch_is_building() ||
+        !pps_descriptor(PPS_PROOF_EDGES, span, accepted)) return;
+    for (uint row = span.w + local; row < span.y; row += threads)
+        ts_batch_failure(pps_admit_proof_edge_row(row));
+}
 public void pps_stage_commit_proofs()
 {
     if (!pps_building() || !ts_batch_is_building()) return;
