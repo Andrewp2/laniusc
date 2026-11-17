@@ -787,6 +787,39 @@ impl RetainedSubstitution {
         self.scratch.get("sb_counts")
     }
 
+    /// The results and status words of the current chain's runs, which its
+    /// later consumers bind. They are a publication only after
+    /// `finish_chain` accepts the run that wrote them.
+    pub(super) fn chain_buffers(&self) -> Option<(&wgpu::Buffer, &wgpu::Buffer)> {
+        let (_, results, _) = self.results.as_ref()?;
+        Some((results, self.scratch.get("sb_counts")?))
+    }
+
+    /// `finish_chain`, with the report of the run when it published.
+    /// `dispatches` are those `record_chained` returned for it.
+    pub(super) fn finish_chain_report(
+        &mut self,
+        counts: &[u32],
+        run: u32,
+        generation: u32,
+        dispatches: u32,
+    ) -> Option<SubstitutionReport> {
+        if !self.finish_chain(counts, run, generation) {
+            return None;
+        }
+        Some(SubstitutionReport {
+            attempts: 1,
+            batches: 1,
+            dispatches,
+            growths: 0,
+            store_growths: 0,
+            rolled_back_terms: 0,
+            capacity: self.capacity,
+            publication: self.published?,
+            counts: counts[..words::COUNT].to_vec(),
+        })
+    }
+
     /// Accepts the status words of a chain's last run `run` (store build
     /// `generation`): it becomes the current publication when it published.
     pub(super) fn finish_chain(&mut self, counts: &[u32], run: u32, generation: u32) -> bool {

@@ -93,21 +93,19 @@ current, ready header with zero instances produces no objects.
 ## Stages
 
 All semantic work is GPU lane work. The host allocates, records, submits and
-reads the plan totals, the check status with the first error and batch
-maxima, and the batch table. Schema realization additionally reads frontier
-counts and substitution receipts. It reads no instance,
-term, row or route. Its first frontier ends at the store's term count, which
-it takes from the projection substitution's receipt (`STORE_TERMS_BASE` plus
-`STORE_NEW_TERMS` of the committed attempt) instead of a store status
-readback.
+reads the plan totals, then the check status with the first error and batch
+maxima, the batch table, the projection substitution's status words and the
+schema rounds' status, all in one readback. It reads no instance, term, row
+or route. The requests, the substitution, the schema rounds and the check
+are recorded back to back after the plan readback; see "Schema rounds".
 
 | Kernel | Lanes | Work |
 | --- | --- | --- |
 | `00_plan` | one per rank | validate readiness, the record and the directory entry; insert the identity; write the rank plan and counts |
 | `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
 | `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results, matched receivers and receiver parameters |
-| substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
-| schema plan, scan, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
+| substitution | engine | a chain of one run (`begin_chain`, `record_chained`); a run that does not publish runs again on the full path (`RetainedSubstitution::run`), where capacity overflow retries inside the engine |
+| schema round, plan, scan × 3, size, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `03b_type_arguments` | one per TermId, up to 32 operands | publish nominal arguments and typed constant atoms for lowering |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
@@ -506,14 +504,59 @@ After body substitution, schema realization scans each newly appended term
 frontier. A parallel prefix scan places one request per nominal schema record;
 each request substitutes the declared field or payload under the closed nominal
 application itself. A lane per result writes a closed field map. Newly created
-nominal field types enter the next frontier. The host reads only counts and
-receipts; it never constructs an environment or a field type.
+nominal field types enter the next frontier. The host never constructs an
+environment or a field type.
 
 Struct layout, member access and initializer checks share that field map.
 A failed substitution leaves the field unavailable, so a used type cannot get
 a complete layout. The field map resets each run; growth preserves the already
 realized prefix. Schema substitution has a separate engine allocation so the
 body substitution publication stays current throughout projection.
+
+### Schema rounds
+
+The rounds run without a readback between them (`projection/schema.rs`).
+The host records a chain of rounds after the projection substitution and
+before the check; the check's readback returns `ps_status`. Each round is:
+
+| Kernel | Lanes | Work |
+| --- | --- | --- |
+| `04_round` mode 0 | one | gate on the previous round's run, commit that round's fields, arm the terms the store gained since the last round |
+| `00_plan` | round terms + 1, indirect | schema records per term |
+| `01_scan` modes 0, 1, 2 | indirect, one workgroup, indirect | inclusive block scan for any round width |
+| `05_size` | one | request count, request-lane dispatch, capacity check |
+| `02_requests` | round requests, indirect | one request per schema record |
+| substitution | engine | a chained run |
+| `03_consume` | round requests, indirect | the field map |
+
+A chain ends with `04_round` mode 1, which gates the last run and converges
+when the store has no term past the last round. The round state (next first
+term, field base, committed rounds) lives in `ps_status`; the armed round in
+`ps_round`, which the wide passes read; their workgroups come from
+`ps_indirect`. Every table is sized from the store's term capacity, which a
+chained run never grows, and from the request and field capacities.
+
+`ps_status` word 3 says how the chain ended:
+
+| Stop | Meaning | Host |
+| --- | --- | --- |
+| 0 | every recorded round ran and the store gained terms | records twice the rounds (kept for later projections, at most 64) |
+| 1 | converged: no new term, or new terms without schema records | done |
+| 2 | a round's run did not publish (overflow, or not final after its first batch) | resumes the armed round: `05_size` mode 1, `02_requests`, the full substitution path, `03_consume`, `04_round` mode 1 |
+| 3 | a round's requests or fields exceed their buffers | grows them to the demand (fields preserved), then resumes as for 2 |
+| 4 | the store is not ready or a scan overflowed | fails the projection |
+
+A stopped round dispatches no workgroups after the stop, and its fields are
+not committed, so a retry never publishes a partial round. When the
+projection substitution itself ran again on the full path, rounds that had
+converged run again for the terms that path interned. The gate takes one
+run's publication word today; another verdict word (such as the proof wave's verdict from `19_finish_batch`)
+can join it as a further input of `04_round` without changing the host.
+
+`retained_native_schema_rounds_retry_with_grown_capacity` starts the
+projection with a tiny substitution capacity and one schema row: the
+chained projection run reruns on the full path, the first round stops for
+capacity and a chained run overflows, and both builds exit 42.
 
 `retained_native_compound_generic_fields_have_exact_layouts` executes nested
 records with arrays of scalar and record elements, slice fields, and a

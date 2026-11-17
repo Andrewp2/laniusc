@@ -104,6 +104,18 @@ impl RetainedNativeBuild {
     pub fn store(&self) -> &Arc<ProgramRetention> {
         &self.store
     }
+
+    /// Test hook: replaces the projection with one on the process-global
+    /// GPU whose substitutions start at `capacity` and whose schema rounds
+    /// start with `schema_rows` request and field rows, so a build exercises
+    /// their capacity retries.
+    #[doc(hidden)]
+    pub fn reset_projection_for_test(&mut self, capacity: SubstitutionCapacity, schema_rows: u32) -> anyhow::Result<()> {
+        let mut projection = RetainedProjection::new(capacity)?;
+        projection.set_schema_rows_for_test(schema_rows);
+        self.projection = projection;
+        Ok(())
+    }
 }
 
 fn retained_error(context: &str, error: impl std::fmt::Display) -> CompileError {
