@@ -105,13 +105,13 @@ public SolverStatus pps_publish_validated_prefix(uint table, uint expected_admit
 // Called exactly once after the complete root/call reduction, including empty
 // batches. Earlier failure dispatches have already replaced batch BUILDING.
 // The host's exact table-row inventory and barriers are part of this protocol.
-public SolverStatus pps_accept_submission()
+// `layout` is pps_admit_layout_group's result for this store.
+public SolverStatus pps_accept_submission(SolverStatus layout)
 {
     if (!ts_batch_is_building() || !pps_building() ||
         trait_solver_proof_store[7u] >= proof_store_params.serial)
         return ts_invalid(66u, TS_INVALID, TS_INVALID);
-    SolverStatus status = pps_admit_layout();
-    if (status.state != TS_VALID) return status;
+    if (layout.state != TS_VALID) return layout;
     for (uint table = 0u; table < PPS_PERSISTENT_TABLES; table++)
     {
         uint4 span; uint accepted;

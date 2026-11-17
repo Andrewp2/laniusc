@@ -1,4 +1,5 @@
 import type_checker.trait_solver.abi;
+import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.catalog_io;
 import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.replay_validation;
@@ -108,13 +109,17 @@ public void ts_batch_reduce_calls(uint local)
     else
         ts_call_status(call, closed && !hypothesis ? 1u : 2u, 0u, TS_INVALID, 0u, 0u);
 }
-public void ts_batch_finish()
+// One workgroup (19_finish_batch): every lane admits the store layout, lane
+// 0 accepts the submission.
+public void ts_batch_finish(uint lane)
 {
+    SolverStatus layout = pps_admit_layout_group(lane);
+    if (lane != 0u) return;
     // Host has covered every required new table/context/obligation/call row,
     // completed each phase, and inserted all required barriers. Any failed row
     // has already replaced BUILDING. No-call batches still require this gate.
     if (!ts_batch_is_building()) return;
-    SolverStatus accepted = pps_accept_submission();
+    SolverStatus accepted = pps_accept_submission(layout);
     if (accepted.state != TS_VALID) { pps_store_failure(accepted); return; }
     ts_write_batch_receipt(accepted);
 }

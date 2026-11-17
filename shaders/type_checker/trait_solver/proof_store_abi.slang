@@ -117,19 +117,8 @@ public bool pps_layout_item(uint key, out SolverStatus status)
     if (!pps_descriptor(other, prior, unused)) return true;
     return prior.z != 0u && span.x < prior.x + prior.z * pps_width(other) && prior.x < end;
 }
-public SolverStatus pps_admit_layout()
-{
-    if (!pps_identity_is_valid()) return ts_invalid(66u, TS_INVALID, TS_INVALID);
-    [loop]
-    for (uint key = 0u; key < PPS_TABLES * PPS_LAYOUT_ITEMS; key++)
-    {
-        SolverStatus status;
-        if (pps_layout_item(key, status)) return status;
-    }
-    return ts_ok();
-}
-// The same admission over one workgroup: every lane calls it (barriers) and
-// gets the status of the first failing item.
+// The layout admission over one workgroup: every lane calls it (barriers)
+// and gets the status of the first failing item in admission order.
 groupshared uint pps_group_first;
 groupshared SolverStatus pps_group_status;
 public static const uint PPS_GROUP_LANES = 256u;
