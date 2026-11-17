@@ -46,8 +46,8 @@ pub(super) fn desugar_pack(sources: &[&str]) -> Result<Desugared, String> {
     })
 }
 
-/// The tests read the last run after the lexer is free, so one test
-/// desugars at a time.
+/// The tests read the last run after the lexer is free, and every test lex
+/// overwrites the lexer's tokens, so one test lexes at a time.
 static TEST_RUNS: Mutex<()> = Mutex::new(());
 
 pub(super) fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
@@ -81,7 +81,8 @@ fn desugar_or_reject(sources: &[&str]) -> Result<Desugared, RuleError> {
                 let last = LAST_RUN
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .clone();
+                    .clone()
+                    .filter(|last| last.sizes.is_some());
                 let mut reads = vec![
                     (&count_bytes, 0, 1),
                     (&flag_bytes, 0, 1),
@@ -89,8 +90,8 @@ fn desugar_or_reject(sources: &[&str]) -> Result<Desugared, RuleError> {
                     (&file_bytes, 0, bufs.token_file_id.count),
                     (&bufs.in_bytes, 0, bufs.in_bytes.byte_size / 4),
                 ];
-                if let Some(last) = &last {
-                    reads.push((&last.sizes, 0, ROUNDS * SIZE_WORDS));
+                if let Some(sizes) = last.as_ref().and_then(|last| last.sizes.as_ref()) {
+                    reads.push((sizes, 0, ROUNDS * SIZE_WORDS));
                 }
                 let mut words = read_words(&reads, None).expect("read the tokens");
                 // The region of every round, from the first.
@@ -273,6 +274,7 @@ fn a_rejected_machine_names_its_file_and_line() {
 /// The token table of the constant strings is the GPU lexer's.
 #[test]
 fn the_constant_token_table_matches_the_lexer() {
+    let _one = one_at_a_time();
     let lexer = test_lexer();
     for &text in machines::constant_strings() {
         let tokens =
@@ -572,8 +574,18 @@ fn generators_desugar_to_the_recorded_machines() {
             sources.push(source);
             expected.push(read("expanded").expect("a recorded text"));
         }
+        // The recorded text names the generator's locals with the reserved
+        // prefix, which a source may not use: both sides spell it another
+        // way of the same length.
+        let renamed = |text: &str| text.replace("__lanius_gen_", "zzlanius_gen_");
         let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
-        let actual = desugar_pack(&texts).unwrap_or_else(|verdict| panic!("pack {pack}: {verdict}")).tokens;
+        let actual: Vec<_> = desugar_pack(&texts)
+            .unwrap_or_else(|verdict| panic!("pack {pack}: {verdict}"))
+            .tokens
+            .into_iter()
+            .map(|(kind, text, file)| (kind, renamed(&text), file))
+            .collect();
+        let expected: Vec<String> = expected.iter().map(|text| renamed(text)).collect();
         let texts: Vec<&str> = expected.iter().map(String::as_str).collect();
         let expected = desugar_pack(&texts).unwrap_or_else(|verdict| panic!("recorded pack {pack}: {verdict}")).tokens;
         if let Some(difference) = first_difference(&actual, &expected) {
@@ -626,9 +638,10 @@ fn generators_stay_in_their_subset() {
 /// The token table of the generator strings is the GPU lexer's, with the
 /// machine keywords the lexer reads where the strings put them.
 #[test]
-fn the_generator_token_table_matches_the_lexer() {
+fn the_generator_and_closure_token_tables_match_the_lexer() {
+    let _one = one_at_a_time();
     let lexer = test_lexer();
-    let (strings, keyword) = generators::constant_strings();
+    for (strings, keyword) in [generators::constant_strings(), closures::constant_strings()] {
     for &text in strings {
         let tokens = without_desugaring(|| pollster::block_on(lexer.lex(text))).expect("lex a constant");
         let mut expected = vec![0u32; text.len()];
@@ -642,4 +655,80 @@ fn the_generator_token_table_matches_the_lexer() {
         }
         assert_eq!(token_info(text, keyword), expected, "{text:?}");
     }
+}
+}
+
+/// The tokens build sets the closure bit only where a closure starts. The
+/// library was written before closures existed, so no `|` or `||` in it
+/// starts one, and a build of the library records no closure round.
+#[test]
+fn library_sources_start_no_closure() {
+    let _one = one_at_a_time();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = Vec::new();
+    lani_files(&root.join("stdlib"), &mut files);
+    lani_files(&root.join("extended"), &mut files);
+    files.sort();
+    let sources: Vec<String> = files
+        .iter()
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .filter(|source| source.contains('|'))
+        .collect();
+    assert!(sources.len() > 100, "found {} library files with a `|`", sources.len());
+    let features = |sources: &[&str]| {
+        without_desugaring(|| {
+            pollster::block_on(test_lexer().with_resident_source_pack_tokens(sources, |_, _, bufs| {
+                let flags = bufs.parser_feature_flags.clone().reinterpret::<u8>(bufs.parser_feature_flags.byte_size);
+                read_words(&[(&flags, 0, 1)], None).expect("read the feature word")[0][0]
+            }))
+        })
+        .expect("lex")
+    };
+    let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
+    assert_eq!(features(&texts) & PARSER_FEATURE_CLOSURES, 0);
+    let control = "fn main() -> i32 {\n    let f: i32 = 2;\n    return call(move |x: i32| x * f);\n}\n";
+    assert_ne!(features(&[control]) & PARSER_FEATURE_CLOSURES, 0);
+    assert_eq!(features(&["fn f(a: bool, b: bool) -> bool {\n    return (a || b) | a;\n}\n"]) & PARSER_FEATURE_CLOSURES, 0);
+}
+
+/// A closure becomes a literal of a struct of its captures where it stands,
+/// and the struct and its impls after the last token of its file, which
+/// imports `core::function` after its module line.
+#[test]
+fn a_closure_becomes_a_struct_and_impls() {
+    let _one = one_at_a_time();
+    let source = "module app::main;\nfn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n";
+    let id = format!("{:010}", source.find("|x").unwrap());
+    let expected = format!(
+        "module app::main;import core::function;\nfn main() -> i32 {{\n    let f: i32 = 2;\n    return call(__lanius_closure_{id}{{f:f,}}.borrow());\n}}\n\
+         struct __lanius_closure_{id}{{f:i32,}}\nimpl __lanius_closure_{id}{{fn borrow(&self)->&__lanius_closure_{id}{{return self;}}}}\n\
+         pub impl<__lanius_r> core::function::Mapper<i32,__lanius_r > for __lanius_closure_{id}\
+         {{pub fn apply(&self,x:i32)->__lanius_r{{let f:i32 =self.f;return x * f;}}}}\n"
+    );
+    let desugared = desugar_pack(&[source]).unwrap_or_else(|verdict| panic!("{verdict}"));
+    let expected = lexed(&[&expected]);
+    if let Some(difference) = first_difference(&desugared.tokens, &expected) {
+        panic!("{difference}");
+    }
+}
+
+/// A source name may not have the prefix of generated names; the closure
+/// round's own names are not source names.
+#[test]
+fn the_reserved_names_are_rejected() {
+    let _one = one_at_a_time();
+    let fixture = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/machines/reject_reserved.lani"),
+    )
+    .expect("read a fixture");
+    let reserved = "identifiers starting with `__lanius_` are reserved for the compiler";
+    for (source, name) in [
+        (fixture.as_str(), "__lanius_state"),
+        ("fn f() -> i32 { let __lanius_closure_3: i32 = 1; return __lanius_closure_3; }\n", "__lanius_closure_3"),
+        ("fn f() -> i32 { let __lanius_r: i32 = 1; return __lanius_r; }\n", "__lanius_r"),
+    ] {
+        assert_eq!(desugar_pack(&[source]).err(), Some(format!("`{name}`: {reserved}")), "{source}");
+    }
+    let closure = "fn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n";
+    assert!(desugar_pack(&[closure]).is_ok());
 }
