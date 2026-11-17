@@ -1,8 +1,9 @@
 // Match-pattern context block summaries for token retagging.
 //
-// This pass records the latest match-pattern phase event in each token block.
-// The shared delimiter scan turns those block summaries into prefix context,
-// and the apply pass publishes per-token rows consumed by tokens_to_kinds.
+// This pass records the latest match-pattern phase event in each token block
+// and stores each token's own event in token_match_pattern_context_event. The
+// apply pass turns those rows into the latest event before each token, which
+// tokens_to_kinds consumes.
 
 import prefix_scan;
 import segment_tree;
@@ -40,6 +41,7 @@ StructuredBuffer<int> brace_match_min_tree;
 StructuredBuffer<uint> brace_semantic_kind;
 
 RWStructuredBuffer<uint> statement_event_block;
+RWStructuredBuffer<uint> token_match_pattern_context_event;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -208,4 +210,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint prefix = prefix_scan_u32_max_256(lane, event);
     if (lane + 1u == WG_SIZE)
         statement_event_block[block_idx] = prefix;
+    if (token_i < gParams.n_tokens)
+        token_match_pattern_context_event[token_i] = event;
 }

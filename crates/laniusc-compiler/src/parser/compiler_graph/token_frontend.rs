@@ -523,11 +523,17 @@ pub(super) fn register_schedule(
         &[],
     )?;
 
+    // The local pass stores each token's own event; the apply pass reads it
+    // at the same row and replaces it with the event before the token.
     pass(
         graph,
         "parser.tokens.match_pattern.local",
         &passes.tokens_match_pattern_01_local,
-        &[],
+        &[(
+            "token_match_pattern_context_event",
+            "token_match_pattern_context_event",
+            Some(AccessMode::Write),
+        )],
     )?;
     pass(
         graph,
@@ -536,7 +542,7 @@ pub(super) fn register_schedule(
         &[(
             "token_match_pattern_context_event",
             "token_match_pattern_context_event",
-            Some(AccessMode::Write),
+            Some(AccessMode::ReadWrite),
         )],
     )?;
     pass(

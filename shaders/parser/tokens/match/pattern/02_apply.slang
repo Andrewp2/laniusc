@@ -1,8 +1,11 @@
 // Apply prefix-scanned match-pattern context rows.
+//
+// 01_local.slang stored each token's own match-pattern event in
+// token_match_pattern_context_event. This pass replaces it, at the same row,
+// with the latest event before the token.
 
 import prefix_scan;
 import parser.tokens.context.before_block;
-import segment_tree;
 
 struct Params
 {
@@ -14,33 +17,12 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
-StructuredBuffer<int> depth_paren_inblock;
-StructuredBuffer<int> block_prefix_paren;
-StructuredBuffer<int> depth_brace_inblock;
-StructuredBuffer<int> block_prefix_brace;
-StructuredBuffer<int> depth_bracket_inblock;
-StructuredBuffer<int> block_prefix_bracket;
-StructuredBuffer<int> depth_angle_inblock;
-StructuredBuffer<int> block_prefix_angle;
-StructuredBuffer<int> brace_match_depth;
-StructuredBuffer<int> brace_match_block_min;
-StructuredBuffer<int> brace_match_min_tree;
-StructuredBuffer<uint> brace_semantic_kind;
 StructuredBuffer<uint> statement_event_block;
 // Written with each block's prefix, as the removed scan did. The row keeps
 // this buffer's graph lifetime: dropping it changed the parser slot plan and
 // broke type_checker_checks_enum_field_assignment_categories after earlier tests.
 RWStructuredBuffer<uint> statement_event_block_prefix;
-
 RWStructuredBuffer<uint> token_match_pattern_context_event;
 
 groupshared uint match_pattern_prefix_values[256];
@@ -48,152 +30,9 @@ groupshared uint match_pattern_prefix_values[256];
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-static const uint TK_COMMA = 36u;
-static const uint TK_SEMICOLON = 37u;
-// An arm may use either arrow: `->` lexes as TK_ARROW, `=>` as TK_MATCH_ARROW.
-static const uint TK_ARROW = 75u;
-static const uint TK_MATCH_ARROW = 113u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_RBRACE = 23u;
-static const uint TK_MATCH_LBRACE = 119u;
-static const uint MATCH_PATTERN_CONTEXT = 1u;
-
 uint linear_group_id(uint3 gid)
 {
     return gid.x + gid.y * MAX_GROUPS_X;
-}
-
-[ForceInline]
-uint active_token_count()
-{
-    return min(lexer_token_count[0], gParams.n_tokens);
-}
-
-uint encode_match_pattern_event(uint token_i, uint payload)
-{
-    return ((token_i + 1u) << 8u) | (payload & 0xffu);
-}
-
-int global_paren_depth_before_token(uint token_i)
-{
-    uint block_idx = token_i / WG_SIZE;
-    return block_prefix_paren[block_idx] + depth_paren_inblock[token_i];
-}
-
-int global_brace_depth_before_token(uint token_i)
-{
-    uint block_idx = token_i / WG_SIZE;
-    return block_prefix_brace[block_idx] + depth_brace_inblock[token_i];
-}
-
-int global_bracket_depth_before_token(uint token_i)
-{
-    uint block_idx = token_i / WG_SIZE;
-    return block_prefix_bracket[block_idx] + depth_bracket_inblock[token_i];
-}
-
-int global_angle_depth_before_token(uint token_i)
-{
-    uint block_idx = token_i / WG_SIZE;
-    return block_prefix_angle[block_idx] + depth_angle_inblock[token_i];
-}
-
-public struct BraceDepthTree : IRangeSearchTree<int>
-{
-    public static uint n_blocks()
-    {
-        return gParams.n_blocks;
-    }
-
-    public static uint leaf_base()
-    {
-        return gParams.match_tree_leaf_base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return brace_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return brace_match_min_tree[node];
-    }
-}
-
-public struct BraceDepthRows : IRangeSearchRows<int>
-{
-    [ForceInline]
-    public static uint item_count()
-    {
-        return gParams.n_tokens;
-    }
-
-    [ForceInline]
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    [ForceInline]
-    public static int row_value(uint row)
-    {
-        return brace_match_depth[row];
-    }
-}
-
-public struct BraceDepthAtMost : IRangeSearchPredicate<int, int>
-{
-    public static bool aggregate_may_match(int aggregate, int query)
-    {
-        return aggregate <= query;
-    }
-
-    public static bool leaf_matches(int leaf, int query)
-    {
-        return leaf <= query;
-    }
-}
-
-bool enclosing_match_brace_before(uint token_i, out uint open_i)
-{
-    open_i = 0u;
-    int depth_before = global_brace_depth_before_token(token_i);
-    if (depth_before <= 0)
-        return false;
-
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BraceDepthTree,
-            BraceDepthRows,
-            BraceDepthAtMost>(
-            token_i,
-            depth_before - 1,
-            open_i))
-        return false;
-
-    return open_i < gParams.n_tokens &&
-           token_words[open_i].kind == TK_LBRACE &&
-           brace_semantic_kind[open_i] == TK_MATCH_LBRACE;
-}
-
-#include "arm_comma.slang"
-
-uint match_pattern_event_for(uint token_i, uint kind)
-{
-    if (kind == TK_LBRACE)
-    {
-        uint payload = brace_semantic_kind[token_i] == TK_MATCH_LBRACE
-            ? MATCH_PATTERN_CONTEXT
-            : 0u;
-        return encode_match_pattern_event(token_i, payload);
-    }
-    if (kind == TK_ARROW || kind == TK_MATCH_ARROW || kind == TK_RBRACE || kind == TK_SEMICOLON)
-        return encode_match_pattern_event(token_i, 0u);
-    if (kind == TK_COMMA && top_level_match_arm_comma(token_i))
-        return encode_match_pattern_event(token_i, MATCH_PATTERN_CONTEXT);
-    return 0u;
 }
 
 [shader("compute")]
@@ -206,9 +45,8 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     uint lane = ltid.x;
     uint token_i = block_idx * WG_SIZE + lane;
-    uint count = active_token_count();
-    uint kind = token_i < count ? token_words[token_i].kind : 0u;
-    uint event = token_i < count ? match_pattern_event_for(token_i, kind) : 0u;
+    uint count = min(lexer_token_count[0], gParams.n_tokens);
+    uint event = token_i < count ? token_match_pattern_context_event[token_i] : 0u;
     uint block_before = context_event_before_block(
         statement_event_block, block_idx, lane, WG_SIZE);
     if (lane == 0u)
