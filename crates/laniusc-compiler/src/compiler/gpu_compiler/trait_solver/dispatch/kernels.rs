@@ -418,6 +418,19 @@ fn dispatch_pass(
     offsets: &[u32],
     launch: Launch<'_>,
 ) {
+    // Inside a deferred batch (run_solver_attempt), the dispatch joins the
+    // batch's one compute pass.
+    let deferred = match launch {
+        Launch::Direct(groups) => {
+            passes_core::defer_compute_direct_with_offsets(pass, bindings, groups, offsets, &pass.shader_id)
+        }
+        Launch::Indirect(buffer, offset) => {
+            passes_core::defer_compute_indirect(pass, bindings, buffer, offset, offsets, &pass.shader_id)
+        }
+    };
+    if deferred {
+        return;
+    }
     passes_core::flush_deferred_compute(encoder);
     let capture_launch = match launch {
         Launch::Direct(groups) => dispatch_capture::CaptureLaunch::Direct(groups),
@@ -1280,6 +1293,10 @@ struct WaveSlot {
 /// which the point's planner rewrites every time it runs. A later check
 /// reuses the template while it binds the same buffer views, and rewrites
 /// only its parameter words (`WaveInputs`).
+/// Templates kept per (pieces, chunks) shape: the main solve's packet and
+/// one per closed wave's packet, with room to spare.
+const WAVE_TEMPLATES_PER_SHAPE: usize = 8;
+
 pub(super) struct WaveTemplate {
     pieces: Vec<WavePiece>,
     chunks: u32,
@@ -1293,6 +1310,9 @@ pub(super) struct WaveTemplate {
     stride: u32,
     written: WaveInputs,
     steps: Vec<WaveStep>,
+    /// When a check last used this template; the least recent template of a
+    /// shape is the one a new one replaces.
+    used: u64,
 }
 
 impl WaveTemplate {
@@ -1407,27 +1427,32 @@ impl ProofKernels {
         };
         let queue = catalog.workspace().queue().clone();
         let same = |template: &WaveTemplate| template.pieces == pieces && template.chunks == chunks;
+        let used = cache.iter().map(|template| template.used).max().unwrap_or(0) + 1;
         if let Some(index) = cache.iter().position(|template| same(template) && template.bound == bound) {
             cache[index].refresh(&queue, inputs);
+            cache[index].used = used;
             return Ok(index);
         }
-        let template = self.build_wave_template(
+        let mut template = self.build_wave_template(
             device, pieces, chunks, bound, inputs, &scratch, &audit, state, demand, catalog, input,
             output, proof,
         )?;
-        Ok(match cache.iter().position(same) {
-            Some(index) => {
-                cache[index] = template;
-                index
-            }
-            None => {
-                cache.push(template);
-                cache.len() - 1
-            }
+        template.used = used;
+        // Each solve of a job binds its own packet arenas, so a shape keeps
+        // one template per packet up to WAVE_TEMPLATES_PER_SHAPE. A check uses
+        // one template of a shape, the most recent, so the one replaced is
+        // never one this check's order names.
+        let shape: Vec<usize> = (0..cache.len()).filter(|&index| same(&cache[index])).collect();
+        Ok(if shape.len() >= WAVE_TEMPLATES_PER_SHAPE {
+            let index = *shape.iter().min_by_key(|&&index| cache[index].used).expect("a template of this shape");
+            cache[index] = template;
+            index
+        } else {
+            cache.push(template);
+            cache.len() - 1
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn build_wave_template(
         &self,
         device: &wgpu::Device,
@@ -1535,6 +1560,7 @@ impl ProofKernels {
             stride,
             written: inputs,
             steps: Vec::new(),
+            used: 0,
         };
         let words = |words: Vec<u32>| words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<u8>>();
         template.slots.write(workspace.queue(), 0, &words(template.slot_words(inputs)));

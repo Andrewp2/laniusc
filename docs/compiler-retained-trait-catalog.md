@@ -316,7 +316,20 @@ rows, proof rows and substitutions; they choose nothing.
 The same readback returns the store's `rt_counts`. `take_store_counts`
 hands them, once, to the next consumer: discovery sizes its root pass with
 them instead of reading the counters again.
-The route header occupies 64 words. Publication reduces hard-refuted calls
+The route header occupies 64 words. Words 45 to 47 hold the verdict
+`08_publish_finish` requires, copied on the GPU after the solve: the
+solver's stop word (`wave::STOP`, which must be DONE: the finish point
+published the batch in the submits recorded), the producer's fill faults
+(must be 0) and the native recipe status (must be 1). A closed publication
+copies its solve's stop word and writes 0 and 1 for the others. A
+publication is valid only when all three hold, so a solve whose progress
+the host did not read (`RetainedTraitOptions::defer_solve`, the native
+build's default) never publishes a partial result. With `defer_solve` the
+check reads nothing back after the producer's count pass. Discovery's
+roots readback returns the publication's status, and an invalid one makes
+the native build check again without the option, for the exact stage and
+report. Settings: the `program proof wave progress` readback is gone, 24
+to 23 round trips per build. Publication reduces hard-refuted calls
 to the smallest retained use and copies its `rt_use_spans` record to words
 48–51. `diagnostic_span()` reads that record on failure, allowing the compiler
 to render LNC0008 without reading or selecting among semantic rows on the host.
@@ -483,6 +496,17 @@ fault returns None from `accept_receipt`, and discovery checks the wave
 again eagerly: that check reads the counts and reports any producer
 failure, as before. Settings: one readback fewer per closed wave, three per
 build.
+
+A chained wave's solve (`record_chained`, see "Chained closed waves" in the
+discovery guide) is recorded before the host reads the status of the wave
+before it. Its sizes come from capacities, and `closed/09_plan` gates it
+and writes the indirect workgroups of every producer and publication pass.
+The solve's dispatches are
+recorded in one compute pass per run of dispatches
+(`DeferredComputeBatchGuard`), and the round templates are kept per packet,
+up to `WAVE_TEMPLATES_PER_SHAPE` (8) per shape, so the closed waves' role
+packets reuse theirs. Settings: 350 to 313 compute passes per build, and
+the closed solve's host recording went from about 1.65 to 1.1 ms.
 
 The counter scan (`closed/06_scan`) is a block scan in three dispatches
 for any lane count: each 256-lane workgroup scans its lanes' two `uint4`

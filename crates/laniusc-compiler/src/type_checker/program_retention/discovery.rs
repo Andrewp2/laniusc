@@ -23,7 +23,7 @@ use super::{
     },
     words_bytes,
 };
-use crate::compiler::{ClosedTraitPublication, RetainedTraitPublication};
+use crate::compiler::{ClosedChainInputs, ClosedTraitPublication, RetainedTraitPublication};
 use crate::gpu::{
     buffers::LaniusBuffer,
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
@@ -54,6 +54,14 @@ const LEVELS: usize = 128;
 /// many, up to `CHAIN_WAVES_MAX`.
 const CHAIN_WAVES: u32 = 3;
 const CHAIN_WAVES_MAX: u32 = 48;
+/// Waves of a closed chain (`chain_closed`) that record a closed solve,
+/// before its tail of waves without one.
+const CLOSED_CHAIN_WAVES: u32 = 3;
+/// Bound of a chained wave's instances with closed predicates, unless the
+/// first wave has more (`chain_closed`).
+const CLOSED_CHAIN_SELECTED: u32 = 64;
+/// dg_wave word counting the chained closed solves that ran (09_plan).
+const WAVE_CLOSED_RAN: u32 = 4 + 2 * CHAIN_WAVES_MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiscoveryCapacity {
@@ -91,6 +99,12 @@ pub struct DiscoveryReport {
     pub substitution_dispatches: u32,
     pub closed_trait_waves: u32,
     pub method_route_waves: u32,
+    /// Closed chains recorded (`chain_closed`), and those that came back
+    /// with a capacity overflow (the attempt grew and ran again chained)
+    /// or otherwise not clean (it ran again without chaining).
+    pub closed_chains: u32,
+    pub closed_chain_growths: u32,
+    pub closed_chain_fallbacks: u32,
 }
 #[derive(Clone, Debug)]
 pub struct DiscoveryError {
@@ -328,7 +342,20 @@ impl RetainedDiscovery {
                 );
             }
             let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
-            self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
+            if self.admission.is_some() {
+                // The publication's solve may not have finished (its status
+                // is checked on the GPU, 05_publish mode 5): the roots pass
+                // runs only over a valid publication.
+                let bound_args = self.scratch["dg_bound_args"].clone();
+                let mut gate = config;
+                gate[0] = 5;
+                gate[10] = uses.div_ceil(256).max(1);
+                self.record(&mut encoder, &guard, 5, gate, &extra, 1, &mut report)?;
+                self.flush(&mut encoder);
+                self.record_with(&mut encoder, &guard, 0, config, &extra, Dispatch::Indirect(&bound_args), &mut report)?;
+            } else {
+                self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
+            }
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
@@ -385,6 +412,39 @@ impl RetainedDiscovery {
                 // The GPU counts inserted instances with closed predicates
                 // (status 11); a wave without any needs no solver work.
                 let wave_predicated = status[11] - predicated;
+                if chain && !self.eager_closed && wave_predicated != 0
+                    && let Some(source) = publication.as_deref_mut()
+                {
+                    let tail = chain_waves;
+                    chain_waves = (chain_waves * 2).min(CHAIN_WAVES_MAX - CLOSED_CHAIN_WAVES);
+                    let wave = [lo, hi, edges, depth, predicated, wave_predicated, tail];
+                    report.closed_chains += 1;
+                    match self.chain_closed(store, source, &requests, &extra, config, wave, &status[STATUS_WORDS..], &mut report)? {
+                        ClosedChain::Clean(chained) => {
+                            status = chained.status;
+                            levels = Some(chained.levels);
+                            report.waves += chained.ran;
+                            lo = chained.lo;
+                            hi = status[0];
+                            edges = status[2];
+                            predicated = chained.predicated;
+                            depth += chained.ran;
+                            if depth > 65 {
+                                bail!("discovery exceeded its depth contract");
+                            }
+                            continue;
+                        }
+                        ClosedChain::Grown => {
+                            report.closed_chain_growths += 1;
+                            continue 'attempt;
+                        }
+                        ClosedChain::Fallback => {
+                            report.closed_chain_fallbacks += 1;
+                            chain = false;
+                            continue 'attempt;
+                        }
+                    }
+                }
                 predicated = status[11];
                 let mut closed = if let Some(source) = publication.as_deref_mut()
                     && wave_predicated != 0
@@ -773,7 +833,7 @@ impl RetainedDiscovery {
     ) -> Result<Option<Chained>> {
         let log_words = 4 + 2 * waves as usize;
         let wave_buffer = self.scratch["dg_wave"].clone();
-        self.queue.write_buffer_counted(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, 0]));
+        self.queue.write_buffer_counted(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, predicated]));
         let runs = engine.begin_chain(requests, waves as usize)?;
         let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
         let status_buffer = self.scratch["dg_status"].clone();
@@ -878,7 +938,273 @@ impl RetainedDiscovery {
             return Ok(None);
         }
         let ran = 1 + (1..waves as usize).filter(|&i| log[5 + 2 * i] > log[4 + 2 * i]).count() as u32;
-        Ok(Some(Chained { status: status.to_vec(), levels: levels.to_vec(), lo: log[1], ran }))
+        Ok(Some(Chained { status: status.to_vec(), levels: levels.to_vec(), lo: log[1], ran, predicated }))
+    }
+    /// Records waves with closed solves back to back, then a tail of waves
+    /// without, with one readback after the last (`wave` is lo, hi, edges,
+    /// depth, the instances with closed predicates before the first wave,
+    /// those in it, and the tail's length). The first wave's frontier is
+    /// the host's and has closed predicates.
+    ///
+    /// Each of the first `CLOSED_CHAIN_WAVES` waves records its closed
+    /// solve before the host has read the wave before it
+    /// (`RetainedTraitPublication::record_chained`): sized from the
+    /// capacities, gated by 09_plan, which skips it unless the wave has new
+    /// instances with closed predicates. Its receipt check (05_publish mode
+    /// 4) stops the chain with code 12 when a solve that ran did not place
+    /// its batch or did not finish, and gates the wave's method and bound
+    /// routes. Routes that did not finish stop it with code 13
+    /// (06_bound_routes). The tail stops at new closed predicates, as
+    /// `chain_waves` does.
+    ///
+    /// Each wave with a closed solve takes three submits: the frontier
+    /// (05_publish mode 3), the solve's own, then the wave and its
+    /// resolution, whose configs take the frontier from the GPU after the
+    /// host writes them.
+    #[allow(clippy::too_many_arguments)]
+    fn chain_closed(
+        &mut self,
+        store: &ProgramRetention,
+        source: &mut RetainedTraitPublication,
+        requests: &SubstitutionRequests,
+        extra: &[(&str, &wgpu::Buffer)],
+        config: [u32; 16],
+        wave: [u32; 7],
+        counters: &[u32],
+        report: &mut DiscoveryReport,
+    ) -> Result<ClosedChain> {
+        let mut engine = self
+            .substitution
+            .take()
+            .ok_or_else(|| anyhow!("discovery substitution is in use"))?;
+        let Some(mut routes) = self.method_routes.take() else {
+            self.substitution = Some(engine);
+            bail!("discovery method routes are in use");
+        };
+        let result = self.record_closed_chain(&mut engine, &mut routes, store, source, requests, extra, config, wave, counters, report);
+        self.method_routes = Some(routes);
+        self.substitution = Some(engine);
+        let (words, last, waves) = result?;
+        let log_words = WAVE_CLOSED_RAN as usize + 1;
+        let (status, rest) = words.split_at(STATUS_WORDS + counts::WORDS);
+        let (sb, rest) = rest.split_at(super::substitution::words::COUNT);
+        let (log, levels) = rest.split_at(log_words);
+        let generation = store.generation();
+        let engine = self.substitution.as_mut().ok_or_else(|| anyhow!("discovery substitution is in use"))?;
+        if !engine.finish_chain(sb, last, generation) || status[3] != 0 || failure(status).is_some() {
+            return Ok(if status[10] == 0 && self.grow(status)? { ClosedChain::Grown } else { ClosedChain::Fallback });
+        }
+        let ran = 1 + (1..waves as usize).filter(|&i| log[5 + 2 * i] > log[4 + 2 * i]).count() as u32;
+        let closed = log[WAVE_CLOSED_RAN as usize];
+        report.closed_trait_waves += closed;
+        report.method_route_waves += closed;
+        Ok(ClosedChain::Clean(Chained {
+            status: status.to_vec(),
+            levels: levels.to_vec(),
+            lo: log[1],
+            ran,
+            predicated: log[3],
+        }))
+    }
+    /// `chain_closed`'s recording. Returns the readback words (status,
+    /// store counters, the last run's status, the wave log through the
+    /// closed count, levels), the last run and the number of waves.
+    #[allow(clippy::too_many_arguments)]
+    fn record_closed_chain(
+        &mut self,
+        engine: &mut RetainedSubstitution,
+        routes: &mut super::method_routes::MethodRoutes,
+        store: &ProgramRetention,
+        source: &mut RetainedTraitPublication,
+        requests: &SubstitutionRequests,
+        extra: &[(&str, &wgpu::Buffer)],
+        mut config: [u32; 16],
+        [lo, hi, edges, depth, predicated, selected, tail]: [u32; 7],
+        counters: &[u32],
+        report: &mut DiscoveryReport,
+    ) -> Result<(Vec<u32>, u32, u32)> {
+        let waves = CLOSED_CHAIN_WAVES + tail;
+        let wave_buffer = self.scratch["dg_wave"].clone();
+        self.queue.write_buffer_counted(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, predicated]));
+        self.queue.write_buffer_counted(&wave_buffer, u64::from(WAVE_CLOSED_RAN) * 4, &words_bytes(&[0]));
+        let runs = engine.begin_chain(requests, waves as usize)?;
+        let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        let status_buffer = self.scratch["dg_status"].clone();
+        let levels_buffer = self.scratch["dg_levels"].clone();
+        let receipt_buffer = self.scratch["dg_receipt"].clone();
+        let indirect = self.scratch["dg_indirect"].clone();
+        let route_args = self.scratch["dg_route_args"].clone();
+        let bound_args = self.scratch["dg_bound_args"].clone();
+        let metadata = self.scratch["dg_req_meta"].clone();
+        let instances = self.scratch["dg_instances"].clone();
+        let instance_buffer = LaniusBuffer::new((instances.clone(), instances.size()), instances.size() as usize / 4);
+        let request_lanes = requests.capacity();
+        let instance_lanes = self.capacity.instances;
+        let term_capacity = store.store.lock().unwrap().capacity.arenas[super::A_TERMS];
+        let inputs = ClosedChainInputs {
+            wave: &wave_buffer,
+            discovery: &status_buffer,
+            ran_word: WAVE_CLOSED_RAN,
+            selected: CLOSED_CHAIN_SELECTED.max(selected.saturating_mul(2)),
+            instances: instance_lanes,
+            terms: term_capacity,
+        };
+        self.config_cursor = 0;
+        for i in 0..waves {
+            let closed = i < CLOSED_CHAIN_WAVES;
+            config[1] = lo;
+            config[2] = hi;
+            config[3] = edges;
+            config[4] = 0;
+            config[6] = depth + 1 + i;
+            config[8] = i + 1;
+            config[9] = 0;
+            config[11] = u32::from(closed);
+            let guard = store.store.lock().unwrap();
+            let mut encoder = self.encoder();
+            if i > 0 {
+                config[0] = 3;
+                self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+            }
+            let proofs = if closed {
+                // The solve's submits follow the frontier's.
+                { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
+                drop(guard);
+                let proofs = source.record_chained(store, &instance_buffer, counters, &inputs)?;
+                encoder = self.encoder();
+                proofs.copy_receipt(&mut encoder, &receipt_buffer, 0);
+                Some(proofs)
+            } else {
+                drop(guard);
+                None
+            };
+            // The view checks the source against the store, which it locks.
+            let view = match &proofs {
+                Some(proofs) => Some(proofs.view(source, store)?),
+                None => None,
+            };
+            let guard = store.store.lock().unwrap();
+            // This wave's configs take (lo, hi, edges) from the GPU: a
+            // closed wave's ten (the receipt check, three scan steps, the
+            // request and publish passes, resolution, the bound routes and
+            // two publish passes), a tail wave's seven.
+            if i > 0 {
+                let first = self.config_cursor;
+                let count = if closed { 10 } else { 7 };
+                while self.configs.len() < first + count {
+                    self.configs.push(self.buffer("dg_config", 64)?);
+                }
+                for slot in first..first + count {
+                    self.flush(&mut encoder);
+                    encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[slot], 4, 12);
+                }
+                // An empty frontier's scan does not size the request pass.
+                self.flush(&mut encoder);
+                encoder.clear_buffer_counted(&indirect, 0, None);
+            }
+            let nodes_bound = proofs.as_ref().map_or(0, |p| p.proof_node_bound());
+            if closed {
+                routes.prepare(request_lanes, nodes_bound)?;
+                let [proof_groups, request_groups, slot_groups] = routes.gated_groups(&guard, request_lanes, nodes_bound);
+                let mut check = config;
+                check[0] = 4;
+                check[10] = proof_groups;
+                check[12] = request_groups;
+                check[13] = slot_groups;
+                self.record(&mut encoder, &guard, 5, check, extra, 1, report)?;
+            }
+            for mode in [3, 4, 2] {
+                config[0] = mode;
+                let lanes = match (mode, i) {
+                    (4, _) => 1,
+                    (_, 0) => hi - lo,
+                    _ => instance_lanes,
+                };
+                self.record(&mut encoder, &guard, 2, config, extra, lanes, report)?;
+            }
+            self.flush(&mut encoder);
+            encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
+            self.flush(&mut encoder);
+            encoder.clear_buffer_counted(&status_buffer, 28, Some(4));
+            config[0] = 0;
+            self.record_with(&mut encoder, &guard, 0, config, extra, Dispatch::Indirect(&indirect), report)?;
+            self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+            self.flush(&mut encoder);
+            let routes = &*routes;
+            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
+                                guard: &Store,
+                                run: u32,
+                                results: &wgpu::Buffer,
+                                counts: &wgpu::Buffer|
+             -> Result<()> {
+                let mut config = config;
+                config[5] = run;
+                let mut bindings = extra.to_vec();
+                bindings.extend([("sb_results", results), ("sb_counts", counts)]);
+                self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
+                self.record(encoder, guard, 5, config, extra, 1, report)?;
+                self.flush(encoder);
+                let Some(view) = &view else { return Ok(()) };
+                // The routes and bound routes dispatch what the receipt
+                // check wrote: nothing unless this wave's solve ran and
+                // finished.
+                routes.record_first_batch(
+                    encoder,
+                    guard,
+                    view,
+                    run,
+                    (results, counts),
+                    (counts, (super::substitution::words::REQUESTS * 4) as u64, request_lanes),
+                    (&receipt_buffer, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, nodes_bound),
+                    &metadata,
+                    &instances,
+                    Some(&route_args),
+                )?;
+                let mut bound = extra.to_vec();
+                bound.push(("mr_out", routes.output()));
+                bound.push(("mr_state", routes.state()));
+                self.record_with(encoder, guard, 6, config, &bound, Dispatch::Indirect(&bound_args), report)?;
+                self.record(encoder, guard, 5, config, extra, 1, report)?;
+                self.flush(encoder);
+                Ok(())
+            };
+            let dispatches = engine.record_chained(&mut encoder, &guard, requests, i as usize, runs[i as usize], &mut consumer)?;
+            report.substitution_dispatches += dispatches;
+            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
+            drop(guard);
+            // The next solve may reuse this one's buffers: the GPU runs
+            // its submits after this wave's.
+            drop(view);
+            drop(proofs);
+        }
+        // Level counts for term ranking, valid when the chain ends
+        // discovery and nothing interns after it.
+        let guard = store.store.lock().unwrap();
+        let mut encoder = self.encoder();
+        let mut levels_config = config;
+        levels_config[0] = 6;
+        levels_config[8] = 0;
+        encoder.clear_buffer_counted(&levels_buffer, 0, None);
+        let term_lanes = guard.capacity.arenas[super::A_TERMS];
+        self.record(&mut encoder, &guard, 3, levels_config, extra, term_lanes, report)?;
+        { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
+        drop(guard);
+        let sb_counts = engine
+            .counts_buffer()
+            .ok_or_else(|| anyhow!("retained substitution has no status words"))?
+            .clone();
+        let log_words = WAVE_CLOSED_RAN as usize + 1;
+        let words = self.read_many(
+            &[
+                (&status_buffer, STATUS_WORDS),
+                (&counts_buffer, counts::WORDS),
+                (&sb_counts, super::substitution::words::COUNT),
+                (&wave_buffer, log_words),
+                (&levels_buffer, LEVELS),
+            ],
+            report,
+        )?;
+        Ok((words, runs[waves as usize - 1], waves))
     }
     /// Substitutes the requests and records resolution in the same submit.
     /// Returns the status words and store counters after resolution, or
@@ -949,6 +1275,7 @@ impl RetainedDiscovery {
                     (spec.receipt, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, spec.nodes_bound),
                     &spec.metadata,
                     &spec.instances,
+                    None,
                 )?;
                 let mut bound = extra.to_vec();
                 bound.push(("mr_out", spec.routes.output()));
@@ -1174,13 +1501,14 @@ impl RetainedDiscovery {
             ("dg_term_rank", 4),
             ("dg_levels", 384 * 4),
             ("dg_receipt", ClosedTraitPublication::RECEIPT_WORDS as u64 * 4),
-            ("dg_wave", u64::from(4 + 2 * CHAIN_WAVES_MAX) * 4),
+            ("dg_wave", u64::from(WAVE_CLOSED_RAN + 1) * 4),
         ] {
             self.ensure(name, bytes)?;
         }
-        if !self.scratch.contains_key("dg_indirect") {
-            self.scratch
-                .insert("dg_indirect", storage(&self.device, "dg_indirect", 16, true));
+        for (name, bytes) in [("dg_indirect", 16), ("dg_route_args", 21 * 4), ("dg_bound_args", 16)] {
+            if !self.scratch.contains_key(name) {
+                self.scratch.insert(name, storage(&self.device, name, bytes, true));
+            }
         }
         Ok(())
     }
@@ -1383,6 +1711,16 @@ struct SpeculativeRoutes<'a> {
     metadata: wgpu::Buffer,
     instances: wgpu::Buffer,
 }
+/// How a closed chain came back (`chain_closed`).
+enum ClosedChain {
+    Clean(Chained),
+    /// A capacity overflowed: the capacities grew, and the attempt runs
+    /// again with chaining.
+    Grown,
+    /// Anything else not clean: the attempt runs again without chaining,
+    /// which reports a failure or takes the slow path that needs the host.
+    Fallback,
+}
 /// The outcome of a clean chain of waves.
 struct Chained {
     /// Status words and store counters after the last wave.
@@ -1393,6 +1731,9 @@ struct Chained {
     lo: u32,
     /// Waves with a nonempty frontier.
     ran: u32,
+    /// Instances with closed predicates before the next wave (dg_wave
+    /// word 3).
+    predicated: u32,
 }
 /// How many workgroups a recorded pass runs.
 enum PendingLaunch {

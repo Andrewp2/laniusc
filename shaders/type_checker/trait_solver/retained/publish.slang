@@ -132,6 +132,8 @@ public void publish_finish()
     uint2 nodes = proof_table(PROOF_NODES, 8u);
     uint2 edges = proof_table(PROOF_EDGES, 2u);
     valid = valid && bindings.x != RP_INVALID && nodes.x != RP_INVALID && edges.x != RP_INVALID;
+    valid = valid && header(RP_H_SOLVE_STOP) == RP_SOLVE_DONE && header(RP_H_FILL_FAULTS) == 0u &&
+        header(RP_H_RECIPE_STATUS) == 1u;
     if (!valid) fault(RP_E_RECEIPT, 0u);
     rc_routes[RP_H_PROOF_BINDINGS] = bindings.x;
     rc_routes[RP_H_PROOF_BINDING_ROWS] = bindings.y;
