@@ -7,6 +7,18 @@
 import type_checker.closure.instance_closure;
 
 RWStructuredBuffer<uint> instance_closure_args;
+// The table rank's grid: RANK_SPLIT lanes per instance (05b_table_rank).
+// The table module is not imported: its kernels bind all of its buffers.
+RWStructuredBuffer<uint> instance_table_rank_args;
+static const uint RANK_SPLIT = 8u;  // IT_RANK_SPLIT (instance_table.slang)
+
+void write_args(RWStructuredBuffer<uint> args, uint groups)
+{
+    uint x = min(groups, 65535u);
+    args[0u] = x;
+    args[1u] = x == 0u ? 0u : (groups + 65534u) / 65535u;
+    args[2u] = 1u;
+}
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
@@ -29,8 +41,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (length > start) ic_flag(IC_FLAG_DEPTH);
         groups = (length + 255u) / 256u;
     }
-    uint x = min(groups, 65535u);
-    instance_closure_args[0u] = x;
-    instance_closure_args[1u] = x == 0u ? 0u : (groups + 65534u) / 65535u;
-    instance_closure_args[2u] = 1u;
+    write_args(instance_closure_args, groups);
+    write_args(instance_table_rank_args, (length * RANK_SPLIT + 255u) / 256u);
 }

@@ -60,6 +60,9 @@ public static const uint IT_NO_ENTRY = 0xffffffffu;  // it_find_entry: no such e
 public static const uint IT_SOURCE_LOCAL = 0u;  // the template rows are this job's HIR rows
 // Ranking counts over every entry; past this many the table is skipped.
 public static const uint IT_RANK_LIMIT = 16384u;
+// Lanes per instance in the rank pass (05b_table_rank); the closure's
+// advance sizes its grid (02_advance).
+public static const uint IT_RANK_SPLIT = 8u;
 
 public void it_flag(uint bits)
 {

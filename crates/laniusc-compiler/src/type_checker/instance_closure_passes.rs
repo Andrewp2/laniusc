@@ -238,6 +238,15 @@ pub(super) fn register_instance_closure_passes(
         bytes: 12,
         usage: WorkspaceUsageClass::StorageIndirect,
     })?;
+    // The table rank's grid (05b_table_rank: IT_RANK_SPLIT lanes per
+    // instance), sized by every advance.
+    graph.add_resource(ResourceDesc {
+        name: "instance_table_rank_args",
+        domain: ResourceDomain::DispatchArguments,
+        class: ResourceClass::Workspace,
+        bytes: 12,
+        usage: WorkspaceUsageClass::StorageIndirect,
+    })?;
     graph.add_pass(PassDesc {
         name: INSTANCE_CLOSURE_CLEAR_PASS,
         phase: CompilerPhase::TypeCheck,
@@ -328,7 +337,10 @@ pub(super) fn register_instance_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS, "instance_closure_args")?;
-    graph.mark_pass_bindings_initialize(INSTANCE_CLOSURE_ADVANCE_PASS, &["instance_closure_args"])?;
+    graph.mark_pass_bindings_initialize(
+        INSTANCE_CLOSURE_ADVANCE_PASS,
+        &["instance_closure_args", "instance_table_rank_args"],
+    )?;
     graph.repeat_pass_range(
         INSTANCE_CLOSURE_LEVELS as u32,
         INSTANCE_CLOSURE_ADVANCE_PASS,
@@ -453,12 +465,12 @@ pub(super) fn register_instance_table_passes(
             PassAccess::write("instance_row_calls", calls),
         ],
     })?;
-    for (name, kernel) in [
-        (INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL),
-        (INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL),
+    for (name, kernel, args) in [
+        (INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL, "instance_closure_args"),
+        (INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL, "instance_table_rank_args"),
     ] {
         graph.add_kernel_pass_by_name(name, CompilerPhase::TypeCheck, ResourceDomain::Types, kernels, kernel, &[])?;
-        graph.add_indirect_dispatch(name, "instance_closure_args")?;
+        graph.add_indirect_dispatch(name, args)?;
     }
     // Keys are written for every appended instance before rank reads them;
     // the table's entries are read only below the counted entries. Every
@@ -710,7 +722,11 @@ impl InstanceTableOperations {
         Ok(Self {
             clear,
             keys: indirect(INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL, &closure_args)?,
-            rank: indirect(INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL, &closure_args)?,
+            rank: indirect(
+                INSTANCE_TABLE_RANK_PASS,
+                TABLE_RANK_KERNEL,
+                &buffer("instance_table_rank_args")?,
+            )?,
             args: ComputeOperation::direct(
                 device,
                 graph,
