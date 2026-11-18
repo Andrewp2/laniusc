@@ -494,14 +494,14 @@ fn main()->i32 { return 0; }
         let counts = readback.read_regions(&compiler.gpu.device, &compiler.gpu.queue, &[
             ReadbackRegion::from_buffer(&hir.count, 0, 4, "HIR count").unwrap(),
             ReadbackRegion::from_buffer(&hir.generic_param_count, 0, 4, "parameter count").unwrap(),
-        ], "generic owner counts").unwrap();
+        ], "generic owner counts".into()).unwrap();
         let hir_count = words(&counts[0])[0] as usize;
         let parameter_count = words(&counts[1])[0] as usize;
         let source_rows = readback.read_regions(&compiler.gpu.device, &compiler.gpu.queue, &[
             ReadbackRegion::from_buffer(&hir.core, 0, hir_count * 16, "HIR core").unwrap(),
             ReadbackRegion::from_buffer(&hir.payload, 0, hir_count * 16, "HIR payload").unwrap(),
             ReadbackRegion::from_buffer(&hir.generic_params, 0, parameter_count * 16, "parameters").unwrap(),
-        ], "generic owner source rows").unwrap();
+        ], "generic owner source rows".into()).unwrap();
         let core = words(&source_rows[0]);
         let payload = words(&source_rows[1]);
         let parameters = words(&source_rows[2]);
@@ -509,7 +509,7 @@ fn main()->i32 { return 0; }
             let view = buffers.generic_param_owner_token;
             assert!((parameter_count * 4) as u64 <= view.byte_size);
             let bytes = readback.read(&compiler.gpu.device, &compiler.gpu.queue,
-                view.buffer, view.byte_offset, parameter_count * 4, "accepted generic owner keys").unwrap();
+                view.buffer, view.byte_offset, parameter_count * 4, "accepted generic owner keys".into()).unwrap();
             (words(&bytes), buffers.type_expr_ref_tag.byte_size / 4)
         }).expect("current interface identity tables");
         let mut trait_impl_owners = std::collections::BTreeSet::new();

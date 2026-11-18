@@ -253,7 +253,7 @@ mod tests {
                     }
                     gpu.queue.submit(Some(encoder.finish()));
                     let slice = readback.slice(..);
-                    map_readback_blocking(&gpu.device, &slice, "match payload ownership").unwrap();
+                    map_readback_blocking(&gpu.device, &slice, "match payload ownership".into()).unwrap();
                     let mapped = slice.get_mapped_range();
                     let words: Vec<u32> = mapped
                         .chunks_exact(4)

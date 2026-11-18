@@ -677,7 +677,7 @@ fn run() -> Result<()> {
     let mut results = serde_json::Map::new();
     for (index, (name, target, bytes)) in staging.iter().enumerate() {
         let slice = target.slice(..);
-        map_readback_blocking(device, &slice, "replay")
+        map_readback_blocking(device, &slice, laniusc_compiler::debug_readback_label!("replay"))
             .with_context(|| format!("dispatch did not finish (waiting on {name})"))?;
         let data = slice.get_mapped_range();
         let data = &data[..*bytes as usize];

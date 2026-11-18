@@ -1517,7 +1517,7 @@ impl GpuLoweringPipeline {
     /// metadata, otherwise none).
     fn read_status(&self, device: &wgpu::Device) -> Result<(LoweringStatus, Vec<u32>)> {
         let slice = self.status_readback.slice(..);
-        map_readback_blocking(device, &slice, "lowering status readback")?;
+        map_readback_blocking(device, &slice, crate::readback_label!("lowering status readback"))?;
         let mapped = slice.get_mapped_range();
         let words = mapped
             .chunks_exact(4)

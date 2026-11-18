@@ -473,7 +473,7 @@ impl GpuWasmObjectStage {
         unit_id: u32,
     ) -> Result<(GpuWasmRelocatableObject, Vec<u32>)> {
         let metadata_slice = self.metadata_readback.slice(..);
-        map_readback_blocking(device, &metadata_slice, "Wasm object metadata readback")?;
+        map_readback_blocking(device, &metadata_slice, crate::readback_label!("Wasm object metadata readback"))?;
         let metadata = metadata_slice.get_mapped_range();
         let word = |index: usize| {
             u32::from_le_bytes(metadata[index * 4..index * 4 + 4].try_into().unwrap())
@@ -559,7 +559,7 @@ impl GpuWasmObjectStage {
                     )?,
                     ReadbackRegion::from_buffer(&self.data_words, 0, data_len, "Wasm object data")?,
                 ],
-                "Wasm object payload readback",
+                crate::readback_label!("Wasm object payload readback"),
             )?
             .try_into()
             .map_err(|_| anyhow::anyhow!("Wasm object payload readback shape changed"))?;

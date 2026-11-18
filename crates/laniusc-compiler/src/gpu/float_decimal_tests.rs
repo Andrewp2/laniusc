@@ -519,13 +519,13 @@ fn physical_gpu_float_decimal_matches_native_rounding_and_bounds() {
     );
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "float_probe.readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "float_probe.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words = decode_words(&mapped);
     drop(mapped);
     readback.unmap();
     let slice = workspace_readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "float_probe.workspace_readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "float_probe.workspace_readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let workspace_words = decode_words(&mapped);
     drop(mapped);

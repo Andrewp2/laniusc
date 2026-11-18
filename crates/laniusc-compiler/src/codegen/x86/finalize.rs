@@ -758,7 +758,7 @@ impl GpuX86SymbolFinalizer {
         } else {
             symbols_at + symbol_copy_bytes
         };
-        let bytes = read_bytes(device, &readback, end, "readback")?;
+        let bytes = read_bytes(device, &readback, end, crate::readback_label!("codegen.x86.finalize.readback"))?;
         let status_words = bytes[..symbols_at]
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
@@ -1069,7 +1069,7 @@ fn read_bytes(
     device: &wgpu::Device,
     readback: &LaniusBuffer<u8>,
     bytes: usize,
-    label: &str,
+    label: crate::gpu::passes_core::ReadbackLabel,
 ) -> Result<Vec<u8>> {
     if bytes == 0 {
         return Ok(Vec::new());
@@ -1078,7 +1078,7 @@ fn read_bytes(
     if let Err(error) = crate::gpu::passes_core::wait_for_readback_map(
         device,
         &slice,
-        &format!("codegen.x86.finalize.{label}"),
+        label,
         std::time::Duration::from_secs(30),
     ) {
         // A timeout or device-poll failure may leave the map pending. Cancel

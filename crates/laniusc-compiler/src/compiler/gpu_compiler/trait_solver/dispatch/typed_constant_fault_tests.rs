@@ -59,7 +59,7 @@ fn table_words(gpu: &GpuTraitSolver, packet: &GpuPacket, table: usize,
     let raw = gpu.readback.read_regions(&gpu.device, &gpu.queue, &[
         ReadbackRegion::from_buffer(&packet.proof.buffer, u64::from(slice.offset) * 4,
             arena::byte_len(mul(rows, width, "test table words")?)?, "constant fault table")?
-    ], "constant fault table readback")?;
+    ], "constant fault table readback".into())?;
     words(&raw[0])
 }
 fn observe(gpu: &GpuTraitSolver, packet: &GpuPacket, layout: &OutputLayout) -> Result<Observation> {
@@ -69,7 +69,7 @@ fn observe(gpu: &GpuTraitSolver, packet: &GpuPacket, layout: &OutputLayout) -> R
         ReadbackRegion::from_buffer(&packet.proof.buffer, 0,
             arena::byte_len(PROOF_STORE_FIXED_WORDS)?, "constant fault header")?,
         layout.region(&gpu.storage, &packet.output, 5, Span::new(0, evidence_slice.count)?)?,
-    ], "constant fault before admission")?;
+    ], "constant fault before admission".into())?;
     let evidence = words(&raw[1])?;
     let old_obligations = packet.completed_suffix_counts[16] as usize;
     ensure!(old_obligations <= evidence.len() / 8, "previous evidence prefix disappeared");
@@ -386,7 +386,7 @@ fn assert_failed_prefixes(gpu: &GpuTraitSolver, packet: &GpuPacket,
             arena::byte_len(PROOF_STORE_FIXED_WORDS).unwrap(), "failed constant directory").unwrap(),
         ReadbackRegion::from_buffer(&packet.output.buffer, u64::from(observation.evidence_slice.offset) * 4,
             arena::byte_len(observation.evidence_slice.count * 8).unwrap(), "failed constant evidence").unwrap(),
-    ], "constant fault after rejection").unwrap();
+    ], "constant fault after rejection".into()).unwrap();
     let after = words(&raw[0]).unwrap();
     // Stage 45 also publishes the transient normalization-request prefix.
     // Check all affected admitted counts, including that nonpersistent table.
@@ -407,7 +407,7 @@ fn assert_failed_prefixes(gpu: &GpuTraitSolver, packet: &GpuPacket,
         let raw = gpu.readback.read_regions(&gpu.device, &gpu.queue, &[
             ReadbackRegion::from_buffer(&packet.proof.buffer, u64::from(write.first_word) * 4,
                 arena::byte_len(write.words.len() as u32).unwrap(), "persisted constant fault").unwrap(),
-        ], "verify injected bytes persist").unwrap();
+        ], "verify injected bytes persist".into()).unwrap();
         assert_eq!(words(&raw[0]).unwrap(), write.words, "fault did not reach the GPU");
     }
     assert_eq!(failure.receipt[6], observation.completed_serial + 1, "failure receipt is stale");
@@ -433,7 +433,7 @@ fn output_words(gpu: &GpuTraitSolver, packet: &GpuPacket, table: usize,
     let raw = gpu.readback.read_regions(&gpu.device, &gpu.queue, &[
         ReadbackRegion::from_buffer(&packet.input.buffer, u64::from(first) * 4, 20,
             "retained result directory")?,
-    ], "retained result location")?;
+    ], "retained result location".into())?;
     let directory = words(&raw[0])?;
     ensure!(directory.len() == 5 && directory[0] == 1 && rows <= directory[2]
         && directory[4] == OUTPUT_WIDTHS[table], "retained result range changed");
@@ -441,7 +441,7 @@ fn output_words(gpu: &GpuTraitSolver, packet: &GpuPacket, table: usize,
         ReadbackRegion::from_buffer(&packet.output.buffer, u64::from(directory[1]) * 4,
             arena::byte_len(mul(rows, directory[4], "retained result words")?)?,
             "retained result rows")?,
-    ], "retained result contents")?;
+    ], "retained result contents".into())?;
     words(&raw[0])
 }
 

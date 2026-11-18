@@ -209,10 +209,10 @@ impl ParserHirFunctionReturnReadbacks {
         device: &wgpu::Device,
         bufs: &ParserBuffers,
     ) -> Result<DecodedParserHirFunctionReturnReadbacks> {
-        let map = |name: &str, b: &wgpu::Buffer| {
+        let map = |_name: &str, b: &wgpu::Buffer| {
             crate::gpu::passes_core::map_readback_for_progress(
                 &b.slice(..),
-                &format!("parser.hir_fn_return_readback.{name}"),
+                crate::readback_label!("parser.hir_fn_return_readback"),
             );
         };
         map("ll1_status", &self.ll1_status);
@@ -234,7 +234,7 @@ impl ParserHirFunctionReturnReadbacks {
 
         crate::gpu::passes_core::wait_for_map_progress(
             device,
-            "parser.hir_fn_return_readback",
+            crate::readback_label!("parser.hir_fn_return_readback"),
             wgpu::PollType::wait_indefinitely(),
         );
 

@@ -482,7 +482,7 @@ impl RetainedTraitPublication {
                 queue.submit(Some(encoder.finish()));
                 producer
                     .reader
-                    .read(&staging, counts::WORDS, "closed store counters")?
+                    .read(&staging, counts::WORDS, crate::readback_label!("closed store counters"))?
             }
         };
         let terms = status[A_TERMS];
@@ -616,7 +616,7 @@ impl RetainedTraitPublication {
             None => {
                 let mut state = producer
                     .reader
-                    .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
+                    .read(&producer.buffers["cw_state"], 32, crate::readback_label!("closed trait demand"))?;
                 if state[5] != 0 {
                     state[0] |= 1 << 7;
                     state[1] = 0;
@@ -787,7 +787,7 @@ impl RetainedTraitPublication {
             let receipt = producer.reader.read(
                 &publication.routes.buffer,
                 RP_HEADER_WORDS as usize,
-                "closed publication receipt",
+                crate::readback_label!("closed publication receipt"),
             )?;
             publication.accept_receipt(&receipt)?;
         }

@@ -392,7 +392,7 @@ fn read_back(
     }
     queue.submit(Some(encoder.finish()));
     let slice = staging.slice(..);
-    map_readback_blocking(device, &slice, "lanius-debug-capture")?;
+    map_readback_blocking(device, &slice, crate::debug_readback_label!("lanius-debug-capture"))?;
     let data = slice.get_mapped_range()[..bytes as usize].to_vec();
     Ok(data)
 }

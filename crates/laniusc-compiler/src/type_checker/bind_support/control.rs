@@ -393,7 +393,7 @@ mod tests {
         encoder.copy_buffer_to_buffer(&depth.buffer, 0, &depth_readback.buffer, 0, 64 * 4);
         gpu.queue.submit(Some(encoder.finish()));
         let slice = delta_readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth mark").unwrap();
+        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth mark".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let actual = mapped
             .chunks_exact(4)
@@ -405,7 +405,7 @@ mod tests {
         delta_readback.unmap();
 
         let slice = depth_readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth apply").unwrap();
+        map_readback_blocking(&gpu.device, &slice, "compact HIR if-depth apply".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let actual = mapped
             .chunks_exact(4)

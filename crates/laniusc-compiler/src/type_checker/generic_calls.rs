@@ -1215,7 +1215,7 @@ impl<'a> WordBatch<'a> {
         readback: &PagedReadback,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        label: &str,
+        label: crate::gpu::passes_core::ReadbackLabel,
     ) -> Result<Vec<u32>> {
         if self.reads.is_empty() {
             return Ok(Vec::new());
@@ -1248,7 +1248,7 @@ pub(super) fn rows<T>(
 ) -> Result<Vec<u32>> {
     let mut batch = WordBatch::default();
     batch.rows(buffer, indices, stride_words, stride_words, "generic call rows")?;
-    batch.read(readback, device, queue, "generic call rows")
+    batch.read(readback, device, queue, crate::readback_label!("generic call rows"))
 }
 
 /// Rows `indices` of a table of `width`-word rows already on the host.
@@ -1350,7 +1350,7 @@ impl CheckedTypeReadback {
         for name in ["type_native_scalar_identity", "type_native_word_count"] {
             batch.rows(inputs.buffer(name), &legacy_rows, 1, 1, "legacy nominal type")?;
         }
-        let values = batch.read(readback, device, queue, "checked type frontier")?;
+        let values = batch.read(readback, device, queue, crate::readback_label!("checked type frontier"))?;
         for (index, &instance) in instances.iter().enumerate() {
             let header = std::array::from_fn(|column| values[column * instances.len() + index]);
             self.instance_headers.insert(instance, header);
@@ -1453,7 +1453,7 @@ impl CheckedTypeReadback {
             batch.push_region(payloads?);
             requested.push((instance, start, count));
         }
-        let values = batch.read(readback, device, queue, "checked nominal frontier")?;
+        let values = batch.read(readback, device, queue, crate::readback_label!("checked nominal frontier"))?;
         for (instance, start, count) in requested {
             let tags = &values[start..start + count];
             let payloads = &values[start + count..start + 2 * count];
@@ -1628,7 +1628,7 @@ impl CheckedTypeReadback {
                 (&projections, "checked_constant_projections")] {
                 batch.rows(inputs.buffer(name), rows, 4, 4, "retained constant frontier")?;
             }
-            let values = batch.read(readback, device, queue, "retained constant frontier")?;
+            let values = batch.read(readback, device, queue, crate::readback_label!("retained constant frontier"))?;
             for (&row, words) in atoms.iter().zip(values.chunks_exact(4)) {
                 self.retain_constant_atom(row, words)?;
             }
@@ -2016,7 +2016,7 @@ pub(super) fn read_unit_facts(
         .then(|| batch.push(inputs.buffer("solver_demand"), 0,
             super::instance_closure_passes::SOLVER_DEMAND_WORDS, "solver demand"))
         .transpose()?;
-    let counts = batch.read(&readback, device, queue, "generic call counts")?;
+    let counts = batch.read(&readback, device, queue, crate::readback_label!("generic call counts"))?;
     timer.stamp("counts");
     // The in-place tables the call counter reads are current only when the
     // closure ran; a unit without generic parameters never consults them.
@@ -2153,7 +2153,7 @@ pub(super) fn read_unit_facts(
         constant_claim_count,
         "GPU-selected constant claims",
     )?);
-    let claims = batch.read(&readback, device, queue, "generic call claims")?;
+    let claims = batch.read(&readback, device, queue, crate::readback_label!("generic call claims"))?;
     let columns = columns.into_iter().map(|range| &claims[range]).collect::<Vec<_>>();
     timer.stamp("claims");
     // The compact producer owns all three columns. Invalid spans must fail
@@ -2342,7 +2342,7 @@ pub(super) fn read_unit_facts(
         None
     };
     timer.stamp("plan_rows");
-    let metadata = batch.read(&readback, device, queue, "generic call rows")?;
+    let metadata = batch.read(&readback, device, queue, crate::readback_label!("generic call rows"))?;
     timer.stamp("rows_read");
     let call_records = &metadata[..parameter_metadata_start];
     let owner_words = CheckedTypeReadback::owner_metadata_words(interface_exported);
@@ -2386,7 +2386,7 @@ pub(super) fn read_unit_facts(
         let links = inputs.buffer("generic_decl_owner_by_node_a");
         let parent_rows = enclosing_owners.iter().map(|&(_, parent)| parent).collect::<Vec<_>>();
         batch.rows(links, &parent_rows, 1, 1, "retained enclosing binder")?;
-        let parents = batch.read(&readback, device, queue, "retained binder links")?;
+        let parents = batch.read(&readback, device, queue, crate::readback_label!("retained binder links"))?;
         for (&(owner, _), &parent) in enclosing_owners.iter().zip(&parents) {
             let enclosing = if parent == INVALID {
                 None
@@ -2535,7 +2535,7 @@ pub(super) fn read_unit_facts(
     let method_row_start =
         batch.rows(inputs.buffer("method_decl_method_row"), &local_names, 1, 1, "local methods")?;
     let name_decl_start = batch.rows(decl_by_name_token, &name_rows, 1, 1, "local declarations")?;
-    let level = batch.read(&readback, device, queue, "generic call rows")?;
+    let level = batch.read(&readback, device, queue, crate::readback_label!("generic call rows"))?;
     let local_count = local_tokens.len();
     let local_type_counts = &level[local_count_start..][..local_count];
     let local_constant_counts = &level[local_constant_start..][..local_count];
@@ -2582,7 +2582,7 @@ pub(super) fn read_unit_facts(
     } else {
         Some(batch.rows(decl_hir_node, &candidate_decls, 1, 1, "declaration HIRs")?)
     };
-    let fallback = batch.read(&readback, device, queue, "generic call rows")?;
+    let fallback = batch.read(&readback, device, queue, crate::readback_label!("generic call rows"))?;
     let (method_cores, method_signatures) = match method_rows_read {
         None => (
             table_rows(columns[18], &method_ids, 4),
@@ -2635,7 +2635,7 @@ pub(super) fn read_unit_facts(
         batch.rows(constant_counts_by_token, &impl_tokens, 1, 1, "impl constant counts")?;
     let public_start =
         batch.rows(public_decl_by_hir, &candidate_hirs, 1, 1, "public declarations")?;
-    let level = batch.read(&readback, device, queue, "generic call rows")?;
+    let level = batch.read(&readback, device, queue, crate::readback_label!("generic call rows"))?;
     let hir_symbols = candidate_hirs
         .iter()
         .copied()
@@ -2903,7 +2903,7 @@ pub(super) fn read_unit_facts(
                     "checked result constant row")
             });
         let (kind_starts, payload_starts) = (kind_starts?, payload_starts?);
-        let rows = batch.read(&readback, device, queue, "checked result constants")?;
+        let rows = batch.read(&readback, device, queue, crate::readback_label!("checked result constants"))?;
         for ((&index, &kinds), &payloads) in
             constant_context.iter().zip(&kind_starts).zip(&payload_starts)
         {
@@ -3011,7 +3011,7 @@ pub(super) fn read_unit_facts(
                     "checked contextual argument row")
             });
         let (tag_starts, payload_starts) = (tag_starts?, payload_starts?);
-        let rows = batch.read(&readback, device, queue, "checked contextual arguments")?;
+        let rows = batch.read(&readback, device, queue, crate::readback_label!("checked contextual arguments"))?;
         for ((&index, &tags), &payloads) in context.iter().zip(&tag_starts).zip(&payload_starts) {
             let mask = context_masks[index];
             let call = calls[index].as_mut().expect("retained contextual call");
@@ -3184,7 +3184,7 @@ fn read_instance_closure(
     let refs_start = (ref_words != 0)
         .then(|| batch.push(refs_buffer, 0, ref_words, "instance closure arguments"))
         .transpose()?;
-    let words = batch.read(readback, device, queue, "instance closure")?;
+    let words = batch.read(readback, device, queue, crate::readback_label!("instance closure"))?;
     let instances = &words[rows..rows + length * 8];
     let targets = &words[target_rows..target_rows + length * 4];
     let refs = refs_start.map_or(&[][..], |start| &words[start..start + ref_words]);
@@ -3326,7 +3326,7 @@ fn read_instance_exec(
     let call_start = (rows != 0)
         .then(|| batch.push(calls_buffer, 0, rows * 2, "instance table calls"))
         .transpose()?;
-    let words = batch.read(readback, device, queue, "instance exec entries")?;
+    let words = batch.read(readback, device, queue, crate::readback_label!("instance exec entries"))?;
     let table = &words[table_start..table_start + entries * 8];
     let heads = &words[head_start..head_start + entries * 8];
     let row_calls = call_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
@@ -3418,7 +3418,7 @@ fn read_instance_table(
     let mut batch = WordBatch::default();
     let start = batch.push(inputs.buffer("instance_table_counts"), 0,
         super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize, "instance table counts")?;
-    let counts = batch.read(readback, device, queue, "instance table counts")?;
+    let counts = batch.read(readback, device, queue, crate::debug_readback_label!("instance table counts"))?;
     let &[entries, rows, flags, failed] = &counts[start..start + 4] else {
         return Err(anyhow!("instance table counters are truncated"));
     };
@@ -3440,7 +3440,7 @@ fn read_instance_table(
     let call_start = (rows != 0)
         .then(|| batch.push(calls_buffer, 0, rows * 2, "instance table calls"))
         .transpose()?;
-    let words = batch.read(readback, device, queue, "instance table")?;
+    let words = batch.read(readback, device, queue, crate::debug_readback_label!("instance table"))?;
     let entry_words = &words[entry_start..entry_start + entries * 8];
     let row_words = row_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
     let call_words = call_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
@@ -3448,7 +3448,7 @@ fn read_instance_table(
     let mut batch = WordBatch::default();
     let token_start = batch.rows(inputs.buffer("compact_hir_core"), &function_rows, 4, 3,
         "instance table function tokens")?;
-    let token_words = batch.read(readback, device, queue, "instance table function tokens")?;
+    let token_words = batch.read(readback, device, queue, crate::debug_readback_label!("instance table function tokens"))?;
     let roots = row_words.chunks_exact(2)
         .filter(|row| matches!(row[0], 2..=4))
         .map(|row| (row[0] - 1, row[1]))

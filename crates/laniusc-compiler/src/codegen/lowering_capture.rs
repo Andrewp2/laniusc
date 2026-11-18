@@ -49,7 +49,7 @@ pub fn take() -> Vec<BTreeMap<String, Vec<u32>>> {
                 .into_iter()
                 .map(|(name, buffer, bytes)| {
                     let slice = buffer.slice(..bytes);
-                    map_readback_blocking(device, &slice, "lowering capture")
+                    map_readback_blocking(device, &slice, crate::debug_readback_label!("lowering capture"))
                         .expect("map lowering capture");
                     let words = slice
                         .get_mapped_range()
@@ -90,7 +90,7 @@ pub(crate) fn record(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&buffer, offset, &copy, 0, bytes);
+        crate::gpu::copies::CountedCommands::copy_buffer_counted(encoder, &buffer, offset, &copy, 0, bytes);
         buffers.push((name, copy, bytes));
     }
     state.pending.push(Pending { buffers });

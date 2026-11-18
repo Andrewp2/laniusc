@@ -285,8 +285,9 @@ fn submit_and_read_u32s(
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     readback: &LaniusBuffer<u32>,
-    label: &'static str,
+    readback_label: crate::gpu::passes_core::ReadbackLabel,
 ) -> Result<Vec<u32>> {
+    let label = readback_label.as_str();
     crate::gpu::passes_core::flush_deferred_compute(encoder);
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("type-check-canonical-encoder"),
@@ -295,7 +296,7 @@ fn submit_and_read_u32s(
     crate::gpu::timer::stamp_active_submission_begin(encoder, label);
     crate::gpu::passes_core::submit_with_progress(queue, label, recorded.finish());
     let slice = readback.slice(..);
-    crate::gpu::passes_core::map_readback_blocking(device, &slice, label)?;
+    crate::gpu::passes_core::map_readback_blocking(device, &slice, readback_label)?;
     let words = read_u32_words_mapped(&slice);
     readback.unmap();
     Ok(words)
@@ -368,7 +369,7 @@ fn record_canonical_types(
     for batch in 0..batches {
         let batch_started = std::time::Instant::now();
         let counts =
-            submit_and_read_u32s(device, queue, encoder, counts_readback, "type_check.canonical")?;
+            submit_and_read_u32s(device, queue, encoder, counts_readback, crate::readback_label!("type_check.canonical"))?;
         let wait_ms = batch_started.elapsed().as_secs_f64() * 1000.0;
         let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
         let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
@@ -409,7 +410,7 @@ fn record_canonical_types(
             queue,
             encoder,
             validation_readback,
-            "type_check.canonical.validation",
+            crate::debug_readback_label!("type_check.canonical.validation"),
         )?;
         eprintln!("{}", canonical_passes::canonical_validation_report(&words));
     }
@@ -2181,7 +2182,7 @@ impl GpuTypeChecker {
                     crate::gpu::passes_core::map_readback_blocking(
                         device,
                         &slice,
-                        "type_check.call_inference",
+                        crate::readback_label!("type_check.call_inference"),
                     )?;
                     let mapped_at = std::time::Instant::now();
                     let mapped = slice.get_mapped_range();
@@ -2753,7 +2754,7 @@ impl GpuTypeChecker {
         crate::gpu::passes_core::map_readback_blocking(
             device,
             &slice,
-            "type_check.canonical.counts",
+            crate::readback_label!("type_check.canonical.counts"),
         )
         .ok()?;
         let counts = read_u32_words_mapped(&slice);
@@ -2801,7 +2802,7 @@ impl GpuTypeChecker {
             crate::gpu::passes_core::map_readback_blocking(
                 device,
                 &history_slice,
-                "type_check.call_inference",
+                crate::readback_label!("type_check.call_inference"),
             )?;
             let history = read_u32_words_mapped(&history_slice);
             self.call_inference_readback.unmap();
@@ -2836,10 +2837,10 @@ impl GpuTypeChecker {
             let counts_slice = self.canonical_counts_readback.slice(..);
             let counts_map = crate::gpu::passes_core::begin_readback_map(
                 &counts_slice,
-                "type_check.canonical.counts",
+                crate::readback_label!("type_check.canonical.counts"),
             );
             let status_map =
-                crate::gpu::passes_core::begin_readback_map(&slice, "type_check.status");
+                crate::gpu::passes_core::begin_readback_map(&slice, crate::readback_label!("type_check.status"));
             crate::gpu::passes_core::finish_readback_map_blocking(device, counts_map)?;
             crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
             let counts = read_u32_words_mapped(&counts_slice);
@@ -2854,10 +2855,10 @@ impl GpuTypeChecker {
             let counts_slice = self.canonical_counts_readback.slice(..);
             let counts_map = crate::gpu::passes_core::begin_readback_map(
                 &counts_slice,
-                "type_check.canonical.counts",
+                crate::readback_label!("type_check.canonical.counts"),
             );
             let status_map =
-                crate::gpu::passes_core::begin_readback_map(&slice, "type_check.status");
+                crate::gpu::passes_core::begin_readback_map(&slice, crate::readback_label!("type_check.status"));
             crate::gpu::passes_core::finish_readback_map_blocking(device, counts_map)?;
             crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
             let counts = read_u32_words_mapped(&counts_slice);

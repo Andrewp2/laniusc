@@ -1724,7 +1724,7 @@ fn finish_recorded_check(
     crate::gpu::passes_core::map_readback_blocking(
         device,
         &slice,
-        "parser.syntax.status_counters",
+        crate::readback_label!("parser.syntax.status_counters"),
     )?;
 
     let mapped = slice.get_mapped_range();

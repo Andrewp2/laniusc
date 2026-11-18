@@ -345,21 +345,11 @@ impl GpuTimer {
         let slice = buffers
             .readback
             .slice(..u64::from(query_count) * u64::from(wgpu::QUERY_SIZE));
-        let (sender, receiver) = std::sync::mpsc::channel();
-        crate::gpu::passes_core::trace_gpu_progress("gpu.timer.readback.map.start");
-        slice.map_async(wgpu::MapMode::Read, move |v| {
-            if let Err(err) = sender.send(v) {
-                warn!("failed to send timer readback completion signal: {err}");
-            }
-        });
-        crate::gpu::passes_core::trace_gpu_progress("gpu.timer.readback.map.queued");
-        crate::gpu::passes_core::wait_for_map_progress(
-            device,
-            "gpu.timer.readback",
-            wgpu::PollType::wait_indefinitely(),
-        );
+        let label = crate::debug_readback_label!("gpu.timer.readback");
+        let pending = crate::gpu::passes_core::begin_readback_map(&slice, label);
+        let mapped = crate::gpu::passes_core::finish_readback_map(device, pending, std::time::Duration::from_secs(30));
 
-        if let Ok(Ok(())) = receiver.try_recv() {
+        if mapped.is_ok() {
             let data = slice.get_mapped_range().to_vec();
             let mut vals = Vec::with_capacity(query_count as usize);
             for chunk in data.chunks_exact(8) {

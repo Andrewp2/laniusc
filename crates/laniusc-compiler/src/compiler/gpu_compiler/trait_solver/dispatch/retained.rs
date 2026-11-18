@@ -379,8 +379,8 @@ impl Producer {
         Ok(())
     }
 
-    fn read(&mut self, buffer: &LaniusBuffer<u32>, words: usize, label: &str) -> Result<Vec<u32>> {
-        let region = ReadbackRegion::from_buffer(buffer, 0, arena::byte_len(u32::try_from(words)?)?, label)?;
+    fn read(&mut self, buffer: &LaniusBuffer<u32>, words: usize, label: crate::gpu::passes_core::ReadbackLabel) -> Result<Vec<u32>> {
+        let region = ReadbackRegion::from_buffer(buffer, 0, arena::byte_len(u32::try_from(words)?)?, label.as_str())?;
         let raw = self.readback.read_regions(&self.device, &self.queue, &[region], label)?;
         self.readback_bytes += raw[0].len() as u64;
         super::words(&raw[0])
@@ -795,7 +795,7 @@ impl CountPass {
         drop(batch);
         self.producer.queue.submit(Some(encoder.finish()));
         let state = self.scratch.state.clone();
-        self.producer.read(&state, COUNT_READ_WORDS, "retained producer state")
+        self.producer.read(&state, COUNT_READ_WORDS, crate::readback_label!("retained producer state"))
     }
 }
 
@@ -1264,7 +1264,7 @@ impl RetainedTraitPublication {
             ReadbackRegion::from_buffer(&self.routes.buffer, RP_H_STATUS as u64 * 4, 12, "retained publication status")?,
             ReadbackRegion::from_buffer(&counters, 0, bytes as usize, "retained publication store counters")?,
         ];
-        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &regions, "retained publication status")?;
+        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &regions, crate::readback_label!("retained publication status"))?;
         let words = super::words(&raw[0])?;
         *self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(super::words(&raw[1])?);
         let status = [words[0], words[1], words[2]];
@@ -1301,7 +1301,7 @@ impl RetainedTraitPublication {
     /// environment or semantic table is read back to choose a diagnostic.
     pub fn diagnostic_span(&self) -> Result<Option<[u32; 4]>> {
         let region = ReadbackRegion::from_buffer(&self.routes.buffer, 48 * 4, 16, "retained diagnostic")?;
-        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained diagnostic")?;
+        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], crate::readback_label!("retained diagnostic"))?;
         let words = super::words(&raw[0])?;
         Ok((words[0] != u32::MAX).then(|| [words[0], words[1], words[2], words[3]]))
     }
@@ -1310,7 +1310,7 @@ impl RetainedTraitPublication {
     #[doc(hidden)]
     pub fn read_routes_for_test(&self) -> Result<Vec<u32>> {
         let region = ReadbackRegion::from_buffer(&self.routes.buffer, 0, arena::byte_len(self.route_words)?, "retained routes")?;
-        super::words(&self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained routes")?[0])
+        super::words(&self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], crate::debug_readback_label!("retained routes"))?[0])
     }
 
     /// Runs the GPU consumer shaders/tests/retained_route_query.slang over
@@ -1390,7 +1390,7 @@ fn query_view(gpu: &GpuTraitSolver, store: &ProgramRetention, view: RetainedTrai
         Ok(())
     })?;
     let region = ReadbackRegion::from_buffer(&output, 0, arena::byte_len(out_words)?, "retained route query")?;
-    let words = super::words(&gpu.readback.read_regions(device, queue, &[region], "retained route query")?[0])?;
+    let words = super::words(&gpu.readback.read_regions(device, queue, &[region], crate::readback_label!("retained route query"))?[0])?;
     Ok(words.chunks_exact(16).take(requests.len()).map(|c| c.try_into().unwrap()).collect())
 }
 
@@ -1428,7 +1428,7 @@ impl GpuTraitSolver {
             ReadbackRegion::from_buffer(&self.native_recipes.buffer, u64::from(recipes.offset) * 4, 32, "native recipe receipt")?,
             ReadbackRegion::from_buffer(state, 0, S_WORDS * 4, "retained producer state")?,
         ];
-        let raw = self.readback.read_regions(&self.device, &self.queue, &regions, "retained catalog admission")?;
+        let raw = self.readback.read_regions(&self.device, &self.queue, &regions, crate::readback_label!("retained catalog admission"))?;
         producer.readback_bytes += raw.iter().map(|r| r.len() as u64).sum::<u64>();
         // This readback is the admission's: the solve does not read it again.
         self.admission_pending.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -1452,7 +1452,7 @@ impl GpuTraitSolver {
         let directory;
         if let Some(packet) = packet {
             let header = ReadbackRegion::from_buffer(&packet.input.buffer, 0, arena::byte_len(BATCH_FIXED_WORDS)?, "retained batch directory")?;
-            directory = super::words(&self.readback.read_regions(&self.device, &self.queue, &[header], "retained batch directory")?[0])?;
+            directory = super::words(&self.readback.read_regions(&self.device, &self.queue, &[header], crate::debug_readback_label!("retained batch directory"))?[0])?;
             for table in 11..=16 {
                 let row = &directory[DIRECTORY_WORD as usize + table * 6..][..6];
                 if row[3] != 0 {
@@ -1462,7 +1462,7 @@ impl GpuTraitSolver {
                 }
             }
         }
-        let raw = self.readback.read_regions(&self.device, &self.queue, &regions, "retained rows")?;
+        let raw = self.readback.read_regions(&self.device, &self.queue, &regions, crate::debug_readback_label!("retained rows"))?;
         for (table, bytes) in which.into_iter().zip(raw) {
             tables[table] = super::words(&bytes)?;
         }

@@ -13,7 +13,7 @@ pub(crate) fn prepare_gather_kernel(device: &wgpu::Device) {
 
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
-    passes_core::map_readback_blocking,
+    passes_core::{ReadbackLabel, map_readback_blocking},
 };
 
 /// Reusable bounded staging for host output whose live length is known only
@@ -39,7 +39,7 @@ struct PrefetchedRegion {
 }
 
 #[cfg(test)]
-type ReadbackMapWait = fn(&wgpu::Device, &wgpu::BufferSlice<'_>, &str) -> Result<()>;
+type ReadbackMapWait = fn(&wgpu::Device, &wgpu::BufferSlice<'_>, crate::gpu::passes_core::ReadbackLabel) -> Result<()>;
 
 /// Owns the map attempt, including the period before its callback completes.
 /// Declare mapped views after this guard so they drop before unmapping on unwind.
@@ -242,7 +242,7 @@ impl PagedReadback {
         &'a self,
         device: &'a wgpu::Device,
         slice: &wgpu::BufferSlice<'_>,
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<ReadbackMapping<'a>> {
         let mut mapping = ReadbackMapping {
             device,
@@ -343,7 +343,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         page_offsets: &[usize],
         byte_lens: impl Iterator<Item = usize>,
-        label: &str,
+        label: ReadbackLabel,
         mut sink: impl FnMut(usize, &[u8]),
     ) -> Result<()> {
         let ranges = page_offsets
@@ -373,7 +373,7 @@ impl PagedReadback {
         source: &wgpu::Buffer,
         source_offset: u64,
         byte_len: usize,
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<u8>> {
         if source_offset % 4 != 0 {
             return Err(anyhow!(
@@ -402,7 +402,7 @@ impl PagedReadback {
         source: &LaniusBuffer<T>,
         source_offset: u64,
         byte_len: usize,
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<u8>> {
         if source_offset.saturating_add(byte_len as u64) > source.byte_size as u64 {
             return Err(anyhow!("{label} exceeds its logical GPU buffer view"));
@@ -428,7 +428,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         regions: &[ReadbackRegion<'_>],
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<Vec<u8>>> {
         let mut outputs = regions
             .iter()
@@ -450,7 +450,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         regions: &[ReadbackRegion<'_>],
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<u32>> {
         let reads = regions.iter().copied().map(WordRead::Region).collect::<Vec<_>>();
         self.read_words(device, queue, &reads, label)
@@ -470,7 +470,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         reads: &[WordRead<'_>],
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<u32>> {
         let mut replay = self.replay.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match replay.as_mut() {
@@ -506,7 +506,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         reads: &[WordRead<'_>],
-        label: &str,
+        label: ReadbackLabel,
     ) -> Result<Vec<u32>> {
         let mut total = 0usize;
         for read in reads {
@@ -528,10 +528,10 @@ impl PagedReadback {
             && crate::options::get().report.host_timing;
         let started = std::time::Instant::now();
         let mut first_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label.as_str()) });
         let mut lease = gather::lease(device, regions);
         let gathered = match lease.as_mut() {
-            Some(lease) => lease.record_words(device, queue, &mut first_encoder, reads, label)?,
+            Some(lease) => lease.record_words(device, queue, &mut first_encoder, reads, label.as_str())?,
             None => None,
         };
 
@@ -604,7 +604,7 @@ impl PagedReadback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         regions: &[ReadbackRegion<'_>],
-        label: &str,
+        label: ReadbackLabel,
         mut sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<()> {
         if let Some(page_offsets) = self.take_prefetch(
@@ -627,10 +627,10 @@ impl PagedReadback {
         let started = std::time::Instant::now();
 
         let mut first_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label.as_str()) });
         let mut lease = gather::lease(device, regions.len());
         let gathered = match lease.as_mut() {
-            Some(lease) => lease.record(device, queue, &mut first_encoder, regions, label)?,
+            Some(lease) => lease.record(device, queue, &mut first_encoder, regions, label.as_str())?,
             None => None,
         };
         let (gathered_regions, gather_dispatches) = gathered
@@ -663,7 +663,7 @@ impl PagedReadback {
         queue: &wgpu::Queue,
         first_encoder: wgpu::CommandEncoder,
         regions: &[ReadbackRegion<'_>],
-        label: &str,
+        label: ReadbackLabel,
         mut sink: impl FnMut(usize, usize, &[u8]),
     ) -> Result<CopyStats> {
         // These copies overwrite the staging page a prefetch filled.
@@ -679,7 +679,7 @@ impl PagedReadback {
         {
             let page_started = std::time::Instant::now();
             let mut encoder = first_encoder.take().unwrap_or_else(|| {
-                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label.as_str()) })
             });
             let mut page_cursor = 0usize;
             let mut page_copies = Vec::new();
@@ -859,7 +859,7 @@ mod lifecycle_tests {
     fn fail_pending_map(
         _device: &wgpu::Device,
         slice: &wgpu::BufferSlice<'_>,
-        _label: &str,
+        _label: crate::gpu::passes_core::ReadbackLabel,
     ) -> Result<()> {
         // Start a real map, then simulate a poll/timeout error without polling.
         slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -869,7 +869,7 @@ mod lifecycle_tests {
     fn fail_already_cancelled_map(
         device: &wgpu::Device,
         slice: &wgpu::BufferSlice<'_>,
-        label: &str,
+        label: crate::gpu::passes_core::ReadbackLabel,
     ) -> Result<()> {
         // Model a failed callback that has already restored backend Idle.
         let _ = fail_pending_map(device, slice, label);
@@ -897,7 +897,7 @@ mod lifecycle_tests {
         };
         let read = |lens: [usize; 2]| {
             readback
-                .read_regions(&gpu.device, &gpu.queue, &regions(lens), "prefetched read")
+                .read_regions(&gpu.device, &gpu.queue, &regions(lens), "prefetched read".into())
                 .unwrap()
         };
 
@@ -942,7 +942,7 @@ mod lifecycle_tests {
                     &source.buffer,
                     0,
                     16,
-                    "injected read",
+                    "injected read".into(),
                 )
                 .expect_err("map fault must fail the read");
             assert!(error.to_string().starts_with("injected "));
@@ -951,7 +951,7 @@ mod lifecycle_tests {
             source.write(&gpu.queue, 0, &new_bytes);
             assert_eq!(
                 readback
-                    .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "read retry")
+                    .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "read retry".into())
                     .unwrap(),
                 new_bytes,
                 "both pages must be copied again after the failed map"
@@ -963,14 +963,14 @@ mod lifecycle_tests {
             ];
             readback.map_wait_override = Some(wait);
             let error = readback
-                .read_regions(&gpu.device, &gpu.queue, &regions, "injected regions")
+                .read_regions(&gpu.device, &gpu.queue, &regions, "injected regions".into())
                 .expect_err("map fault must fail the batched read");
             assert!(error.to_string().starts_with("injected "));
             readback.map_wait_override = None;
             source.write(&gpu.queue, 0, &old_bytes);
             assert_eq!(
                 readback
-                    .read_regions(&gpu.device, &gpu.queue, &regions, "regions retry")
+                    .read_regions(&gpu.device, &gpu.queue, &regions, "regions retry".into())
                     .unwrap(),
                 vec![old_bytes[..4].to_vec(), old_bytes[4..].to_vec()]
             );
@@ -988,7 +988,7 @@ mod lifecycle_tests {
         let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let slice = readback.staging.buffer.slice(..8);
             let _mapping = readback
-                .map_staging(&gpu.device, &slice, "unwind map")
+                .map_staging(&gpu.device, &slice, "unwind map".into())
                 .unwrap();
             let _mapped = slice.get_mapped_range();
             panic!("injected host-copy panic");
@@ -998,7 +998,7 @@ mod lifecycle_tests {
         source.write(&gpu.queue, 0, &expected);
         assert_eq!(
             readback
-                .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "unwind retry")
+                .read_buffer(&gpu.device, &gpu.queue, &source, 0, 16, "unwind retry".into())
                 .unwrap(),
             expected
         );
@@ -1060,7 +1060,7 @@ mod lifecycle_tests {
             }
         }
         let read = readback
-            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test")
+            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test".into())
             .unwrap();
         assert_eq!(read, expected);
 
@@ -1080,7 +1080,7 @@ mod lifecycle_tests {
             );
         }
         let read = readback
-            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test again")
+            .read_regions(&gpu.device, &gpu.queue, &regions, "gather test again".into())
             .unwrap();
         assert_eq!(read, expected);
         assert!(pollster::block_on(validation.pop()).is_none());
@@ -1103,20 +1103,20 @@ mod lifecycle_tests {
             regions.push(ReadbackRegion::from_buffer(buffer, offset, len, "word region").unwrap());
         }
         let expected = readback
-            .read_regions(&gpu.device, &gpu.queue, &regions, "word regions as bytes")
+            .read_regions(&gpu.device, &gpu.queue, &regions, "word regions as bytes".into())
             .unwrap()
             .concat()
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
             .collect::<Vec<_>>();
         let words = readback
-            .read_regions_words(&gpu.device, &gpu.queue, &regions, "word regions")
+            .read_regions_words(&gpu.device, &gpu.queue, &regions, "word regions".into())
             .unwrap();
         assert_eq!(words, expected);
         regions.push(ReadbackRegion::from_buffer(&first, 0, 6, "partial word").unwrap());
         assert!(
             readback
-                .read_regions_words(&gpu.device, &gpu.queue, &regions, "partial word")
+                .read_regions_words(&gpu.device, &gpu.queue, &regions, "partial word".into())
                 .is_err()
         );
         assert!(pollster::block_on(validation.pop()).is_none());
@@ -1171,14 +1171,14 @@ mod lifecycle_tests {
             regions.push(ReadbackRegion::from_buffer(&copy_only, offset, 4, "row").unwrap());
         }
         let expected = readback
-            .read_regions(&gpu.device, &gpu.queue, &regions, "rows as regions")
+            .read_regions(&gpu.device, &gpu.queue, &regions, "rows as regions".into())
             .unwrap()
             .concat()
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
             .collect::<Vec<_>>();
         assert_eq!(expected.len(), reads.iter().map(WordRead::words).sum::<usize>());
-        let words = readback.read_words(&gpu.device, &gpu.queue, &reads, "rows").unwrap();
+        let words = readback.read_words(&gpu.device, &gpu.queue, &reads, "rows".into()).unwrap();
         assert_eq!(words, expected);
         assert!(
             ReadbackRows::new(&[171]).column(&first, 0, 12, 1, "past the view").is_err(),
@@ -1215,7 +1215,7 @@ mod lifecycle_tests {
         };
 
         readback.begin_read_plan(buffers(), None);
-        let expected = [read(&[counts()], "counts"), read(&[rows(), tail()], "rows")];
+        let expected = [read(&[counts()], "counts".into()), read(&[rows(), tail()], "rows".into())];
         let (plan, stats) = readback.finish_read_plan().unwrap();
         assert_eq!((plan.len(), stats.read, stats.answered), (3, 2, 0));
 
@@ -1223,11 +1223,11 @@ mod lifecycle_tests {
         let changed = (0..8192u32).map(|i| (i as u8).wrapping_mul(7)).collect::<Vec<_>>();
         second.write(&gpu.queue, 0, &changed);
         readback.begin_read_plan(buffers(), Some(plan));
-        let fresh_counts = read(&[counts()], "counts");
-        let fresh_rows = read(&[rows(), tail()], "rows");
+        let fresh_counts = read(&[counts()], "counts".into());
+        let fresh_rows = read(&[rows(), tail()], "rows".into());
         let outside = read(
             &[WordRead::Region(ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap())],
-            "outside",
+            "outside".into(),
         );
         let (plan, stats) = readback.finish_read_plan().unwrap();
         assert_eq!(fresh_counts, expected[0]);
@@ -1237,14 +1237,14 @@ mod lifecycle_tests {
         assert!(readback.finish_read_plan().is_none());
 
         // Without a replay the same reads come straight from the GPU.
-        assert_eq!(read(&[rows(), tail()], "rows"), fresh_rows);
+        assert_eq!(read(&[rows(), tail()], "rows".into()), fresh_rows);
         assert_eq!(
             outside,
             read(
                 &[WordRead::Region(
                     ReadbackRegion::from_buffer(&first, 128, 16, "outside").unwrap()
                 )],
-                "outside",
+                "outside".into(),
             )
         );
         assert!(pollster::block_on(validation.pop()).is_none());

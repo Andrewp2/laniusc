@@ -1610,7 +1610,7 @@ mod tests {
         buffer: &crate::gpu::buffers::LaniusBuffer<u8>,
     ) -> Vec<u32> {
         let slice = buffer.slice(..);
-        map_readback_blocking(device, &slice, "checked control-depth readback")
+        map_readback_blocking(device, &slice, "checked control-depth readback".into())
             .expect("map checked control-depth readback");
         let mapped = slice.get_mapped_range();
         let words = mapped

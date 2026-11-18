@@ -485,7 +485,7 @@ pub(super) fn inject_pending_proof_fault(
                 Span::new(0, evidence_slice.count)?,
             )?,
         ],
-        "proof admission test before injection",
+        "proof admission test before injection".into(),
     )?;
     let rows = statuses(&raw[1])?;
     let Some((index, original)) = rows.iter().enumerate().find(|(_, row)| {
@@ -640,7 +640,7 @@ fn gpu_batch_rejects_corrupted_pending_assumption_proofs_before_commit() {
                     )
                     .unwrap(),
                 ],
-                "proof admission test after rejection",
+                "proof admission test after rejection".into(),
             )
             .expect("read failure without granting authority");
         let after = words(&raw[0]).unwrap();
@@ -780,7 +780,7 @@ fn native_layout_goal_sources(
         ).unwrap());
     }
     let rows = gpu.readback.read_regions(
-        &gpu.device, &gpu.queue, &regions, "native test accepted goal subjects",
+        &gpu.device, &gpu.queue, &regions, "native test accepted goal subjects".into(),
     ).unwrap();
     rows.iter().zip(calls).map(|(raw, call)| {
         let row = words(raw).unwrap();

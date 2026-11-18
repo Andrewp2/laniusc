@@ -866,7 +866,7 @@ impl GpuX86Linker {
         crate::gpu::passes_core::wait_for_readback_map(
             device,
             &slice,
-            "codegen.x86.link.relocate",
+            "codegen.x86.link.relocate".into(),
             std::time::Duration::from_secs(30),
         )?;
         let (bytes, status) = {
@@ -1203,7 +1203,7 @@ impl GpuX86Linker {
         crate::gpu::passes_core::wait_for_readback_map(
             device,
             &slice,
-            "codegen.x86.link.sections",
+            "codegen.x86.link.sections".into(),
             std::time::Duration::from_secs(30),
         )?;
         let bytes = {

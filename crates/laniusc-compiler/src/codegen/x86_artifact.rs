@@ -486,7 +486,7 @@ impl GpuX86ArtifactStage {
 
     pub(crate) fn finish(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Vec<u8>> {
         let length_slice = self.length_readback.slice(..);
-        map_readback_blocking(device, &length_slice, "x86 artifact length readback")?;
+        map_readback_blocking(device, &length_slice, crate::readback_label!("x86 artifact length readback"))?;
         let mapped = length_slice.get_mapped_range();
         let length = u32::from_le_bytes(mapped[..4].try_into().unwrap()) as usize;
         drop(mapped);
@@ -503,7 +503,7 @@ impl GpuX86ArtifactStage {
             &self.words,
             0,
             length,
-            "x86 artifact byte readback",
+            crate::readback_label!("x86 artifact byte readback"),
         )
     }
 }

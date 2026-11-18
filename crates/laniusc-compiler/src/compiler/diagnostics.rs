@@ -3993,7 +3993,7 @@ pub(in crate::compiler) fn read_single_token_from_buffer(
     crate::gpu::passes_core::map_readback_blocking(
         device,
         &token_slice,
-        "compiler.syntax.diagnostic-token",
+        crate::readback_label!("compiler.syntax.diagnostic-token"),
     )
     .map_err(|err| err.to_string())?;
     let mapped = token_slice.get_mapped_range();

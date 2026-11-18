@@ -2422,7 +2422,7 @@ mod tests {
 
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
-        map_readback_blocking(device, &slice, "semantic LIR test readback").unwrap();
+        map_readback_blocking(device, &slice, "semantic LIR test readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let result = mapped
             .chunks_exact(4)

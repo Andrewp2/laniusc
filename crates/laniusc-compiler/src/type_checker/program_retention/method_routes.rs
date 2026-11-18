@@ -231,7 +231,7 @@ impl MethodRoutes {
                 let mut parts = vec![(&self.buffers["mr_state"], 32)];
                 parts.extend_from_slice(also);
                 let status =
-                    super::substitution::read_many_labeled(&self.device, &self.queue, &parts, "method_routes.state")?;
+                    super::substitution::read_many_labeled(&self.device, &self.queue, &parts, crate::readback_label!("method_routes.state"))?;
                 ensure!(status[MR_PENDING] == 0, "method routes pending after the level bound");
                 if status[0] != 3 {
                     return Ok(status);

@@ -1626,7 +1626,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
-                                    "lexer.fused.metadata",
+                                    crate::readback_label!("lexer.fused.metadata"),
                                     None,
                                 )
                                 .map_err(|err| {
@@ -2044,7 +2044,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
-                                    "lexer.source-pack.fused.metadata",
+                                    crate::readback_label!("lexer.source-pack.fused.metadata"),
                                     frontend,
                                 )
                                 .map_err(|err| {
@@ -3372,7 +3372,7 @@ fn read_hir_token_start_for_diagnostic(
     crate::gpu::passes_core::map_readback_blocking(
         device,
         &slice,
-        "compiler.lowering.diagnostic-hir",
+        crate::readback_label!("compiler.lowering.diagnostic-hir"),
     )
     .map_err(|error| error.to_string())?;
     let mapped = slice.get_mapped_range();
@@ -4732,7 +4732,7 @@ fn read_single_token_from_buffer(
     crate::gpu::passes_core::map_readback_blocking(
         device,
         &token_slice,
-        "compiler.typecheck.diagnostic-token",
+        crate::readback_label!("compiler.typecheck.diagnostic-token"),
     )
     .map_err(|err| err.to_string())?;
     let mapped = token_slice.get_mapped_range();

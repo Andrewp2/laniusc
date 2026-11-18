@@ -547,7 +547,7 @@ fn read_resolution_batch(
     crate::gpu::passes_core::wait_for_readback_map(
         device,
         &status_slice,
-        "codegen.wasm.link.resolve.status",
+        crate::readback_label!("codegen.wasm.link.resolve.status"),
         std::time::Duration::from_secs(30),
     )?;
     let status_mapped = status_slice.get_mapped_range();
@@ -567,7 +567,7 @@ fn read_resolution_batch(
     crate::gpu::passes_core::wait_for_readback_map(
         device,
         &targets_slice,
-        "codegen.wasm.link.resolve.targets",
+        crate::readback_label!("codegen.wasm.link.resolve.targets"),
         std::time::Duration::from_secs(30),
     )?;
     let targets_mapped = targets_slice.get_mapped_range();

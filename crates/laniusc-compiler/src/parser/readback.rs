@@ -1565,10 +1565,10 @@ impl DecodedParserReadbacks {
         rb: ParserReadbacks,
     ) -> Result<Self> {
         // Map all
-        let map = |name: &str, b: &wgpu::Buffer| {
+        let map = |_name: &str, b: &wgpu::Buffer| {
             crate::gpu::passes_core::map_readback_for_progress(
                 &b.slice(..),
-                &format!("parser.readback.{name}"),
+                crate::readback_label!("parser.readback"),
             );
         };
         map("headers", &rb.headers);
@@ -1705,7 +1705,7 @@ impl DecodedParserReadbacks {
 
         crate::gpu::passes_core::wait_for_map_progress(
             device,
-            "parser.readback",
+            crate::readback_label!("parser.readback"),
             wgpu::PollType::wait_indefinitely(),
         );
 

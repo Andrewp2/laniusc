@@ -67,7 +67,7 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     results.copy_to(&mut encoder, 0, &readback, 0, (word_count * 4) as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, key).unwrap();
+    map_readback_blocking(&gpu.device, &slice, "typed_constant.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words: Vec<u32> = mapped.chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().unwrap())).collect();
@@ -184,7 +184,7 @@ fn physical_gpu_checked_type_identity_by_canonical_id() {
     errors.copy_to(&mut encoder, 0, &readback, 0, (words * 4) as u64);
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(device, &slice, key).unwrap();
+    map_readback_blocking(device, &slice, "typed_constant.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let errors: Vec<u32> = mapped.chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().unwrap())).collect();
