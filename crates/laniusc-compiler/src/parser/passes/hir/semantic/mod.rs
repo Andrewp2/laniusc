@@ -2,8 +2,6 @@
 pub mod build_child_index_heaps;
 /// Builds the semantic-end search heaps the parent search reads.
 pub mod build_semantic_end_heaps;
-/// Semantic depth propagation passes.
-pub mod depth;
 /// Counts each semantic row's earlier siblings with a heap range query.
 pub mod find_child_indices;
 /// Finds dense semantic parents by searching the semantic-end heaps.
