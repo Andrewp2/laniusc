@@ -302,9 +302,18 @@ impl RetainedNativeBuild {
         if error != x86::X86_LINK_NO_ENTRY_OBJECT {
             return retained_error(context, error);
         }
+        // The label goes on the program's own source: the last unit's first
+        // file that is not an embedded `core` file (a build with no `core`
+        // directory compiles those into the same unit, ahead of the program).
         let first = self.sources.last().and_then(|unit| {
-            let text = unit.texts.first()?;
-            Some((text.as_str(), unit.paths.first().and_then(Option::as_deref)))
+            let embedded = |path: &Option<PathBuf>| {
+                path.as_deref().is_some_and(|path| path.starts_with(crate::compiler::EMBEDDED_CORE_ROOT))
+            };
+            let file = (0..unit.texts.len())
+                .find(|&file| !unit.paths.get(file).is_some_and(embedded))
+                .unwrap_or(0);
+            let text = unit.texts.get(file)?;
+            Some((text.as_str(), unit.paths.get(file).and_then(Option::as_deref)))
         });
         super::x86_codegen::x86_link_input_error(error, first)
     }
