@@ -1731,6 +1731,12 @@ enum Dispatch {
 /// The report of an export attempt whose counters (`rt_counts`,
 /// `rt_x_counts`) show that it committed.
 fn committed_export(attempt: u32, words: Vec<u32>, x: &[u32]) -> Option<JobReport> {
+    if words[counts::JOB_STATE] == counts::JOB_COMMITTED && crate::options::get().report.resources.is_some() {
+        eprintln!(
+            "[program_retention] export term_rows={} spare_term_rows={}",
+            words[A_TERMS], words[counts::SPARE + A_TERMS],
+        );
+    }
     (words[counts::JOB_STATE] == counts::JOB_COMMITTED).then(|| JobReport {
         attempts: attempt,
         ready: words[counts::READY] != 0,

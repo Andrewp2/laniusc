@@ -694,6 +694,13 @@ impl RetainedDiscovery {
             report.instances = status[1];
             report.edges = status[2];
             report.roots = status[9];
+            if crate::options::get().report.resources.is_some() {
+                eprintln!(
+                    "[program_retention] discovery term_rows={} spare_term_rows={}",
+                    status[STATUS_WORDS + super::A_TERMS],
+                    status[STATUS_WORDS + counts::SPARE + super::A_TERMS],
+                );
+            }
             // Rank by full structure, height by height. Hashes never decide
             // equality or output order, even with forced table collisions.
             self.rank_terms(store, status[STATUS_WORDS + super::A_TERMS], levels, &extra, config, &mut report)?;
