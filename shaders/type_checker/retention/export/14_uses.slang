@@ -192,9 +192,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // reference, or a fresh `&matched`). It is a term of the caller's scope
     // for every callee kind (local, dependency, bound trait member), like
     // the matched receiver, and must have exactly that shape.
+    // Only a receiver call has a receiver plan. A path call's matched
+    // receiver is its qualifier, which a bare generic qualifier
+    // (`W::get(w)`, `Option::is_some(o)`) types with its declaration's own
+    // application, not a type of this body. The arguments carry the
+    // receiver, so the record keeps no such term. A caller-scoped one stays:
+    // a required member's route matches its bound on it (method_routes/01).
+    bool receiver_plan = form == RT_USE_METHOD || (form == RT_USE_HOST && call.receiver_hir != 0xffffffffu);
+    if (!receiver_plan && !owned_by(matched, owner, owner_parent)) matched = RT_NONE;
+    if (!receiver_plan && !owned_by(receiver, owner, owner_parent)) receiver = RT_NONE;
     uint untranslated = form == RT_USE_UNRESOLVED || (form == RT_USE_CONSTRUCTOR && callee == 0u) ? 1u : 0u;
     uint adjust = call_row ? call.receiver_adjustment_kind & 0xffu : 0u;
-    if (form == RT_USE_METHOD || (form == RT_USE_HOST && call.receiver_hir != 0xffffffffu))
+    if (receiver_plan)
     {
         // A missing plan is untranslated here; an untranslatable term is
         // counted by the loop below.
@@ -206,7 +215,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (!shaped)
             {
                 rt_invariant(RT_INV_RECEIVER_SCOPE);
-                stat_add(owner_row, RT_STAT_OWNERSHIP, 1u);
+                stat_add_at(owner_row, row, RT_STAT_OWNERSHIP, 1u);
             }
         }
     }
@@ -219,8 +228,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (t == RT_UNKNOWN || t == RT_FIT_FAILED || (i == 1u && !rt_is_resolved(t))) untranslated++;
         else if (!owned_by(t, owner, owner_parent)) unowned++;
     }
-    stat_add(owner_row, RT_STAT_UNTRANSLATED, untranslated);
-    stat_add(owner_row, RT_STAT_OWNERSHIP, unowned);
+    stat_add_at(owner_row, row, RT_STAT_UNTRANSLATED, untranslated);
+    stat_add_at(owner_row, row, RT_STAT_OWNERSHIP, unowned);
     if (unowned != 0u) rt_invariant(RT_INV_OWNERSHIP);
 
     BodySpan span;
@@ -233,7 +242,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint rel_callee_token = rel_token(span, token, foreign);
     uint index = use_base + rt_x_scan[row].y;
     uint deref = call_row ? min(call.receiver_deref_count, 0xffffu) : 0u;
-    stat_add(owner_row, RT_STAT_FOREIGN, foreign);
+    stat_add_at(owner_row, row, RT_STAT_FOREIGN, foreign);
     rt_uses[index * RT_USE_WORDS + 0u] = uint4(owner, rel, form | (adjust << 8u) | (deref << 16u), callee);
     rt_uses[index * RT_USE_WORDS + 1u] = uint4(env, result, matched, receiver);
     rt_uses[index * RT_USE_WORDS + 2u] = uint4(aux, call_row ? call.generic_requirements : 0u, compact_hir_links[row].file_id,

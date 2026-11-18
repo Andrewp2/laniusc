@@ -29,6 +29,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     rt_counts[RT_C_INVARIANTS] = 0u;
     rt_counts[RT_C_INCOMPLETE] = 0u;
     rt_counts[RT_C_FIRST_INVARIANT] = 0xffffffffu;
+    rt_counts[RT_C_FAULT_KEY] = 0xffffffffu;
     rt_counts[RT_C_JOB_STATE] = RT_JOB_OPEN;
     rt_counts[RT_C_LIBRARY] = job_library();
     rt_counts[RT_C_UNIT] = job_unit();

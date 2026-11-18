@@ -46,9 +46,7 @@ StructuredBuffer<uint> semantic_lir_param_total;
 StructuredBuffer<SemanticLirParam> semantic_lir_params;
 StructuredBuffer<uint> semantic_lir_local_total;
 StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
-RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_stack_words_by_position;
-RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 // walk_function adds loop weights for small functions; optimize_init has
 // already added them for segmented functions. decl_slots uses those weights
 // to give registers to the most-read locals.

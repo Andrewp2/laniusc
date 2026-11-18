@@ -250,9 +250,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     rt_seg_rows[base + 4u] = r4;
     rt_seg_rows[base + 5u] = r5;
     rt_seg_rows[base + 6u] = r6;
-    stat_add(function, RT_STAT_UNTYPED, missing ? 1u : 0u);
-    stat_add(function, RT_STAT_FOREIGN, foreign);
-    stat_add(function, RT_STAT_UNTRANSLATED, untranslated);
-    stat_add(function, RT_STAT_OWNERSHIP, unowned);
+    stat_add_at(function, row, RT_STAT_UNTYPED, missing ? 1u : 0u);
+    stat_add_at(function, row, RT_STAT_FOREIGN, foreign);
+    stat_add_at(function, row, RT_STAT_UNTRANSLATED, untranslated);
+    stat_add_at(function, row, RT_STAT_OWNERSHIP, unowned);
     if (unowned != 0u) rt_invariant(RT_INV_OWNERSHIP);
 }

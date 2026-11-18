@@ -12,6 +12,10 @@
 
 #include "allocation_body.slang"
 
+// Written only by the walks; allocation_prepare does not bind them.
+RWStructuredBuffer<uint> x86_location_by_semantic;
+RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
+
 StructuredBuffer<X86AllocationPrepared> x86_allocation_prepared;
 
 // The record at `position` when it lies in [start, end), otherwise one that no
