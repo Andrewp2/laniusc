@@ -3800,7 +3800,6 @@ mod tests {
             "hir_type_arg_rank_step.b_to_a",
             "hir_type_arg_scatter",
             "hir_type_root_owner_init",
-            "hir_type_root_rank_prefix_00_local",
             "hir_type_root_rank_prefix_01_blocks",
             "hir_type_root_rank_compact_scatter",
             crate::parser::passes::hir::types::root::step::A_TO_B,

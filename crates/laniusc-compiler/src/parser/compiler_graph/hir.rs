@@ -1221,21 +1221,13 @@ fn register_type_root_owner(
             "hir_type_root_owner_a",
             "hir_type_root_link_b",
             "hir_type_root_owner_b",
+            "hir_list_rank_flag",
+            "hir_list_rank_block_sum",
         ],
     )?;
-    indirect(
-        graph,
-        "hir_type_root_owner_init",
-        "tree_active_dispatch_args",
-    )?;
-
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::TypeRoots,
-        "hir_type_root_owner",
-        "hir_type_arg_link_a",
-    )?;
+    // The owner init marks the type rows itself; the scan and the compact
+    // scatter list them.
+    register_list_rank_listing(graph, passes, ListRankInvocation::TypeRoots)?;
     let steps = crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
         capacity.tree_capacity,
     );

@@ -562,7 +562,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_canonical_scope_end[row] = hir_stmt_scope_end[owner_record_row];
     hir_canonical_fn_return_type[row] =
         semantic_id(hir_fn_return_type_node[owner_record_row]);
-    hir_canonical_type_root_owner[row] = semantic_id(hir_type_root_owner[raw]);
+    // The type-root owner is defined on type rows only.
+    hir_canonical_type_root_owner[row] = semantic_id(
+        raw_kind == HIR_CORE_TYPE ? hir_type_root_owner[raw] : INVALID);
     hir_canonical_type_alias_target[row] =
         semantic_id(hir_type_alias_target_node[owner_record_row]);
     hir_canonical_const_type[row] = item_kind == 3u

@@ -493,25 +493,15 @@ impl GpuParser {
                     .hir_type_arg_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_scatter");
-                self.passes
-                    .hir_type_root_owner_init
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                // Type nodes are a small fraction of tree nodes: compact the
-                // owned or linked type nodes and walk only those rows.
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_type_fields_params,
-                        &bufs.hir_type_root_owner,
-                        &bufs.hir_type_arg_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::TypeRoots,
-                    )?;
+                // Type nodes are a small fraction of tree nodes: the owner
+                // init lists them, so it covers every block of the tree, and
+                // the walk runs over that list only.
+                self.passes.hir_type_root_owner_init.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
