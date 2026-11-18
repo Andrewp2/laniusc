@@ -281,6 +281,19 @@ def main():
                 receipt["summary"][kind] = dict(samples=len(samples), median_wall_ms=statistics.median(wall),
                     min_wall_ms=min(wall), max_wall_ms=max(wall),
                     median_compile_ms=statistics.median(sample["response"]["compile_ms"] for sample in samples))
+                last = samples[-1]["response"]
+                blocked = [sample["response"]["readback_wait_ms_during_job"] for sample in samples
+                           if "readback_wait_ms_during_job" in sample["response"]]
+                # The host is blocked in a readback while the GPU runs every
+                # dispatch queued before it. host_blocked_on_gpu_ms is mostly
+                # GPU compute for that queued work. It is not the cost of the
+                # readbacks, and removing a readback does not remove it.
+                # tools/run_nsight_gpu_trace.sh measures GPU time per pass.
+                receipt["summary"][kind].update(
+                    dispatches=last.get("recorded_compute_dispatches_during_job"),
+                    readback_round_trips=last.get("readback_round_trips_during_job"),
+                    median_host_blocked_on_gpu_ms=statistics.median(blocked) if blocked else None,
+                    peak_gpu_buffer_gb=last.get("tracked_gpu_buffers", {}).get("peak_bytes", 0) / 1e9)
         receipt["verified_full_recompiles"] = True
         _, receipt["shutdown"] = ask(dict(id="shutdown", command="shutdown"), timeout=10)
         proc.wait(timeout=10)
