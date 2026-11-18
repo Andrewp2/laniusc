@@ -12,7 +12,10 @@ use std::{
 
 use anyhow::{Result, anyhow, ensure};
 
-use crate::gpu::buffers::{CapacityBufferCache, LaniusBuffer};
+use crate::gpu::{
+    buffers::{CapacityBufferCache, LaniusBuffer},
+    readback::PagedReadback,
+};
 
 use super::super::proof_store::PROOF_STORE_TABLES;
 
@@ -240,6 +243,17 @@ impl WorkspaceLease {
         contents: Option<&[u32]>,
     ) -> Result<LaniusBuffer<u32>> {
         self.reserve(label)?.buffer(words, usage, contents)
+    }
+
+    pub(super) fn readback(&self, label: &str, bytes: usize) -> Result<PagedReadback> {
+        let staging = self.reserve(label)?.buffer(
+            u32::try_from(bytes / 4)?,
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            None,
+        )?;
+        Ok(PagedReadback::from_staging(
+            staging.subrange(0, bytes as u64, bytes).map_err(anyhow::Error::msg)?,
+        ))
     }
 }
 

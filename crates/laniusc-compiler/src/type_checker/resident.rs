@@ -535,6 +535,7 @@ impl GpuTypeChecker {
             current_semantic_artifact: Mutex::new(None),
             dependency_interface_state: Mutex::new(None),
             semantic_interface_buffers: CapacityBufferCache::default(),
+            resident_interface_buffers: Mutex::default(),
             unit_facts_read_plans: Default::default(),
         })
     }
@@ -547,6 +548,10 @@ impl GpuTypeChecker {
             .dependency_interface_state
             .lock()
             .expect("GpuTypeChecker.dependency_interface_state poisoned") = None;
+        self.resident_interface_buffers
+            .lock()
+            .expect("resident interface buffer pool poisoned")
+            .clear();
     }
 
     /// Releases the workspace bound to the frontend's allocations but keeps

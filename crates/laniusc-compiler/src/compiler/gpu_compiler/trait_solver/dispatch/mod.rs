@@ -333,9 +333,7 @@ impl GpuTraitSolver {
             page_bytes >= 4,
             "device cannot allocate evidence readback page"
         );
-        let readback = PagedReadback::from_staging(workspace.reserve("trait_solver.readback")?
-            .buffer(u32::try_from(page_bytes / 4)?, wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, None)?
-            .subrange::<u8>(0, page_bytes as u64, page_bytes).map_err(anyhow::Error::msg)?);
+        let readback = workspace.readback("trait_solver.readback", page_bytes)?;
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("trait_solver.admit_catalog"),
         });

@@ -4,6 +4,10 @@
 //! GPU-local token, HIR, name, declaration, type-instance, and module ids must
 //! be translated into these records before a unit can be released.
 
+use std::sync::Arc;
+
+use crate::gpu::buffers::LaniusBuffer;
+
 /// Current binary schema version for GPU semantic-interface artifacts.
 // Version 15 carries typed constant atoms and explicit array length graphs.
 // Version 16 adds the never scalar leaf (18), shifting signature type indices.
@@ -369,16 +373,16 @@ pub struct GpuSemanticInterfaceArtifact {
 /// part of the interface: equality ignores it, and interfaces read from
 /// disk have none.
 #[derive(Clone, Default)]
-pub(crate) struct ResidentInterfaceBytes(Option<(wgpu::Buffer, usize)>);
+pub(crate) struct ResidentInterfaceBytes(Option<(Arc<LaniusBuffer<u8>>, usize)>);
 
 impl ResidentInterfaceBytes {
-    pub(crate) fn new(buffer: wgpu::Buffer, byte_len: usize) -> Self {
+    pub(crate) fn new(buffer: Arc<LaniusBuffer<u8>>, byte_len: usize) -> Self {
         Self(Some((buffer, byte_len)))
     }
 
     /// The buffer and the encoded byte length at its start.
     pub(crate) fn get(&self) -> Option<(&wgpu::Buffer, usize)> {
-        self.0.as_ref().map(|(buffer, byte_len)| (buffer, *byte_len))
+        self.0.as_ref().map(|(buffer, byte_len)| (&buffer.buffer, *byte_len))
     }
 }
 

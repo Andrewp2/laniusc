@@ -647,7 +647,7 @@ impl CountPass {
             .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
             .collect::<Result<Vec<_>>>()?;
         let producer = Producer {
-            readback: PagedReadback::new(&device, "trait_solver.retained_readback", 4096),
+            readback: workspace.readback("trait_solver.retained_readback", 4096)?,
             device: device.clone(),
             queue: workspace.queue().clone(),
             passes,
