@@ -8,7 +8,7 @@
 //! ownership and resident cache invariants lives in
 //! `docs/compiler/type-checker.md`.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 mod bind_groups;
 pub mod program_retention;
@@ -436,6 +436,7 @@ pub struct GpuTypeChecker {
     current_semantic_artifact: Mutex<Option<OwnedGpuSemanticArtifact>>,
     dependency_interface_state: Mutex<Option<GpuDependencyInterfaceState>>,
     semantic_interface_buffers: CapacityBufferCache,
+    resident_interface_buffers: Mutex<Vec<Arc<LaniusBuffer<u8>>>>,
     /// Read plans of recent unit-facts runs (no GPU resources).
     unit_facts_read_plans: Mutex<generic_calls::UnitFactsReadPlans>,
 }

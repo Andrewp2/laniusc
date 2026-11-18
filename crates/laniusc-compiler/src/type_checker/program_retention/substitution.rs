@@ -38,11 +38,9 @@ use super::{
     storage,
     words_bytes,
 };
-use crate::gpu::passes_core::{
-    self,
-    PassData,
-    make_pass_data_from_shader_key,
-    map_readback_blocking,
+use crate::gpu::{
+    buffers::{LaniusBuffer, readback_bytes},
+    passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
 /// How one recorded dispatch launches.
@@ -472,6 +470,7 @@ pub struct RetainedSubstitution {
     /// Run numbers of a chain (`begin_chain`), copied into `sb_config` in
     /// encoder order.
     chain_runs: Option<wgpu::Buffer>,
+    status_readback: Option<LaniusBuffer<u8>>,
 }
 
 impl RetainedSubstitution {
@@ -497,6 +496,7 @@ impl RetainedSubstitution {
             hash_mask: u32::MAX,
             published: None,
             chain_runs: None,
+            status_readback: None,
         })
     }
 
@@ -638,7 +638,12 @@ impl RetainedSubstitution {
             if consumed {
                 parts.extend_from_slice(extra);
             }
-            let mut counts = read_many(&self.device, &self.queue, &parts)?;
+            let mut counts = read_many(
+                &self.device,
+                &self.queue,
+                &parts,
+                &mut self.status_readback,
+            )?;
             let consumer_words = counts.split_off(words::COUNT);
             let mut consumer_final = consumed && counts[words::PHASE] == words::PHASE_FINAL;
             while counts[words::PHASE] != words::PHASE_FINAL {
@@ -654,7 +659,12 @@ impl RetainedSubstitution {
                 self.record_batch(&mut encoder, &binds, false, rounds, &mut report.dispatches);
                 self.queue.submit(Some(encoder.finish()));
                 report.batches += 1;
-                counts = self.read(&self.scratch["sb_counts"], words::COUNT)?;
+                counts = read_many(
+                    &self.device,
+                    &self.queue,
+                    &[(&self.scratch["sb_counts"], words::COUNT)],
+                    &mut self.status_readback,
+                )?;
                 consumer_final = false;
             }
             if counts[words::RUN] != run || counts[words::GENERATION] != guard.generation {
@@ -1000,7 +1010,7 @@ fn read_words(
     buffer: &wgpu::Buffer,
     words: usize,
 ) -> Result<Vec<u32>> {
-    read_many(device, queue, &[(buffer, words)])
+    read_many(device, queue, &[(buffer, words)], &mut None)
 }
 
 /// The leading words of each buffer (at most its size), concatenated, in
@@ -1009,8 +1019,15 @@ fn read_many(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     parts: &[(&wgpu::Buffer, usize)],
+    staging: &mut Option<LaniusBuffer<u8>>,
 ) -> Result<Vec<u32>> {
-    read_many_labeled(device, queue, parts, crate::readback_label!("retained_substitution.readback"))
+    read_many_with_staging(
+        device,
+        queue,
+        parts,
+        staging,
+        crate::readback_label!("retained_substitution.readback"),
+    )
 }
 
 /// `read_many` under another readback label.
@@ -1018,6 +1035,16 @@ pub(super) fn read_many_labeled(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     parts: &[(&wgpu::Buffer, usize)],
+    label: crate::gpu::passes_core::ReadbackLabel,
+) -> Result<Vec<u32>> {
+    read_many_with_staging(device, queue, parts, &mut None, label)
+}
+
+fn read_many_with_staging(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    parts: &[(&wgpu::Buffer, usize)],
+    staging: &mut Option<LaniusBuffer<u8>>,
     label: crate::gpu::passes_core::ReadbackLabel,
 ) -> Result<Vec<u32>> {
     let sizes: Vec<u64> = parts
@@ -1028,12 +1055,12 @@ pub(super) fn read_many_labeled(
     if bytes == 0 {
         return Ok(Vec::new());
     }
-    let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label.as_str()),
-        size: bytes,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    let capacity = usize::try_from(bytes)?;
+    // Keep the staging page only after a successful map and unmap.
+    let readback = staging
+        .take()
+        .filter(|buffer| buffer.byte_size >= capacity)
+        .unwrap_or_else(|| readback_bytes(device, label.as_str(), capacity, capacity));
     let mut encoder = device.create_command_encoder(&Default::default());
     let mut at = 0;
     for ((buffer, _), size) in parts.iter().zip(&sizes) {
@@ -1041,7 +1068,7 @@ pub(super) fn read_many_labeled(
         at += size;
     }
     queue.submit(Some(encoder.finish()));
-    let slice = readback.slice(..);
+    let slice = readback.slice(..bytes);
     map_readback_blocking(device, &slice, label)?;
     let out = slice
         .get_mapped_range()
@@ -1049,6 +1076,7 @@ pub(super) fn read_many_labeled(
         .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
         .collect();
     readback.unmap();
+    *staging = Some(readback);
     Ok(out)
 }
 

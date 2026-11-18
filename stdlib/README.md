@@ -1,8 +1,10 @@
 # Standard library
 
-The standard library is implemented in Lanius. Use `--stdlib-root stdlib` when
-compiling a program from this checkout. The [extended library](../extended/README.md)
-contains optional codecs, protocols, mathematics and application utilities.
+The standard library is implemented in Lanius. The compiler embeds `core`
+and uses it unless the supplied standard-library root contains `core/`.
+Use `--stdlib-root stdlib` to also make `alloc`, `std` and `test` available
+from this checkout. The [extended library](../extended/README.md) contains
+optional codecs, protocols, mathematics and application utilities.
 
 ## Layers
 

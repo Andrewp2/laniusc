@@ -151,6 +151,8 @@ fn prepare_codegen_kernels(
     device: &wgpu::Device,
     backends: GpuCompilerBackends,
 ) -> anyhow::Result<crate::gpu::kernels::KernelRegistry> {
+    // Both targets use the trait solver's dynamic-uniform pipeline variants.
+    trait_solver::prepare_solver_kernels(device)?;
     crate::gpu::kernels::KernelRegistry::prepare_prefixes(
         device,
         crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
@@ -222,13 +224,7 @@ fn initialize_pipeline_families(
                 .stack_size(PIPELINE_INIT_STACK_BYTES)
                 .spawn_scoped(scope, || {
                     let start = std::time::Instant::now();
-                    // Native body specialization admits trait solver in
-                    // x86 jobs; its pipelines are prepared with the linker's.
                     let linker = x86::GpuX86Linker::new_with_device(gpu)
-                        .and_then(|linker| {
-                            trait_solver::prepare_solver_kernels(&gpu.device)?;
-                            Ok(linker)
-                        })
                         .map(Box::new)
                         .map_err(|err| err.to_string());
                     let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(

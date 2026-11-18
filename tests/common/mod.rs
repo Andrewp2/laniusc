@@ -165,6 +165,70 @@ pub fn temp_artifact_path(prefix: &str, stem: &str, extension: Option<&str>) -> 
     path
 }
 
+/// A fixture root that supplies its own core must supply the language item.
+#[allow(dead_code)]
+pub fn write_core_language_item_fixture(core_dir: &Path) {
+    std::fs::write(core_dir.join("function.lani"), include_str!("../../stdlib/core/function.lani"))
+        .expect("write fixture core::function");
+    std::fs::write(core_dir.join("mem.lani"), include_str!("../../stdlib/core/mem.lani"))
+        .expect("write fixture core::mem");
+}
+
+// Small test libraries supply their own core modules to exercise cross-library
+// behavior. Complete their disk core in a temporary copy for entry builds.
+struct CompletedStdlibFixture(PathBuf);
+
+impl CompletedStdlibFixture {
+    fn new(root: &Path) -> Option<Self> {
+        let core = root.join("core");
+        if !core.is_dir() || core.join("function.lani").is_file() {
+            return None;
+        }
+        let fixture = Self(temp_artifact_path("laniusc_stdlib_fixture", "root", None));
+        copy_fixture_directory(root, &fixture.0);
+        write_core_language_item_fixture(&fixture.0.join("core"));
+        Some(fixture)
+    }
+}
+
+impl Drop for CompletedStdlibFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn copy_fixture_directory(source: &Path, destination: &Path) {
+    fs::create_dir(destination).expect("create temporary fixture directory");
+    for entry in fs::read_dir(source).expect("read stdlib fixture directory") {
+        let entry = entry.expect("read stdlib fixture entry");
+        let path = destination.join(entry.file_name());
+        if entry.file_type().expect("stat fixture entry").is_dir() {
+            copy_fixture_directory(&entry.path(), &path);
+        } else {
+            fs::copy(entry.path(), path).expect("copy stdlib fixture file");
+        }
+    }
+}
+
+pub async fn compile_fixture_entry_to_x86_64(
+    entry: &Path,
+    stdlib: &Path,
+) -> Result<Vec<u8>, CompileError> {
+    let fixture = CompletedStdlibFixture::new(stdlib);
+    let root = fixture.as_ref().map_or(stdlib, |fixture| fixture.0.as_path());
+    laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib(entry, root).await
+}
+
+#[allow(dead_code)]
+pub async fn type_check_fixture_entry(
+    entry: &Path,
+    stdlib: &Path,
+) -> Result<(), CompileError> {
+    let fixture = CompletedStdlibFixture::new(stdlib);
+    let root = fixture.as_ref().map_or(stdlib, |fixture| fixture.0.as_path());
+    laniusc_compiler::compiler::type_check_entry_with_stdlib(entry, root).await
+}
+
 pub fn assert_command_success(context: impl fmt::Display, output: &Output) {
     assert!(
         output.status.success(),

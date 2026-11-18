@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
     fs,
@@ -29,7 +30,7 @@ use import_graph::{
     PackageLockfileResolvedImport,
     compare_import_edge_identity,
     import_graph_edge_summary,
-    import_graph_reachable_files_from_entry,
+    import_graph_reachable_files,
     validate_import_graph_module_endpoint,
 };
 use source_scan::{
@@ -45,14 +46,20 @@ use source_scan::{
 use crate::compiler::{
     CompileError,
     Diagnostic,
+    EMBEDDED_CORE_ROOT,
     EntrySourceRoots,
     ExplicitSourcePack,
     ExplicitSourcePackPathManifest,
+    LANGUAGE_ITEM_MODULE,
     PACKAGE_MANIFEST_MAX_ROOTS,
     ResolvedPackageManifest,
     diagnostic_label_from_source_span,
+    embedded_core_import_path,
+    embedded_core_source,
     load_entry_path_manifest_with_source_roots,
     load_entry_with_source_roots,
+    read_source_path,
+    uses_embedded_core,
 };
 
 /// Version for package lockfile JSON documents.
@@ -687,7 +694,7 @@ impl PackageLockfile {
     ) -> Result<PackageLockfileInputs, CompileError> {
         let mut files = Vec::with_capacity(path_manifest.files.len());
         for file in &path_manifest.files {
-            let bytes = fs::read(&file.path).map_err(|err| {
+            let bytes = read_lockfile_source_bytes(&file.path).map_err(|err| {
                 package_lockfile_error(format!("read input file {}: {err}", file.path.display()))
             })?;
             files.push(PackageLockfileInputFile {
@@ -719,7 +726,7 @@ impl PackageLockfile {
         self.validate_unique_declared_source_modules(path_manifest)?;
         let mut files = Vec::with_capacity(path_manifest.files.len());
         for file in &path_manifest.files {
-            let source = fs::read_to_string(&file.path).map_err(|err| {
+            let source = read_source_path(&file.path).map_err(|err| {
                 package_lockfile_error(format!(
                     "read source identity file {}: {err}",
                     file.path.display()
@@ -756,7 +763,7 @@ impl PackageLockfile {
     ) -> Result<(), CompileError> {
         let mut seen_modules = BTreeMap::new();
         for file in &path_manifest.files {
-            let source = fs::read_to_string(&file.path).map_err(|err| {
+            let source = read_source_path(&file.path).map_err(|err| {
                 package_lockfile_error(format!(
                     "read source identity file {}: {err}",
                     file.path.display()
@@ -803,7 +810,7 @@ impl PackageLockfile {
         let mut seen_source_imports = BTreeSet::new();
 
         for file in &path_manifest.files {
-            let source = fs::read_to_string(&file.path).map_err(|err| {
+            let source = read_source_path(&file.path).map_err(|err| {
                 package_lockfile_error(format!(
                     "read import graph source {}: {err}",
                     file.path.display()
@@ -877,7 +884,15 @@ impl PackageLockfile {
             }
         }
 
+        // The compilation also depends on the implicit closure language item.
+        // Lockfile import graphs record dependencies backed by explicit imports.
         let mut library_dependencies = path_manifest.library_dependencies.clone();
+        library_dependencies.retain(|dependency| {
+            imports.iter().any(|import| {
+                import.source_library_id == dependency.library_id
+                    && import.target_library_id == dependency.depends_on_library_id
+            })
+        });
         library_dependencies
             .sort_by_key(|dependency| (dependency.library_id, dependency.depends_on_library_id));
         imports.sort_by(compare_import_edge_identity);
@@ -930,6 +945,13 @@ impl PackageLockfile {
                 library_id: PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID,
                 label: "stdlib root",
                 root: canonicalize_import_root("stdlib root", stdlib_root)?,
+            });
+        }
+        if uses_embedded_core(self.stdlib_root.as_deref()) {
+            roots.push(PackageLockfileImportSearchRoot {
+                library_id: PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID,
+                label: "embedded core",
+                root: PathBuf::from(EMBEDDED_CORE_ROOT),
             });
         }
         Ok(roots)
@@ -1127,6 +1149,9 @@ impl PackageLockfile {
         for file in &expected.files {
             self.validate_file_library_ownership("input file", file.library_id, &file.path)?;
             validate_resolved_source_path("input file", &file.path)?;
+            if embedded_core_source(&file.path).is_some() {
+                continue;
+            }
             let metadata = match fs::metadata(&file.path) {
                 Ok(metadata) => metadata,
                 Err(err) => {
@@ -1154,7 +1179,7 @@ impl PackageLockfile {
         for file in &expected.files {
             self.validate_file_library_ownership("input file", file.library_id, &file.path)?;
             validate_resolved_source_path("input file", &file.path)?;
-            let bytes = match fs::read(&file.path) {
+            let bytes = match read_lockfile_source_bytes(&file.path) {
                 Ok(bytes) => bytes,
                 Err(err) => {
                     return Ok(Some(package_lockfile_error(format!(
@@ -1357,7 +1382,15 @@ impl PackageLockfile {
                 )));
             }
         }
-        let reachable_files = import_graph_reachable_files_from_entry(&entry_key, import_graph);
+        // The closure trait module is an implicit root of the source graph.
+        let language_item = source_identities.files.iter().find(|file| {
+            file.library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID
+                && file.module_path.as_deref() == Some(LANGUAGE_ITEM_MODULE)
+        });
+        let roots = std::iter::once(entry_key).chain(
+            language_item.map(|file| (file.library_id, file.path.clone())),
+        );
+        let reachable_files = import_graph_reachable_files(roots, import_graph);
         for file in &inputs.files {
             let file_key = (file.library_id, file.path.clone());
             if !reachable_files.contains(&file_key) {
@@ -1496,6 +1529,10 @@ impl PackageLockfile {
         library_id: u32,
         path: &Path,
     ) -> Result<(usize, PathBuf), CompileError> {
+        if library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID && self.owns_embedded_core_path(path) {
+            let name = path.file_name().expect("embedded core source has a file name");
+            return Ok((0, Path::new("core").join(name)));
+        }
         let (root_index, root) = match library_id {
             PACKAGE_LOCKFILE_USER_LIBRARY_ID => self
                 .roots
@@ -1704,6 +1741,10 @@ impl PackageLockfile {
         )))
     }
 
+    fn owns_embedded_core_path(&self, path: &Path) -> bool {
+        uses_embedded_core(self.stdlib_root.as_deref()) && embedded_core_source(path).is_some()
+    }
+
     fn validate_file_library_ownership(
         &self,
         label: &str,
@@ -1723,6 +1764,9 @@ impl PackageLockfile {
                 }
             }
             PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID => {
+                if self.owns_embedded_core_path(path) {
+                    return Ok(());
+                }
                 let Some(stdlib_root) = &self.stdlib_root else {
                     return Err(package_lockfile_error(format!(
                         "{label} {} uses stdlib library {PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID}, but the lockfile has no stdlib root",
@@ -2383,12 +2427,25 @@ fn validate_normalized_resolved_path(label: &str, path: &Path) -> Result<(), Com
     Ok(())
 }
 
+fn read_lockfile_source_bytes(path: &Path) -> std::io::Result<Cow<'static, [u8]>> {
+    match embedded_core_source(path) {
+        Some(source) => Ok(Cow::Borrowed(source.as_bytes())),
+        None => fs::read(path).map(Cow::Owned),
+    }
+}
+
 fn validate_resolved_source_path(label: &str, path: &Path) -> Result<(), CompileError> {
+    if embedded_core_source(path).is_some() {
+        return Ok(());
+    }
     validate_resolved_path(label, path)?;
     validate_lockfile_source_path(label, path)
 }
 
 fn validate_existing_resolved_source_file(label: &str, path: &Path) -> Result<(), CompileError> {
+    if embedded_core_source(path).is_some() {
+        return Ok(());
+    }
     validate_existing_resolved_file(label, path)?;
     validate_lockfile_source_path(label, path)
 }
@@ -2688,6 +2745,16 @@ fn collect_lockfile_import_matches<'a>(
     let mut matches = Vec::new();
 
     for root in roots {
+        if root.root == Path::new(EMBEDDED_CORE_ROOT) {
+            if let Some(path) = embedded_core_import_path(import_path) {
+                matches.push(PackageLockfileResolvedImport {
+                    library_id: root.library_id,
+                    label: root.label,
+                    path,
+                });
+            }
+            continue;
+        }
         let source_path = lockfile_import_source_path(&root.root, import_path);
         searched_paths.push(source_path.clone());
         let Ok(canonical_source_path) = fs::canonicalize(&source_path) else {

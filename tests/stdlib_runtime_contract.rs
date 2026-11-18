@@ -105,7 +105,7 @@ fn runtime_service_values() -> Vec<(&'static str, u32)> {
         .collect()
 }
 
-/// A build with a stdlib root always loads the language-item module
+/// A build always loads the language-item module
 /// `core::function`, the closure traits, and its import `core::mem`, after
 /// the entry's imports. The manifest lists what the build loads, so every
 /// manifest count in this file includes those two files (one when the entry

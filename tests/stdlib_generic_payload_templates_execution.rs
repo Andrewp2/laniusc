@@ -1,8 +1,8 @@
 use crate::common;
+use common::compile_fixture_entry_to_x86_64 as compile_entry_to_x86_64_with_stdlib;
 
 use laniusc_compiler::compiler::{
     CompileError,
-    compile_entry_to_x86_64_with_stdlib,
     compile_source_to_x86_64_with_gpu_codegen,
 };
 

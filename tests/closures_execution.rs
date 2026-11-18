@@ -6,7 +6,9 @@ use crate::common;
 
 use std::path::PathBuf;
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use laniusc_compiler::compiler::{
+    GpuCompiler, compile_entry_to_x86_64_with_stdlib,
+};
 
 const NO_IMPORT: &str = "\
 fn apply<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
@@ -34,16 +36,12 @@ fn a_closure_in_a_file_without_imports_compiles_and_runs() {
 }
 
 #[test]
-fn a_closure_in_a_build_without_core_reports_the_missing_trait_module_at_its_bar() {
-    let source = "fn main() -> i32 {\n    let k: i32 = 3;\n    let f = |x: i32| x * k;\n    return 0;\n}\n";
-    let error = common::run_gpu_codegen_with_timeout("closure without core", move || {
-        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new())
-            .expect("GPU compiler");
-        pollster::block_on(compiler.compile_source_to_x86_64(source))
+fn a_closure_in_a_build_without_a_stdlib_root_compiles_and_runs() {
+    let bytes = common::run_gpu_codegen_with_timeout("closure with embedded core", move || {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        pollster::block_on(compiler.compile_source_to_x86_64(NO_IMPORT))
     })
-    .expect_err("a closure without core::function must not compile");
-    let diagnostic = error.to_public_diagnostic();
-    let label = diagnostic.primary_label.clone().unwrap_or_else(|| panic!("unlocated: {error:?}"));
-    assert_eq!((label.line, label.column), (3, 13), "{error:?}");
-    assert!(diagnostic.message.contains("core::function"), "{error:?}");
+    .unwrap_or_else(|error| panic!("closure with embedded core: {error:?}"));
+    let output = common::run_x86_64_elf_output("closure with embedded core", "closures", &bytes);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
 }
