@@ -5,7 +5,7 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.goal_operations;
-import type_checker.trait_solver.proof_goal_equality;
+import type_checker.trait_solver.normalization.proof_goal_equality;
 
 public SolverStatus ts_validate_retained_evidence(uint evidence)
 {

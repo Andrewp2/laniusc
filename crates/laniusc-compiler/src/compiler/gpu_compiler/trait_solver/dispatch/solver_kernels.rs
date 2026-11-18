@@ -617,18 +617,18 @@ const GENERIC_SELECTION_PHASE: u32 = 65;
 const SUBSTITUTION_PHASE: u32 = 54;
 const IMPLEMENTATION_PROOF_PHASE: u32 = 59;
 const PREREQUISITE_PHASE: u32 = 66;
-const WALK_GOALS: &str = "type_checker/trait_solver/entries/54_walk_substitution_goals";
-const WALK_ROOTS: &str = "type_checker/trait_solver/entries/54_walk_substitution_roots";
-const WALK_BINDINGS: &str = "type_checker/trait_solver/entries/54_walk_substitution_bindings";
-const SELECT_IMPLEMENTATIONS: &str = "type_checker/trait_solver/entries/53_select_implementations";
+const WALK_GOALS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_goals";
+const WALK_ROOTS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_roots";
+const WALK_BINDINGS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_bindings";
+const SELECT_IMPLEMENTATIONS: &str = "type_checker/trait_solver/proof_frontier/select_proof_implementations";
 /// Exact implementation match, caller assumption search, generic
 /// implementation match (the first kernel again, as phase 65), then the
 /// finish (proof_frontier_selection.slang).
 const SELECTION_STEPS: [(&str, u32); 4] = [
     (SELECT_IMPLEMENTATIONS, SELECTION_PHASE),
-    ("type_checker/trait_solver/entries/53_select_assumptions", SELECTION_PHASE),
+    ("type_checker/trait_solver/proof_frontier/select_proof_assumptions", SELECTION_PHASE),
     (SELECT_IMPLEMENTATIONS, GENERIC_SELECTION_PHASE),
-    ("type_checker/trait_solver/entries/53_select_work", SELECTION_PHASE),
+    ("type_checker/trait_solver/proof_frontier/select_proof_work", SELECTION_PHASE),
 ];
 /// Up to the head match, the head's root unification, then the bindings
 /// (proof_substitution_walk.slang).
@@ -645,21 +645,21 @@ const IMPLEMENTATION_PROOF_STEPS: [(&str, u32); 4] = [
     (WALK_BINDINGS, IMPLEMENTATION_PROOF_PHASE),
     (WALK_ROOTS, PREREQUISITE_PHASE),
 ];
-const BINDING_ROWS: &str = "type_checker/trait_solver/entries/54_admit_binding_rows";
-const ASSUMPTION_PROOFS: &str = "type_checker/trait_solver/entries/59_admit_assumption_proofs";
-const PROOF_EDGE_ROWS: &str = "type_checker/trait_solver/entries/59_admit_proof_edge_rows";
+const BINDING_ROWS: &str = "type_checker/trait_solver/proof_substitution/admit_proof_binding_rows";
+const ASSUMPTION_PROOFS: &str = "type_checker/trait_solver/proof_publication/admit_assumption_proofs";
+const PROOF_EDGE_ROWS: &str = "type_checker/trait_solver/proof_publication/admit_proof_edge_rows";
 /// The GPU planner of recorded solver rounds (proof_solver_wave.slang).
 const WAVE_PLAN_PHASE: u32 = 70;
 /// Normalization row counts (proof_demand.slang): original Works (phase 41)
 /// and prerequisite Works (phase 42).
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
-const AUDIT_TERMS: &str = "type_checker/trait_solver/entries/45_audit_normalized_terms";
-const AUDIT_GOALS: &str = "type_checker/trait_solver/entries/47_audit_normalized_goals";
-const MARK_GOALS: &str = "type_checker/trait_solver/entries/47_mark_normalized_goals";
-const AUDIT_WORK: &str = "type_checker/trait_solver/entries/50_audit_work";
-const WRITE_GOAL_INDEX: &str = "type_checker/trait_solver/entries/50_write_goal_index";
-const AUDIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/entries/55_audit_substitutions";
+const AUDIT_TERMS: &str = "type_checker/trait_solver/normalization/audit_normalized_terms";
+const AUDIT_GOALS: &str = "type_checker/trait_solver/normalization/audit_normalized_goals";
+const MARK_GOALS: &str = "type_checker/trait_solver/normalization/mark_normalized_goals";
+const AUDIT_WORK: &str = "type_checker/trait_solver/proof_frontier/audit_proof_work";
+const WRITE_GOAL_INDEX: &str = "type_checker/trait_solver/proof_frontier/write_goal_index";
+const AUDIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/proof_substitution/audit_proof_substitutions";
 /// Commit stages over the whole grid (proof_commit_audit.slang): audit lanes
 /// over the owner rows, whose last workgroup runs the committing thread; 47
 /// and 50 go on with lanes that finish what the commit let through, and the
@@ -698,70 +698,70 @@ fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
-        "type_checker/trait_solver/entries/40_initialize_proof_store",
+        "type_checker/trait_solver/proof_publication/initialize_proof_store",
         256,
     ),
     (
         41,
-        "type_checker/trait_solver/entries/41_normalize_original",
+        "type_checker/trait_solver/normalization/normalize_original_obligations",
         256,
     ),
     (
         42,
-        "type_checker/trait_solver/entries/42_normalize_prerequisite",
+        "type_checker/trait_solver/normalization/normalize_prerequisite_obligations",
         256,
     ),
     (
         43,
-        "type_checker/trait_solver/entries/43_validate_original_normalization",
+        "type_checker/trait_solver/normalization/validate_original_obligation_normalization",
         256,
     ),
     (
         44,
-        "type_checker/trait_solver/entries/44_validate_prerequisite_normalization",
+        "type_checker/trait_solver/normalization/validate_prerequisite_normalization",
         256,
     ),
     // Commit stages 45, 47, 50 and 55: see COMMIT_STAGES.
     (45, AUDIT_TERMS, 256),
     (
         46,
-        "type_checker/trait_solver/entries/46_hash_normalized_goals",
+        "type_checker/trait_solver/normalization/hash_normalized_goals",
         256,
     ),
     (47, AUDIT_GOALS, 256),
     (47, MARK_GOALS, 256),
     (
         48,
-        "type_checker/trait_solver/entries/48_initialize_work",
+        "type_checker/trait_solver/proof_frontier/initialize_proof_frontier",
         256,
     ),
     (
         49,
-        "type_checker/trait_solver/entries/49_admit_work",
+        "type_checker/trait_solver/proof_frontier/admit_proof_work",
         256,
     ),
     (50, AUDIT_WORK, 256),
     (50, WRITE_GOAL_INDEX, 256),
     (
         51,
-        "type_checker/trait_solver/entries/51_index_work",
+        "type_checker/trait_solver/proof_frontier/index_proof_work",
         256,
     ),
     (
         52,
-        "type_checker/trait_solver/entries/52_resolve_work",
+        "type_checker/trait_solver/proof_frontier/resolve_proof_work",
         256,
     ),
     // Work selection: see SELECTION_STEPS.
     (53, SELECT_IMPLEMENTATIONS, 256),
     (
         53,
-        "type_checker/trait_solver/entries/53_select_assumptions",
+        "type_checker/trait_solver/proof_frontier/select_proof_assumptions",
         256,
     ),
     (
         53,
-        "type_checker/trait_solver/entries/53_select_work",
+        "type_checker/trait_solver/proof_frontier/select_proof_work",
         256,
     ),
     // Substitution walk (phases 54, 59 and 66): see SUBSTITUTION_STEPS and
@@ -773,44 +773,44 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (55, AUDIT_SUBSTITUTIONS, 256),
     (
         56,
-        "type_checker/trait_solver/entries/56_expand_work",
+        "type_checker/trait_solver/proof_frontier/expand_proof_frontier",
         256,
     ),
     (
         57,
-        "type_checker/trait_solver/entries/57_link_requirements",
+        "type_checker/trait_solver/proof_frontier/link_proof_requirements",
         256,
     ),
     (
         58,
-        "type_checker/trait_solver/entries/58_emit_ready_proofs",
+        "type_checker/trait_solver/proof_publication/emit_ready_proofs",
         256,
     ),
     (59, ASSUMPTION_PROOFS, 256),
     (59, PROOF_EDGE_ROWS, 256),
     (
         61,
-        "type_checker/trait_solver/entries/61_publish_work_proofs",
+        "type_checker/trait_solver/proof_publication/publish_work_proofs",
         256,
     ),
     (
         64,
-        "type_checker/trait_solver/entries/64_publish_roots",
+        "type_checker/trait_solver/proof_publication/publish_proof_roots",
         256,
     ),
     (
         COUNT_ORIGINAL_NORMALIZATION,
-        "type_checker/trait_solver/entries/67_count_original_normalization",
+        "type_checker/trait_solver/normalization/count_original_normalization_rows",
         256,
     ),
     (
         COUNT_PREREQUISITE_NORMALIZATION,
-        "type_checker/trait_solver/entries/68_count_prerequisite_normalization",
+        "type_checker/trait_solver/normalization/count_prerequisite_normalization_rows",
         256,
     ),
     (
         WAVE_PLAN_PHASE,
-        "type_checker/trait_solver/entries/70_plan_solver_wave",
+        "type_checker/trait_solver/proof_frontier/plan_solver_wave",
         256,
     ),
     // The finish point's batch stages: call reduction, then the receipt.
@@ -1561,7 +1561,7 @@ impl ProofKernels {
         let words = |words: Vec<u32>| words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<u8>>();
         template.slots.write(workspace.queue(), 0, &words(template.slot_words(inputs)));
         template.params.write(workspace.queue(), 0, &words(template.params_words(inputs)));
-        let plan = proof_key_index("type_checker/trait_solver/entries/70_plan_solver_wave")?;
+        let plan = proof_key_index("type_checker/trait_solver/proof_frontier/plan_solver_wave")?;
         let slot_bytes = u64::from(stride) * 4;
         let plan_block = u32::try_from(template.params.absolute_offset(0))?;
         let mut steps = Vec::with_capacity(template.slot_rows.len() + segments.len());

@@ -6,7 +6,7 @@ import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_store_abi;
-import type_checker.trait_solver.proof_term_normalization;
+import type_checker.trait_solver.normalization.proof_term_normalization;
 import type_checker.owned_type_constraint_contract;
 import type_checker.scoped_type_equality;
 

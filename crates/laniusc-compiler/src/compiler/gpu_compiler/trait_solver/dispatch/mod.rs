@@ -19,7 +19,7 @@ mod implementation_application;
 pub(super) use implementation_application::ProjectedImplApplication;
 #[cfg(test)]
 pub(super) use implementation_application::ImplProjectionLimits;
-mod proof;
+mod proof_progress;
 mod retained_catalog;
 pub(super) use retained_catalog::{
     check as retained_check,
@@ -497,7 +497,7 @@ impl GpuTraitSolver {
     fn grow_for_demand(
         &self,
         packet: &mut GpuPacket,
-        progress: &proof::ProofProgress,
+        progress: &proof_progress::ProofProgress,
         demand: &[u32],
     ) -> Result<()> {
         ensure!(demand.len() == PROOF_STORE_TABLES, "proof normalization demand has no table words");
@@ -1077,8 +1077,8 @@ impl GpuTraitSolver {
         plan: &BatchPlan,
         submission: &Submission,
     ) -> Result<WaveReadback> {
-        let mut capacities = proof::with_floor(
-            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+        let mut capacities = proof_progress::with_floor(
+            proof_progress::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
             &self.workspace.proof_capacity_floor(),
             &packet.packet.proof_store,
         )?;
@@ -1110,8 +1110,8 @@ impl GpuTraitSolver {
         plan: &BatchPlan,
         submission: &Submission,
     ) -> Result<()> {
-        let capacities = proof::with_floor(
-            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+        let capacities = proof_progress::with_floor(
+            proof_progress::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
             &self.workspace.proof_capacity_floor(),
             &packet.packet.proof_store,
         )?;
@@ -1287,7 +1287,7 @@ const FIRST_SUBMIT_QUEUE_ROUNDS: u32 = 3;
 struct AttemptEnd {
     /// The decoded progress of an attempt whose batch or store stopped
     /// building; None for a solve the finish point published.
-    stopped: Option<proof::ProofProgress>,
+    stopped: Option<proof_progress::ProofProgress>,
     readback: WaveReadback,
 }
 
@@ -1308,8 +1308,8 @@ struct WaveReadback {
 }
 impl WaveReadback {
     /// The solver counters of a submit the finish point did not publish.
-    fn progress(&self, packet: &GpuPacket, submission: &Submission) -> Result<proof::ProofProgress> {
-        proof::ProofProgress::from_owned_readback(
+    fn progress(&self, packet: &GpuPacket, submission: &Submission) -> Result<proof_progress::ProofProgress> {
+        proof_progress::ProofProgress::from_owned_readback(
             packet.packet.proof_store.layout(),
             submission,
             self.proof_header.clone(),

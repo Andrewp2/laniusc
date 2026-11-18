@@ -441,7 +441,7 @@ pub(super) fn inject_pending_proof_fault(
     gpu: &GpuTraitSolver,
     packet: &GpuPacket,
     layout: &OutputLayout,
-    progress: &proof::ProofProgress,
+    progress: &crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::ProofProgress,
 ) -> anyhow::Result<()> {
     let mut armed = packet.proof_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else {

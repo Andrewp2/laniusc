@@ -5,7 +5,7 @@ import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.batches.replay_validation;
 import type_checker.trait_solver.batches.obligation_selection;
 import type_checker.trait_solver.goal_operations;
-import type_checker.trait_solver.proof_store_lifecycle;
+import type_checker.trait_solver.proof_publication.proof_store_lifecycle;
 
 public void ts_batch_validate_evidence(uint local)
 {

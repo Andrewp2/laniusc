@@ -9,7 +9,7 @@ import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.checked_graph_operations;
 import type_checker.trait_solver.catalog_admission.catalog_row_admission;
 import type_checker.trait_solver.catalog_admission.definition_admission;
-import type_checker.trait_solver.proof_goal_equality;
+import type_checker.trait_solver.normalization.proof_goal_equality;
 
 // Frozen host provenance supplies the exact accepted call_hir -> actual owner
 // inventory and public-unit registry. Packet equality checks below preserve it;
