@@ -175,8 +175,8 @@ impl GpuTypeChecker {
             dependency_interfaces_present: 0,
             retain_callable_owners: 0,
             trait_obligation_mode: 0,
-            canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
-            canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
+            canonical_library_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
+            canonical_unit_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
             workspace_token_rows: token_capacity,
         };
         self.params_buf.write(queue, 0, &type_check_params_bytes(&params));

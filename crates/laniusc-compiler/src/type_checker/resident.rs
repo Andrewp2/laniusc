@@ -332,7 +332,7 @@ fn submit_recorded(
 fn canonical_stages_synchronous(requested: bool) -> bool {
     requested
         || crate::options::get().trace.canonical
-        || canonical_passes::canonical_validation_enabled()
+        || crate::type_checker::canonicalization::canonical_validation_enabled()
 }
 
 /// Interns canonical type identities (docs/canonical-type-ids.md).
@@ -365,14 +365,14 @@ fn record_canonical_types(
         return Ok(());
     }
     let trace = crate::options::get().trace.canonical;
-    let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
+    let batches = crate::type_checker::canonicalization::CANONICAL_MAX_ROUNDS / crate::type_checker::canonicalization::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
         let batch_started = std::time::Instant::now();
         let counts =
             submit_and_read_u32s(device, queue, encoder, counts_readback, crate::readback_label!("type_check.canonical"))?;
         let wait_ms = batch_started.elapsed().as_secs_f64() * 1000.0;
-        let pending = counts[canonical_passes::CANONICAL_COUNT_PENDING];
-        let overflow = counts[canonical_passes::CANONICAL_COUNT_OVERFLOW];
+        let pending = counts[crate::type_checker::canonicalization::CANONICAL_COUNT_PENDING];
+        let overflow = counts[crate::type_checker::canonicalization::CANONICAL_COUNT_OVERFLOW];
         let [record_capacity, argument_capacity, frontier_rows] = canonical.capacity();
         if trace || overflow != 0 {
             // Records from 32 on are allocated; the frontier lengths are the
@@ -380,7 +380,7 @@ fn record_canonical_types(
             eprintln!(
                 "[typecheck.canonical] stage={} batch={batch} rounds={} pending={pending} records={}/{record_capacity} args={}/{argument_capacity} frontier={}/{frontier_rows} overflow={overflow:#x} scale={canonical_scale} wait_ms={wait_ms:.3}",
                 stage.label(),
-                counts[canonical_passes::CANONICAL_COUNT_ROUND],
+                counts[crate::type_checker::canonicalization::CANONICAL_COUNT_ROUND],
                 counts[0].saturating_sub(32),
                 counts[1],
                 counts[5].max(counts[6]),
@@ -389,8 +389,8 @@ fn record_canonical_types(
         // Overflow bits stay set until the next job's clear, so the first
         // batch that reports one abandons the job: its candidates already
         // turned UNKNOWN and no later stage can repair them.
-        if overflow & canonical_passes::CANONICAL_RETRY_OVERFLOW_BITS != 0 {
-            return Err(anyhow::Error::new(canonical_passes::CanonicalCapacityOverflow {
+        if overflow & crate::type_checker::canonicalization::CANONICAL_RETRY_OVERFLOW_BITS != 0 {
+            return Err(anyhow::Error::new(crate::type_checker::canonicalization::CanonicalCapacityOverflow {
                 bits: overflow,
                 stage: stage.label(),
                 scale: canonical_scale,
@@ -403,7 +403,7 @@ fn record_canonical_types(
         }
         canonical.record_batch(encoder, stage)?;
     }
-    if stage == CanonicalStage::Late && canonical_passes::canonical_validation_enabled() {
+    if stage == CanonicalStage::Late && crate::type_checker::canonicalization::canonical_validation_enabled() {
         canonical.record_validation(encoder)?;
         let words = submit_and_read_u32s(
             device,
@@ -412,7 +412,7 @@ fn record_canonical_types(
             validation_readback,
             crate::debug_readback_label!("type_check.canonical.validation"),
         )?;
-        eprintln!("{}", canonical_passes::canonical_validation_report(&words));
+        eprintln!("{}", crate::type_checker::canonicalization::canonical_validation_report(&words));
     }
     Ok(())
 }
@@ -436,8 +436,8 @@ impl GpuTypeChecker {
                 if key.starts_with("type_checker/trait_solver/") {
                     return false;
                 }
-                if canonical_passes::CANONICAL_DEBUG_KERNELS.contains(&key)
-                    && !canonical_passes::canonical_validation_enabled()
+                if crate::type_checker::canonicalization::CANONICAL_DEBUG_KERNELS.contains(&key)
+                    && !crate::type_checker::canonicalization::canonical_validation_enabled()
                 {
                     return false;
                 }
@@ -502,12 +502,12 @@ impl GpuTypeChecker {
         let canonical_counts_readback = readback_u32s(
             device,
             "rb.type_check.canonical.counts",
-            canonical_passes::CANONICAL_COUNT_WORDS,
+            crate::type_checker::canonicalization::CANONICAL_COUNT_WORDS,
         );
         let canonical_validation_readback = readback_u32s(
             device,
             "rb.type_check.canonical.validation",
-            canonical_passes::CANONICAL_VALIDATION_WORDS,
+            crate::type_checker::canonicalization::CANONICAL_VALIDATION_WORDS,
         );
         let preflight_graph = preflight::TypeCheckPreflightGraph::new(device, &passes)?;
 
@@ -664,11 +664,11 @@ impl GpuTypeChecker {
             let Err(GpuTypeCheckError::Gpu(error)) = &result else {
                 return result;
             };
-            let Some(overflow) = error.downcast_ref::<canonical_passes::CanonicalCapacityOverflow>()
+            let Some(overflow) = error.downcast_ref::<crate::type_checker::canonicalization::CanonicalCapacityOverflow>()
             else {
                 return result;
             };
-            let Some(scale) = canonical_passes::canonical_retry_scale(overflow.scale, overflow.bits)
+            let Some(scale) = crate::type_checker::canonicalization::canonical_retry_scale(overflow.scale, overflow.bits)
             else {
                 return result;
             };
@@ -769,7 +769,7 @@ impl GpuTypeChecker {
             // execution rows' virtual tokens follow the job's tokens
             // (closure/instance_exec.slang), so the token tables reserve
             // their share and the type rows start after it.
-            token_capacity: super::instance_closure_passes::exec_lowering_token_capacity(
+            token_capacity: super::closure::exec_lowering_token_capacity(
                 token_capacity,
             ),
             hir_node_capacity,
@@ -935,9 +935,9 @@ impl GpuTypeChecker {
             retain_callable_owners: u32::from(hir_items.semantic_interface_required),
             trait_obligation_mode,
             canonical_library_id: dependency_pages
-                .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
+                .map_or(crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
             canonical_unit_id: dependency_pages
-                .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_unit_id()),
+                .map_or(crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY, |pages| pages.current_unit_id()),
             // Written with the workspace's allocation below.
             workspace_token_rows: 0,
         };
@@ -2505,7 +2505,7 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_backend_targets.done");
             }
             // An original job's closure selects the functions the body
-            // passes bind in place (closure/inplace_read.slang).
+            // passes bind in place (inplace_instance_lookup.slang).
             let in_place = instance_closure;
             if instance_closure {
                 let closure = &bind_groups.semantic_projection.instance_closure;
@@ -2585,7 +2585,7 @@ impl GpuTypeChecker {
                 closure.record_inplace_rearm(encoder, 2)?;
             }
             // An original job counts what it leaves for the trait solver
-            // (closure/04e_solver_demand.slang).
+            // (count_instance_solver_demand.slang).
             if hir_items.semantic_interface_required {
                 bind_groups.semantic_projection.instance_closure.record_solver_demand(encoder)?;
             }
@@ -2739,9 +2739,9 @@ impl GpuTypeChecker {
     /// Selects the synchronous canonical recording for the next job and
     /// returns the error that asks the caller to record this job again.
     fn request_synchronous_canonical(&self, counts: &[u32]) -> GpuTypeCheckError {
-        let retry = canonical_passes::CanonicalSynchronousRetry {
-            batch_pending: counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
-            overflow: counts[canonical_passes::CANONICAL_COUNT_OVERFLOW],
+        let retry = crate::type_checker::canonicalization::CanonicalSynchronousRetry {
+            batch_pending: counts[crate::type_checker::canonicalization::CANONICAL_COUNT_BATCH_PENDING] != 0,
+            overflow: counts[crate::type_checker::canonicalization::CANONICAL_COUNT_OVERFLOW],
         };
         if crate::options::get().trace.canonical {
             eprintln!("[typecheck.canonical] {retry}; recording the job again");
@@ -2764,7 +2764,7 @@ impl GpuTypeChecker {
         .ok()?;
         let counts = read_u32_words_mapped(&slice);
         self.canonical_counts_readback.unmap();
-        canonical_passes::canonical_deferred_retry_required(&counts)
+        crate::type_checker::canonicalization::canonical_deferred_retry_required(&counts)
             .then(|| self.request_synchronous_canonical(&counts))
     }
 
@@ -2851,7 +2851,7 @@ impl GpuTypeChecker {
             let counts = read_u32_words_mapped(&counts_slice);
             self.canonical_counts_readback.unmap();
             self.canonical_synchronous.store(
-                counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
+                counts[crate::type_checker::canonicalization::CANONICAL_COUNT_BATCH_PENDING] != 0,
                 std::sync::atomic::Ordering::Relaxed,
             );
         } else {
@@ -2868,7 +2868,7 @@ impl GpuTypeChecker {
             crate::gpu::passes_core::finish_readback_map_blocking(device, status_map)?;
             let counts = read_u32_words_mapped(&counts_slice);
             self.canonical_counts_readback.unmap();
-            if canonical_passes::canonical_deferred_retry_required(&counts) {
+            if crate::type_checker::canonicalization::canonical_deferred_retry_required(&counts) {
                 self.status_readback.unmap();
                 return Err(self.request_synchronous_canonical(&counts));
             }

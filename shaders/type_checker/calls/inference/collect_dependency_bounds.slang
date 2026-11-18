@@ -10,8 +10,8 @@
 // a dropped bound only infers nothing.
 import dependency_interface;
 import semantic_interface_layout;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_dependency;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_dependency;
 import type_checker.calls.bound_tables;
 
 static const uint INVALID = 0xffffffffu;

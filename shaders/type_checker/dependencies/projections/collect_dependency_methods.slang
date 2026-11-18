@@ -4,8 +4,8 @@
 // all local and imported candidates have been offered.
 #include "../method_candidates.slang"
 import type_checker.constant_atoms;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_candidates;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_candidates;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
 import type_checker.matches.checked_match_types;

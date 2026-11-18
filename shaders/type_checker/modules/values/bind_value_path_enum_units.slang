@@ -3,7 +3,7 @@ import hir_expr_semantics;
 import type_checker.argument_context;
 import type_checker.checked_type_graph;
 import type_checker.checked_canonical;
-import type_checker.canonical.canonical_candidates;
+import type_checker.canonicalization.canonical_candidates;
 import hir_match_patterns;
 import status;
 import type_checker.calls.inference_activity;

@@ -1,7 +1,7 @@
 // Export step 3: one lane per canonical record of the job. Counts records by
 // height, so step 6 can translate every record after all of its children
 // (a child's height is below its parent's).
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

@@ -14,10 +14,10 @@
 // from the published one, so a stable call reserves nothing in later rounds.
 import hir_records;
 import primitive_types;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_constants;
 import type_checker.substitution.ct_checked;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.call_env;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_env;

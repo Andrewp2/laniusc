@@ -1,11 +1,11 @@
 // Fixture setup for the canonical type boundary tests: intern the resident
 // page's dependency nodes into the canonical table, as the per-page rounds
-// (04_dependency_begin, 05_intern_dependency) do in a job. One lane visits
+// (seed_dependency_type_interning, intern_dependency_types) do in a job. One lane visits
 // the nodes in index order; children have smaller indices than parents, so
 // every node resolves in one pass. The host clears ct_slot and sets every
 // canonical_dependency_type entry to CT_PENDING.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_dependency;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_dependency;
 import dependency_interface;
 
 [shader("compute")]

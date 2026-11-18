@@ -311,7 +311,7 @@ pub(in crate::type_checker) const DECL_PUBLIC_MARK: ReflectedComputeSpec = typec
 pub(in crate::type_checker) const INTERFACE_PUBLIC_DECLS_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.interface.public_decls.clear",
     Declarations,
-    "type_checker/interface/public_decls/00_clear";
+    "type_checker/interface/declarations/clear_interface_declaration_map";
     writes [
         "interface_public_decl_count",
         "interface_public_decl_local_id",
@@ -324,7 +324,7 @@ pub(in crate::type_checker) const INTERFACE_PUBLIC_DECLS_MAP: ReflectedComputeSp
     typecheck_pass!(
         "type_check.interface.public_decls.map",
         Declarations,
-        "type_checker/interface/public_decls/01_map"
+        "type_checker/interface/declarations/map_public_interface_declarations"
     )
     .with_aliases(&[
         typecheck_resource!("decl_type_public_flag" => "type_instance_arg_ref_tag", Read),
@@ -721,12 +721,12 @@ pub(in crate::type_checker) const TYPE_INSTANCES_PROJECT: ReflectedComputeSpec =
 
 /// Private types an exported type's fields need become hidden interface
 /// declarations before the canonical early stage. One lane per field and
-/// payload row marks them (02_hidden); per-block counts (03_hidden_count)
-/// let every block publish its indices (04_hidden_publish).
+/// payload row marks them (mark_hidden_interface_declarations); per-block counts (count_hidden_interface_declarations)
+/// let every block publish its indices (publish_hidden_interface_declarations).
 pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_MAP: ReflectedComputeSpec = typecheck_operation!(
     "type_check.interface.public_decls.hidden",
     Declarations,
-    "type_checker/interface/public_decls/02_hidden"
+    "type_checker/interface/declarations/mark_hidden_interface_declarations"
     ; resources [
         typecheck_resource!("interface_public_decl_index_by_local" => "interface_public_decl_index_by_local", ReadWrite),
         typecheck_resource!("interface_public_decl_index_by_hir" => "interface_public_decl_index_by_hir", ReadWrite),
@@ -736,7 +736,7 @@ pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_MAP: ReflectedComputeSp
 pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_COUNT: ReflectedComputeSpec = typecheck_operation!(
     "type_check.interface.public_decls.hidden_count",
     Declarations,
-    "type_checker/interface/public_decls/03_hidden_count"
+    "type_checker/interface/declarations/count_hidden_interface_declarations"
     ; resources [
         typecheck_resource!("interface_public_decl_count" => "interface_public_decl_count", Read),
         typecheck_resource!("interface_public_decl_index_by_local" => "interface_public_decl_index_by_local", Read),
@@ -747,7 +747,7 @@ pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_COUNT: ReflectedCompute
 pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_PUBLISH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.interface.public_decls.hidden_publish",
     Declarations,
-    "type_checker/interface/public_decls/04_hidden_publish"
+    "type_checker/interface/declarations/publish_hidden_interface_declarations"
     ; resources [
         typecheck_resource!("interface_hidden_block_count" => "interface_hidden_block_count", Read),
         typecheck_resource!("status" => "status", ReadWrite),

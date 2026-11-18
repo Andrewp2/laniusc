@@ -17,7 +17,7 @@
 // declaration token when it has one, else by its (library, unit, local)
 // triple. Array lengths are count classes: a count is a u32 atom and a
 // constant parameter a u32 projection of it, as source arrays are written.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_rows;
 import type_checker.mutable_checked_type_graph;

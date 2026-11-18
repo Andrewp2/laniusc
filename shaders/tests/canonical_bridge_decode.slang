@@ -5,8 +5,8 @@
 // application environment reader. Check i that fails sets bit i % 32 of
 // word i / 32 of bridge_errors and stores its actual value at
 // bridge_errors[4 + i]. Each reader has one call site.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_bridge;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_bridge;
 import type_checker.concrete_type_equality;
 import primitive_types;
 

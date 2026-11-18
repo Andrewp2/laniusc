@@ -1,6 +1,6 @@
 import type_checker.checked_canonical;
-import type_checker.canonical.canonical_candidates;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_candidates;
+import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.checked_index_reference;
 import type_checker.checked_pattern_path;

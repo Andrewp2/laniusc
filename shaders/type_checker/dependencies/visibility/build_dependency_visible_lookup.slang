@@ -26,7 +26,7 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
-// Declaration flags word: a hidden type (interface/public_decls/02_hidden)
+// Declaration flags word: a hidden type (mark_hidden_interface_declarations)
 // is reachable by identity, never by name.
 static const uint DECL_FLAGS_WORD = 11u;
 static const uint DECL_FLAG_HIDDEN = 1u;

@@ -5,7 +5,7 @@
 // Phase 0 matches the receiver against the impl root (ct_match over canonical
 // IDs); phase 1 matches the self parameter against its accepted parameter
 // under the bindings of phase 0. Each phase publishes the bindings it adds to
-// the call's context environment (ct_context_publish), in the same tables
+// the call's context environment (checked_match_context_publication), in the same tables
 // ordinary argument and result inference reads, never in positional type
 // slots. Explicit and contextual types must agree with the bindings, and
 // constants merge with the call's constant binding.
@@ -19,10 +19,10 @@ import type_checker.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_candidates;
-import type_checker.canonical.canonical_mutable_rows;
-import type_checker.canonical.canonical_dependency;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_candidates;
+import type_checker.canonicalization.canonical_mutable_rows;
+import type_checker.canonicalization.canonical_dependency;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_rows;

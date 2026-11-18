@@ -5,8 +5,8 @@
 import primitive_types;
 import type_checker.owned_literal_context;
 import type_checker.literal_symbolic_context;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_subst;
 import type_checker.checked_slots;
@@ -415,7 +415,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint symbolic = 0u;
     uint type = checked_literal_context(node, symbolic);
     // A literal whose only context is a type parameter's value records that
-    // parameter; each instance gives it its scalar (closure/06c).
+    // parameter; each instance gives it its scalar (validate_instance_table_operands).
     if (type == 0u) type = symbolic;
     if (literal_context_type_by_hir[node] != type)
     {

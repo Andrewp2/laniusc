@@ -99,8 +99,8 @@ static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint RT_STMT_FORM_LET = 1u;
 static const uint RT_STMT_FORM_CONST = 4u;
 
-// Rows whose semantic_expr_ref is a checked reference (01_expression_refs):
-// expressions, let/const storage, and for binders (01b_array_index_refs). Function,
+// Rows whose semantic_expr_ref is a checked reference (project_checked_expression_references):
+// expressions, let/const storage, and for binders (project_checked_array_index_references). Function,
 // parameter, block and other statement rows hold the per-row scalar cache,
 // which is not a type.
 bool checked_value_row(uint row, uint function, uint kind, uint form)

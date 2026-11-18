@@ -46,7 +46,7 @@ StructuredBuffer<uint> interface_public_decl_index_by_hir;
 StructuredBuffer<uint4> checked_constant_atoms;
 
 #define LANIUS_INPLACE_ARGUMENTS 1
-#include "../../closure/inplace_read.slang"
+#include "../../closure/inplace_instance_lookup.slang"
 
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;

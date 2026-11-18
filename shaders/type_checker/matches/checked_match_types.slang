@@ -26,7 +26,7 @@
 // checks heads and closed children and collects the parameter masks, then
 // one pass per bound slot folds that slot's occurrences. Each pass walks
 // the pattern by re-descending from the root along a packed child path.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_spare;
 import constant_value;
 import primitive_types;

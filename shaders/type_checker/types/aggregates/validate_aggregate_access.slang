@@ -454,7 +454,7 @@ void validate_struct_literal_field_row(uint field_row)
     if (expected == TY_UNKNOWN)
         return;
     // A closed checked expectation is compared with the value's complete
-    // type by conditions/compact_aggregate_requests. A scalar code cannot
+    // type by request_aggregate_type_comparisons. A scalar code cannot
     // stand for it: a reference value has none, so `&Item` read as unknown.
     if (struct_init_field_expected_ref_tag[field_token] == 3u &&
         checked_row_is_closed(struct_init_field_expected_ref_payload[field_token]))

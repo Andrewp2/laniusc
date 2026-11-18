@@ -10864,7 +10864,7 @@ fn qualified_enum_variants_reject_ambiguous_and_unrelated_names() {
             }).expect_err("ambiguous names and unrelated enum families must not emit code");
             let diagnostic = error.to_public_diagnostic();
             // `A::Absent()` names no associated item of `A`, which is a call
-            // resolution failure (conditions/compact_calls.slang).
+            // resolution failure (diagnose_unresolved_calls.slang).
             assert!(matches!(diagnostic.code.as_str(), "LNC0005" | "LNC0006" | "LNC0027" | "LNC0042"), "{expression}, imported={imported}: {error:?}");
             assert!(diagnostic.primary_label.is_some(), "{error:?}");
         }

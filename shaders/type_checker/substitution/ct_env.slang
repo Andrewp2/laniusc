@@ -10,8 +10,8 @@
 // binding() from one site, at most twice per candidate slot: once to find the
 // bound slots and compare them with the published environment, and once,
 // only when they differ, to write the new key.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_constants;
 import type_checker.substitution.ct_spare;
 
 public interface ICtEnvBindings

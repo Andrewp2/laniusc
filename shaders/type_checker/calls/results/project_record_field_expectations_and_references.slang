@@ -1,5 +1,5 @@
 // The record-literal field expectations (project_struct_init_fields) and the
-// dense struct-literal references (01a_struct_literal_refs) of one inference
+// dense struct-literal references (project_checked_struct_literal_references) of one inference
 // round in one dispatch. Neither body reads a row the other writes, and each
 // lane writes only its own rows, so running both per lane matches running
 // them as two dispatches. The lanes visit the rows list_struct_literal_rows listed: the
@@ -7,7 +7,7 @@
 // The other rows are no-ops for both bodies.
 
 import type_checker.types.aggregates.struct_init_fields;
-import type_checker.semantic.artifact.struct_literal_refs;
+import type_checker.semantics.struct_literal_refs;
 
 StructuredBuffer<uint> struct_literal_row_counts;
 StructuredBuffer<uint> struct_literal_field_rows;

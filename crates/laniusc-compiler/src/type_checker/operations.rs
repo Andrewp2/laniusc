@@ -185,7 +185,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_COLLECT_PASS,
-                &passes.kernel("type_checker/semantic/features/00_collect"),
+                &passes.kernel("type_checker/semantics/collect_semantic_features"),
                 hir_dispatch_args,
             )?,
             dispatch: ComputeOperation::direct(
@@ -193,7 +193,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_DISPATCH_PASS,
-                &passes.kernel("type_checker/semantic/features/01_dispatch_args"),
+                &passes.kernel("type_checker/semantics/write_semantic_feature_dispatch_args"),
                 1,
             )?,
         })

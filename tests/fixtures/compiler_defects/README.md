@@ -82,7 +82,7 @@ lang and now exits 0.
 
 `laniusc check` runs only the frontend. Its trait solver indexes concrete
 impls only (`impl_row_has_supported_exact_key` in
-[`02_obligations.slang`](../../../shaders/type_checker/predicates/02_obligations.slang)).
+[`predicate_obligation_checks.slang`](../../../shaders/type_checker/predicates/predicate_obligation_checks.slang)).
 A generic impl head such as `impl<T> Cmp for N<T>` is selected by the
 whole-program admission that only a build runs. So check rejected every call
 whose bound only a generic impl meets. The rejection was LNC0008 "no matching

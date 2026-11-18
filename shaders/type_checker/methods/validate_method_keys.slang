@@ -19,7 +19,7 @@ import status;
 import type_checker.methods.method_lookup;
 import type_checker.instance_arguments;
 import type_checker.constant_atoms;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_spare;
 import type_checker.matches.checked_match_types;
 

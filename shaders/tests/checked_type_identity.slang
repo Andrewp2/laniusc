@@ -7,8 +7,8 @@
 // checked_types_equal_ids. Check i that fails sets bit i % 32 of word i / 32
 // of identity_errors and stores its actual value at identity_errors[4 + i].
 // Each builder and comparison has one call site.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_constants;
 import type_checker.checked_type_identity;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_subst;

@@ -7,7 +7,7 @@ import dependency_interface;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
 import type_checker.scoped_type_equality;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 
 public StructuredBuffer<uint2> dependency_constant_ref_by_type;
 

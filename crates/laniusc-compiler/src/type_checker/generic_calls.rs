@@ -758,7 +758,7 @@ impl CheckedInstanceExec {
         if row < self.first_row {
             return None;
         }
-        // Selected entries hold ascending virtual rows (08b_exec_layout).
+        // Selected entries hold ascending virtual rows (assign_instance_execution_row_offsets).
         self.entries
             .iter()
             .filter(|entry| entry.selected())
@@ -2001,7 +2001,7 @@ pub(super) fn read_unit_facts(
         && interface_exported;
     let closure_counts = closure_active
         .then(|| batch.push(inputs.buffer("instance_closure_counts"), 0,
-            super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize,
+            super::closure::INSTANCE_CLOSURE_COUNT_WORDS as usize,
             "instance closure counts"))
         .transpose()?;
     // An original job with an instance table may have lowered execution
@@ -2009,10 +2009,10 @@ pub(super) fn read_unit_facts(
     let exec_counts = closure_active
         .then(|| -> Result<usize> {
             let start = batch.push(inputs.buffer("instance_exec_counts"), 0,
-                super::instance_closure_passes::INSTANCE_EXEC_COUNT_WORDS as usize,
+                super::closure::INSTANCE_EXEC_COUNT_WORDS as usize,
                 "instance exec counts")?;
             batch.push(inputs.buffer("instance_table_counts"), 0,
-                super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize,
+                super::closure::INSTANCE_TABLE_COUNT_WORDS as usize,
                 "instance table counts")?;
             Ok(start)
         })
@@ -2021,7 +2021,7 @@ pub(super) fn read_unit_facts(
     let original_job = interface_exported;
     let solver_demand = original_job
         .then(|| batch.push(inputs.buffer("solver_demand"), 0,
-            super::instance_closure_passes::SOLVER_DEMAND_WORDS, "solver demand"))
+            super::closure::SOLVER_DEMAND_WORDS, "solver demand"))
         .transpose()?;
     let counts = batch.read(&readback, device, queue, crate::readback_label!("generic call counts"))?;
     timer.stamp("counts");
@@ -3086,7 +3086,7 @@ pub(super) fn read_unit_facts(
     // The closure is an optimization: a decode failure only loses it.
     let mut instance_closure = match closure_counts {
         Some(start) => read_instance_closure(&readback, device, queue, inputs,
-            &counts[start..start + super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize],
+            &counts[start..start + super::closure::INSTANCE_CLOSURE_COUNT_WORDS as usize],
             &call_spans, &calls, &mut types)
             .unwrap_or_else(|error| CheckedInstanceClosure {
                 error: Some(format!("{error:#}")),
@@ -3098,8 +3098,8 @@ pub(super) fn read_unit_facts(
     // Unlike the closure, the execution rows are not optional: the object
     // calls them, so a failed read fails the unit.
     if let Some(start) = exec_counts {
-        let words = super::instance_closure_passes::INSTANCE_EXEC_COUNT_WORDS as usize;
-        let table = super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize;
+        let words = super::closure::INSTANCE_EXEC_COUNT_WORDS as usize;
+        let table = super::closure::INSTANCE_TABLE_COUNT_WORDS as usize;
         instance_closure.exec = read_instance_exec(&readback, device, queue, inputs,
             &counts[start..start + words], &counts[start + words..start + words + table])?;
     }
@@ -3211,7 +3211,7 @@ fn read_instance_closure(
             && base != INVALID
             && type_count <= arity
             && (base as usize + arity) * 2 <= ref_words;
-        // A summary instance's template is a job edge (closure/03b): the
+        // A summary instance's template is a job edge (expand_dependency_closure): the
         // library unit's retained call.
         let template = decodable.then(|| if callee & super::closure_summary::SUMMARY_TAG != 0 {
             summaries.and_then(|summaries| summaries.edge_template(template_word))
@@ -3290,7 +3290,7 @@ fn read_instance_closure(
         instance.depth,
         format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
     ));
-    if super::instance_closure_passes::instance_table_checked() {
+    if super::closure::instance_table_checked() {
         closure.table = Some(read_instance_table(readback, device, queue, inputs, instances, refs, types)?);
     }
     Ok(closure)
@@ -3363,7 +3363,7 @@ fn read_instance_exec(
             }
         }
     }
-    // A call of a selected entry targets that entry's copy (09_exec_rows);
+    // A call of a selected entry targets that entry's copy (publish_instance_execution_rows);
     // only calls of the other entries route through the host.
     let statuses = heads.chunks_exact(8).map(|head| head[0]).collect::<Vec<_>>();
     exec.calls.retain(|&(_, callee)| statuses[callee as usize] != CheckedExecEntry::SELECTED);
@@ -3424,7 +3424,7 @@ fn read_instance_table(
 ) -> Result<CheckedInstanceTable> {
     let mut batch = WordBatch::default();
     let start = batch.push(inputs.buffer("instance_table_counts"), 0,
-        super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize, "instance table counts")?;
+        super::closure::INSTANCE_TABLE_COUNT_WORDS as usize, "instance table counts")?;
     let counts = batch.read(readback, device, queue, crate::debug_readback_label!("instance table counts"))?;
     let &[entries, rows, flags, failed] = &counts[start..start + 4] else {
         return Err(anyhow!("instance table counters are truncated"));

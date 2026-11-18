@@ -1,7 +1,7 @@
 // Seed the row of each ID from the interned source rows, atoms and
 // projections (the smallest candidate in the ID's own spelling). Runs once
 // per job, after the early canonical stage.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_rows;
 import type_checker.checked_type_graph;
 

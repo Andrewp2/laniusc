@@ -11,8 +11,8 @@ import type_checker.calls.explicit_call_environment;
 import type_checker.calls.contextual_call_environment;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 
 struct Params

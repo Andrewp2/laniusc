@@ -444,7 +444,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     }
     put("type_instance_arg_row_count_out", vec![0]);
     // 03a8 validates explicit applications by canonical ID (1f3ee486). The
-    // tables start as canonical/00_clear leaves them: no records past the
+    // tables start as clear_canonical_interning_state leaves them: no records past the
     // preseeded scalars, every candidate pending. Candidates are the type
     // rows above, the 128 atoms and the 32 projections.
     const RECORDS: usize = 1024;

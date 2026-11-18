@@ -272,7 +272,7 @@ void publish_trait_self_reference(uint node, uint token)
     type_expr_ref_payload[token] = owner;
     // The identity token reads like a parameter's declaration token: a
     // declaration return of `Self` names it as the return type token
-    // (project_hir_functions), and semantic/artifact/00_calls reads its
+    // (project_hir_functions), and project_semantic_call_facts reads its
     // reference there.
     type_expr_ref_tag[owner] = TYPE_REF_GENERIC_PARAM;
     type_expr_ref_payload[owner] = owner;

@@ -2,9 +2,9 @@
 // substitute a struct-literal field's declaration-side expected type under
 // its literal's application, as a canonical ID with a checked row
 // (field_expected.slang).
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_candidates;
-import type_checker.canonical.canonical_mutable_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_candidates;
+import type_checker.canonicalization.canonical_mutable_rows;
 import type_checker.mutable_checked_type_graph;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;

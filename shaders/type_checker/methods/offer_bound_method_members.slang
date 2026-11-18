@@ -26,7 +26,7 @@
 import gpu_index;
 import hir_records;
 import type_checker.methods.method_candidate;
-import type_checker.predicates.owner_lookup;
+import type_checker.predicates.predicate_owner_lookup;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.calls.inference_activity;

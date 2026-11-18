@@ -26,7 +26,7 @@ use crate::parser::passes::hir::items::extract_item_records::{HIR_ITEM_KIND_ENUM
 const INVALID: u32 = u32::MAX;
 const TRAIT_KIND: u32 = 10;
 const TYPE_HIR_KIND: u32 = 5;
-/// semantic/artifact/00_project: a predicate subject column value with this
+/// project_checked_semantic_artifact: a predicate subject column value with this
 /// bit is a scalar subject's type code, not a parameter declaration token.
 const SCALAR_SUBJECT_BIT: u32 = 0x8000_0000;
 
@@ -769,7 +769,7 @@ pub(super) fn read_contracts(
                 "predicate {index} has inconsistent subject or public alias metadata"
             );
             let subject = if fact[4] != INVALID && fact[4] & SCALAR_SUBJECT_BIT != 0 {
-                // semantic/artifact/00_project: `where bool: Inner<..>`.
+                // project_checked_semantic_artifact: `where bool: Inner<..>`.
                 let code = fact[4] & !SCALAR_SUBJECT_BIT;
                 ensure!(
                     crate::primitive_types::is_known(code),

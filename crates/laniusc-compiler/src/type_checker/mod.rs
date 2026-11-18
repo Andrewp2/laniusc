@@ -14,13 +14,14 @@ mod bind_groups;
 pub mod program_retention;
 mod bind_models;
 mod bind_support;
-mod canonical_passes;
+mod canonicalization;
+mod closure;
+mod interface;
 mod compiler_graph;
 #[cfg(test)]
 pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
 mod generic_calls;
-mod instance_closure_passes;
-pub(crate) use instance_closure_passes::{exec_lowering_token_capacity};
+pub(crate) use closure::exec_lowering_token_capacity;
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod checked_contracts;
@@ -64,15 +65,14 @@ mod record;
 mod struct_literal_field_types;
 mod resident;
 mod substitution_passes;
-mod semantic_interface;
-pub use semantic_interface::RecordedSemanticInterface;
-pub use semantic_interface::SemanticInterfaceExportFailure;
+pub use interface::RecordedSemanticInterface;
+pub use interface::SemanticInterfaceExportFailure;
 /// Rows the type checker reserves for language symbols ahead of source names;
 /// capacity estimates outside the crate read it from here.
 pub const LANGUAGE_SYMBOL_COUNT: u32 = params::LANGUAGE_SYMBOL_COUNT;
 /// Constant reference rounds after the literal fold: a constant may refer to
 /// other constants this many levels deep
-/// (shaders/type_checker/semantic/artifact/const_fold.slang).
+/// (shaders/type_checker/semantics/const_fold.slang).
 pub const LOCAL_CONST_FOLD_ROUNDS: u32 = 8;
 mod util;
 
@@ -336,7 +336,7 @@ impl GpuTypeCheckError {
     /// with the readbacks.
     pub(crate) fn requests_rerecord(&self) -> bool {
         matches!(self, GpuTypeCheckError::Gpu(error)
-            if error.downcast_ref::<canonical_passes::CanonicalSynchronousRetry>().is_some()
+            if error.downcast_ref::<canonicalization::CanonicalSynchronousRetry>().is_some()
                 || error.downcast_ref::<resident::CallInferenceWaitRetry>().is_some())
     }
 }
@@ -469,7 +469,7 @@ struct ResidentTypeCheckCacheKey {
     parser_feature_flags: u32,
     semantic_interface_required: bool,
     program_retention: bool,
-    /// Canonical table capacity scale (`canonical_passes::CanonicalCapacity`).
+    /// Canonical table capacity scale (`canonicalization::CanonicalCapacity`).
     /// It only grows: a job whose canonical stage overflowed is recorded again
     /// with twice the scale, and later jobs keep it.
     canonical_scale: u32,
@@ -653,7 +653,7 @@ mod resident_typecheck_cache_key_tests {
     fn canonical_overflow_retry_rebuilds_and_keeps_the_larger_scale() {
         let ordinary = key(100, 0, 11);
         let mut retry = ordinary;
-        retry.canonical_scale = super::canonical_passes::canonical_retry_scale(1, 2).unwrap();
+        retry.canonical_scale = super::canonicalization::canonical_retry_scale(1, 2).unwrap();
         assert_eq!(retry.canonical_scale, 2);
         assert!(!ordinary.covers(retry));
         let grown = ordinary.grow_to_cover(retry);
@@ -666,7 +666,7 @@ mod resident_typecheck_cache_key_tests {
 
     #[test]
     fn canonical_retry_only_for_capacity_bits_and_below_the_limit() {
-        use super::canonical_passes::{CANONICAL_MAX_SCALE, canonical_retry_scale};
+        use super::canonicalization::{CANONICAL_MAX_SCALE, canonical_retry_scale};
         assert_eq!(canonical_retry_scale(1, 1), Some(2));
         assert_eq!(canonical_retry_scale(4, 4 | 8), Some(8));
         // The substitution memo and the frontier lists grow with the scale.
@@ -681,7 +681,7 @@ mod resident_typecheck_cache_key_tests {
 
     #[test]
     fn canonical_dynamic_capacity_reaches_its_bound_at_the_largest_scale() {
-        use super::canonical_passes::{CANONICAL_MAX_SCALE, canonical_scaled_capacity};
+        use super::canonicalization::{CANONICAL_MAX_SCALE, canonical_scaled_capacity};
         // A bound that the scale does not divide still reaches it exactly.
         let bound = 5_499_963;
         assert_eq!(canonical_scaled_capacity(bound, 4096, 1), bound.div_ceil(64));
@@ -766,7 +766,7 @@ struct ResidentTypeCheckWorkspace {
     scope_hir: ComputeOperation,
     /// The semantic interface's type-topology operations, built by the first
     /// job that records the interface and reused while their inputs match.
-    semantic_interface_topology: Mutex<semantic_interface::CachedSemanticInterfaceTopology>,
+    semantic_interface_topology: Mutex<interface::CachedSemanticInterfaceTopology>,
 }
 
 impl ResidentTypeCheckWorkspace {
@@ -844,14 +844,14 @@ impl ResidentTypeCheckWorkspace {
             public_decl_index_by_hir: self.module_path.interface_public_decl_index_by_hir.clone(),
             struct_init_field_ordinal_by_row: graph.buffer("struct_init_field_ordinal_by_row")?,
             lowering_counts: [
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[0])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[1])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[2])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[3])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[4])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[5])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[6])?,
-                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[7])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[0])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[1])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[2])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[3])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[4])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[5])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[6])?,
+                graph.buffer(closure::EXEC_LOWERING_COUNTS[7])?,
             ],
             generic_call_inputs: semantic_interface_required
                 .then(|| {

@@ -16,7 +16,7 @@ import type_checker.constant_publication;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
-// Selected in-place instantiations (closure/04b_select_inplace).
+// Selected in-place instantiations (select_inplace_instances).
 StructuredBuffer<uint> instance_inplace_counts;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;

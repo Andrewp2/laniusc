@@ -6,7 +6,7 @@
 // entry files: the shader build compiles only files with an entry point.
 import status;
 import type_checker.mutable_checked_type_graph;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;

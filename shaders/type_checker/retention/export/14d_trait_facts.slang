@@ -21,7 +21,7 @@
 // from a predicate's argument loop (at most 32) and the argument
 // translation each probe of the trait term's interning repeats.
 import hir_records;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

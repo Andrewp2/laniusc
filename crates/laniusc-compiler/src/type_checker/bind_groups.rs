@@ -312,7 +312,7 @@ impl GpuTypeChecker {
         resources.buffer("gTypeCheckParams", &self.params_buf);
         resources.buffer("gConstantStoragePlan", &constant_storage_plan);
         resources.buffer(
-            instance_closure_passes::CLOSURE_SUMMARY_INPUTS,
+            crate::type_checker::closure::CLOSURE_SUMMARY_INPUTS,
             &self.closure_summary_inputs,
         );
         resources.buffer("token_words", token_buf);

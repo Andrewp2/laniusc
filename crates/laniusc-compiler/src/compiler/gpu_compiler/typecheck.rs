@@ -3204,7 +3204,7 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
         .source
         .get(start..start.saturating_add(token.len).min(file.source.len()))
         .unwrap_or("");
-    // Detail 7 (type_topology/12_type_records): a public function, constant,
+    // Detail 7 (export_interface_type_records): a public function, constant,
     // alias or method signature names a private type of this unit.
     if failure.detail == SEMANTIC_INTERFACE_PRIVATE_TYPE_IN_SIGNATURE {
         let label = diagnostic_label_from_source_span(
@@ -3696,7 +3696,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
         ),
-        // Details 2 to 4 come from `...` (semantic/artifact/00_project.slang).
+        // Details 2 to 4 come from `...` (project_checked_semantic_artifact.slang).
         GpuTypeCheckCode::InvalidNativeCSignature if detail == 2 => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "unsupported native C signature")
                 .with_primary_label(diagnostic_label_from_source_span(

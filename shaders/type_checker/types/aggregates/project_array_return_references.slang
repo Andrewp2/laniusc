@@ -13,8 +13,8 @@ import hir_records;
 import type_checker.checked_array_counts;
 import status;
 import type_checker.checked_type_graph;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 
 struct Params

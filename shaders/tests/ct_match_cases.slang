@@ -6,7 +6,7 @@
 // match_ids[j]; a reference REF | j names spec j. Check i that fails sets
 // bit i % 32 of word i / 32 of match_errors and stores its actual value at
 // match_errors[4 + i]. match_errors[3] counts the cases run.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_spare;
 import type_checker.matches.checked_match_types;
 import primitive_types;

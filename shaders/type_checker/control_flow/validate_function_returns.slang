@@ -147,7 +147,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // A unit function may end without a return. A `-> !` function must
     // provably diverge on every path: each path ends in a diverging call (a
     // `-> !` call or `assert(false)`, see mark_guaranteed_returns). Its `return` statements
-    // are rejected by conditions/compact_stmt.
+    // are rejected by validate_statement_types.
     if (expected == TY_VOID)
         return;
 

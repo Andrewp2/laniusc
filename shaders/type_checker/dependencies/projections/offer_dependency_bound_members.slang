@@ -27,7 +27,7 @@ import hir_records;
 import dependency_interface;
 import semantic_interface_layout;
 import type_checker.methods.method_candidate;
-import type_checker.predicates.owner_lookup;
+import type_checker.predicates.predicate_owner_lookup;
 import type_checker.predicates.trait_reference;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.calls.inference_activity;

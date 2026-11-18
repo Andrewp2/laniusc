@@ -1,0 +1,46 @@
+// Close one instance-closure round (one lane): the instances the previous
+// round appended become this round's frontier, and expand_instance_closure_frontier's indirect
+// dispatch arguments are written. After IC_LEVELS rounds the closing
+// advance flags a frontier it leaves unexpanded and sizes the export
+// dispatches (export_instance_closure_round, finalize_instance_closure_exports) to the instance table instead,
+// so a job without instances exports with zero workgroups.
+import type_checker.closure.instance_closure;
+
+RWStructuredBuffer<uint> instance_closure_args;
+// The table rank's grid: RANK_SPLIT lanes per instance (rank_instance_table_entries).
+// The table module is not imported: its kernels bind all of its buffers.
+RWStructuredBuffer<uint> instance_table_rank_args;
+static const uint RANK_SPLIT = 8u;  // IT_RANK_SPLIT (instance_table.slang)
+
+void write_args(RWStructuredBuffer<uint> args, uint groups)
+{
+    uint x = min(groups, 65535u);
+    args[0u] = x;
+    args[1u] = x == 0u ? 0u : (groups + 65534u) / 65535u;
+    args[2u] = 1u;
+}
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    if (dtid.x != 0u) return;
+    uint length = min(instance_closure_counts[IC_COUNT_LENGTH], ic_instance_capacity());
+    uint round = instance_closure_counts[IC_COUNT_ROUND];
+    instance_closure_counts[IC_COUNT_ROUND] = round + 1u;
+    uint start = instance_closure_counts[IC_COUNT_END];
+    uint groups = 0u;
+    if (round < IC_LEVELS)
+    {
+        instance_closure_counts[IC_COUNT_START] = start;
+        instance_closure_counts[IC_COUNT_END] = length;
+        groups = ((length - start) * IC_LANES_PER_INSTANCE + 255u) / 256u;
+    }
+    else
+    {
+        if (length > start) ic_flag(IC_FLAG_DEPTH);
+        groups = (length + 255u) / 256u;
+    }
+    write_args(instance_closure_args, groups);
+    write_args(instance_table_rank_args, (length * RANK_SPLIT + 255u) / 256u);
+}

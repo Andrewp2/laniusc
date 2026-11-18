@@ -18,8 +18,8 @@ import type_checker.methods.method_lookup;
 import type_checker.methods.method_candidate;
 import type_checker.checked_type_graph;
 import type_checker.constant_atoms;
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
@@ -107,7 +107,7 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 uint active_hir_node_count() { return active_hir_count(); }
 
 #define LANIUS_INPLACE_WRITE_OWNER 1
-#include "../closure/inplace_read.slang"
+#include "../closure/inplace_instance_lookup.slang"
 
 #include "local_required_member.slang"
 
@@ -160,7 +160,7 @@ bool implements(uint impl, uint member, uint4 required)
 // name, or the leaf of its qualified callee path `P::member` (a path span ends
 // after its leaf), where mark_method_call_keys keys an associated call. A path callee is
 // also read at its first segment (finalize_method_candidates owner alias) and at the callee's
-// value token (semantic/artifact/00_calls); `aliases` are those tokens.
+// value token (project_semantic_call_facts); `aliases` are those tokens.
 uint method_call_token(uint call, out uint2 aliases)
 {
     aliases = uint2(INVALID, INVALID);
@@ -403,7 +403,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 required = required_member(token);
     if (required.x == 0u) return;
     // An original job routes only the bodies it instantiates in place
-    // (closure/04b_select_inplace); every other receiver is a parameter.
+    // (select_inplace_instances); every other receiver is a parameter.
     uint in_place_owner = enclosing_fn[token] - 1u;
     if (inplace_instance(in_place_owner) == INPLACE_NONE) return;
     uint tag = method_call_receiver_ref_tag[token];

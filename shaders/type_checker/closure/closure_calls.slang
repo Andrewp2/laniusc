@@ -1,5 +1,5 @@
 // The edges and instance keys of the instance closure (instance_closure.slang),
-// shared by 01_mark and 03_expand. Included after the kernel's own Params,
+// shared by mark_instance_closure_roots_and_edges and expand_instance_closure_frontier. Included after the kernel's own Params,
 // HIR buffers and INVALID.
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;

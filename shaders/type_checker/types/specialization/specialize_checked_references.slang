@@ -31,7 +31,7 @@ static const uint EXTENT_ALL = 0u;
 static const uint EXTENT_TYPE_ARGUMENTS = 1u;
 // Generic claims, below the scanned claim total (emit_generic_claims).
 static const uint EXTENT_CLAIMS = 2u;
-// 32 slots per HIR call node (offer_bound_method_members, ct_context_publish).
+// 32 slots per HIR call node (offer_bound_method_members, checked_match_context_publication).
 static const uint EXTENT_CALL_CONTEXTS = 3u;
 // Explicit bindings, below their allocation counter (03a0).
 static const uint EXTENT_EXPLICIT_BINDINGS = 4u;

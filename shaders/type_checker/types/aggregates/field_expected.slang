@@ -10,7 +10,7 @@
 // context instance, CT_NONE while it has none (its reference is already in
 // caller scope) and CT_UNKNOWN when the substitution failed. Readers bind the
 // column read-only; only substitute_struct_literal_field_expectations declares it writable.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 
 public StructuredBuffer<uint> struct_init_field_expected_ct;
 

@@ -21,7 +21,7 @@ public void fail(Row at, uint code, uint detail)
 }
 
 // A pointer context keeps literal-derived arithmetic at i32, matching
-// expression_types/00_init and closure/table_rows. Pointer-valued operands
+// resolve_scalar_expression_types and instance_table_rows. Pointer-valued operands
 // still carry ptr. All consumers see this normalization.
 public uint normalize_pointer_literal(Row at, uint row, uint type)
 {

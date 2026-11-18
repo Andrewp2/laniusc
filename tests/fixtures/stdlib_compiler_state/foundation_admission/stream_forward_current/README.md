@@ -56,7 +56,7 @@ are under `target/stdlib-work/stream-forward-current-66e966d3/`.
 Receiver adjustment is another owned contract. Method selection accepts the
 callee and its source receiver, dereference count, matched checked type, passing
 mode and parameter reference together. `finalize_method_candidates.slang`
-constructs that plan; `semantic/artifact/00_calls.slang` refuses a callable with
+constructs that plan; `project_semantic_call_facts.slang` refuses a callable with
 a missing/stale plan. Imported trait bound offering in
 `offer_dependency_bound_members.slang` currently rejects a path call of a
 self member; thus the explicit `W::write` probe fails before reaching the missing

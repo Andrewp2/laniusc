@@ -3,7 +3,7 @@ use super::super::*;
 /// Aggregate arguments are compared through the complete checked type graph.
 ///
 /// After the semantic projection has listed the aggregate requests
-/// (conditions/compact_aggregate_requests), a scan whose apply writes the
+/// (request_aggregate_type_comparisons), a scan whose apply writes the
 /// comparison dispatch arguments, then the indirect comparison.
 pub(in crate::type_checker) struct AggregateComparisonOperation {
     _aggregate_dispatch_params: LaniusBuffer<CountDispatchParams>,
@@ -35,7 +35,7 @@ impl AggregateComparisonOperation {
             graph,
             resources,
             compiler_graph::CONDITIONS_AGGREGATE_ARGS_FINAL_PASS,
-            &passes.kernel("type_checker/conditions/aggregate_args"),
+            &passes.kernel("type_checker/conditions/validate_aggregate_type_arguments"),
             aggregate_dispatch_args,
         )?;
         Ok(Self {
@@ -70,8 +70,8 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) calls: ComputeOperation,
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     /// The instance closure of an original job, ahead of the body passes.
-    pub(in crate::type_checker) instance_closure: instance_closure_passes::InstanceClosureOperations,
-    pub(in crate::type_checker) instance_table: instance_closure_passes::InstanceTableOperations,
+    pub(in crate::type_checker) instance_closure: crate::type_checker::closure::InstanceClosureOperations,
+    pub(in crate::type_checker) instance_table: crate::type_checker::closure::InstanceTableOperations,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
     /// The rows of the IDs the late canonical stage added.
     pub(in crate::type_checker) late_row_seed: ComputeOperation,
@@ -98,7 +98,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) artifact: ComputeOperation,
     pub(in crate::type_checker) local_const_literals: ComputeOperation,
     /// One constant reference round: size, resolve, publish
-    /// (semantic/artifact/const_fold.slang), recorded LOCAL_CONST_FOLD_ROUNDS
+    /// (const_fold.slang), recorded LOCAL_CONST_FOLD_ROUNDS
     /// times.
     pub(in crate::type_checker) local_const_fold_round: ComputeOperation,
     pub(in crate::type_checker) local_const_references: ComputeOperation,
@@ -125,7 +125,7 @@ impl SemanticProjectionOperations {
         };
         let struct_literal_refs = direct(
             compiler_graph::SEMANTIC_STRUCT_LITERAL_REFS_PROJECT_PASS,
-            "type_checker/semantic/artifact/01a_struct_literal_refs",
+            "type_checker/semantics/project_checked_struct_literal_references",
         )?;
         let struct_literal_refs_early = struct_literal_refs.invocation(
             graph,
@@ -240,7 +240,7 @@ impl SemanticProjectionOperations {
                 ),
                 (
                     compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
-                    canonical_passes::CANONICAL_REARM_KERNEL,
+                    crate::type_checker::canonicalization::CANONICAL_REARM_KERNEL,
                 ),
                 (
                     "type_check.body_specialization.payloads",
@@ -325,7 +325,7 @@ impl SemanticProjectionOperations {
                         typed_buffer_from_resources(resources, tag_column)?;
                     u32::try_from(tags.byte_size / 4)?
                 } else if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
-                    canonical_passes::CANONICAL_REARM_LANES
+                    crate::type_checker::canonicalization::CANONICAL_REARM_LANES
                 } else if name == compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS {
                     // Strides the live constant claims, then the live calls.
                     compiler_graph::BODY_REFERENCE_LANES
@@ -377,20 +377,20 @@ impl SemanticProjectionOperations {
             )?,
             calls: direct(
                 compiler_graph::SEMANTIC_CALLS_PROJECT_PASS,
-                "type_checker/semantic/artifact/00_calls",
+                "type_checker/semantics/project_semantic_call_facts",
             )?,
             generic_call_results: direct(
                 "type_check.semantic_artifact.generic_call_results",
-                "type_checker/semantic/artifact/00c_generic_call_results",
+                "type_checker/semantics/project_generic_call_results",
             )?,
-            instance_closure: instance_closure_passes::InstanceClosureOperations::new(
+            instance_closure: crate::type_checker::closure::InstanceClosureOperations::new(
                 device,
                 graph,
                 resources,
                 passes,
                 hir_capacity,
             )?,
-            instance_table: instance_closure_passes::InstanceTableOperations::new(
+            instance_table: crate::type_checker::closure::InstanceTableOperations::new(
                 device,
                 graph,
                 resources,
@@ -428,7 +428,7 @@ impl SemanticProjectionOperations {
                 graph,
                 resources,
                 "type_check.semantic_artifact.generic_native_words",
-                &passes.kernel("type_checker/semantic/artifact/01c_generic_native_words"),
+                &passes.kernel("type_checker/semantics/project_generic_native_word_counts"),
                 u32::try_from(
                     typed_buffer_from_resources::<u32>(resources, "type_expr_ref_tag")?.byte_size
                         / 4,
@@ -436,65 +436,65 @@ impl SemanticProjectionOperations {
             )?,
             expression_types_init: direct(
                 compiler_graph::INIT_PASS,
-                "type_checker/semantic/expression_types/00_init",
+                "type_checker/semantics/resolve_scalar_expression_types",
             )?,
             member_layout: direct(
                 "type_check.semantic_artifact.member_layout",
-                "type_checker/semantic/artifact/01d_member_layout",
+                "type_checker/semantics/publish_checked_member_layouts",
             )?,
             expression_refs: direct(
                 compiler_graph::SEMANTIC_EXPRESSION_REFS_PROJECT_PASS,
-                "type_checker/semantic/artifact/01_expression_refs",
+                "type_checker/semantics/project_checked_expression_references",
             )?,
             struct_literal_refs_early_clear,
             struct_literal_refs,
             struct_literal_refs_early,
             array_index_refs: direct(
                 compiler_graph::SEMANTIC_ARRAY_INDEX_REFS_PROJECT_PASS,
-                "type_checker/semantic/artifact/01b_array_index_refs",
+                "type_checker/semantics/project_checked_array_index_references",
             )?,
             operator_refs: direct(
                 compiler_graph::SEMANTIC_OPERATOR_REFS_PROJECT_PASS,
-                "type_checker/semantic/artifact/01e_operator_refs",
+                "type_checker/semantics/project_checked_operator_references",
             )?,
             compact_expr: direct(
                 compiler_graph::CONDITIONS_COMPACT_EXPR_PASS,
-                "type_checker/conditions/compact_expr",
+                "type_checker/conditions/validate_expression_conditions",
             )?,
             compact_stmt: direct(
                 compiler_graph::CONDITIONS_COMPACT_STMT_PASS,
-                "type_checker/conditions/compact_stmt",
+                "type_checker/conditions/validate_statement_types",
             )?,
             compact_distinct_nodes: direct(
                 compiler_graph::CONDITIONS_COMPACT_DISTINCT_NODES_PASS,
-                "type_checker/conditions/compact_distinct_nodes",
+                "type_checker/conditions/index_distinct_type_brands",
             )?,
             compact_distinct: direct(
                 compiler_graph::CONDITIONS_COMPACT_DISTINCT_PASS,
-                "type_checker/conditions/compact_distinct",
+                "type_checker/conditions/validate_distinct_type_brands",
             )?,
             compact_exclusive: direct(
                 compiler_graph::CONDITIONS_COMPACT_EXCLUSIVE_PASS,
-                "type_checker/conditions/compact_exclusive",
+                "type_checker/conditions/validate_exclusive_reference_arguments",
             )?,
             compact_aggregate_requests: direct(
                 compiler_graph::CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS,
-                "type_checker/conditions/compact_aggregate_requests",
+                "type_checker/conditions/request_aggregate_type_comparisons",
             )?,
             artifact: direct(
                 compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS,
-                "type_checker/semantic/artifact/00_project",
+                "type_checker/semantics/project_checked_semantic_artifact",
             )?,
             local_const_literals: direct(
                 compiler_graph::SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,
-                "type_checker/semantic/artifact/00a_local_const_literals",
+                "type_checker/semantics/fold_local_constant_literals",
             )?,
             local_const_fold_round: ComputeOperation::direct(
                 device,
                 graph,
                 resources,
                 compiler_graph::SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
-                &passes.kernel("type_checker/semantic/artifact/00a1_local_const_fold_round"),
+                &passes.kernel("type_checker/semantics/write_constant_fold_round_args"),
                 1,
             )?,
             local_const_references: ComputeOperation::indirect(
@@ -502,7 +502,7 @@ impl SemanticProjectionOperations {
                 graph,
                 resources,
                 compiler_graph::SEMANTIC_LOCAL_CONST_REFERENCES_PROJECT_PASS,
-                &passes.kernel("type_checker/semantic/artifact/00b_local_const_references"),
+                &passes.kernel("type_checker/semantics/resolve_local_constant_references"),
                 &local_const_fold_dispatch_args,
             )?,
             local_const_fold_publish: ComputeOperation::indirect(
@@ -510,7 +510,7 @@ impl SemanticProjectionOperations {
                 graph,
                 resources,
                 compiler_graph::SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
-                &passes.kernel("type_checker/semantic/artifact/00b2_local_const_fold_publish"),
+                &passes.kernel("type_checker/semantics/publish_local_constant_values"),
                 &local_const_fold_dispatch_args,
             )?,
         })
@@ -608,36 +608,36 @@ impl CanonicalTypeOperations {
                 "canonical_counts_readback",
                 &typed_buffer_from_resources::<u32>(resources, "canonical_counts_readback")?,
                 0,
-                canonical_passes::CANONICAL_COUNT_WORDS as u64 * 4,
+                crate::type_checker::canonicalization::CANONICAL_COUNT_WORDS as u64 * 4,
             )
         };
-        let early = &canonical_passes::CANONICAL_EARLY_ROUNDS;
-        let late = &canonical_passes::CANONICAL_LATE_ROUNDS;
+        let early = &crate::type_checker::canonicalization::CANONICAL_EARLY_ROUNDS;
+        let late = &crate::type_checker::canonicalization::CANONICAL_LATE_ROUNDS;
         let dependency_rows = words("canonical_dependency_type")?;
         let clear = direct(
-            canonical_passes::CANONICAL_CLEAR_PASS,
-            canonical_passes::CANONICAL_CLEAR_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_CLEAR_PASS,
+            crate::type_checker::canonicalization::CANONICAL_CLEAR_KERNEL,
             words("ct_slot")?
                 .max(candidates)
                 .max(dependency_rows)
-                .max(canonical_passes::CANONICAL_VALIDATION_WORDS as u32),
+                .max(crate::type_checker::canonicalization::CANONICAL_VALIDATION_WORDS as u32),
         )?;
         // The early stage's re-arm visits every candidate; the body and late
-        // stages' visit the allocated ones (03c_rearm_live_list). Each
+        // stages' visit the allocated ones (list_live_canonical_candidates_to_rearm). Each
         // strides its candidates over a fixed grid.
         let rearm = direct(
-            canonical_passes::CANONICAL_REARM_PASS,
-            canonical_passes::CANONICAL_REARM_LIVE_LIST_KERNEL,
-            canonical_passes::CANONICAL_REARM_LANES,
+            crate::type_checker::canonicalization::CANONICAL_REARM_PASS,
+            crate::type_checker::canonicalization::CANONICAL_REARM_LIVE_LIST_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_REARM_LANES,
         )?;
         let early_rearm = direct(
-            canonical_passes::CANONICAL_EARLY_REARM_PASS,
-            canonical_passes::CANONICAL_REARM_LIST_KERNEL,
-            canonical_passes::CANONICAL_REARM_LANES,
+            crate::type_checker::canonicalization::CANONICAL_EARLY_REARM_PASS,
+            crate::type_checker::canonicalization::CANONICAL_REARM_LIST_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_REARM_LANES,
         )?;
         let rearm_args = direct(
-            canonical_passes::CANONICAL_REARM_ARGS_PASS,
-            canonical_passes::CANONICAL_REARM_ARGS_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_REARM_ARGS_PASS,
+            crate::type_checker::canonicalization::CANONICAL_REARM_ARGS_KERNEL,
             1,
         )?;
         let round0 = ComputeOperation::indirect(
@@ -645,16 +645,16 @@ impl CanonicalTypeOperations {
             graph,
             resources,
             early.round0,
-            &passes.kernel(canonical_passes::CANONICAL_INTERN_KERNEL),
+            &passes.kernel(crate::type_checker::canonicalization::CANONICAL_INTERN_KERNEL),
             &typed_buffer_from_resources(resources, "canonical_round_args")?,
         )?;
-        let round_args = direct(early.round_args, canonical_passes::CANONICAL_ROUND_ARGS_KERNEL, 1)?;
+        let round_args = direct(early.round_args, crate::type_checker::canonicalization::CANONICAL_ROUND_ARGS_KERNEL, 1)?;
         let round = ComputeOperation::indirect(
             device,
             graph,
             resources,
             early.round,
-            &passes.kernel(canonical_passes::CANONICAL_INTERN_KERNEL),
+            &passes.kernel(crate::type_checker::canonicalization::CANONICAL_INTERN_KERNEL),
             &typed_buffer_from_resources(resources, "canonical_round_args")?,
         )?;
         let counts_readback = counts_copy(early.counts_readback)?;
@@ -663,26 +663,26 @@ impl CanonicalTypeOperations {
         let late_round = round.invocation(graph, late.round)?;
         let late_counts_readback = counts_copy(late.counts_readback)?;
         let early_rearm_args =
-            rearm_args.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_ARGS_PASS)?;
-        let body = &canonical_passes::CANONICAL_BODY_ROUNDS;
-        let body_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_BODY_REARM_PASS)?;
+            rearm_args.invocation(graph, crate::type_checker::canonicalization::CANONICAL_EARLY_REARM_ARGS_PASS)?;
+        let body = &crate::type_checker::canonicalization::CANONICAL_BODY_ROUNDS;
+        let body_rearm = rearm.invocation(graph, crate::type_checker::canonicalization::CANONICAL_BODY_REARM_PASS)?;
         let body_rearm_args =
-            rearm_args.invocation(graph, canonical_passes::CANONICAL_BODY_REARM_ARGS_PASS)?;
+            rearm_args.invocation(graph, crate::type_checker::canonicalization::CANONICAL_BODY_REARM_ARGS_PASS)?;
         let body_round0 = round0.invocation(graph, body.round0)?;
         let body_round_args = round_args.invocation(graph, body.round_args)?;
         let body_round = round.invocation(graph, body.round)?;
         let body_counts_readback = counts_copy(body.counts_readback)?;
-        let dependency = &canonical_passes::CANONICAL_DEPENDENCY_ROUNDS;
+        let dependency = &crate::type_checker::canonicalization::CANONICAL_DEPENDENCY_ROUNDS;
         // Round 0 covers the largest page; lanes past the page's nodes exit.
         let page_rows = words("dependency_canonical_type_roots_a")?;
         let dependency_begin = direct(
-            canonical_passes::CANONICAL_DEPENDENCY_BEGIN_PASS,
-            canonical_passes::CANONICAL_DEPENDENCY_BEGIN_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_DEPENDENCY_BEGIN_PASS,
+            crate::type_checker::canonicalization::CANONICAL_DEPENDENCY_BEGIN_KERNEL,
             1,
         )?;
         let dependency_round0 = direct(
             dependency.round0,
-            canonical_passes::CANONICAL_DEPENDENCY_INTERN_KERNEL,
+            crate::type_checker::canonicalization::CANONICAL_DEPENDENCY_INTERN_KERNEL,
             page_rows,
         )?;
         let dependency_round_args = round_args.invocation(graph, dependency.round_args)?;
@@ -691,30 +691,30 @@ impl CanonicalTypeOperations {
             graph,
             resources,
             dependency.round,
-            &passes.kernel(canonical_passes::CANONICAL_DEPENDENCY_INTERN_KERNEL),
+            &passes.kernel(crate::type_checker::canonicalization::CANONICAL_DEPENDENCY_INTERN_KERNEL),
             &typed_buffer_from_resources(resources, "canonical_round_args")?,
         )?;
         let dependency_counts_readback = counts_copy(dependency.counts_readback)?;
-        let validation_readback = if canonical_passes::canonical_validation_enabled() {
+        let validation_readback = if crate::type_checker::canonicalization::canonical_validation_enabled() {
             Some(crate::gpu::operations::CopyBufferOperation::new(
                 graph,
-                canonical_passes::CANONICAL_VALIDATION_READBACK_PASS,
+                crate::type_checker::canonicalization::CANONICAL_VALIDATION_READBACK_PASS,
                 "canonical_validation",
                 &typed_buffer_from_resources::<u32>(resources, "canonical_validation")?,
                 0,
                 "canonical_validation_readback",
                 &typed_buffer_from_resources::<u32>(resources, "canonical_validation_readback")?,
                 0,
-                canonical_passes::CANONICAL_VALIDATION_WORDS as u64 * 4,
+                crate::type_checker::canonicalization::CANONICAL_VALIDATION_WORDS as u64 * 4,
             )?)
         } else {
             None
         };
-        let validate = if canonical_passes::canonical_validation_enabled() {
+        let validate = if crate::type_checker::canonicalization::canonical_validation_enabled() {
             vec![
                 direct(
-                    canonical_passes::CANONICAL_VALIDATE_PASS,
-                    canonical_passes::CANONICAL_VALIDATE_KERNEL,
+                    crate::type_checker::canonicalization::CANONICAL_VALIDATE_PASS,
+                    crate::type_checker::canonicalization::CANONICAL_VALIDATE_KERNEL,
                     words("ct_slot")?
                         .max(candidates)
                         .max(dependency_rows)
@@ -722,13 +722,13 @@ impl CanonicalTypeOperations {
                         .max(words("canonical_crosscheck_owner")?),
                 )?,
                 direct(
-                    canonical_passes::CANONICAL_CROSSCHECK_BUCKETS_PASS,
-                    canonical_passes::CANONICAL_CROSSCHECK_BUCKETS_KERNEL,
+                    crate::type_checker::canonicalization::CANONICAL_CROSSCHECK_BUCKETS_PASS,
+                    crate::type_checker::canonicalization::CANONICAL_CROSSCHECK_BUCKETS_KERNEL,
                     words("canonical_row")?,
                 )?,
                 direct(
-                    canonical_passes::CANONICAL_CROSSCHECK_PASS,
-                    canonical_passes::CANONICAL_CROSSCHECK_KERNEL,
+                    crate::type_checker::canonicalization::CANONICAL_CROSSCHECK_PASS,
+                    crate::type_checker::canonicalization::CANONICAL_CROSSCHECK_KERNEL,
                     words("canonical_row")?,
                 )?,
             ]
@@ -843,7 +843,7 @@ impl CanonicalTypeOperations {
                 self.round_args.record_invocation(encoder, &self.late_round_args)?;
             }
         }
-        for _ in 1..canonical_passes::CANONICAL_ROUNDS_PER_BATCH {
+        for _ in 1..crate::type_checker::canonicalization::CANONICAL_ROUNDS_PER_BATCH {
             self.record_round(encoder, stage)?;
         }
         self.record_counts_readback(encoder, stage);
@@ -857,7 +857,7 @@ impl CanonicalTypeOperations {
         encoder: &mut wgpu::CommandEncoder,
         stage: CanonicalStage,
     ) -> Result<()> {
-        for _ in 0..canonical_passes::CANONICAL_ROUNDS_PER_BATCH {
+        for _ in 0..crate::type_checker::canonicalization::CANONICAL_ROUNDS_PER_BATCH {
             self.record_round(encoder, stage)?;
         }
         self.record_counts_readback(encoder, stage);

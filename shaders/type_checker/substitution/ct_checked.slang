@@ -9,9 +9,9 @@
 //
 // Graph-free: rows are read through the kernel's ICtRowReader
 // (canonical_checked_rows / canonical_mutable_rows).
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_candidates;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_candidates;
+import type_checker.canonicalization.canonical_constants;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
 import type_checker.substitution.ct_rows;

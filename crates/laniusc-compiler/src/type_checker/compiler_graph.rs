@@ -1,15 +1,15 @@
 use super::{
-    semantic_interface::{
+    *,
+    interface::{
         DECLARATION_WORDS,
-        IMPLEMENTATION_WORDS,
         IMPLEMENTATION_METHOD_BINDING_WORDS,
+        IMPLEMENTATION_WORDS,
         MEMBER_WORDS,
-        PREDICATE_WORDS,
         MODULE_SEGMENT_WORDS,
         MODULE_WORDS,
+        PREDICATE_WORDS,
         TYPE_WORDS,
     },
-    *,
 };
 use crate::{
     gpu::{
@@ -273,7 +273,7 @@ pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::Compa
     crate::gpu::compiler_graph::CompactionSpec {
         mark: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
             "type_check.semantic_artifact.callable_mark",
-            "type_checker/semantic/artifact/02_mark_callable_rows",
+            "type_checker/semantics/mark_callable_rows",
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
         )
@@ -282,7 +282,7 @@ pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::Compa
         scan: RETAINED_CALLABLE_SCAN,
         scatter: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
             "type_check.semantic_artifact.callable_scatter",
-            "type_checker/semantic/artifact/03_scatter_callable_rows",
+            "type_checker/semantics/scatter_callable_rows",
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
         )
@@ -302,7 +302,7 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_CLEAR_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.clear";
 pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.project";
-/// A body replay's canonical re-arm (canonical/03_rearm), ahead of the
+/// A body replay's canonical re-arm (rearm_canonical_type_candidates), ahead of the
 /// replayed match passes.
 pub(super) const BODY_SPECIALIZATION_CANONICAL_REARM_PASS: &str =
     "type_check.body_specialization.canonical_rearm";
@@ -1867,48 +1867,48 @@ impl SemanticInterfaceScanGraph {
             )
             .map_err(anyhow::Error::msg)?;
         const IDENTITY_KERNELS: &[&str] = &[
-            "type_checker/interface/00_identity_sizes",
-            "type_checker/interface/01_identity_records",
-            "type_checker/interface/02_identity_bytes",
-            "type_checker/interface/artifact/materialize",
+            "type_checker/interface/size_interface_identities",
+            "type_checker/interface/scatter_interface_identity_records",
+            "type_checker/interface/copy_interface_identity_bytes",
+            "type_checker/interface/materialize_interface_artifact",
         ];
         const TOPOLOGY_KERNELS: &[&str] = &[
-            "type_checker/interface/implementations/00_init",
-            "type_checker/interface/implementations/00a_mark_methods",
-            "type_checker/interface/implementations/00_classify",
-            "type_checker/interface/implementations/02_map_seed",
-            "type_checker/interface/implementations/01_method_counts",
-            "type_checker/interface/implementations/03_methods",
-            "type_checker/interface/implementations/04_totals",
-            "type_checker/interface/implementations/05_scatter",
-            "type_checker/interface/implementations/06_finish",
-            "type_checker/interface/type_topology/00_init",
-            "type_checker/interface/type_topology/01_attach_unary",
-            "type_checker/interface/type_topology/02_seed_declarations",
-            "type_checker/interface/type_topology/02b_seed_params",
-            "type_checker/interface/type_topology/02c_seed_fields",
-            "type_checker/interface/type_topology/02d_seed_variants",
-            "type_checker/interface/predicates/00_classify",
-            "type_checker/interface/type_topology/02e_seed_predicates",
-            "type_checker/interface/predicates/01_scatter",
-            "type_checker/interface/type_topology/05_mark_reverse",
-            "type_checker/interface/type_topology/06_scatter",
-            "type_checker/interface/type_topology/08_edge_counts",
-            "type_checker/interface/type_topology/10_resolve_local_decl",
-            "type_checker/interface/type_topology/12_type_records",
-            "type_checker/interface/signature/00_flags",
-            "type_checker/interface/signature/01_totals",
-            "type_checker/interface/signature/01b_direct_types",
-            "type_checker/interface/signature/01c_synthetic_types",
-            "type_checker/interface/signature/02_param_edges",
-            "type_checker/interface/signature/02b_variant_payload_edges",
-            "type_checker/interface/signature/03_return_edges",
-            "type_checker/interface/members/00_variant_counts",
-            "type_checker/interface/members/00b_generic_counts",
-            "type_checker/interface/members/00c_method_counts",
-            "type_checker/interface/members/01_counts",
-            "type_checker/interface/members/02_scatter_hir",
-            "type_checker/interface/members/03_scatter_generic",
+            "type_checker/interface/implementations/initialize_interface_implementation_inventory",
+            "type_checker/interface/implementations/mark_interface_implementation_methods",
+            "type_checker/interface/implementations/classify_interface_implementations",
+            "type_checker/interface/implementations/seed_interface_implementation_map",
+            "type_checker/interface/implementations/count_interface_implementation_methods",
+            "type_checker/interface/implementations/export_interface_method_contracts",
+            "type_checker/interface/implementations/publish_interface_implementation_totals",
+            "type_checker/interface/implementations/scatter_interface_implementations",
+            "type_checker/interface/implementations/finalize_interface_implementation_predicates",
+            "type_checker/interface/type_topology/clear_interface_type_topology",
+            "type_checker/interface/type_topology/attach_interface_unary_type_operands",
+            "type_checker/interface/type_topology/seed_interface_declaration_type_roots",
+            "type_checker/interface/type_topology/seed_interface_parameter_type_roots",
+            "type_checker/interface/type_topology/seed_interface_field_type_roots",
+            "type_checker/interface/type_topology/seed_interface_variant_type_roots",
+            "type_checker/interface/members/classify_interface_predicates",
+            "type_checker/interface/type_topology/seed_interface_predicate_type_roots",
+            "type_checker/interface/members/scatter_interface_predicates",
+            "type_checker/interface/type_topology/size_interface_type_trees",
+            "type_checker/interface/type_topology/scatter_interface_type_roots",
+            "type_checker/interface/type_topology/count_interface_type_edges",
+            "type_checker/interface/type_topology/resolve_interface_local_types",
+            "type_checker/interface/type_topology/export_interface_type_records",
+            "type_checker/interface/signature/size_interface_signature_records",
+            "type_checker/interface/signature/publish_interface_signature_totals",
+            "type_checker/interface/signature/select_direct_interface_signature_types",
+            "type_checker/interface/signature/emit_synthetic_interface_signature_types",
+            "type_checker/interface/signature/scatter_interface_parameter_edges",
+            "type_checker/interface/signature/scatter_interface_variant_payload_edges",
+            "type_checker/interface/signature/scatter_interface_return_edges",
+            "type_checker/interface/members/count_interface_variant_members",
+            "type_checker/interface/members/count_interface_generic_members",
+            "type_checker/interface/members/count_interface_method_members",
+            "type_checker/interface/members/count_interface_members",
+            "type_checker/interface/members/scatter_interface_hir_members",
+            "type_checker/interface/members/scatter_interface_generic_members",
         ];
         builder
             .import_reflected_resources_from(upstream_graph, kernels, IDENTITY_KERNELS)
@@ -2069,25 +2069,25 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/00_init",
+                "type_checker/interface/type_topology/clear_interface_type_topology",
             )
             .map_err(anyhow::Error::msg)?;
         add_kernel!(
             "type_check.interface.type_topology.attach_unary",
-            "type_checker/interface/type_topology/01_attach_unary"
+            "type_checker/interface/type_topology/attach_interface_unary_type_operands"
         );
-        add_kernel_writes!("type_check.interface.implementations.init", "type_checker/interface/implementations/00_init",
+        add_kernel_writes!("type_check.interface.implementations.init", "type_checker/interface/implementations/initialize_interface_implementation_inventory",
             "interface_implementation_flag" => "semantic_interface.implementations.flag",
             "interface_implementation_index_by_hir" => "semantic_interface.implementations.index_by_hir",
             "interface_implementation_member_count" => "semantic_interface.implementations.member_count",
             "interface_implementation_method_count" => "semantic_interface.implementations.method_count",
             "interface_implementation_first_method_row" => "semantic_interface.implementations.first_method_row");
-        add_kernel!("type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/00a_mark_methods");
-        add_kernel_writes!("type_check.interface.implementations.classify", "type_checker/interface/implementations/00_classify",
+        add_kernel!("type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/mark_interface_implementation_methods");
+        add_kernel_writes!("type_check.interface.implementations.classify", "type_checker/interface/implementations/classify_interface_implementations",
             "interface_implementation_argument_count" => "semantic_interface.implementations.argument_count");
         add_scan!(SemanticInterfaceScan::Implementations);
         add_scan!(SemanticInterfaceScan::ImplementationArguments);
-        add_kernel!("type_check.interface.implementations.map_seed", "type_checker/interface/implementations/02_map_seed");
+        add_kernel!("type_check.interface.implementations.map_seed", "type_checker/interface/implementations/seed_interface_implementation_map");
         let direct_type_hir = builder
             .resource_id("semantic_interface.type.direct_hir_by_decl")
             .expect("semantic-interface direct declaration type");
@@ -2097,7 +2097,7 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/02_seed_declarations",
+                "type_checker/interface/type_topology/seed_interface_declaration_type_roots",
                 &[ReflectedResourceBinding {
                     binding: "interface_decl_direct_type_hir",
                     resource: direct_type_hir,
@@ -2108,15 +2108,15 @@ impl SemanticInterfaceScanGraph {
         for (name, kernel) in [
             (
                 "type_check.interface.type_topology.seed_params",
-                "type_checker/interface/type_topology/02b_seed_params",
+                "type_checker/interface/type_topology/seed_interface_parameter_type_roots",
             ),
             (
                 "type_check.interface.type_topology.seed_fields",
-                "type_checker/interface/type_topology/02c_seed_fields",
+                "type_checker/interface/type_topology/seed_interface_field_type_roots",
             ),
             (
                 "type_check.interface.type_topology.seed_variants",
-                "type_checker/interface/type_topology/02d_seed_variants",
+                "type_checker/interface/type_topology/seed_interface_variant_type_roots",
             ),
         ] {
             builder
@@ -2132,7 +2132,7 @@ impl SemanticInterfaceScanGraph {
         }
         add_kernel_writes!(
             "type_check.interface.predicates.classify",
-            "type_checker/interface/predicates/00_classify",
+            "type_checker/interface/members/classify_interface_predicates",
             "interface_predicate_flag" => "semantic_interface.predicates.flag",
             "interface_predicate_argument_count" => "semantic_interface.predicates.argument_count",
             "interface_predicate_owner" => "semantic_interface.predicates.owner",
@@ -2141,7 +2141,7 @@ impl SemanticInterfaceScanGraph {
         );
         add_kernel!(
             "type_check.interface.type_topology.seed_predicates",
-            "type_checker/interface/type_topology/02e_seed_predicates"
+            "type_checker/interface/type_topology/seed_interface_predicate_type_roots"
         );
         add_scan!(SemanticInterfaceScan::Predicates);
         add_scan!(SemanticInterfaceScan::PredicateArguments);
@@ -2154,7 +2154,7 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/05_mark_reverse",
+                "type_checker/interface/type_topology/size_interface_type_trees",
                 &[ReflectedResourceBinding {
                     binding: "interface_type_reverse_flag",
                     resource: reverse_flag,
@@ -2165,22 +2165,22 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::TypeOrder);
         add_kernel!(
             "type_check.interface.type_topology.scatter",
-            "type_checker/interface/type_topology/06_scatter"
+            "type_checker/interface/type_topology/scatter_interface_type_roots"
         );
         add_kernel_writes!(
             "type_check.interface.type_topology.edge_counts",
-            "type_checker/interface/type_topology/08_edge_counts",
+            "type_checker/interface/type_topology/count_interface_type_edges",
             "interface_type_edge_count" => "semantic_interface.type.edge_count"
         );
         add_scan!(SemanticInterfaceScan::TypeEdges);
         add_kernel_writes!(
             "type_check.interface.type_topology.resolve_local_decl",
-            "type_checker/interface/type_topology/10_resolve_local_decl",
+            "type_checker/interface/type_topology/resolve_interface_local_types",
             "interface_type_local_decl_by_hir" => "semantic_interface.type.local_decl_by_hir"
         );
         add_kernel_writes!(
             "type_check.interface.signature.flags",
-            "type_checker/interface/signature/00_flags",
+            "type_checker/interface/signature/size_interface_signature_records",
             "interface_signature_type_flag" => "semantic_interface.signature.type_flag",
             "interface_signature_edge_count" => "semantic_interface.signature.edge_count",
             "interface_signature_type_by_decl" => "semantic_interface.signature.type_by_decl"
@@ -2189,36 +2189,36 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::SignatureEdges);
         add_kernel_writes!(
             "type_check.interface.signature.totals",
-            "type_checker/interface/signature/01_totals",
+            "type_checker/interface/signature/publish_interface_signature_totals",
             "interface_types" => "semantic_interface.type.types",
             "interface_complete_type_count" => "semantic_interface.complete_type_count",
             "interface_complete_edge_total" => "semantic_interface.complete_edge_total"
         );
         add_kernel!(
             "type_check.interface.signature.direct_types",
-            "type_checker/interface/signature/01b_direct_types"
+            "type_checker/interface/signature/select_direct_interface_signature_types"
         );
         add_kernel_writes!(
             "type_check.interface.signature.synthetic_types",
-            "type_checker/interface/signature/01c_synthetic_types",
+            "type_checker/interface/signature/emit_synthetic_interface_signature_types",
             "interface_type_edges" => "semantic_interface.type.edges"
         );
         for (name, kernel) in [
             (
                 "type_check.interface.signature.param_edges",
-                "type_checker/interface/signature/02_param_edges",
+                "type_checker/interface/signature/scatter_interface_parameter_edges",
             ),
             (
                 "type_check.interface.signature.variant_payload_edges",
-                "type_checker/interface/signature/02b_variant_payload_edges",
+                "type_checker/interface/signature/scatter_interface_variant_payload_edges",
             ),
             (
                 "type_check.interface.signature.return_edges",
-                "type_checker/interface/signature/03_return_edges",
+                "type_checker/interface/signature/scatter_interface_return_edges",
             ),
             (
                 "type_check.interface.members.variant_counts",
-                "type_checker/interface/members/00_variant_counts",
+                "type_checker/interface/members/count_interface_variant_members",
             ),
         ] {
             builder
@@ -2234,52 +2234,52 @@ impl SemanticInterfaceScanGraph {
         }
         add_kernel_writes!(
             "type_check.interface.members.generic_counts",
-            "type_checker/interface/members/00b_generic_counts",
+            "type_checker/interface/members/count_interface_generic_members",
             "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
         );
         add_kernel_writes!(
             "type_check.interface.members.counts",
-            "type_checker/interface/members/01_counts",
+            "type_checker/interface/members/count_interface_members",
             "interface_member_count" => "semantic_interface.members.row_count",
             "interface_member_cursor" => "semantic_interface.members.cursor"
         );
         add_kernel!(
             "type_check.interface.members.method_counts",
-            "type_checker/interface/members/00c_method_counts"
+            "type_checker/interface/members/count_interface_method_members"
         );
-        add_kernel!("type_check.interface.implementations.method_counts", "type_checker/interface/implementations/01_method_counts");
+        add_kernel!("type_check.interface.implementations.method_counts", "type_checker/interface/implementations/count_interface_implementation_methods");
         add_scan!(SemanticInterfaceScan::Members);
         add_scan!(SemanticInterfaceScan::ImplementationMembers);
         add_scan!(SemanticInterfaceScan::ImplementationMethods);
-        add_kernel_writes!("type_check.interface.implementations.totals", "type_checker/interface/implementations/04_totals",
+        add_kernel_writes!("type_check.interface.implementations.totals", "type_checker/interface/implementations/publish_interface_implementation_totals",
             "interface_member_total" => "semantic_interface.complete_member_count");
         add_kernel_writes!(
             "type_check.interface.members.scatter_hir",
-            "type_checker/interface/members/02_scatter_hir",
+            "type_checker/interface/members/scatter_interface_hir_members",
             "interface_member_words" => "semantic_interface.members.records",
             "interface_member_name_id" => "semantic_interface.members.name_id"
         );
         add_kernel_writes!(
             "type_check.interface.members.scatter_generic",
-            "type_checker/interface/members/03_scatter_generic",
+            "type_checker/interface/members/scatter_interface_generic_members",
             "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
         );
-        add_kernel_writes!("type_check.interface.implementations.methods", "type_checker/interface/implementations/03_methods",
+        add_kernel_writes!("type_check.interface.implementations.methods", "type_checker/interface/implementations/export_interface_method_contracts",
             "interface_implementation_method_binding_words" => "semantic_interface.implementations.method_binding_words");
         add_kernel!(
             "type_check.interface.type_topology.type_records",
-            "type_checker/interface/type_topology/12_type_records"
+            "type_checker/interface/type_topology/export_interface_type_records"
         );
-        add_kernel_writes!("type_check.interface.implementations.scatter", "type_checker/interface/implementations/05_scatter",
+        add_kernel_writes!("type_check.interface.implementations.scatter", "type_checker/interface/implementations/scatter_interface_implementations",
             "interface_implementation_words" => "semantic_interface.implementations.words",
             "interface_implementation_arguments" => "semantic_interface.implementations.arguments");
         add_kernel_writes!(
             "type_check.interface.predicates.scatter",
-            "type_checker/interface/predicates/01_scatter",
+            "type_checker/interface/members/scatter_interface_predicates",
             "interface_predicate_words" => "semantic_interface.predicates.words",
             "interface_predicate_arguments" => "semantic_interface.predicate_arguments.words"
         );
-        add_kernel!("type_check.interface.implementations.finish", "type_checker/interface/implementations/06_finish");
+        add_kernel!("type_check.interface.implementations.finish", "type_checker/interface/implementations/finalize_interface_implementation_predicates");
         for name in [
             "type_check.interface.predicates.classify",
             "type_check.interface.type_topology.seed_predicates",
@@ -2312,13 +2312,13 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::Modules);
         add_kernel!(
             "type_check.interface.identity_sizes",
-            "type_checker/interface/00_identity_sizes",
+            "type_checker/interface/size_interface_identities",
             ResourceDomain::Declarations
         );
         add_scan!(SemanticInterfaceScan::Names);
         add_kernel_writes!(
             "type_check.interface.identity_records",
-            "type_checker/interface/01_identity_records",
+            "type_checker/interface/scatter_interface_identity_records",
             ResourceDomain::Declarations,
             "interface_modules" => "semantic_interface.modules",
             "interface_module_segments" => "semantic_interface.module_segments",
@@ -2326,12 +2326,12 @@ impl SemanticInterfaceScanGraph {
         );
         add_kernel!(
             "type_check.interface.identity_bytes",
-            "type_checker/interface/02_identity_bytes",
+            "type_checker/interface/copy_interface_identity_bytes",
             ResourceDomain::Bytes
         );
         add_kernel!(
             "type_check.interface.artifact",
-            "type_checker/interface/artifact/materialize",
+            "type_checker/interface/materialize_interface_artifact",
             ResourceDomain::ArtifactBytes
         );
         let artifact_length = builder
@@ -3217,7 +3217,7 @@ fn build_graph(
         _type_instance_decl_token as "type_instance_decl_token" in Types => type_rows * 4;
         _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => type_rows * 4;
         _type_native_word_count as "type_native_word_count" in Types => type_rows * 4;
-        // 01c_generic_native_words: a layout entry per row and per local
+        // project_generic_native_word_counts: a layout entry per row and per local
         // nominal declaration.
         _type_native_word_memo as "type_native_word_memo" in Types => (type_rows + token_rows) * 4;
         _type_native_scalar_identity as "type_native_scalar_identity" in Types => type_rows * 4;
@@ -3252,7 +3252,7 @@ fn build_graph(
         _interface_public_decl_local_id as "interface_public_decl_local_id" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_local as "interface_public_decl_index_by_local" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_hir as "interface_public_decl_index_by_hir" in HirNodes => hir_rows * 4;
-        // 03_hidden_count: the public count, then one count per 256 records.
+        // count_hidden_interface_declarations: the public count, then one count per 256 records.
         _interface_hidden_block_count as "interface_hidden_block_count" in Declarations => (record_rows.div_ceil(256) + 1) * 4;
         _import_visible_type_lookup_state as "import_visible_type_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_type_duplicate_of as "import_visible_type_duplicate_of" in Declarations => import_visible_rows * 4;
@@ -3655,7 +3655,7 @@ fn build_graph(
         predicate_obligation_pair_total in HirNodes => 4;
         predicate_obligation_pair_dispatch_args in DispatchArguments [StorageIndirect] => 12;
         // What the unit leaves for the whole-program trait solver
-        // (closure/04e_solver_demand.slang): three counts and a spare word.
+        // (count_instance_solver_demand.slang): three counts and a spare word.
         solver_demand in HirNodes => 16;
     });
     graph_resources!(graph, Workspace {
@@ -4209,7 +4209,7 @@ fn build_graph(
         _type_semantic_count_out as "type_semantic_count_out" in HirNodes => 4;
         _type_semantic_row_by_ordinal as "type_semantic_row_by_ordinal" in HirNodes => hir_rows * 4;
     });
-    // Constant reference rounds (semantic/artifact/const_fold.slang): the
+    // Constant reference rounds (const_fold.slang): the
     // round counter and staged count, and each round's workgroups.
     graph_resources!(graph, Workspace {
         local_const_fold_state in HirNodes => 8;
@@ -4236,7 +4236,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/features/00_collect",
+        "type_checker/semantics/collect_semantic_features",
         &[],
     )?;
     graph.add_pass_access(
@@ -4248,7 +4248,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/semantic/features/01_dispatch_args",
+        "type_checker/semantics/write_semantic_feature_dispatch_args",
     )?;
     graph.add_kernel_pass_by_name(
         IF_DEPTH_CLEAR_PASS,
@@ -4390,7 +4390,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/predicates/00a_clear_syntax_tokens",
+        "type_checker/predicates/clear_predicate_syntax_tokens",
         reflected_bindings!["predicate_syntax_token" => predicate_syntax_token: Write],
     )?;
     graph.add_indirect_dispatch(
@@ -4686,13 +4686,13 @@ fn build_graph(
     let (substitution_records, substitution_argument_words) =
         super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
     let (closure_records, closure_argument_words) =
-        super::instance_closure_passes::closure_canonical_extra(hir_rows);
+        super::closure::closure_canonical_extra(hir_rows);
     let (dependency_closure_records, dependency_closure_argument_words) =
-        super::instance_closure_passes::closure_dependency_canonical_extra();
-    let canonical_records = super::canonical_passes::register_canonical_passes(
+        super::closure::closure_dependency_canonical_extra();
+    let canonical_records = super::canonicalization::register_canonical_passes(
         &mut graph,
         kernels,
-        super::canonical_passes::CanonicalCapacity {
+        super::canonicalization::CanonicalCapacity {
             token_rows,
             hir_rows,
             type_rows,
@@ -4740,7 +4740,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_TYPE_INSTANCES_PROJECT.name, "path_dispatch_args")?;
-    super::canonical_passes::register_canonical_dependency_passes(
+    super::canonicalization::register_canonical_dependency_passes(
         &mut graph,
         kernels,
         dependency_canonical_type_roots,
@@ -4788,7 +4788,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/expression_types/00_init",
+                "type_checker/semantics/resolve_scalar_expression_types",
                 reflected_bindings!["compact_expr_scalar_type_out" => scalar_a: Write],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4796,7 +4796,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01_expression_refs",
+                "type_checker/semantics/project_checked_expression_references",
                 reflected_bindings![
                     "compact_expr_scalar_type" => final_scalar,
                     "type_instance_decl_token" => _type_instance_decl_token: Read,
@@ -4819,7 +4819,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01a_struct_literal_refs",
+                "type_checker/semantics/project_checked_struct_literal_references",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4827,7 +4827,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01b_array_index_refs",
+                "type_checker/semantics/project_checked_array_index_references",
                 reflected_bindings![
                     "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: ReadWrite,
                     "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: ReadWrite,
@@ -4839,7 +4839,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01e_operator_refs",
+                "type_checker/semantics/project_checked_operator_references",
                 reflected_bindings![
                     "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: ReadWrite,
                     "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: ReadWrite,
@@ -4850,7 +4850,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_expr",
+                "type_checker/conditions/validate_expression_conditions",
                 reflected_bindings!["compact_expr_scalar_type" => final_scalar],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4858,7 +4858,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_stmt",
+                "type_checker/conditions/validate_statement_types",
                 reflected_bindings!["compact_expr_scalar_type" => final_scalar],
             )?;
             let distinct_hir_node_by_token = graph.add_storage(
@@ -4870,7 +4870,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_distinct_nodes",
+                "type_checker/conditions/index_distinct_type_brands",
                 reflected_bindings!["distinct_hir_node_by_token" => distinct_hir_node_by_token: Write],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4878,7 +4878,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_distinct",
+                "type_checker/conditions/validate_distinct_type_brands",
                 reflected_bindings!["distinct_hir_node_by_token" => distinct_hir_node_by_token: Read],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4886,7 +4886,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_exclusive",
+                "type_checker/conditions/validate_exclusive_reference_arguments",
                 reflected_bindings![],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4894,7 +4894,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_aggregate_requests",
+                "type_checker/conditions/request_aggregate_type_comparisons",
                 &[],
             )?;
             aggregate_scan(AGGREGATE_FINAL_SCAN_PASSES).register_with_total_dispatch(
@@ -4907,7 +4907,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::CallArguments,
                 kernels,
-                "type_checker/conditions/aggregate_args",
+                "type_checker/conditions/validate_aggregate_type_arguments",
                 reflected_bindings![
                     "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
                 ],
@@ -5282,7 +5282,7 @@ fn build_graph(
             })?;
             graph.assign_kernel(
                 SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS,
-                "type_checker/semantic/artifact/01a_struct_literal_refs",
+                "type_checker/semantics/project_checked_struct_literal_references",
             )?;
             graph.require_complete_reflection(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)?;
             super::struct_literal_field_types::register_field_expected_ids_pass(
@@ -5362,7 +5362,7 @@ fn build_graph(
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
     // Canonical identities of the declared rows, in recording order: after
     // the decl refs and ahead of the closed application index.
-    super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
+    super::canonicalization::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
     super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
     super::struct_literal_field_types::register_match_storage(&mut graph, token_rows)?;
@@ -5471,7 +5471,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00_clear_bound_arg_facts",
+        "type_checker/predicates/clear_bound_arg_facts",
         predicate_clear_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5479,7 +5479,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00b_collect_bound_arg_facts",
+        "type_checker/predicates/collect_bound_arg_facts",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5487,7 +5487,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00c_collect_method_contracts",
+        "type_checker/predicates/collect_method_contracts",
         reflected_bindings![
             "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
             "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
@@ -5505,7 +5505,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/01_collect",
+        "type_checker/predicates/collect_generic_bound_predicates",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5513,7 +5513,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/01a_validate_bound_args",
+        "type_checker/predicates/validate_bound_args",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -6297,7 +6297,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01_collect_impls",
+            "type_checker/predicates/collect_implementation_headers",
             reflected_bindings![
                 "predicate_impl_lookup_next" => predicate_impl_lookup_next: Write,
             ],
@@ -6307,7 +6307,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f_emit_method_validation_rows",
+            "type_checker/predicates/emit_method_validation_rows",
             reflected_bindings![
                 "predicate_method_validation_owner_node" => predicate_method_validation_owner_node: Write,
                 "predicate_method_validation_peer_node" => predicate_method_validation_peer_node: Write,
@@ -6319,7 +6319,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f1_emit_method_param_validation_rows",
+            "type_checker/predicates/emit_method_param_validation_rows",
             &[],
         )?;
         add_dependency_type_index_passes(
@@ -6333,7 +6333,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f2_validate_imported_methods",
+            "type_checker/predicates/validate_imported_methods",
             reflected_bindings![
                 "canonical_type_roots" => dependency_canonical_type_roots: Read,
             ],
@@ -6343,7 +6343,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01g_reduce_method_validation_errors",
+            "type_checker/predicates/reduce_method_validation_errors",
             &[],
         )?;
         graph.add_buffer_clear_pass(
@@ -6357,7 +6357,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/02a_count_obligations",
+            "type_checker/predicates/count_predicate_obligations",
             reflected_bindings![
                 "predicate_obligation_count_by_call" => predicate_obligation_count_by_call: Write,
             ],
@@ -6386,7 +6386,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/02b_validate_obligations",
+            "type_checker/predicates/validate_predicate_obligations",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -6521,8 +6521,8 @@ fn build_graph(
     // The instance closure of an original job reads the checked call
     // environments and realizes its instances' arguments as checked rows. It
     // precedes the body passes: they bind in place the functions it selects
-    // (closure/inplace_read.slang).
-    super::instance_closure_passes::register_instance_closure_passes(
+    // (inplace_instance_lookup.slang).
+    super::closure::register_instance_closure_passes(
         &mut graph,
         kernels,
         hir_rows,
@@ -6657,7 +6657,7 @@ fn build_graph(
         // interned: re-arm them, so the match passes intern what they read.
         (
             BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
-            super::canonical_passes::CANONICAL_REARM_KERNEL,
+            super::canonicalization::CANONICAL_REARM_KERNEL,
             ResourceDomain::Types,
         ),
         (
@@ -6677,7 +6677,7 @@ fn build_graph(
         ),
     ] {
         if name == BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
-            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 1)?;
+            super::closure::register_inplace_rearm_pass(&mut graph, kernels, 1)?;
         }
         graph.add_kernel_pass_by_name(
             name,
@@ -6700,8 +6700,8 @@ fn build_graph(
             },
         )?;
         if name == BODY_CANONICAL_AFTER_PASS {
-            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
-            super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
+            super::closure::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
+            super::canonicalization::register_canonical_body_passes(&mut graph, kernels)?;
             super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
         }
         if name == BODY_FIELD_CLOSURE_AFTER_PASS {
@@ -6720,7 +6720,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00_calls",
+        "type_checker/semantics/project_semantic_call_facts",
         reflected_bindings![
             "call_fn_index" => _call_fn_index: Read,
             "backend_call_fn_index" => backend_call_fn_index: Read,
@@ -6756,13 +6756,13 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00c_generic_call_results",
+        "type_checker/semantics/project_generic_call_results",
         &[],
     )?;
-    super::instance_closure_passes::register_inplace_guard_pass(&mut graph, kernels)?;
-    super::instance_closure_passes::register_solver_demand_pass(&mut graph, kernels)?;
-    super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 2)?;
-    super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
+    super::closure::register_inplace_guard_pass(&mut graph, kernels)?;
+    super::closure::register_solver_demand_pass(&mut graph, kernels)?;
+    super::closure::register_inplace_rearm_pass(&mut graph, kernels, 2)?;
+    super::canonicalization::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
     // Rows the inference rounds created are interned only by the late stage;
     // seed their IDs' rows before the layout and projection passes read them.
     graph.add_kernel_pass_by_name(
@@ -6784,7 +6784,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/semantic/artifact/01c_generic_native_words",
+        "type_checker/semantics/project_generic_native_word_counts",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "type_native_word_count" => _type_native_word_count: Write,
@@ -6796,7 +6796,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/01d_member_layout",
+        "type_checker/semantics/publish_checked_member_layouts",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "semantic_member_field_word_offset_by_hir" => semantic_member_field_word_offset_by_hir: Write,
@@ -6814,7 +6814,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00_project",
+        "type_checker/semantics/project_checked_semantic_artifact",
         reflected_bindings![
             "path_id_by_owner_hir" => _path_id_by_owner_hir: Read,
             "resolved_dependency_value_metadata" => resolved_dependency_value_metadata: Read,
@@ -6851,7 +6851,7 @@ fn build_graph(
     )?;
     // The instance table (D2) realizes the closure's instances' rows from
     // the final expression references.
-    super::instance_closure_passes::register_instance_table_passes(
+    super::closure::register_instance_table_passes(
         &mut graph,
         kernels,
         hir_rows,
@@ -6872,7 +6872,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00a_local_const_literals",
+        "type_checker/semantics/fold_local_constant_literals",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
@@ -6887,7 +6887,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00a1_local_const_fold_round",
+        "type_checker/semantics/write_constant_fold_round_args",
         reflected_bindings![
             "local_const_fold_state" => local_const_fold_state: ReadWrite,
             "local_const_fold_dispatch_args" => local_const_fold_dispatch_args: Write,
@@ -6898,7 +6898,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00b_local_const_references",
+        "type_checker/semantics/resolve_local_constant_references",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_expr_scalar_type" => final_scalar: Read,
@@ -6920,7 +6920,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00b2_local_const_fold_publish",
+        "type_checker/semantics/publish_local_constant_values",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
@@ -6941,7 +6941,7 @@ fn build_graph(
     // The table's selected instances become execution rows lowering reads
     // like the job's own (closure/instance_exec.slang), once every checked
     // fact of their templates is final.
-    super::instance_closure_passes::register_instance_exec_passes(
+    super::closure::register_instance_exec_passes(
         &mut graph,
         kernels,
         hir_rows,

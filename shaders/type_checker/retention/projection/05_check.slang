@@ -10,7 +10,7 @@
 //   use is a RECORD with no route, and its fields have the declared types;
 // - the literal, operator, condition and destination rules of the
 //   frontend (operator_operand_rules.slang, integer_words.slang,
-//   closure/06c_table_operands.slang) hold where the template's types were
+//   validate_instance_table_operands.slang) hold where the template's types were
 //   symbolic.
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
@@ -52,7 +52,7 @@ void check_literal(Row at, uint4 p, uint t, bool changed)
     if (p.x == EXPR_INT)
     {
         // An integer literal in a pointer context keeps the i32 the
-        // template gives it (06c_table_operands.slang).
+        // template gives it (validate_instance_table_operands.slang).
         uint scalar = t == SCALAR_PTR ? SCALAR_I32 : t;
         if (!scalar_is_integer(scalar))
         {

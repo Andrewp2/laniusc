@@ -10,7 +10,7 @@
 //   use is a RECORD with no route, and its fields have the declared types;
 // - the literal, operator, condition and destination rules of the
 //   frontend (operator_operand_rules.slang, integer_words.slang,
-//   closure/06c_table_operands.slang) hold where the template's types were
+//   validate_instance_table_operands.slang) hold where the template's types were
 //   symbolic.
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.

@@ -2,7 +2,7 @@ use super::*;
 use crate::gpu::compiler_graph::{CompilerGraphBuilder, ReflectedComputeSpec};
 
 pub(in crate::type_checker) const CONDITIONS_CALLS: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.conditions.compact_calls", HirNodes, "type_checker/conditions/compact_calls";
+    "type_check.conditions.compact_calls", HirNodes, "type_checker/conditions/diagnose_unresolved_calls";
     resources [
         typecheck_resource!("call_dependency_library_id" => "call_dependency_library_id", Read),
         typecheck_resource!("module_value_path_associated_method_token" => "module_value_path_associated_method_token", Read),
@@ -11,23 +11,23 @@ pub(in crate::type_checker) const CONDITIONS_CALLS: ReflectedComputeSpec = typec
 pub(in crate::type_checker) const CONDITIONS_TYPES: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_types",
     HirNodes,
-    "type_checker/conditions/compact_types"
+    "type_checker/conditions/validate_resolved_type_references"
 );
 pub(in crate::type_checker) const CONDITIONS_METHODS: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_methods",
     Declarations,
-    "type_checker/conditions/compact_methods"
+    "type_checker/conditions/diagnose_unsupported_method_signatures"
 )
 .with_indirect_dispatch("method_compact_dispatch_args");
 pub(in crate::type_checker) const CONDITIONS_PREDICATES: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_predicates",
     Declarations,
-    "type_checker/conditions/compact_predicates"
+    "type_checker/conditions/validate_checked_predicates"
 );
 pub(in crate::type_checker) const CONDITIONS_NAMES: ReflectedComputeSpec = typecheck_pass!(
     "type_check.conditions.compact_names",
     HirNodes,
-    "type_checker/conditions/compact_names"
+    "type_checker/conditions/diagnose_unresolved_names"
 );
 
 /// Final condition projection after aggregate comparison has completed.
