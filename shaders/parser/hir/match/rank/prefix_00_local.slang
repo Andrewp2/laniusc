@@ -1,4 +1,7 @@
-// Mark match arm/pattern-payload nodes and count them per block.
+// Mark the match family's rows and count them per block: match expressions,
+// arms, and every pattern and pattern-list production. The family's kernels
+// run over this list only (links, owner walk, rank steps, scatter, canonical
+// marks), so no kernel writes a default to a row outside it.
 
 import generated_parse_production_ids;
 
@@ -35,10 +38,12 @@ uint active_node_count()
                                     : gHirMatch.n;
 }
 
-bool is_pattern_production(uint prod)
+bool in_pattern_path(uint prod)
 {
     return prod == PROD_PATTERN_IDENT || prod == PROD_PATTERN_INT ||
-           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE;
+           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE ||
+           prod == PROD_PATTERN_TUPLE || prod == PROD_PATTERNS_SOME ||
+           prod == PROD_PATTERNS_MORE || prod == PROD_PATTERNS_AFTER_COMMA_MORE;
 }
 
 uint match_rank_flag(uint node, uint active)
@@ -46,7 +51,9 @@ uint match_rank_flag(uint node, uint active)
     if (node >= active)
         return 0u;
     uint prod = node_kind[node];
-    return prod == PROD_MATCH_ARM || is_pattern_production(prod) ? 1u : 0u;
+    return prod == PROD_MATCH_EXPR || prod == PROD_MATCH_ARM || in_pattern_path(prod)
+        ? 1u
+        : 0u;
 }
 
 [shader("compute")]

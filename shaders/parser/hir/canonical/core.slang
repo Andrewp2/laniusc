@@ -102,6 +102,8 @@ static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_IMPL = 35u;
+static const uint HIR_CORE_TYPE = 5u;
+static const uint HIR_CORE_PATH_EXPR = 33u;
 static const uint HIR_IMPL_INHERENT = 1u;
 static const uint HIR_IMPL_TRAIT = 2u;
 static const uint HIR_EXPR_INT = 3u;
@@ -324,7 +326,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     payload.c = INVALID;
     payload.d = INVALID;
 
-    uint type_form = hir_type_form[raw];
+    // Type arrays are defined on type rows only.
+    uint raw_kind = hir_kind[raw];
+    uint type_form = raw_kind == HIR_CORE_TYPE ? hir_type_form[raw] : 0u;
     uint parameter_anchor = hir_token_pos[raw];
     uint4 parameter = parameter_anchor < gCanonical.canonical_capacity
         ? hir_param_record[parameter_anchor]
@@ -533,14 +537,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_payload[row] = payload;
     HirSemanticFacts semantic_facts;
     semantic_facts.semantic_kind = semantic_kind(production);
-    semantic_facts.type_path_leaf = semantic_id(hir_type_path_leaf_node[raw]);
+    // The path leaf is defined on type rows and path expressions only.
+    semantic_facts.type_path_leaf =
+        raw_kind == HIR_CORE_TYPE || raw_kind == HIR_CORE_PATH_EXPR
+            ? semantic_id(hir_type_path_leaf_node[raw])
+            : INVALID;
     // Method storage is an absent-family sentinel when the unit contains no
     // trait or impl declarations. Only impl nodes own this relation.
     semantic_facts.method_impl_receiver_type = core.kind == HIR_IMPL
         ? semantic_id(hir_method_impl_receiver_type_node[raw])
         : INVALID;
     semantic_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
-    semantic_facts.struct_lit_head = semantic_id(hir_struct_lit_head_node[raw]);
+    // The literal head is defined on struct literal rows only.
+    semantic_facts.struct_lit_head = production == PROD_STRUCT_LIT
+        ? semantic_id(hir_struct_lit_head_node[raw])
+        : INVALID;
     semantic_facts.predicate_owner = INVALID;
     semantic_facts.predicate_subject = INVALID;
     semantic_facts.literal_status = expr_form == HIR_EXPR_FLOAT
@@ -551,7 +562,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_canonical_scope_end[row] = hir_stmt_scope_end[owner_record_row];
     hir_canonical_fn_return_type[row] =
         semantic_id(hir_fn_return_type_node[owner_record_row]);
-    hir_canonical_type_root_owner[row] = semantic_id(hir_type_root_owner[raw]);
+    // The type-root owner is defined on type rows only.
+    hir_canonical_type_root_owner[row] = semantic_id(
+        raw_kind == HIR_CORE_TYPE ? hir_type_root_owner[raw] : INVALID);
     hir_canonical_type_alias_target[row] =
         semantic_id(hir_type_alias_target_node[owner_record_row]);
     hir_canonical_const_type[row] = item_kind == 3u

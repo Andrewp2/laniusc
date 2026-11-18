@@ -25,6 +25,7 @@ pub struct ParserHirItemReadbacks {
     pub hir_canonical_core: wgpu::Buffer,
     pub hir_canonical_payload: wgpu::Buffer,
     pub hir_canonical_nearest_fn: wgpu::Buffer,
+    pub hir_canonical_count: wgpu::Buffer,
     pub hir_type_form: wgpu::Buffer,
     pub hir_type_value_node: wgpu::Buffer,
     pub hir_type_len_token: wgpu::Buffer,
@@ -297,6 +298,7 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.hir_canonical_nearest_fn",
                 bufs.hir_canonical_nearest_fn.byte_size as u64,
             ),
+            hir_canonical_count: mk("rb.parser.hir_item_records.hir_canonical_count", 4),
             hir_type_form: mk(
                 "rb.parser.hir_item_records.hir_type_form",
                 bufs.hir_type_form.byte_size as u64,
@@ -744,6 +746,13 @@ impl ParserHirItemReadbacks {
             &self.hir_canonical_nearest_fn,
             0,
             bufs.hir_canonical_nearest_fn.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_canonical_count,
+            0,
+            &self.hir_canonical_count,
+            0,
+            4,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_type_form,
@@ -1362,6 +1371,7 @@ impl ParserHirItemReadbacks {
         map("hir_canonical_core", &self.hir_canonical_core);
         map("hir_canonical_payload", &self.hir_canonical_payload);
         map("hir_canonical_nearest_fn", &self.hir_canonical_nearest_fn);
+        map("hir_canonical_count", &self.hir_canonical_count);
         map("hir_type_form", &self.hir_type_form);
         map("hir_type_value_node", &self.hir_type_value_node);
         map("hir_type_len_token", &self.hir_type_len_token);
@@ -1536,6 +1546,9 @@ impl ParserHirItemReadbacks {
             bufs.total_emit,
             bufs.hir_kind.count,
         )?;
+        let canonical_len = (read_u32_array::<1>(&self.hir_canonical_count, "hir_canonical_count")?
+            [0] as usize)
+            .min(tree_len);
         let hir_token_pos = read_u32_vec(&self.hir_token_pos, tree_len);
         let hir_item_kind = read_u32_vec(&self.hir_item_kind, tree_len);
         let hir_item_name_token_words =
@@ -1670,7 +1683,7 @@ impl ParserHirItemReadbacks {
             read_u32_vec_padded(&self.hir_variant_payload_count, tree_len, 0);
         let hir_item_decl_token = project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
 
-        let decoded = DecodedParserHirItemReadbacks {
+        let mut decoded = DecodedParserHirItemReadbacks {
             ll1_status,
             node_kind: read_u32_vec(&self.node_kind, tree_len),
             hir_kind: read_u32_vec(&self.hir_kind, tree_len),
@@ -1683,15 +1696,16 @@ impl ParserHirItemReadbacks {
             hir_semantic_next_sibling: read_u32_vec(&self.hir_semantic_next_sibling, tree_len),
             hir_semantic_depth: read_u32_vec(&self.hir_semantic_depth, tree_len),
             hir_semantic_child_index: read_u32_vec(&self.hir_semantic_child_index, tree_len),
+            // Canonical rows past the job's count are not written.
             hir_canonical_core_words: read_u32_vec(
                 &self.hir_canonical_core,
-                tree_len.saturating_mul(4),
+                canonical_len.saturating_mul(4),
             ),
             hir_canonical_payload_words: read_u32_vec(
                 &self.hir_canonical_payload,
-                tree_len.saturating_mul(4),
+                canonical_len.saturating_mul(4),
             ),
-            hir_canonical_nearest_fn: read_u32_vec(&self.hir_canonical_nearest_fn, tree_len),
+            hir_canonical_nearest_fn: read_u32_vec(&self.hir_canonical_nearest_fn, canonical_len),
             hir_type_form: read_u32_vec(&self.hir_type_form, tree_len),
             hir_type_value_node: read_u32_vec(&self.hir_type_value_node, tree_len),
             hir_type_len_token: read_u32_vec(&self.hir_type_len_token, tree_len),
@@ -1912,6 +1926,35 @@ impl ParserHirItemReadbacks {
                 u32::MAX,
             ),
         };
+        super::reset_hir_enum_rows_outside_family(
+            &decoded.node_kind,
+            &decoded.hir_kind,
+            [
+                &mut decoded.hir_variant_parent_enum,
+                &mut decoded.hir_variant_ordinal,
+                &mut decoded.hir_variant_payload_start,
+            ],
+            [&mut decoded.hir_variant_payload_count],
+            &mut decoded.hir_variant_payload_node,
+        );
+        super::reset_hir_match_rows_outside_family(
+            &decoded.node_kind,
+            [
+                &mut decoded.hir_match_scrutinee_node,
+                &mut decoded.hir_match_arm_start,
+                &mut decoded.hir_match_arm_next,
+                &mut decoded.hir_match_arm_pattern_node,
+                &mut decoded.hir_match_arm_payload_start,
+                &mut decoded.hir_match_arm_result_node,
+                &mut decoded.hir_match_payload_owner_arm,
+                &mut decoded.hir_match_payload_match_node,
+                &mut decoded.hir_match_payload_ordinal,
+            ],
+            [
+                &mut decoded.hir_match_arm_count,
+                &mut decoded.hir_match_arm_payload_count,
+            ],
+        );
         validate_hir_source_address_records(
             &decoded.hir_kind,
             &decoded.hir_token_pos,

@@ -240,9 +240,6 @@ pub(in crate::parser) const PATH_SEGMENT_COUNT_CLEAR: &str = "parser.hir_path_se
 pub(in crate::parser) const STRING_DECODED_LEN_CLEAR: &str = "parser.hir_string_decoded_len.clear";
 pub(in crate::parser) const STRING_DATA_WORDS_CLEAR: &str = "parser.hir_string_data_words.clear";
 pub(in crate::parser) const CALL_ARG_COUNT_CLEAR: &str = "parser.hir_call_arg_count.clear";
-pub(in crate::parser) const TYPE_ARG_OWNER_B_CLEAR: &str = "parser.hir_type_arg_owner_b.clear";
-pub(in crate::parser) const TYPE_ARG_LINK_B_CLEAR: &str = "parser.hir_type_arg_link_b.clear";
-pub(in crate::parser) const TYPE_ARG_RANK_B_CLEAR: &str = "parser.hir_type_arg_rank_b.clear";
 pub(in crate::parser) const CANONICAL_VARIANT_CLEAR: &str = "parser.hir_canonical.variants.clear";
 pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_CLEAR: &str =
     "parser.hir_canonical.variant_payloads.clear";
@@ -991,7 +988,16 @@ fn register_list_rank_compaction(
         invocation.local_label(),
         &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
+    register_list_rank_listing(graph, passes, invocation)
+}
 
+/// The scan and compact scatter that list the rows a preceding pass marked in
+/// `hir_list_rank_flag` and counted in `hir_list_rank_block_sum`.
+fn register_list_rank_listing(
+    graph: &mut CompilerGraphBuilder,
+    passes: &ParserPasses,
+    invocation: ListRankInvocation,
+) -> Result<(), String> {
     register_list_rank_scan(graph, passes, invocation)?;
 
     reflected(
@@ -1151,24 +1157,17 @@ fn register_type_argument_ranking(
             "hir_type_arg_link_a",
             "hir_type_arg_rank_a",
             "hir_type_arg_previous",
+            "hir_type_arg_owner_b",
+            "hir_type_arg_link_b",
+            "hir_type_arg_rank_b",
+            "hir_list_rank_flag",
+            "hir_list_rank_block_sum",
         ],
     )?;
-    indirect(graph, "hir_type_arg_links", "tree_active_dispatch_args")?;
 
-    for (name, resource) in [
-        (TYPE_ARG_OWNER_B_CLEAR, "hir_type_arg_owner_b"),
-        (TYPE_ARG_LINK_B_CLEAR, "hir_type_arg_link_b"),
-        (TYPE_ARG_RANK_B_CLEAR, "hir_type_arg_rank_b"),
-    ] {
-        clear(graph, name, CompilerPhase::Hir, &[(resource, resource)])?;
-    }
-    register_list_rank_compaction(
-        graph,
-        passes,
-        invocation,
-        "hir_type_arg_owner_a",
-        "hir_type_arg_link_a",
-    )?;
+    // The links pass marks the arguments with an owner or a link itself; the
+    // scan and the compact scatter list them.
+    register_list_rank_listing(graph, passes, invocation)?;
     register_list_rank_propagation(
         graph,
         capacity,
@@ -1222,21 +1221,13 @@ fn register_type_root_owner(
             "hir_type_root_owner_a",
             "hir_type_root_link_b",
             "hir_type_root_owner_b",
+            "hir_list_rank_flag",
+            "hir_list_rank_block_sum",
         ],
     )?;
-    indirect(
-        graph,
-        "hir_type_root_owner_init",
-        "tree_active_dispatch_args",
-    )?;
-
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::TypeRoots,
-        "hir_type_root_owner",
-        "hir_type_arg_link_a",
-    )?;
+    // The owner init marks the type rows itself; the scan and the compact
+    // scatter list them.
+    register_list_rank_listing(graph, passes, ListRankInvocation::TypeRoots)?;
     let steps = crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
         capacity.tree_capacity,
     );
@@ -1282,30 +1273,8 @@ fn register_enum_ranking(
         FINALIZE,
     };
 
-    static_pass(
-        graph,
-        &passes.hir_enum_variant_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_enum_variant_links",
-        &[
-            "hir_variant_owner_a",
-            "hir_variant_link_a",
-            "hir_variant_rank_a",
-            "hir_variant_payload_owner_a",
-            "hir_variant_payload_link_a",
-            "hir_variant_payload_rank_a",
-            "hir_variant_parent_enum",
-            "hir_variant_ordinal",
-            "hir_variant_payload_start",
-            "hir_variant_payload_count",
-            "hir_variant_payload_node",
-        ],
-    )?;
-    indirect(graph, "hir_enum_variant_links", "tree_active_dispatch_args")?;
+    // The enum family's rows first: the links, the rank step and the scatter
+    // run over them only.
     static_pass(
         graph,
         &passes.hir_enum_rank_prefix_local,
@@ -1356,6 +1325,30 @@ fn register_enum_ranking(
             "hir_enum_rank_dispatch_args",
         ],
     )?;
+    static_pass(
+        graph,
+        &passes.hir_enum_variant_links,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_enum_variant_links",
+        &[
+            "hir_variant_owner_a",
+            "hir_variant_link_a",
+            "hir_variant_rank_a",
+            "hir_variant_payload_owner_a",
+            "hir_variant_payload_link_a",
+            "hir_variant_payload_rank_a",
+            "hir_variant_parent_enum",
+            "hir_variant_ordinal",
+            "hir_variant_payload_start",
+            "hir_variant_payload_count",
+            "hir_variant_payload_node",
+        ],
+    )?;
+    indirect(graph, "hir_enum_variant_links", "hir_enum_rank_dispatch_args")?;
 
     let steps = crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity);
     register_ping_pong_walk(
@@ -1418,7 +1411,7 @@ fn register_enum_ranking(
     indirect(
         graph,
         "hir_enum_variant_scatter",
-        "tree_active_dispatch_args",
+        "hir_enum_rank_dispatch_args",
     )?;
     register_item_paths_and_type_aliases(graph, capacity, passes)?;
     Ok(())
@@ -1487,17 +1480,13 @@ fn register_item_paths_and_type_aliases(
             "hir_path_segment_rank_b",
         ],
     )?;
-    indirect(graph, "hir_path_segment_links", "tree_active_dispatch_args")?;
-
-    // Only owned or linked segments change during the walk; the links pass
-    // seeded both ping-pong buffers, so every other node reads identically.
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::PathSegments,
-        "hir_path_segment_owner_a",
-        "hir_path_segment_link_a",
+    // The links pass marks the path segments itself; the scan and the
+    // compact scatter list them, and the walk runs over that list.
+    graph.mark_pass_bindings_initialize(
+        "hir_path_segment_links",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
+    register_list_rank_listing(graph, passes, ListRankInvocation::PathSegments)?;
     register_list_rank_propagation(
         graph,
         capacity,
@@ -1520,7 +1509,7 @@ fn register_item_paths_and_type_aliases(
     indirect(
         graph,
         "hir_path_segment_scatter",
-        "tree_active_dispatch_args",
+        "hir_list_rank_dispatch_args",
     )?;
 
     static_pass(
@@ -1899,11 +1888,19 @@ fn register_literals_and_raw_expression_records(
         &passes.hir_string_offset_scatter,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
-        &[(
-            "hir_list_rank_block_prefix",
-            "hir_list_rank_block_prefix_a",
-            None,
-        )],
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_list_rank_block_prefix",
+                "hir_list_rank_block_prefix_a",
+                None,
+            ),
+        ],
+    )?;
+    indirect(
+        graph,
+        "hir_string_offset_scatter",
+        "tree_active_dispatch_args",
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_string_offset_scatter",
@@ -2042,6 +2039,11 @@ fn register_canonical_variants(
             ("family_flag", "hir_variant_family_flag", None),
         ],
     )?;
+    indirect(
+        graph,
+        "hir_canonical_variant_mark",
+        "hir_enum_rank_dispatch_args",
+    )?;
     register_canonical_compaction_prefix(
         graph,
         passes,
@@ -2122,13 +2124,13 @@ fn register_canonical_variants(
         "hir_canonical_variant_payload_owner_init",
         &["owner_link_a", "owner_value_a", "owner_link_b", "owner_value_b"],
     )?;
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::VariantPayloadOwners,
-        "hir_semantic_parent_value_a",
-        "hir_semantic_parent_link_a",
+    // The owner init marks the walk's rows itself; the scan and the compact
+    // scatter list them.
+    graph.mark_pass_bindings_initialize(
+        "hir_canonical_variant_payload_owner_init",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
+    register_list_rank_listing(graph, passes, ListRankInvocation::VariantPayloadOwners)?;
     register_ping_pong_walk(
         graph,
         passes.hir_tree_relations.graph_rows_pass(),
@@ -2253,14 +2255,13 @@ fn register_call_arguments(
             "hir_call_arg_rank_b",
         ],
     )?;
-    indirect(graph, "hir_call_arg_links", "tree_active_dispatch_args")?;
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::CallArguments,
-        "hir_call_arg_owner_a",
-        "hir_call_arg_link_a",
+    // The links pass marks the call arguments itself; the scan and the
+    // compact scatter list them.
+    graph.mark_pass_bindings_initialize(
+        "hir_call_arg_links",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
+    register_list_rank_listing(graph, passes, ListRankInvocation::CallArguments)?;
     register_list_rank_propagation(
         graph,
         capacity,
@@ -2279,6 +2280,11 @@ fn register_call_arguments(
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    indirect(
+        graph,
+        "hir_call_arg_ordinal_scatter",
+        "hir_list_rank_dispatch_args",
     )?;
     clear(
         graph,
@@ -2322,7 +2328,7 @@ fn register_call_arguments(
     indirect(
         graph,
         "hir_canonical_call_arg_scatter",
-        "tree_active_dispatch_args",
+        "hir_list_rank_dispatch_args",
     )?;
     register_array_elements(graph, capacity, passes)
 }
@@ -2356,18 +2362,13 @@ fn register_array_elements(
             "hir_array_element_next",
         ],
     )?;
-    indirect(
-        graph,
+    // The links pass marks the array elements itself; the scan and the
+    // compact scatter list them.
+    graph.mark_pass_bindings_initialize(
         "hir_array_element_links",
-        "tree_active_dispatch_args",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::ArrayElements,
-        "hir_array_element_owner_a",
-        "hir_array_element_link_a",
-    )?;
+    register_list_rank_listing(graph, passes, ListRankInvocation::ArrayElements)?;
     register_list_rank_propagation(
         graph,
         capacity,
@@ -2386,6 +2387,11 @@ fn register_array_elements(
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    indirect(
+        graph,
+        "hir_array_element_scatter",
+        "hir_list_rank_dispatch_args",
     )?;
     clear(
         graph,
@@ -2419,6 +2425,11 @@ fn register_array_elements(
             ),
             ("family_flag", "hir_array_element_family_flag", None),
         ],
+    )?;
+    indirect(
+        graph,
+        "hir_canonical_array_element_mark",
+        "hir_list_rank_dispatch_args",
     )?;
     register_canonical_compaction_prefix(
         graph,
@@ -2490,82 +2501,12 @@ fn register_matches(
         CanonicalConstruct,
         hir::{
             matches::arm::rank_step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
-            nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
-            semantic::parent::step::{MATCH_ARM_OWNER, bounded_walk_steps_after_local_span},
+            semantic::parent::step::{MATCH_ARM_OWNER, family_relation_steps},
         },
     };
 
-    static_pass(
-        graph,
-        &passes.hir_match_arm_owner_init,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
-            ("hir_match_nearest_arm", "hir_match_pattern_owner_arm", None),
-        ],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_match_arm_owner_init",
-        &["hir_semantic_parent_link_a", "hir_match_nearest_arm"],
-    )?;
-    register_ping_pong_walk(
-        graph,
-        passes.hir_tree_relations.graph_single_pass(),
-        MATCH_ARM_OWNER.a_to_b,
-        MATCH_ARM_OWNER.b_to_a,
-        MATCH_ARM_OWNER.a_to_b_final,
-        MATCH_ARM_OWNER.finalize,
-        "hir_local_relation_dispatch_args",
-        true,
-        bounded_walk_steps_after_local_span(
-            capacity.tree_capacity,
-            SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
-        ),
-        &[("tree_count_status", "partial_parse_status", None)],
-        &[
-            PingPongBinding {
-                input_binding: "hir_semantic_parent_link_in",
-                output_binding: "hir_semantic_parent_link_out",
-                a: "hir_semantic_parent_link_a",
-                b: "hir_semantic_parent_link_b",
-            },
-            PingPongBinding {
-                input_binding: "hir_semantic_parent_value_in",
-                output_binding: "hir_semantic_parent_value_out",
-                a: "hir_match_pattern_owner_arm",
-                b: "hir_semantic_parent_value_b",
-            },
-        ],
-    )?;
-    static_pass(
-        graph,
-        &passes.hir_match_arm_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_match_arm_links",
-        &[
-            "hir_match_scrutinee_node",
-            "hir_match_arm_pattern_node",
-            "hir_match_arm_result_node",
-            "hir_match_arm_start",
-            "hir_match_arm_count",
-            "hir_match_arm_next",
-            "hir_match_arm_payload_start",
-            "hir_match_arm_payload_count",
-            "hir_match_arm_owner_a",
-            "hir_match_arm_link_a",
-            "hir_match_arm_rank_a",
-            "hir_match_arm_previous",
-            "hir_match_payload_owner_a",
-            "hir_match_payload_link_a",
-            "hir_match_payload_rank_a",
-            "hir_match_pattern_parent",
-        ],
-    )?;
+    // The match family's rows first: every match kernel below runs over them
+    // only, through their indirect dispatch args.
     static_pass(
         graph,
         &passes.hir_match_rank_prefix_local,
@@ -2616,6 +2557,80 @@ fn register_matches(
             "hir_match_rank_dispatch_args",
         ],
     )?;
+    static_pass(
+        graph,
+        &passes.hir_match_arm_owner_init,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            ("hir_match_nearest_arm", "hir_match_pattern_owner_arm", None),
+        ],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_match_arm_owner_init",
+        &["hir_semantic_parent_link_a", "hir_match_nearest_arm"],
+    )?;
+    indirect(graph, "hir_match_arm_owner_init", "hir_match_rank_dispatch_args")?;
+    register_ping_pong_walk(
+        graph,
+        passes.hir_tree_relations.graph_rows_pass(),
+        MATCH_ARM_OWNER.a_to_b,
+        MATCH_ARM_OWNER.b_to_a,
+        MATCH_ARM_OWNER.a_to_b_final,
+        MATCH_ARM_OWNER.finalize,
+        "hir_match_rank_dispatch_args",
+        true,
+        family_relation_steps(capacity.tree_capacity),
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            ("hir_list_rank_node", "hir_match_rank_node", None),
+            ("hir_list_rank_count", "hir_match_rank_count", None),
+        ],
+        &[
+            PingPongBinding {
+                input_binding: "hir_semantic_parent_link_in",
+                output_binding: "hir_semantic_parent_link_out",
+                a: "hir_semantic_parent_link_a",
+                b: "hir_semantic_parent_link_b",
+            },
+            PingPongBinding {
+                input_binding: "hir_semantic_parent_value_in",
+                output_binding: "hir_semantic_parent_value_out",
+                a: "hir_match_pattern_owner_arm",
+                b: "hir_semantic_parent_value_b",
+            },
+        ],
+    )?;
+    static_pass(
+        graph,
+        &passes.hir_match_arm_links,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_match_arm_links",
+        &[
+            "hir_match_scrutinee_node",
+            "hir_match_arm_pattern_node",
+            "hir_match_arm_result_node",
+            "hir_match_arm_start",
+            "hir_match_arm_count",
+            "hir_match_arm_next",
+            "hir_match_arm_payload_start",
+            "hir_match_arm_payload_count",
+            "hir_match_arm_owner_a",
+            "hir_match_arm_link_a",
+            "hir_match_arm_rank_a",
+            "hir_match_arm_previous",
+            "hir_match_payload_owner_a",
+            "hir_match_payload_link_a",
+            "hir_match_payload_rank_a",
+            "hir_match_pattern_parent",
+        ],
+    )?;
+    indirect(graph, "hir_match_arm_links", "hir_match_rank_dispatch_args")?;
     register_ping_pong_walk(
         graph,
         passes.hir_match_arm_rank_step.graph_pass(),
@@ -2691,6 +2706,7 @@ fn register_matches(
             "hir_match_payload_ordinal",
         ],
     )?;
+    indirect(graph, "hir_match_arm_scatter", "hir_match_rank_dispatch_args")?;
 
     clear(
         graph,
@@ -2719,6 +2735,7 @@ fn register_matches(
             ("family_flag", "hir_match_arm_family_flag", None),
         ],
     )?;
+    indirect(graph, "hir_canonical_match_arm_mark", "hir_match_rank_dispatch_args")?;
     register_canonical_compaction_prefix(
         graph,
         passes,
@@ -2783,6 +2800,11 @@ fn register_matches(
             ("family_flag", "hir_match_payload_family_flag", None),
         ],
     )?;
+    indirect(
+        graph,
+        "hir_canonical_match_payload_mark",
+        "hir_match_rank_dispatch_args",
+    )?;
     register_canonical_compaction_prefix(
         graph,
         passes,
@@ -2836,10 +2858,11 @@ fn register_struct_fields(
 
     static_pass(
         graph,
-        &passes.hir_struct_fields,
+        &passes.hir_struct_field_links,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
         &[
+            ("tree_count_status", "partial_parse_status", None),
             (
                 "hir_struct_field_parent_struct",
                 "hir_struct_field_parent_struct",
@@ -2891,14 +2914,6 @@ fn register_struct_fields(
                 Some(AccessMode::Write),
             ),
         ],
-    )?;
-    indirect(graph, "hir_struct_fields", "tree_active_dispatch_args")?;
-    static_pass(
-        graph,
-        &passes.hir_struct_field_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_struct_field_links",
@@ -2910,24 +2925,10 @@ fn register_struct_fields(
             "hir_struct_lit_field_link_a",
             "hir_struct_lit_field_rank_a",
             "hir_struct_lit_field_previous",
-        ],
-    )?;
-    indirect(graph, "hir_struct_field_links", "tree_active_dispatch_args")?;
-    static_pass(
-        graph,
-        &passes.hir_struct_rank_prefix_local,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_struct_rank_prefix_00_local",
-        &[
             "hir_struct_rank_flag",
             "hir_struct_rank_block_sum",
         ],
     )?;
-
     super::block_scan(
         graph,
         passes,
@@ -3042,7 +3043,7 @@ fn register_struct_fields(
     indirect(
         graph,
         "hir_struct_field_scatter",
-        "tree_active_dispatch_args",
+        "hir_struct_rank_dispatch_args",
     )?;
 
     clear(

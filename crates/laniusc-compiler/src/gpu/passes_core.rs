@@ -969,11 +969,13 @@ mod compute_pass_counting_tests {
             ("lexer/driver/readback.rs", 3),
             ("lexer/passes/dfa/scan_block_summaries.rs", 1),
             ("lexer/passes/pair/scan_block_totals.rs", 1),
+            // The fill of `LANIUS_CHECK=parser-poison`, a validation mode.
+            ("parser/buffers.rs", 1),
             ("parser/buffers/scans.rs", 3),
             ("parser/driver/debug.rs", 5),
             ("parser/driver/resident_tree.rs", 1),
             ("parser/readback.rs", 90),
-            ("parser/readback/hir_item_readbacks.rs", 99),
+            ("parser/readback/hir_item_readbacks.rs", 100),
             (
                 "parser/readback/hir_item_readbacks/function_return_readbacks.rs",
                 13,

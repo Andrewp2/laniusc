@@ -37,12 +37,14 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     if (dense == 0u) family_count[0u] = total;
     if (dense >= min(canonical_count[0u], gCanonical.canonical_capacity)) return;
     uint raw = canonical_dense_to_raw[dense];
+    // The argument arrays are defined on argument value rows only: a type, a
+    // literal, or a negated literal (`-5`, `-0.0`), as in mark.slang.
+    if (raw >= gCanonical.raw_capacity ||
+        (hir_kind[raw] != 5u && hir_kind[raw] != 23u && hir_kind[raw] != 17u)) return;
     uint seed = hir_type_arg_owner[raw];
     uint owner = seed < gCanonical.raw_capacity ? hir_type_arg_application_owner[seed] : INVALID;
     uint head = mapped(seed);
-    // A type, a literal, or a negated literal (`-5`, `-0.0`), as in mark.slang.
-    if ((hir_kind[raw] != 5u && hir_kind[raw] != 23u && hir_kind[raw] != 17u) ||
-        owner >= gCanonical.raw_capacity || owner == raw ||
+    if (owner >= gCanonical.raw_capacity || owner == raw ||
         head >= gCanonical.canonical_capacity || hir_type_arg_rank[raw] >= family_flag[head]) return;
     uint block = head / 256u;
     uint base = block == 0u ? 0u : family_block_prefix[block - 1u];

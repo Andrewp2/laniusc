@@ -116,11 +116,17 @@ public uint3 ct_expand_level_args(uint groups)
     return uint3(x, x == 0u ? 0u : (groups + 65534u) / 65535u, 1u);
 }
 
+// Lanes per queued entry in a level round; only the first of them expands
+// it. Entries take divergent paths through substitution and realization,
+// and a wave runs its lanes' paths one after another, so fewer entries per
+// wave over more workgroups finish sooner.
+public static const uint CT_EXPAND_LANES_PER_ENTRY = 32u;
+
 public uint ct_expand_level_groups()
 {
     uint start = ct_expand_counts[CT_EXPAND_START];
     uint end = ct_expand_counts[CT_EXPAND_END];
-    return max((end - start + 255u) / 256u, 1u);
+    return max(((end - start) * CT_EXPAND_LANES_PER_ENTRY + 255u) / 256u, 1u);
 }
 
 // At a run's opening advance (one lane): whether no entry waits past the

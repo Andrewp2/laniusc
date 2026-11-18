@@ -26,6 +26,9 @@ pub(super) const CANONICAL_EARLY_REARM_PASS: &str = "type_check.canonical.rearm"
 pub(super) const CANONICAL_BODY_REARM_PASS: &str = "type_check.canonical.body.rearm";
 pub(super) const CANONICAL_REARM_PASS: &str = "type_check.canonical.late.rearm";
 pub(super) const CANONICAL_REARM_KERNEL: &str = "type_checker/canonical/03_rearm";
+/// Lanes every re-arm sweep launches; each strides its candidates by this
+/// count (canonical_rearm.slang, CANONICAL_REARM_LANES).
+pub(super) const CANONICAL_REARM_LANES: u32 = 1 << 19;
 /// A stage's re-arm also lists the candidates it left pending
 /// (`canonical_pending`); the args pass sizes round 0 over that list.
 pub(super) const CANONICAL_REARM_LIST_KERNEL: &str = "type_checker/canonical/03a_rearm_list";

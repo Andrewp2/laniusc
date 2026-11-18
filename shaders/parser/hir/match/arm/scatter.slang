@@ -24,6 +24,8 @@ StructuredBuffer<uint> hir_match_arm_rank_a;
 StructuredBuffer<uint> hir_match_arm_previous;
 StructuredBuffer<uint> hir_match_payload_owner_a;
 StructuredBuffer<uint> hir_match_payload_rank_a;
+StructuredBuffer<uint> hir_match_rank_node;
+StructuredBuffer<uint> hir_match_rank_count;
 
 RWStructuredBuffer<uint> hir_match_arm_start;
 RWStructuredBuffer<uint> hir_match_arm_count;
@@ -104,14 +106,18 @@ void publish_payload(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_match_rank_count[0u])
+        return;
+    uint node = hir_match_rank_node[row];
     if (node >= gHirMatch.n || !valid_node(node))
         return;
 
     // These rows are graph workspace that may alias other passes' storage.
-    // Initialize every active node: canonical payload marking reads
+    // Initialize every match-family row: canonical payload marking reads
     // hir_match_payload_owner_arm for each pattern node, including `let`
-    // patterns that publish_payload leaves unowned.
+    // patterns that publish_payload leaves unowned. Rows outside the family
+    // are not read.
     hir_match_payload_owner_arm[node] = INVALID;
     hir_match_payload_match_node[node] = INVALID;
     hir_match_payload_ordinal[node] = INVALID;

@@ -1528,6 +1528,41 @@ fn main()->i32 {{if (keep(false) || !keep(true)) {{return 1;}} return 0;}}
     reject_trait_program("32 compound operands with wrong final length", &source(&wrong_last), "LNC0008");
 }
 
+// A `>>` closes two angle levels; its outer opener sits more than two token
+// blocks back, so the close-kind search walks the delimiter min tree. That
+// tree keeps the resident allocation's layout, and its leaves past the
+// current job hold an earlier, larger job's block minima. The first job here
+// is such a job: it has no angle brackets, so those leaves are all empty.
+#[test]
+fn split_shr_finds_distant_openers_after_a_larger_job_in_the_same_workspace() {
+    common::run_gpu_codegen_with_timeout("split shr after a larger job", || {
+        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new())
+            .expect("GPU compiler");
+        let mut larger = (0..1200)
+            .map(|i| format!("fn f{i}() -> i32 {{ return {i}; }}\n"))
+            .collect::<String>();
+        larger.push_str("fn main() -> i32 { return f7() - 7; }\n");
+        let parameters = (0..32).map(|i| format!("T{i}")).collect::<Vec<_>>().join(",");
+        let operands = (0..32)
+            .map(|i| format!("Cell<[[[i32;1];1];{i}]>"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let distant = format!(
+            "struct Cell<T> {{ value: T }}\n\
+             trait Wide<{parameters}> {{}}\n\
+             impl Wide<{operands}> for bool {{}}\n\
+             fn keep<T>(v: T) -> T where T: Wide<{operands}> {{ return v; }}\n\
+             fn main() -> i32 {{ if (keep(false) || !keep(true)) {{ return 1; }} return 0; }}\n"
+        );
+        for (label, source) in [("larger job", &larger), ("distant split shr", &distant)] {
+            let bytes = pollster::block_on(compiler.compile_source_to_x86_64(source))
+                .unwrap_or_else(|error| panic!("{label}: compile: {error:?}"));
+            let output = common::run_x86_64_elf_output(label, "generic_workspace", &bytes);
+            assert_eq!(output.status.code(), Some(0), "{label}: {output:?}");
+        }
+    });
+}
+
 #[test]
 fn trait_method_contracts_compare_substituted_types_independently_of_syntax_shape() {
     execute("normalized trait method signature", include_str!("fixtures/stdlib_compiler_state/trait-type-graphs/method-signature-annotated.lani"));

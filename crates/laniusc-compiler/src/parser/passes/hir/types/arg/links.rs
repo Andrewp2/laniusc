@@ -96,6 +96,26 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeArgLinksP
                 "hir_type_arg_previous".into(),
                 b.hir_type_arg_previous.as_entire_binding(),
             ),
+            (
+                "hir_list_rank_flag".into(),
+                b.hir_list_rank_flag.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_block_sum".into(),
+                b.hir_list_rank_block_sum.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_owner_b".into(),
+                b.hir_type_arg_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_link_b".into(),
+                b.hir_type_arg_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_rank_b".into(),
+                b.hir_type_arg_rank_b.as_entire_binding(),
+            ),
         ])
     }
 }

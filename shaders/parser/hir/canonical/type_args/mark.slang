@@ -28,7 +28,8 @@ void main(uint3 dtid: SV_DispatchThreadID) {
     uint raw = dense < min(canonical_count[0u], gCanonical.canonical_capacity)
         ? canonical_dense_to_raw[dense]
         : INVALID;
-    if (raw >= gCanonical.raw_capacity) return;
+    // The argument arrays are defined on argument value rows only.
+    if (raw >= gCanonical.raw_capacity || !argument_value_kind(hir_kind[raw])) return;
     uint seed = hir_type_arg_owner[raw];
     uint owner = seed < gCanonical.raw_capacity ? hir_type_arg_application_owner[seed] : INVALID;
     bool valid_owner = owner < gCanonical.raw_capacity &&

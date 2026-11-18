@@ -5,6 +5,9 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> variant_parent_enum;
 StructuredBuffer<uint> hir_token_pos;
+// The enum family's rows: the variant arrays are defined on those rows only.
+StructuredBuffer<uint> hir_enum_rank_node;
+StructuredBuffer<uint> hir_enum_rank_count;
 RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
 static const uint INVALID = 0xffffffffu;
@@ -16,7 +19,9 @@ uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = tid(dtid);
+    uint row = tid(dtid);
+    if (row >= hir_enum_rank_count[0u]) return;
+    uint raw = hir_enum_rank_node[row];
     if (raw >= gCanonical.raw_capacity) return;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_ENUMS))
         return;

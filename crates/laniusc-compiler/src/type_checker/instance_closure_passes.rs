@@ -24,7 +24,6 @@ pub(super) const INSTANCE_CLOSURE_CLEAR_PASS: &str = "type_check.instance_closur
 pub(super) const INSTANCE_CLOSURE_MARK_PASS: &str = "type_check.instance_closure.mark";
 pub(super) const INSTANCE_CLOSURE_ADVANCE_PASS: &str = "type_check.instance_closure.advance";
 pub(super) const INSTANCE_CLOSURE_EXPAND_PASS: &str = "type_check.instance_closure.expand";
-pub(super) const INSTANCE_CLOSURE_EXPAND_BOUND_PASS: &str = "type_check.instance_closure.expand_bound";
 pub(super) const INSTANCE_CLOSURE_EXPORT_PASS: &str = "type_check.instance_closure.export";
 pub(super) const INSTANCE_CLOSURE_EXPORT_FINAL_PASS: &str =
     "type_check.instance_closure.export_final";
@@ -60,7 +59,6 @@ const INSTANCE_INPLACE_COUNT_WORDS: u64 = 4;
 const MARK_KERNEL: &str = "type_checker/closure/01_mark";
 const ADVANCE_KERNEL: &str = "type_checker/closure/02_advance";
 const EXPAND_KERNEL: &str = "type_checker/closure/03_expand";
-const EXPAND_BOUND_KERNEL: &str = "type_checker/closure/03c_expand_bound";
 const EXPORT_KERNEL: &str = "type_checker/closure/04_export";
 const EXPORT_FINAL_KERNEL: &str = "type_checker/closure/04a_export_final";
 const IMPORT_SUMMARY_KERNEL: &str = "type_checker/closure/00b_import_summary";
@@ -238,6 +236,15 @@ pub(super) fn register_instance_closure_passes(
         bytes: 12,
         usage: WorkspaceUsageClass::StorageIndirect,
     })?;
+    // The table rank's grid (05b_table_rank: IT_RANK_SPLIT lanes per
+    // instance), sized by every advance.
+    graph.add_resource(ResourceDesc {
+        name: "instance_table_rank_args",
+        domain: ResourceDomain::DispatchArguments,
+        class: ResourceClass::Workspace,
+        bytes: 12,
+        usage: WorkspaceUsageClass::StorageIndirect,
+    })?;
     graph.add_pass(PassDesc {
         name: INSTANCE_CLOSURE_CLEAR_PASS,
         phase: CompilerPhase::TypeCheck,
@@ -308,16 +315,6 @@ pub(super) fn register_instance_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_PASS, "instance_closure_args")?;
-    // The same frontier's bound-member edges route under each instance (D3).
-    graph.add_kernel_pass_by_name(
-        INSTANCE_CLOSURE_EXPAND_BOUND_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Types,
-        kernels,
-        EXPAND_BOUND_KERNEL,
-        &[],
-    )?;
-    graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_BOUND_PASS, "instance_closure_args")?;
     // The same frontier's summary instances expand through their edges.
     graph.add_kernel_pass_by_name(
         INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
@@ -328,7 +325,10 @@ pub(super) fn register_instance_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS, "instance_closure_args")?;
-    graph.mark_pass_bindings_initialize(INSTANCE_CLOSURE_ADVANCE_PASS, &["instance_closure_args"])?;
+    graph.mark_pass_bindings_initialize(
+        INSTANCE_CLOSURE_ADVANCE_PASS,
+        &["instance_closure_args", "instance_table_rank_args"],
+    )?;
     graph.repeat_pass_range(
         INSTANCE_CLOSURE_LEVELS as u32,
         INSTANCE_CLOSURE_ADVANCE_PASS,
@@ -453,12 +453,12 @@ pub(super) fn register_instance_table_passes(
             PassAccess::write("instance_row_calls", calls),
         ],
     })?;
-    for (name, kernel) in [
-        (INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL),
-        (INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL),
+    for (name, kernel, args) in [
+        (INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL, "instance_closure_args"),
+        (INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL, "instance_table_rank_args"),
     ] {
         graph.add_kernel_pass_by_name(name, CompilerPhase::TypeCheck, ResourceDomain::Types, kernels, kernel, &[])?;
-        graph.add_indirect_dispatch(name, "instance_closure_args")?;
+        graph.add_indirect_dispatch(name, args)?;
     }
     // Keys are written for every appended instance before rank reads them;
     // the table's entries are read only below the counted entries. Every
@@ -710,7 +710,11 @@ impl InstanceTableOperations {
         Ok(Self {
             clear,
             keys: indirect(INSTANCE_TABLE_KEYS_PASS, TABLE_KEYS_KERNEL, &closure_args)?,
-            rank: indirect(INSTANCE_TABLE_RANK_PASS, TABLE_RANK_KERNEL, &closure_args)?,
+            rank: indirect(
+                INSTANCE_TABLE_RANK_PASS,
+                TABLE_RANK_KERNEL,
+                &buffer("instance_table_rank_args")?,
+            )?,
             args: ComputeOperation::direct(
                 device,
                 graph,
@@ -827,7 +831,6 @@ pub(in crate::type_checker) struct InstanceClosureOperations {
     mark_dependency: ComputeOperation,
     advance: ComputeOperation,
     expand: ComputeOperation,
-    expand_bound: ComputeOperation,
     expand_dependency: ComputeOperation,
     export: ComputeOperation,
     export_final: ComputeOperation,
@@ -886,7 +889,6 @@ impl InstanceClosureOperations {
             )?,
             advance: direct(INSTANCE_CLOSURE_ADVANCE_PASS, ADVANCE_KERNEL, 1)?,
             expand: indirect(INSTANCE_CLOSURE_EXPAND_PASS, EXPAND_KERNEL)?,
-            expand_bound: indirect(INSTANCE_CLOSURE_EXPAND_BOUND_PASS, EXPAND_BOUND_KERNEL)?,
             expand_dependency: indirect(
                 INSTANCE_CLOSURE_EXPAND_DEPENDENCY_PASS,
                 EXPAND_DEPENDENCY_KERNEL,
@@ -972,7 +974,6 @@ impl InstanceClosureOperations {
         for _ in 0..INSTANCE_CLOSURE_LEVELS {
             self.advance.record(encoder)?;
             self.expand.record(encoder)?;
-            self.expand_bound.record(encoder)?;
             if import_rounds != 0 {
                 self.expand_dependency.record(encoder)?;
             }

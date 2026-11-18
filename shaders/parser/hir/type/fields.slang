@@ -205,9 +205,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     seed_type_path_leaf(i);
-    clear_type(i);
+    // The type arrays are written on type rows only (and the path leaf also on
+    // path expressions, by the leaf scatter); readers test the row's kind.
+    // Debug readbacks read every row.
+    bool type_row = valid_node(i) && hir_kind[i] == HIR_TYPE;
+    if (type_row || gHirType.retain_debug_rows != 0u)
+        clear_type(i);
 
-    if (!valid_node(i) || hir_kind[i] != HIR_TYPE)
+    if (!type_row)
         return;
 
     uint prod = node_kind[i];

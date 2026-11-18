@@ -501,6 +501,21 @@ uint layout_words(uint tag, uint payload)
     return INVALID;
 }
 
+// The words of row `instance` without the memo walk when it is not a type:
+// a row with no instance kind and no retained layout has no groups, so
+// layout_words gives its cached aggregate width or INVALID. Most rows are
+// tokens without a type; they skip the leaf and group lookups. Returns false
+// for every other row.
+bool untyped_row_words(uint instance, out uint words)
+{
+    words = INVALID;
+    if (instance >= checked_type_capacity() || instance >= layout_memo_capacity()) return true;
+    if (type_instance_kind[instance] != 0u || retained_layout_kind(instance) != 0u) return false;
+    uint cached = type_instance_aggregate_word_count[instance];
+    if (cached != 0u) words = cached;
+    return true;
+}
+
 RWStructuredBuffer<uint> type_native_word_count;
 RWStructuredBuffer<uint> type_native_scalar_identity;
 // Generated rows allocated so far (allocate_application.slang).
@@ -548,7 +563,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
         }
         type_native_scalar_identity[instance] = scalar;
-        type_native_word_count[instance] = layout_words(tag, payload);
+        uint words;
+        if (tag != TYPE_REF_INSTANCE || !untyped_row_words(instance, words))
+            words = layout_words(tag, payload);
+        type_native_word_count[instance] = words;
         if (instance < source_capacity)
             instance = source_capacity + token;
         else if (gParams.n_tokens >= end - instance) break;
