@@ -420,9 +420,7 @@ full paths, and the file imports nothing. `core::function` is a language
 item, as Rust's `core::ops`: the type checker resolves a path into it from
 any module without an import
 (`shaders/type_checker/modules/10c_resolve_qualified_paths.slang`), and a
-build with a stdlib root always loads it. A build without it reports
-`LNC0021`, "closure trait module `core::function` is missing", at the
-closure's `|`. `mark` reads the word
+build always loads it. `mark` reads the word
 `move` before a closure start; `records` then starts the site at that word
 and `pieces` ends it with `}` in place of `}.borrow()`. Fixtures:
 `tests/fixtures/language/closure*.lani` and `closure_modules/`.

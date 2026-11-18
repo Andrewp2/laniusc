@@ -106,6 +106,40 @@ fn cli_check_without_stdlib_root_accepts_headerless_entry() {
 
 #[cfg(all(unix, target_arch = "x86_64"))]
 #[test]
+fn cli_imports_embedded_core_option_and_runs_without_a_stdlib_root() {
+    let entry = common::TempArtifact::new("laniusc_cli_core", "option", Some("lani"));
+    entry.write_str(
+        "import core::option;\n\
+         fn main() -> i32 {\n\
+             let value: core::option::Option<i32> = core::option::Some(7);\n\
+             return core::option::unwrap_or(value, 0) - 7;\n\
+         }\n",
+    );
+    let exe = common::TempArtifact::new("laniusc_cli_core", "option", None);
+    let mut command = Command::new(laniusc_bin());
+    command.args(["--emit", "x86_64", "-o"]).arg(exe.path()).arg(entry.path());
+    let output = common::codegen_command_output_with_timeout("compile embedded core", &mut command);
+    common::assert_command_success("compile embedded core", &output);
+
+    let bytes = fs::read(exe.path()).expect("read emitted executable");
+    let output = common::run_x86_64_elf_output("run embedded core", "embedded_core", &bytes);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[test]
+fn cli_imports_without_a_stdlib_root_report_located_missing_alloc_and_std_modules() {
+    let entry = common::TempArtifact::new("laniusc_cli_core", "missing", Some("lani"));
+    for module in ["alloc::vec", "std::io"] {
+        entry.write_str(&format!("// Only core is available.\nimport {module};\nfn main() {{}}\n"));
+        let stderr = assert_cli_fails_with(&[entry.path()], &["check"], "check missing library");
+        assert!(stderr.contains(&format!("missing source-root module {module}")), "{stderr}");
+        assert!(stderr.contains("LNC0001"), "{stderr}");
+        assert!(stderr.contains(&format!("{}:2:1", entry.path().display())), "{stderr}");
+    }
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+#[test]
 fn cli_stdlib_root_x86_build_command_runs_host_runtime_samples() {
     for sample_name in ["host_runtime_smoke", "host_runtime_files"] {
         let stdout = compile_and_run_x86_sample_with_stdlib_root(sample_name);

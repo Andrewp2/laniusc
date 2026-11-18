@@ -11,8 +11,8 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// Compile one in-memory source string through the x86_64 backend using
     /// `<source>` as the diagnostic path.
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
-        let src = prepare_source_for_gpu(src)?;
-        self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, PathBuf::from("<source>"))
+        let pack = load_in_memory_entry(src, Path::new("<source>"))?;
+        self.compile_source_pack_manifest_to_x86_64(&pack)
             .await
     }
     /// Read a source file from disk and compile it through the x86_64 backend
@@ -22,8 +22,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         path: impl AsRef<Path>,
     ) -> Result<Vec<u8>, CompileError> {
         let path = path.as_ref();
-        let src = prepare_source_for_gpu_from_path(path)?;
-        self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, path.to_path_buf())
+        let pack = load_entry_with_source_roots(path, &EntrySourceRoots::default())?;
+        self.compile_source_pack_manifest_to_x86_64(&pack)
             .await
     }
     /// Compile an in-memory source pack through the x86_64 backend after

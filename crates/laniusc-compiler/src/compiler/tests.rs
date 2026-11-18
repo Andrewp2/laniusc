@@ -2968,6 +2968,9 @@ fn source_root_path_manifest_orders_dependencies_before_importers() {
     assert_eq!(
         paths,
         vec![
+            // The implicit language item follows its own dependency in library 0.
+            PathBuf::from("<core>/mem.lani"),
+            PathBuf::from("<core>/function.lani"),
             std::fs::canonicalize(c).expect("canonical c"),
             std::fs::canonicalize(a).expect("canonical a"),
             std::fs::canonicalize(b).expect("canonical b"),

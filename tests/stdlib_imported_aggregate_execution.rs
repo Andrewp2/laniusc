@@ -1,8 +1,8 @@
 use crate::common;
 
-use laniusc_compiler::compiler::{
-    compile_entry_to_x86_64_with_stdlib,
-    type_check_entry_with_stdlib,
+use common::{
+    compile_fixture_entry_to_x86_64 as compile_entry_to_x86_64_with_stdlib,
+    type_check_fixture_entry as type_check_entry_with_stdlib,
 };
 
 #[test]
