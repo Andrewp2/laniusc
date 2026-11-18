@@ -16,36 +16,17 @@ StructuredBuffer<uint> semantic_param_ref_tag_by_row;
 StructuredBuffer<uint> semantic_param_ref_payload_by_row;
 
 
-public struct OneArg : IRtArgs
-{
-    public uint value;
-    public uint arg(uint index) { return value; }
-}
-
-static const uint RECEIVER_SELF = 1u;
-static const uint RECEIVER_REF_SELF = 2u;
-
 // A required trait member's `self` or `&self` receiver: the checker
 // publishes no term for it. It is the trait's implicit Self, or a reference
 // to it, by the method's receiver mode.
 uint required_receiver_term(uint function, uint ordinal)
 {
-    uint trait_row = container_of(function);
-    if (ordinal != 0u || !is_trait_row(trait_row)) return RT_UNKNOWN;
-    uint method = method_row(function);
-    if (method == 0xffffffffu) return RT_UNKNOWN;
-    uint mode = compact_method_signatures[method].receiver_mode;
-    if (mode != RECEIVER_SELF && mode != RECEIVER_REF_SELF) return RT_UNKNOWN;
-    uint owner_token = hir_generic_owner_token(compact_hir_core[trait_row], compact_hir_payload[trait_row], token_capacity());
-    uint self_param = owner_token == 0xffffffffu ? RT_INVALID : param_map_find(owner_token);
-    if (self_param == RT_INVALID) return RT_UNKNOWN;
-    uint self_leaf = rt_param_leaf(self_param);
+    uint trait_row, self_leaf;
+    uint mode = required_receiver(function, ordinal, trait_row, self_leaf);
     if (mode == RECEIVER_SELF) return self_leaf;
-    RtTermKey key = rt_key_begin(RT_KIND_REF, 1u, 0u, uint3(0u, 0u, 0u));
-    rt_key_fold(key, self_leaf);
-    OneArg args;
-    args.value = self_leaf;
-    return rt_intern_term(key, args);
+    if (mode != RECEIVER_REF_SELF) return RT_UNKNOWN;
+    uint term = rt_x_ref_self[trait_row].y;
+    return rt_is_stored_term(term) ? term : RT_UNKNOWN;
 }
 
 void check(uint row, uint term, uint decl, uint parent)

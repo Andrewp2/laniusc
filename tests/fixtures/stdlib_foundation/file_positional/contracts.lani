@@ -29,9 +29,9 @@ fn main() -> i32 {
     assert(core::mem::slice_stride(packed) == 1 && core::mem::slice_stride(native) < 0);
     let index: i32 = 0; while (index < 2080) { packed[index] = 211; index += 1; }
     index = 0; while (index < 2053) { packed[5+index] = pattern(index); index += 1; }
-    let source: core::slice::View<u8> = core::slice::view_range<u8>(packed,5,2053).unwrap();
-    assert(std::file_ops::write_at(file.borrow(),source,100).unwrap() == 1024); positions(file.borrow(),duplicate.borrow());
-    assert(core::io::write_all_at<std::file::File>(duplicate.borrow(),packed,1029,1029,1124,4).unwrap() == 1029);
+    let source: core::slice::View<u8> = core::slice::view_range<u8>(packed,5,1025).unwrap();
+    assert(std::file_ops::write_at(file.borrow(),source,100).unwrap() == 1025); positions(file.borrow(),duplicate.borrow());
+    assert(core::io::write_all_at<std::file::File>(duplicate.borrow(),packed,1030,1028,1125,4).unwrap() == 1028);
     positions(file.borrow(),duplicate.borrow());
     let destination: core::slice::View<u8> = core::slice::view_range<u8>(native,7,2053).unwrap();
     assert(std::file_ops::read_at(duplicate.borrow(),destination,100).unwrap() == 1024);

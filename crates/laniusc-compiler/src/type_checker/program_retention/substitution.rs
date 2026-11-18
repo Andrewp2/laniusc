@@ -610,6 +610,7 @@ impl RetainedSubstitution {
             let run = next_run()?;
             let mut encoder = self.device.create_command_encoder(&Default::default());
             encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
+            encoder.clear_buffer_counted(&self.scratch["sb_term_slots"], 0, None);
             encoder.clear_buffer_counted(&self.scratch["sb_counts"], 0, None);
             self.queue.write_buffer_counted(
                 &self.scratch["sb_config"],
@@ -778,6 +779,7 @@ impl RetainedSubstitution {
     ) -> Result<u32> {
         let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
         encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
+        encoder.clear_buffer_counted(&self.scratch["sb_term_slots"], 0, None);
         encoder.clear_buffer_counted(&self.scratch["sb_counts"], 0, None);
         encoder.copy_buffer_counted(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
         let binds = self.bind_all(guard, requests)?;
@@ -889,7 +891,9 @@ impl RetainedSubstitution {
             ("sb_task_fail", tasks * 8, false),
             ("sb_order", tasks * 4, false),
             ("sb_edges", c.edges.max(1) as u64 * 8, false),
-            ("sb_memo", slots * 4, false),
+            ("sb_memo", slots * 12, false),
+            ("sb_term_keys", tasks * 16, false),
+            ("sb_term_slots", (tasks * 2).next_power_of_two() * 8, false),
         ];
         for (name, bytes, _) in tables {
             self.check_limit(name, bytes)?;

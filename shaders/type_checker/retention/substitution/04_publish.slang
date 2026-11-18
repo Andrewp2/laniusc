@@ -21,8 +21,7 @@ void edge_result(uint2 edge, uint env, out uint4 out, out uint2 fail)
     fail = uint2(RT_NONE, SB_ENV_NONE);
     if (edge.y == SB_EDGE_TASK)
     {
-        out = sb_task_res[edge.x];
-        fail = sb_task_fail[edge.x];
+        out = sb_task_result(sb_edge_task(edge.x), fail);
         if (out.y == SB_PENDING) { out = uint4(RT_UNKNOWN, SB_INVARIANT, RT_NONE, env); fail = uint2(RT_NONE, SB_ENV_NONE); }
     }
     else if (edge.y == SB_OK) out = uint4(edge.x, SB_OK, RT_NONE, 0u);

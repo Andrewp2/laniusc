@@ -4,7 +4,9 @@ __exported import type_checker.retention.retention_store;
 public StructuredBuffer<uint> dg_config;
 public globallycoherent RWStructuredBuffer<uint> dg_status;
 public globallycoherent RWStructuredBuffer<uint4> dg_instances;
-public globallycoherent RWStructuredBuffer<uint> dg_slots;
+// (environment key, dense instance row). Resolution records the slot, and
+// 05_publish reads its row after the dispatch that claimed it has finished.
+public globallycoherent RWStructuredBuffer<uint2> dg_slots;
 public RWStructuredBuffer<uint> dg_scan_a;
 public RWStructuredBuffer<uint> dg_scan_b;
 // Per 256-lane block of the use scan: its total, then its exclusive prefix.
@@ -58,42 +60,33 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
     uint capacity; uint stride; dg_instances.GetDimensions(capacity, stride); capacity /= 2u;
     uint slots; dg_slots.GetDimensions(slots, stride);
     uint slot = (rt_mix(decl, env) & dg_config[7]) & (slots - 1u);
-    uint candidate = RT_INVALID;
     for (uint probe = 0u; probe < slots; probe++)
     {
-        uint value = dg_slots[slot];
+        // The environment names its callee, so its ID is the complete key.
+        uint value = dg_slots[slot].x;
         if (value == 0u)
         {
             if (dg_config[6] > 64u) { dg_fail(root, index, use, 7u, dg_config[6]); return RT_INVALID; }
-            if (candidate == RT_INVALID)
+            InterlockedCompareExchange(dg_slots[slot].x, 0u, env, value);
+            if (value == 0u)
             {
+                uint candidate;
                 InterlockedAdd(dg_status[0], 1u, candidate);
                 InterlockedMax(dg_status[4], candidate + 1u);
                 if (candidate >= capacity) { InterlockedOr(dg_status[3], 1u); return RT_INVALID; }
                 dg_instances[2u * candidate] = uint4(decl, env, dg_config[15], 0u);
                 dg_instances[2u * candidate + 1u] = uint4(0u, 0u, dg_config[6], 0u);
-            }
-            DeviceMemoryBarrier();
-            InterlockedCompareExchange(dg_slots[slot], 0u, candidate + 1u, value);
-            if (value == 0u)
-            {
+                dg_slots[slot].y = candidate;
                 InterlockedAdd(dg_status[1], 1u);
                 // Instances whose closed predicates need a solver wave.
                 uint entry = dg_entry(decl);
                 if (entry != RT_INVALID && dg_predicates(entry)) InterlockedAdd(dg_status[11], 1u);
-                return candidate;
+                return slot;
             }
         }
-        DeviceMemoryBarrier();
-        uint4 key = dg_instances[2u * (value - 1u)];
-        if (key.x == decl && key.y == env)
-        {
-            if (candidate != RT_INVALID) dg_instances[2u * candidate] = uint4(0u, 0u, 0u, 0u);
-            return value - 1u;
-        }
+        if (value == env) return slot;
         slot = (slot + 1u) & (slots - 1u);
     }
-    if (candidate != RT_INVALID) dg_instances[2u * candidate] = uint4(0u, 0u, 0u, 0u);
     InterlockedOr(dg_status[3], 1u);
     return RT_INVALID;
 }

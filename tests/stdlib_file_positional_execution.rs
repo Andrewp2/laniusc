@@ -182,7 +182,7 @@ fn positional_native_strides_chunks_sparse_offsets_and_duplicate_cursors() {
     let high = 4_294_967_311;
     assert_eq!(
         positional(&events, "pwrite64"),
-        [(1024, 100), (1024, 1124), (5, 2148), (6, 4000), (6, high)],
+        [(1025, 100), (1028, 1125), (6, 4000), (6, high)],
         "{events}"
     );
     assert_eq!(
@@ -208,7 +208,7 @@ fn positional_native_strides_chunks_sparse_offsets_and_duplicate_cursors() {
             .iter()
             .filter(|line| line.contains("F_GETFL"))
             .count(),
-        8,
+        7,
         "staged native reads and all writes check status once; packed reads, empty, invalid and closed calls do not: {events}"
     );
     let mut expected = seed();

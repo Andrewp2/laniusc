@@ -1134,17 +1134,30 @@ fn retained_substitution_is_memoized_parallel_and_exact() {
     );
     // Pair<D, D> resolves D once; the repeated argument shares its edge.
     assert_eq!(report.edges(), 44);
-    assert!(
-        report.counts[words::SPARE_TASKS] <= 4,
-        "only the three equal roots and their equal ENVs can race: {}",
-        report.counts[words::SPARE_TASKS]
-    );
+    assert_eq!(report.counts[words::SPARE_TASKS], 0, "duplicate roots share memo slots");
     assert_eq!(report.expansion_rounds(), 40);
     assert_eq!(report.eval_rounds(), 40);
     assert!(
         results.iter().all(|r| r[0] == results[0][0]),
         "equal keys give one result"
     );
+
+    // Distinct tasks can still produce one term. These environments differ
+    // in an unused constant and all substitute the same reference type.
+    let mut p = Program::new(203, true);
+    let (i32_, bool_) = (p.sc(I32), p.sc(BOOL));
+    let value = p.s.value(U8, 0);
+    let reference = p.s.unary(REF, p.t);
+    for index in 0..64 {
+        let unused = p.s.value(USIZE, index);
+        let env = p.env_f(i32_, bool_, value, unused);
+        p.s.ok(p.f, env, reference, None);
+    }
+    let fixture = build_fixture(&store, &p.s);
+    let (report, results) = run(&mut engine, &store, &fixture);
+    check(&fixture, &results);
+    assert!(results.iter().all(|result| result[0] == results[0][0]));
+    assert_eq!(report.counts[words::STORE_NEW_TERMS], 1, "equal results take one store row");
 
     // Independent environments run side by side: the span is the template
     // height, not the number of environments.
