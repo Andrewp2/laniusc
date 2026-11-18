@@ -1,8 +1,8 @@
-use crate::{gpu::buffers::LaniusBuffer, parser::passes::pack::offsets::HierarchyParams};
+use crate::{gpu::buffers::LaniusBuffer, parser::passes::pack::scan_pack_offsets::HierarchyParams};
 
 /// Capacity-dependent paired hierarchy for packed stream offsets.
 pub struct PackOffsetScanPlan {
-    pub params: LaniusBuffer<super::super::passes::pack::offsets::Params>,
+    pub params: LaniusBuffer<crate::parser::passes::pack::scan_pack_offsets::Params>,
     pub up: Vec<PackOffsetHierarchyStep>,
     pub down: Vec<PackOffsetHierarchyStep>,
 }
@@ -15,7 +15,7 @@ pub struct PackOffsetHierarchyStep {
 
 /// One reduction step for packed stream total counts.
 pub struct PackTotalReduceStep {
-    pub params: LaniusBuffer<super::super::passes::pack::totals::reduce::Params>,
+    pub params: LaniusBuffer<crate::parser::passes::pack::reduce_pack_length_sums::Params>,
     pub item_count: u32,
     pub read_from_a: bool,
     pub write_to_a: bool,
@@ -63,6 +63,6 @@ pub struct TokenBlockScanHierarchyParams {
 
 /// One max-tree build step used by tree parent recovery.
 pub struct TreePrefixMaxBuildStep {
-    pub params: LaniusBuffer<super::super::passes::tree::prefix::build_max_tree::Params>,
+    pub params: LaniusBuffer<crate::parser::passes::tree::build_deficit_max_tree::Params>,
     pub work_items: u32,
 }

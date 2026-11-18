@@ -104,7 +104,7 @@ bool semantic_lir_is_if(HirCore core, HirPayload payload)
         (core.kind == HIR_STMT && payload.a == HIR_STMT_IF);
 }
 
-// `requires (cond)` is an `if` record with no then arm (nodes.slang). It
+// `requires (cond)` is an `if` record with no then arm (classify_hir_nodes.slang). It
 // lowers as `if (cond) {} else { trap }`: IF_BEGIN, ELSE, TRAP, CONTROL_END.
 bool semantic_lir_is_contract(HirCore core, HirPayload payload)
 {

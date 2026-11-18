@@ -10,16 +10,28 @@ use crate::{
     lexer::{Pass, buffers::GpuBuffers},
 };
 
-/// Boundary compaction passes.
-pub mod compact;
-/// DFA scanning passes.
-pub mod dfa;
-/// Token-boundary prefix-sum passes.
-pub mod pair;
-/// Source-pack source-file boundary pass.
-pub mod source_file_boundaries;
 /// Final token-record construction pass.
-pub mod tokens_build;
+pub mod build_tokens;
+/// Compaction pass for all token boundaries.
+pub mod compact_all_token_boundaries;
+/// Compaction pass for kept token boundaries.
+pub mod compact_kept_token_boundaries;
+/// Counts token boundaries inside blocks.
+pub mod count_token_boundaries_in_blocks;
+/// Source-pack source-file boundary pass.
+pub mod mark_source_file_boundaries;
+/// Applies DFA block prefixes to per-byte state.
+pub mod mark_token_boundaries;
+/// Applies token-boundary block prefixes.
+pub mod rank_token_boundaries;
+/// Prefix-scans DFA block summaries.
+pub mod scan_dfa_block_summaries;
+/// Prefix-scans token-boundary block totals.
+pub mod scan_token_boundary_counts;
+/// Scans DFA state transitions inside blocks.
+pub mod summarize_dfa_blocks;
+/// Scan steps shared by the token-boundary count and rank passes.
+pub mod token_boundary_scan_steps;
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 /// Uniform parameters for one prefix-scan round.
@@ -33,27 +45,27 @@ pub(super) struct ScanParams {
 /// All GPU passes that make up one lexer pipeline.
 pub struct LexerPasses {
     /// Scans DFA state transitions inside each byte block.
-    pub dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass,
+    pub dfa_01: summarize_dfa_blocks::Dfa01ScanInblockPass,
     /// Prefix-scans DFA block summaries.
-    pub dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass,
+    pub dfa_02: scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass,
     /// Applies DFA block prefixes and emits boundary flags.
-    pub dfa_03: dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass,
+    pub dfa_03: mark_token_boundaries::Dfa03ApplyBlockPrefixPass,
     /// Marks source-pack file start/end byte offsets.
-    pub source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass,
+    pub source_file_boundaries: mark_source_file_boundaries::SourceFileBoundariesPass,
 
     /// Counts all/kept token boundaries inside each block.
-    pub pair_01: pair::sum_inblock::Pair01SumInblockPass,
+    pub pair_01: count_token_boundaries_in_blocks::Pair01SumInblockPass,
     /// Prefix-scans per-block token-boundary totals.
-    pub pair_02: pair::scan_block_totals::Pair02ScanBlockTotalsPass,
+    pub pair_02: scan_token_boundary_counts::Pair02ScanBlockTotalsPass,
     /// Applies pair prefixes to produce compacted token ranks.
-    pub pair_03: pair::apply_block_prefix::Pair03ApplyBlockPrefixPass,
+    pub pair_03: rank_token_boundaries::Pair03ApplyBlockPrefixPass,
 
     /// Compacts all token boundaries, including skipped tokens.
-    pub compact_all: compact::boundaries::all::CompactBoundariesAllPass,
+    pub compact_all: compact_all_token_boundaries::CompactBoundariesAllPass,
     /// Compacts kept token boundaries.
-    pub compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass,
+    pub compact_kept: compact_kept_token_boundaries::CompactBoundariesKeptPass,
     /// Builds final resident token records.
-    pub tokens_build: tokens_build::TokensBuildPass,
+    pub tokens_build: build_tokens::TokensBuildPass,
     /// The desugaring after the token build, with its own buffers and floors.
     pub(crate) desugaring: std::sync::Arc<crate::compiler::desugar::Desugaring>,
 }
@@ -62,16 +74,16 @@ impl LexerPasses {
     /// Creates every lexer shader pass for a device.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
         Ok(Self {
-            dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass::new(&device)?,
-            dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
-            dfa_03: dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?,
-            source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass::new(&device)?,
-            pair_01: pair::sum_inblock::Pair01SumInblockPass::new(&device)?,
-            pair_02: pair::scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?,
-            pair_03: pair::apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?,
-            compact_all: compact::boundaries::all::CompactBoundariesAllPass::new(&device)?,
-            compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass::new(&device)?,
-            tokens_build: tokens_build::TokensBuildPass::new(&device)?,
+            dfa_01: summarize_dfa_blocks::Dfa01ScanInblockPass::new(&device)?,
+            dfa_02: scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
+            dfa_03: mark_token_boundaries::Dfa03ApplyBlockPrefixPass::new(&device)?,
+            source_file_boundaries: mark_source_file_boundaries::SourceFileBoundariesPass::new(&device)?,
+            pair_01: count_token_boundaries_in_blocks::Pair01SumInblockPass::new(&device)?,
+            pair_02: scan_token_boundary_counts::Pair02ScanBlockTotalsPass::new(&device)?,
+            pair_03: rank_token_boundaries::Pair03ApplyBlockPrefixPass::new(&device)?,
+            compact_all: compact_all_token_boundaries::CompactBoundariesAllPass::new(&device)?,
+            compact_kept: compact_kept_token_boundaries::CompactBoundariesKeptPass::new(&device)?,
+            tokens_build: build_tokens::TokensBuildPass::new(&device)?,
             desugaring: crate::compiler::desugar::Desugaring::new(device, queue),
         })
     }

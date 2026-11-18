@@ -28,10 +28,17 @@ use crate::{
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView},
         compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
-        readback::{PagedReadback, PlanBuffers, ReadPlan, ReadbackRegion, ReadbackRows, WordRead},
+        readback::{
+            PagedReadback,
+            PlanBuffers,
+            ReadPlan,
+            ReadbackRegion,
+            ReadbackRows,
+            WordRead,
+        },
     },
     parser::passes::hir::{
-        item::fields::{
+        items::extract_item_records::{
             HIR_ITEM_KIND_ENUM,
             HIR_ITEM_KIND_EXTERN_FN,
             HIR_ITEM_KIND_FN,
@@ -39,7 +46,7 @@ use crate::{
             HIR_ITEM_KIND_TRAIT,
             HIR_ITEM_KIND_TYPE_ALIAS,
         },
-        nodes::{
+        records::classify_hir_nodes::{
             HIR_NODE_ENUM_ITEM,
             HIR_NODE_FN,
             HIR_NODE_IMPL,
@@ -1896,7 +1903,7 @@ impl CheckedTypeReadback {
             let core = &metadata[1..5];
             let payload = &metadata[5..9];
             // Declaration item kinds and canonical HIR node kinds are
-            // separate namespaces (parser/hir/nodes.slang).
+            // separate namespaces (parser/hir/records/classify_hir_nodes.slang).
             let expected_kind = match kind {
                 HIR_ITEM_KIND_STRUCT => HIR_NODE_STRUCT_ITEM,
                 HIR_ITEM_KIND_ENUM => HIR_NODE_ENUM_ITEM,

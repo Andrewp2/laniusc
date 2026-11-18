@@ -1,9 +1,20 @@
 use encase::ShaderType;
 
-/// Enum variant rank scan passes.
-pub mod rank;
-/// Enum variant and payload record passes.
-pub mod variant;
+/// Links enum variant rows to parent enum declarations.
+pub mod link_enum_variants;
+/// Scatters ranked enum declaration rows into compact ranges.
+pub mod list_enum_rows;
+pub mod mark_canonical_variants;
+/// Computes local enum declaration ranks.
+pub mod mark_enum_rows;
+pub mod number_canonical_variant_payloads;
+/// Scatters ranked enum variant rows into compact storage.
+pub mod publish_enum_variants;
+/// Ranks enum variant and payload rows.
+pub mod rank_enum_variants;
+pub mod scatter_canonical_variant_payloads;
+pub mod scatter_canonical_variants;
+pub mod seed_variant_payload_owners;
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]

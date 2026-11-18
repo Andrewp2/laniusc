@@ -1,7 +1,7 @@
 // src/parser/driver/resident_passes.rs
 
 use super::*;
-use crate::parser::passes::hir::list::rank::ListRankInvocation;
+use crate::parser::passes::hir::lists::ListRankInvocation;
 
 impl GpuParser {
     /// Compacts the rows whose `owner_a` or `link_a` record is valid into
@@ -281,7 +281,7 @@ impl GpuParser {
             self.passes.hir_semantic_end_blocks.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
-                    crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+                    crate::parser::passes::hir::semantic::build_semantic_end_heaps::leaf_base(
                         bufs.tree_n_node_blocks,
                     ),
                 ),
@@ -307,7 +307,7 @@ impl GpuParser {
             self.passes.hir_semantic_child_index_blocks.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
-                    crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+                    crate::parser::passes::hir::semantic::build_semantic_end_heaps::leaf_base(
                         bufs.tree_n_node_blocks,
                     ),
                 ),
@@ -1187,7 +1187,7 @@ impl GpuParser {
                         &bufs.hir_match_pattern_owner_arm,
                         &bufs.hir_semantic_parent_link_b,
                         &bufs.hir_semantic_parent_value_b,
-                        crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER,
+                        crate::parser::passes::hir::semantic::walk_semantic_parents::MATCH_ARM_OWNER,
                         ctx.bg_cache
                             .as_deref_mut()
                             .expect("resident parser requires a bind-group cache"),
@@ -1268,7 +1268,7 @@ impl GpuParser {
                     .record_pass_indirect_as(
                         &mut ctx,
                         &bufs.tree_active_dispatch_args,
-                        crate::parser::passes::tree::prev::sibling::clear::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
+                        crate::parser::passes::tree::clear_previous_siblings::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
                     )?;
                 stamp_timer(
                     timer_ref,
@@ -1289,7 +1289,7 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_context_relations_init");
                 if bufs.tree_capacity
-                    <= passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+                    <= passes::hir::context::walk_small_context_relations::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
                 {
                     self.passes.hir_context_relations_step_small.record_pass(
                         &mut ctx,

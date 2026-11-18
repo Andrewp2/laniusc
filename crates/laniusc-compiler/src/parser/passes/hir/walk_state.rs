@@ -12,7 +12,7 @@
 
 use encase::ShaderType;
 
-use super::list::rank::ListRankInvocation;
+use super::lists::ListRankInvocation;
 use crate::{
     gpu::buffers::{DynamicUniformBuffer, dynamic_uniforms_from_vals},
     parser::buffers::ParserBuffers,

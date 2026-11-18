@@ -2,7 +2,7 @@
 //!
 //! `LANIUS_CAPTURE=<name>` selects the dispatches recorded under that
 //! operation label (as `LANIUS_TRACE=operations` prints it) or of that
-//! kernel (shader artifact key, e.g. `parser/tokens/to/kinds`), and
+//! kernel (shader artifact key, e.g. `parser/tokens/kinds/retag_token_kinds`), and
 //! `,index=k` (default 0) picks the k-th of them. The selected dispatch is recorded in a compute pass of its own,
 //! with every bound range copied right before it (the inputs) and right after
 //! it (the GPU's outputs), plus its indirect dispatch arguments.

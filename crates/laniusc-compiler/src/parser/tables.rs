@@ -172,7 +172,7 @@ pub const INVALID_TABLE_ENTRY: u32 = u32::MAX;
 const GENERIC_SHR_ROW_TAG: u32 = 0x8000_0000;
 
 /// Expands parser rows into the token sequence the grammar reads. The GPU
-/// pair pass (`llp_pairs.slang`) reads a generic `>>` row as its inner closer
+/// pair pass (`find_token_pair_actions.slang`) reads a generic `>>` row as its inner closer
 /// followed by its outer closer, so host replays of the same tables must too.
 /// The second vector maps each virtual token back to its parser row.
 fn virtual_token_kinds(token_kinds: &[u32]) -> (Vec<u32>, Vec<usize>) {
@@ -1020,7 +1020,7 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
 
 impl PrecomputedParseTables {
     /// Produce a contiguous (n_kinds*n_kinds) array of ActionHeader as bytes,
-    /// matching what `llp_pairs.slang` reads.
+    /// matching what `find_token_pair_actions.slang` reads.
     pub fn to_action_header_grid_bytes(&self) -> Vec<u8> {
         use std::mem::size_of;
         let n = self.n_kinds as usize;

@@ -110,7 +110,7 @@ bool valid_instance(uint instance)
     return instance < rows;
 }
 
-// A statement's payload (core.slang: stmt_kind branch).
+// A statement's payload (build_canonical_rows.slang: stmt_kind branch).
 HirPayload stmt_payload(ExecMap map, HirPayload p)
 {
     if (p.a == STMT_LET || p.a == STMT_CONST || p.a == STMT_FOR)
@@ -145,7 +145,7 @@ uint context(ExecMap map, uint encoded)
     return (encoded & CONTEXT_STMT_BIT) | (ex_row(map, id) & CONTEXT_ID_MASK);
 }
 
-// The remapped payload of template row `row` (core.slang: the branches
+// The remapped payload of template row `row` (build_canonical_rows.slang: the branches
 // that wrote it, then the side-table scatters that filled b/c).
 HirPayload payload_of(ExecMap map, uint row, HirCore core, HirPayload p)
 {

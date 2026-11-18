@@ -1,0 +1,77 @@
+use std::collections::HashMap;
+
+use crate::{
+    gpu::passes_core::{DispatchDim, Pass, PassData},
+    parser::buffers::ParserBuffers,
+};
+
+/// Pass that seeds type-alias owner propagation from semantic parent links.
+pub struct HirTypeAliasOwnerInitPass {
+    data: PassData,
+}
+
+crate::gpu::passes_core::impl_static_shader_pass!(
+    HirTypeAliasOwnerInitPass,
+    label: "hir_type_alias_owner_init",
+    shader: "parser/hir/types/seed_type_alias_owners"
+);
+
+impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeAliasOwnerInitPass {
+    const NAME: &'static str = "hir_type_alias_owner_init";
+    const DIM: DispatchDim = DispatchDim::D1;
+
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+
+    fn data(&self) -> &PassData {
+        &self.data
+    }
+
+    fn create_resource_map<'a>(
+        &self,
+        b: &'a ParserBuffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        HashMap::from([
+            (
+                "gHirTypeAliasOwner".into(),
+                b.hir_params.as_entire_binding(),
+            ),
+            (
+                "tree_count_status".into(),
+                if b.tree_count_uses_status {
+                    b.partial_parse_status.as_entire_binding()
+                } else {
+                    b.ll1_status.as_entire_binding()
+                },
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_parent".into(),
+                b.hir_semantic_parent.as_entire_binding(),
+            ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            (
+                "raw_to_hir".into(),
+                b.hir_canonical_raw_to_dense.as_entire_binding(),
+            ),
+            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
+            (
+                "hir_type_alias_owner_link_a".into(),
+                b.hir_type_alias_owner_link_a.as_entire_binding(),
+            ),
+            (
+                "hir_type_alias_owner_value_a".into(),
+                b.hir_type_alias_owner_value_a.as_entire_binding(),
+            ),
+        ])
+    }
+}

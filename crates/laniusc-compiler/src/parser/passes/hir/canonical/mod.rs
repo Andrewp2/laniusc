@@ -1,28 +1,21 @@
 use encase::ShaderType;
 
-pub mod array_elements;
-pub mod call_args;
-pub mod core;
-pub mod decl_index;
-pub mod expr_forest;
-pub mod fields;
-pub mod generic_params;
-pub mod identity_aliases;
-pub mod local;
-pub mod mark;
-pub mod matches;
-pub mod methods;
-pub mod nav;
-pub mod params;
-pub mod parent;
-pub mod paths;
-pub mod predicates;
-pub mod scatter;
-pub mod stmt_compact;
-pub mod strings;
-pub mod type_args;
-pub mod validate;
-pub mod variants;
+pub mod build_canonical_end_heaps;
+pub mod build_canonical_links;
+pub mod build_canonical_rows;
+/// Publishes dense operand and call-argument ownership edges.
+pub mod build_expr_forest_edges;
+pub mod count_canonical_rows_in_blocks;
+pub mod gather_canonical_stmts;
+pub mod index_declarations_by_name;
+pub mod list_canonical_rows;
+pub mod map_canonical_aliases;
+pub mod mark_canonical_rows;
+/// Seeds compact expression-root pointer jumping.
+pub mod seed_expr_forest_roots;
+pub mod validate_canonical_hir;
+/// Resolves compact expression roots.
+pub mod walk_expr_forest_roots;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, ShaderType)]
