@@ -6,7 +6,7 @@
 //
 // CLI:
 //   cargo run --bin parse_fuzz
-//   cargo run --bin parse_fuzz -- parser_tests/tricky_combo.lani
+//   cargo run --bin parse_fuzz -- tests/fixtures/parser_fuzz/tricky_combo.lani
 //   cargo run --bin parse_fuzz -- --iters=10 --len=2000000 --seed=123
 //   cargo run --bin parse_fuzz -- --check-tree --residency
 //
@@ -688,12 +688,12 @@ async fn main() -> Result<()> {
     let (mut paths, fuzz) = parse_cli_args(&args);
 
     if paths.is_empty() {
-        paths = collect_inputs_from_dir("parser_tests");
+        paths = collect_inputs_from_dir("tests/fixtures/parser_fuzz");
     }
 
     if paths.is_empty() {
         eprintln!(
-            "[parse_fuzz] no .lani files found in parser_tests/ and no explicit files; continuing with random corpus only."
+            "[parse_fuzz] no .lani files found in tests/fixtures/parser_fuzz/ and no explicit files; continuing with random corpus only."
         );
     }
 
