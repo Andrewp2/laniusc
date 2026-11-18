@@ -21,7 +21,7 @@ import type_checker.predicates.trait_reference;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
+import type_checker.substitution.checked_operand_ids;
 import type_checker.calls.bound_tables;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

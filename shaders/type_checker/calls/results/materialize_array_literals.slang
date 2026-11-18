@@ -10,9 +10,9 @@ import status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_mutable_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 

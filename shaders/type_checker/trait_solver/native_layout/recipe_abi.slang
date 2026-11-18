@@ -1,9 +1,9 @@
 // Immutable checked nominal recipes share the program's admitted graph roots.
 // The sidecar is owned by the exact frozen catalog; it is never a source-job
 // scratch resource or a second implementation/identity registry.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
 
 public static const uint PLR_MAGIC = 0x504c5231u;
 public static const uint PLR_VERSION = 1u;

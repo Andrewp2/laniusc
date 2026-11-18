@@ -63,7 +63,7 @@ pub(crate) fn record_validation(
 ) -> Result<LaniusBuffer<u32>> {
     let word_capacity = u32::try_from(artifact_words.byte_size / 4)
         .map_err(|_| anyhow!("semantic-interface artifact capacity exceeds u32 words"))?;
-    // Each scratch table (00_plan.slang) has fewer words per row than the
+    // Each scratch table (plan_interface_validation.slang) has fewer words per row than the
     // row's record has in the artifact; the symbol table's power-of-two
     // slack is at most eight more.
     let scratch_words = word_capacity as usize + 64;

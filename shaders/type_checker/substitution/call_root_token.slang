@@ -1,4 +1,4 @@
-// The call token whose expansion word a call root carries (04 and 04a).
+// The call token whose expansion word a call root carries (04 and list_call_field_closure_roots).
 // Included by kernels that bind compact_hir_count, compact_hir_core and
 // compact_hir_payload and define hir_count() and INVALID.
 uint call_token(uint call)

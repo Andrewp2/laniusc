@@ -62,7 +62,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     /// The body field closure (in place of list_type_rows) runs ahead of
     /// `body_specialization[i]` for this `i` (right after the body
     /// application index).
-    pub(in crate::type_checker) body_field_closure: substitution_passes::FieldClosureOperations,
+    pub(in crate::type_checker) body_field_closure: crate::type_checker::substitution::FieldClosureOperations,
     pub(in crate::type_checker) body_field_closure_at: usize,
     /// `body_specialization[i]` for this `i` is the canonical rearm inside
     /// the body passes.
@@ -357,12 +357,12 @@ impl SemanticProjectionOperations {
             })
             .collect::<Result<_>>()?,
             body_canonical_split: body_canonical_split.get(),
-            body_field_closure: substitution_passes::FieldClosureOperations::new(
+            body_field_closure: crate::type_checker::substitution::FieldClosureOperations::new(
                 device,
                 graph,
                 resources,
                 passes,
-                &substitution_passes::BODY_FIELD_CLOSURE,
+                &crate::type_checker::substitution::BODY_FIELD_CLOSURE,
                 &typed_buffer_from_resources(resources, "token_active_dispatch_args")?,
             )?,
             body_field_closure_at: body_field_closure_at.get(),
@@ -408,7 +408,7 @@ impl SemanticProjectionOperations {
                     graph,
                     resources,
                     compiler_graph::SUBSTITUTION_LATE_SEED_PASS,
-                    &passes.kernel(substitution_passes::SUBSTITUTION_SEED_KERNEL),
+                    &passes.kernel(crate::type_checker::substitution::SUBSTITUTION_SEED_KERNEL),
                     words("canonical_row")?
                         + words("canonical_atom")?
                         + words("canonical_projection")?,

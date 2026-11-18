@@ -20,7 +20,7 @@ import type_checker.checked_type_graph;
 import type_checker.constant_atoms;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
+import type_checker.substitution.checked_operand_ids;
 import type_checker.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
 import callable_identity;

@@ -2,8 +2,8 @@
 // ts_admit_output_layout and ts_admit_directories run on all lanes, and the
 // first failing item in admission order decides, as in the serial loops.
 // One thread checking every pair of tables took about 100 µs.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
 
 public static const uint TS_ADMISSION_LANES = 256u;
 groupshared uint ts_group_first[2];

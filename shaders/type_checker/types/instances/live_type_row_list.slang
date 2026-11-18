@@ -1,5 +1,5 @@
 // The live type rows the inference rounds' row passes visit (the rounds'
-// index_closed_applications, 07b_project_listed_imported_fields): the
+// index_closed_applications, project_listed_imported_field_types): the
 // source rows that hold a type, listed once before the rounds
 // (list_type_rows), then the generated rows as in live_type_rows.slang.
 //

@@ -1,6 +1,6 @@
 // Admission is a complete graph validation and work bound, not a second solver.
-import type_checker.trait_solver.graph_admission;
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.catalog_admission.graph_admission;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.packed_graph;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;

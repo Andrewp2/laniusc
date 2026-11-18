@@ -317,17 +317,17 @@ const DEBUG: &[(&str, &str, &str)] = &[
         "the lowering capture tool",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained batch directory",
         "opt-in row assertions (`read_rows`)",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained rows",
         "opt-in row assertions (`read_rows`)",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained routes",
         "test oracle `read_routes_for_test`",
     ),
@@ -384,7 +384,7 @@ const DEBUG: &[(&str, &str, &str)] = &[
         "instance table validation mode",
     ),
     (
-        "type_checker/program_retention/projection.rs",
+        "type_checker/program_retention/projection/mod.rs",
         "retained_projection.test_readback",
         "test oracle `read_test_buffer`",
     ),

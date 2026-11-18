@@ -299,21 +299,21 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
             "type_checker/calls/results/materialize_return_types",
         )?,
-        call_field_closure: substitution_passes::FieldClosureOperations::new(
+        call_field_closure: crate::type_checker::substitution::FieldClosureOperations::new(
             device,
             graph,
             resources,
             passes,
-            &substitution_passes::CALL_FIELD_CLOSURE,
+            &crate::type_checker::substitution::CALL_FIELD_CLOSURE,
             &typed_buffer_from_resources(resources, "call_root_args")?,
         )?,
-        project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
+        project_argument_contexts: Some(crate::type_checker::substitution::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
                 device,
                 graph,
                 resources,
-                substitution_passes::SUBSTITUTION_CALL_ENVS_PASS,
-                &passes.kernel(substitution_passes::SUBSTITUTION_CALL_ENVS_KERNEL),
+                crate::type_checker::substitution::SUBSTITUTION_CALL_ENVS_PASS,
+                &passes.kernel(crate::type_checker::substitution::SUBSTITUTION_CALL_ENVS_KERNEL),
                 &listed_hir_args,
             )?,
             contexts: ComputeOperation::indirect(
@@ -325,7 +325,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 hir_dispatch_args,
             )?,
         }),
-        substitution: substitution_passes::SubstitutionOperations::new(
+        substitution: crate::type_checker::substitution::SubstitutionOperations::new(
             device, graph, resources, passes,
         )?,
         return_type_index_clear: optional_generic(

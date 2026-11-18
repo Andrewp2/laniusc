@@ -6,11 +6,11 @@ import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_mutable_rows;
 import type_checker.mutable_checked_type_graph;
-import type_checker.substitution.ct_spare;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_realize;
-import type_checker.substitution.source_slots;
+import type_checker.substitution.substitution_scratch;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.checked_row_realization;
+import type_checker.substitution.source_slot_adapter;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

@@ -1,9 +1,9 @@
 // Test consumer for retained substitution (tests/retained_substitution.rs):
-// applies the publication check of sb_consumer.slang.
+// applies the publication check of retained_substitution_results.slang.
 // fx_config: (run, request). fx_out: (publication current, row current,
 // row status, row result).
 import type_checker.retention.retention_store;
-import type_checker.retention.substitution.sb_consumer;
+import type_checker.retention.substitution.retained_substitution_results;
 
 RWStructuredBuffer<uint> fx_config;
 RWStructuredBuffer<uint> fx_out;

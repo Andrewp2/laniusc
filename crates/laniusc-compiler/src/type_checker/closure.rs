@@ -79,8 +79,8 @@ const TABLE_ARGS_KERNEL: &str = "type_checker/closure/tables/write_instance_tabl
 const TABLE_ROWS_KERNEL: &str = "type_checker/closure/tables/realize_instance_table_rows";
 /// The field closure of the types the table realized (06b), so 01c finds
 /// the widths of their fields' and payloads' types for the execution rows.
-pub(super) const TABLE_FIELD_CLOSURE: super::substitution_passes::FieldClosurePasses =
-    super::substitution_passes::FieldClosurePasses {
+pub(super) const TABLE_FIELD_CLOSURE: super::substitution::FieldClosurePasses =
+    super::substitution::FieldClosurePasses {
         roots: "type_check.instance_table.expand.roots",
         roots_kernel: "type_checker/closure/tables/queue_instance_field_roots",
         advance: "type_check.instance_table.expand.advance",
@@ -501,7 +501,7 @@ pub(super) fn register_instance_table_passes(
     )?;
     graph.add_indirect_dispatch(INSTANCE_TABLE_OPERANDS_PASS, "instance_table_args")?;
     // The field closure of the realized row types, for their widths.
-    super::substitution_passes::register_field_closure_passes(
+    super::substitution::register_field_closure_passes(
         graph,
         kernels,
         &TABLE_FIELD_CLOSURE,
@@ -668,7 +668,7 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     rows: ComputeOperation,
     rows_final: ComputeOperation,
     operands: ComputeOperation,
-    field_closure: super::substitution_passes::FieldClosureOperations,
+    field_closure: super::substitution::FieldClosureOperations,
     calls: ComputeOperation,
     exec_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_select: ComputeOperation,
@@ -726,7 +726,7 @@ impl InstanceTableOperations {
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
             operands: indirect(INSTANCE_TABLE_OPERANDS_PASS, TABLE_OPERANDS_KERNEL, &table_args)?,
-            field_closure: super::substitution_passes::FieldClosureOperations::new(
+            field_closure: super::substitution::FieldClosureOperations::new(
                 device,
                 graph,
                 resources,

@@ -13,8 +13,8 @@ import type_checker.mutable_checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_mutable_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.source_slots;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.source_slot_adapter;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 

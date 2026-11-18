@@ -9,8 +9,8 @@
 // HIR row); an edge whose environment stays open, has a hole, or names a
 // node the import left unresolved is counted and left to the replays.
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.source_slots;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.source_slot_adapter;
 import type_checker.closure.instance_closure;
 import type_checker.closure.dependency_closure_summary;
 

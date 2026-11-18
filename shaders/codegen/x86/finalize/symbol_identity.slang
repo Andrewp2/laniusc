@@ -2,7 +2,7 @@
 // identity words, the identity hash (`stable_name_hash` of the 12 identity
 // bytes) and the lane index. The finalizer (symbol_finalize_common.slang)
 // and the original-call provisionalization
-// (type_checker/retention/native/00_provisional.slang) share them.
+// (type_checker/retention/projection/project_provisional_native_call_symbols.slang) share them.
 
 import gpu_index;
 

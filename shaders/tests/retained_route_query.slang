@@ -5,7 +5,7 @@
 // target method and the exact binding environment in the solver's own
 // output. It checks the publication header against the expected identity
 // and the live store counters first, and writes nothing when they differ.
-import type_checker.trait_solver.retained.route_abi;
+import type_checker.trait_solver.retained_catalog.retained_route_abi;
 
 RWStructuredBuffer<uint> rc_routes;
 RWStructuredBuffer<uint> rp_catalog;

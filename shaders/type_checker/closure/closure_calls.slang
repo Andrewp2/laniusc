@@ -22,7 +22,7 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 // The low `count` bits.
 uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
 
-// The callee token of a call node, or INVALID (as 02_publish_call_envs,
+// The callee token of a call node, or INVALID (as publish_canonical_call_environments,
 // whose call_env_ct rows it reads).
 uint call_token(uint call)
 {
@@ -62,7 +62,7 @@ bool closure_body(uint row)
 // facts name) whose callee is a generic local function body. Its callee path
 // row resolves to the same function but is not a call. Sets its callee
 // token, the callee's function row and its candidate slot masks (the
-// composed arity, as candidate_masks in 02_publish_call_envs).
+// composed arity, as candidate_masks in publish_canonical_call_environments).
 bool closure_call(uint call, out uint token, out uint callee, out uint2 masks)
 {
     callee = INVALID;

@@ -10,7 +10,7 @@ use workspace::WorkspaceLease;
 mod batch_tests;
 #[cfg(test)]
 mod host_batch_tests;
-mod kernels;
+mod solver_kernels;
 mod native_layout;
 pub(super) use native_layout::MaterializedProofType;
 #[cfg(test)]
@@ -19,10 +19,26 @@ mod implementation_application;
 pub(super) use implementation_application::ProjectedImplApplication;
 #[cfg(test)]
 pub(super) use implementation_application::ImplProjectionLimits;
-mod proof;
-mod retained;
-pub(super) use retained::{check as retained_check, publish as retained_publish, record_count_follower as retained_count_follower};
-pub use retained::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+mod proof_progress;
+mod retained_catalog;
+pub(super) use retained_catalog::{
+    check as retained_check,
+    publish as retained_publish,
+    record_count_follower as retained_count_follower,
+};
+pub use retained_catalog::{
+    ClosedChainInputs,
+    ClosedTraitCheck,
+    ClosedTraitPublication,
+    RETAINED_POISON,
+    RetainedBufferRange,
+    RetainedTraitCheck,
+    RetainedTraitIdentity,
+    RetainedTraitOptions,
+    RetainedTraitPublication,
+    RetainedTraitStage,
+    RetainedTraitView,
+};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -175,24 +191,24 @@ pub(super) struct GpuTraitSolver {
     storage: Arena,
     native_recipes: Arena,
     readback: PagedReadback,
-    batch_kernels: Option<kernels::BatchKernels>,
-    proof_kernels: Option<kernels::ProofKernels>,
-    layout_kernel: Option<kernels::NativeLayoutKernel>,
-    implementation_application_kernel: Option<kernels::ImplementationApplicationKernel>,
+    batch_kernels: Option<solver_kernels::BatchKernels>,
+    proof_kernels: Option<solver_kernels::ProofKernels>,
+    layout_kernel: Option<solver_kernels::NativeLayoutKernel>,
+    implementation_application_kernel: Option<solver_kernels::ImplementationApplicationKernel>,
     /// Reserved once per controller, not once per call/root. Query methods
     /// complete all readbacks before these exclusive roles can be reused.
     layout_query_slots: Vec<workspace::WorkspaceSlot>,
     implementation_query_slot: Option<workspace::WorkspaceSlot>,
     query_scratch_poisoned: bool,
-    /// Solver wave templates of this job (kernels::WaveTemplate).
-    wave_templates: Vec<kernels::WaveTemplate>,
+    /// Solver wave templates of this job (solver_kernels::WaveTemplate).
+    wave_templates: Vec<solver_kernels::WaveTemplate>,
     /// Catalog and native-recipe admission ran but no readback has read
     /// their receipts yet: the first check reads them with its results.
     admission_pending: std::sync::atomic::AtomicBool,
     /// Wave readbacks include the context, call, result and evidence rows.
     /// A retained publication clears it: its consumers bind the arenas.
     semantic_rows: bool,
-    /// The wave state of the last solver attempt (kernels::wave_state), for
+    /// The wave state of the last solver attempt (solver_kernels::wave_state), for
     /// a deferred check that copies it out with a later readback.
     last_wave_state: std::sync::Mutex<Option<LaniusBuffer<u32>>>,
     /// A retained catalog's producer state: while the admission receipts
@@ -202,7 +218,7 @@ pub(super) struct GpuTraitSolver {
     /// The input, output and proof roles of closed solves, and the token a
     /// live packet in them holds (`role_packet`). Closed waves solve one at
     /// a time, so each binds the buffers of the one before and its solver
-    /// wave templates are found again (kernels::wave_template).
+    /// wave templates are found again (solver_kernels::wave_template).
     closed_role: (Arc<()>, [workspace::WorkspaceSlot; 3]),
 }
 
@@ -237,8 +253,8 @@ impl GpuPacket {
     pub(super) fn uploaded_retained_evidence_rows(&self) -> u32 {
         self.completed_suffix_counts[17]
     }
-    fn proof_resources(&self, submission: &Submission) -> kernels::ProofResources<'_> {
-        kernels::ProofResources {
+    fn proof_resources(&self, submission: &Submission) -> solver_kernels::ProofResources<'_> {
+        solver_kernels::ProofResources {
             storage: &self.proof,
             epoch: submission.epoch,
             arena_id: submission.arena_id,
@@ -282,12 +298,12 @@ impl GpuPacket {
 /// Creates every trait-solver pipeline (the kernel caches keep them),
 /// so that a daemon's jobs after readiness create none.
 pub(in crate::compiler::gpu_compiler) fn prepare_kernels(device: &wgpu::Device) -> Result<()> {
-    kernels::CatalogKernels::load(device)?;
-    kernels::RecipeKernels::load(device)?;
-    kernels::BatchKernels::load(device)?;
-    kernels::ProofKernels::load(device)?;
-    kernels::NativeLayoutKernel::load(device)?;
-    kernels::ImplementationApplicationKernel::load(device)?;
+    solver_kernels::CatalogKernels::load(device)?;
+    solver_kernels::RecipeKernels::load(device)?;
+    solver_kernels::BatchKernels::load(device)?;
+    solver_kernels::ProofKernels::load(device)?;
+    solver_kernels::NativeLayoutKernel::load(device)?;
+    solver_kernels::ImplementationApplicationKernel::load(device)?;
     Ok(())
 }
 
@@ -303,7 +319,7 @@ impl GpuTraitSolver {
 
     /// Admission of `catalog` in `storage`. `fill` records, before the
     /// admission kernels and in the same submit, the writes that complete
-    /// the catalog rows (the retained producer, dispatch/retained.rs).
+    /// the catalog rows (the retained producer, dispatch/retained_catalog/mod.rs).
     fn admit_storage(
         workspace: WorkspaceLease,
         catalog: Arc<FrozenCatalog>,
@@ -319,8 +335,8 @@ impl GpuTraitSolver {
                 && limits.max_bindings_per_bind_group >= 6,
             "device cannot bind evidence arenas"
         );
-        let kernels = kernels::CatalogKernels::load(&device)?;
-        let recipe_kernels = kernels::RecipeKernels::load(&device)?;
+        let kernels = solver_kernels::CatalogKernels::load(&device)?;
+        let recipe_kernels = solver_kernels::RecipeKernels::load(&device)?;
         // One-shot processes create these pipelines lazily; save driver
         // compiles now rather than only at a normal exit.
         crate::gpu::device::persist_created_pipelines_for_device(&device);
@@ -481,7 +497,7 @@ impl GpuTraitSolver {
     fn grow_for_demand(
         &self,
         packet: &mut GpuPacket,
-        progress: &proof::ProofProgress,
+        progress: &proof_progress::ProofProgress,
         demand: &[u32],
     ) -> Result<()> {
         ensure!(demand.len() == PROOF_STORE_TABLES, "proof normalization demand has no table words");
@@ -528,7 +544,7 @@ impl GpuTraitSolver {
     #[allow(clippy::too_many_arguments)]
     fn run_solver_attempt(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
@@ -541,7 +557,7 @@ impl GpuTraitSolver {
         let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
         let mut commands = self.wave_encoder();
         self.prepare_proof_store(packet, &mut commands, submission, capacities)?;
-        kernels::reset_commit_audit(&self.storage, packet.proof_resources(submission))?;
+        solver_kernels::reset_commit_audit(&self.storage, packet.proof_resources(submission))?;
         let resets = layout.reset_writes(submission)?;
         packet.output.upload(&mut commands, &resets)?;
         let mut attempt_plan = plan.clone();
@@ -593,8 +609,8 @@ impl GpuTraitSolver {
             packet.proof_resources(submission),
         )?;
         record(packet, &mut commands, 48, plan.obligations)?;
-        let state = kernels::wave_state(&self.device, &self.storage, plan.calls)?;
-        let demand = kernels::proof_demand(&self.storage)?;
+        let state = solver_kernels::wave_state(&self.device, &self.storage, plan.calls)?;
+        let demand = solver_kernels::proof_demand(&self.storage)?;
         *self.last_wave_state.lock().unwrap() = Some(state.clone());
         // The GPU admits the batch while the host records the rounds.
         self.submit_wave(commands);
@@ -620,14 +636,14 @@ impl GpuTraitSolver {
     }
 
     /// The template of `pieces` with `chunks` chunk steps over this packet's
-    /// arenas (kernels::ProofKernels::wave_template).
+    /// arenas (solver_kernels::ProofKernels::wave_template).
     #[allow(clippy::too_many_arguments)]
     fn template(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &GpuPacket,
         submission: &Submission,
-        pieces: &[kernels::WavePiece],
+        pieces: &[solver_kernels::WavePiece],
         chunks: u32,
         state: &LaniusBuffer<u32>,
         demand: &LaniusBuffer<u32>,
@@ -647,7 +663,7 @@ impl GpuTraitSolver {
     }
 
     /// Records the templates at `order` in one submit.
-    fn submit_templates(&self, templates: &[kernels::WaveTemplate], order: &[usize]) {
+    fn submit_templates(&self, templates: &[solver_kernels::WaveTemplate], order: &[usize]) {
         let recorded = order.iter().map(|&index| &templates[index]).collect::<Vec<_>>();
         let mut commands = self.wave_encoder();
         self.proof_kernels.as_ref().expect("loaded proof kernels").record_waves(&mut commands, &recorded);
@@ -657,12 +673,12 @@ impl GpuTraitSolver {
     /// The wave driver while a test fault is armed: one round at a time, with
     /// a readback wherever a fault hook reads or rewrites pending rows. The
     /// steps and their order are those of run_solver_waves
-    /// (kernels::wave_segment).
+    /// (solver_kernels::wave_segment).
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn run_paused_solver_waves(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
@@ -670,7 +686,7 @@ impl GpuTraitSolver {
         state: &LaniusBuffer<u32>,
         demand: &LaniusBuffer<u32>,
     ) -> Result<AttemptEnd> {
-        use kernels::{WavePiece, WavePoint, wave};
+        use solver_kernels::{WavePiece, WavePoint, wave};
         #[derive(Clone, Copy)]
         enum Hook {
             None,
@@ -691,7 +707,7 @@ impl GpuTraitSolver {
                     // targeted binding ABI fixture pauses after term commit,
                     // before GPU goal hashing/admission.
                     let recipe = typed_constant_fault_tests::needs_binding_recipe_boundary(packet);
-                    let cut = kernels::round_groups_through(if recipe { 45 } else { 42 })?;
+                    let cut = solver_kernels::round_groups_through(if recipe { 45 } else { 42 })?;
                     cuts.push_back((
                         vec![WavePiece::groups(WavePoint::Round, 0, cut)],
                         if recipe { Hook::TermCommit } else { Hook::Emission },
@@ -790,7 +806,7 @@ impl GpuTraitSolver {
     #[allow(clippy::too_many_arguments)]
     fn run_solver_waves(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
@@ -799,7 +815,7 @@ impl GpuTraitSolver {
         demand: &LaniusBuffer<u32>,
         defer: bool,
     ) -> Result<Option<AttemptEnd>> {
-        use kernels::{WavePiece, WavePoint, wave};
+        use solver_kernels::{WavePiece, WavePoint, wave};
         let pieces = |points: &[WavePoint]| points.iter().map(|&point| WavePiece::whole(point)).collect::<Vec<_>>();
         // The first work and the first round span every source obligation.
         let opening_chunks = wave_chunks(plan.obligations.count);
@@ -975,7 +991,7 @@ impl GpuTraitSolver {
             ReadbackRegion::from_buffer(
                 state,
                 0,
-                arena::byte_len(kernels::wave::READ_WORDS)?,
+                arena::byte_len(solver_kernels::wave::READ_WORDS)?,
                 "solver wave state",
             )?,
             ReadbackRegion::from_buffer(
@@ -1055,14 +1071,14 @@ impl GpuTraitSolver {
     /// only after an explicit table-capacity failure.
     fn solve(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
     ) -> Result<WaveReadback> {
-        let mut capacities = proof::with_floor(
-            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+        let mut capacities = proof_progress::with_floor(
+            proof_progress::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
             &self.workspace.proof_capacity_floor(),
             &packet.packet.proof_store,
         )?;
@@ -1088,14 +1104,14 @@ impl GpuTraitSolver {
     /// the solve did not finish in it.
     fn solve_deferred(
         &self,
-        templates: &mut Vec<kernels::WaveTemplate>,
+        templates: &mut Vec<solver_kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
     ) -> Result<()> {
-        let capacities = proof::with_floor(
-            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+        let capacities = proof_progress::with_floor(
+            proof_progress::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
             &self.workspace.proof_capacity_floor(),
             &packet.packet.proof_store,
         )?;
@@ -1122,10 +1138,10 @@ impl GpuTraitSolver {
         // Resolve every phase before advancing host packet state; artifact or
         // pipeline failure cannot leave a pending packet submission.
         if self.batch_kernels.is_none() {
-            self.batch_kernels = Some(kernels::BatchKernels::load(&self.device)?);
+            self.batch_kernels = Some(solver_kernels::BatchKernels::load(&self.device)?);
         }
         if self.proof_kernels.is_none() {
-            self.proof_kernels = Some(kernels::ProofKernels::load(&self.device)?);
+            self.proof_kernels = Some(solver_kernels::ProofKernels::load(&self.device)?);
         }
         crate::gpu::device::persist_created_pipelines_for_device(&self.device);
         let prepare_span = crate::gpu::trace::HostSpan::new("host.compiler", "trait_solver.check.prepare");
@@ -1271,7 +1287,7 @@ const FIRST_SUBMIT_QUEUE_ROUNDS: u32 = 3;
 struct AttemptEnd {
     /// The decoded progress of an attempt whose batch or store stopped
     /// building; None for a solve the finish point published.
-    stopped: Option<proof::ProofProgress>,
+    stopped: Option<proof_progress::ProofProgress>,
     readback: WaveReadback,
 }
 
@@ -1292,8 +1308,8 @@ struct WaveReadback {
 }
 impl WaveReadback {
     /// The solver counters of a submit the finish point did not publish.
-    fn progress(&self, packet: &GpuPacket, submission: &Submission) -> Result<proof::ProofProgress> {
-        proof::ProofProgress::from_owned_readback(
+    fn progress(&self, packet: &GpuPacket, submission: &Submission) -> Result<proof_progress::ProofProgress> {
+        proof_progress::ProofProgress::from_owned_readback(
             packet.packet.proof_store.layout(),
             submission,
             self.proof_header.clone(),
@@ -1586,15 +1602,15 @@ pub(super) fn proof_store_growths() -> u64 {
 
 /// Chunk steps to record for a span of `rows` rows.
 fn wave_chunks(rows: u32) -> u32 {
-    rows.div_ceil(kernels::THREAD_SCRATCH_SLOTS)
+    rows.div_ceil(solver_kernels::THREAD_SCRATCH_SLOTS)
         .max(1)
         .checked_next_power_of_two()
-        .unwrap_or(kernels::WAVE_MAX_CHUNKS)
-        .min(kernels::WAVE_MAX_CHUNKS)
+        .unwrap_or(solver_kernels::WAVE_MAX_CHUNKS)
+        .min(solver_kernels::WAVE_MAX_CHUNKS)
 }
 /// The host error of a planner fault (proof_solver_wave.slang).
 fn wave_fault(words: &[u32]) -> Result<()> {
-    use kernels::wave;
+    use solver_kernels::wave;
     if words[wave::STOP] != wave::FAULT {
         return Ok(());
     }

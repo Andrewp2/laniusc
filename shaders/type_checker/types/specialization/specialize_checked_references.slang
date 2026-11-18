@@ -27,7 +27,7 @@ RWStructuredBuffer<uint> reference_payload;
 static const uint EXTENT_ALL = 0u;
 // Source rows hold four arguments per token row; generated rows 32 each from
 // there, one block per allocated application (type_checker/types/instances/allocate_application.slang,
-// ct_realize.slang).
+// checked_row_realization.slang).
 static const uint EXTENT_TYPE_ARGUMENTS = 1u;
 // Generic claims, below the scanned claim total (emit_generic_claims).
 static const uint EXTENT_CLAIMS = 2u;

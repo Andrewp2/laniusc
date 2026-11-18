@@ -3,10 +3,10 @@ import constant_value;
 import type_checker.trait_solver.constant_atoms;
 // The normalized store has its own compound-node namespace. Leaf atoms remain
 // the exact catalog/batch atoms; no parameter slot or page-local token is copied.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_store_abi;
-import type_checker.trait_solver.proof_term_normalization;
+import type_checker.trait_solver.normalization.proof_term_normalization;
 import type_checker.owned_type_constraint_contract;
 import type_checker.scoped_type_equality;
 

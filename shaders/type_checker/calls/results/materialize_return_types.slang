@@ -1,5 +1,5 @@
 // Instantiate complete call returns: the declared result under the call's
-// value environment (call_env.slang), substituted over canonical IDs and
+// value environment (canonical_call_environments.slang), substituted over canonical IDs and
 // realized as a checked row. Argument claims retain the type of known values;
 // result constraints fill missing bindings. A receiving context must not
 // rewrite a known value and then feed that rewritten result back into its
@@ -17,11 +17,11 @@ import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
-import type_checker.substitution.source_slots;
-import type_checker.substitution.call_env;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
+import type_checker.substitution.source_slot_adapter;
+import type_checker.substitution.canonical_call_environments;
 import type_checker.calls.intrinsic_result;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

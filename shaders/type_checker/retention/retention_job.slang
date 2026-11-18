@@ -11,7 +11,7 @@ import hir_records;
 import callable_identity;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
-import type_checker.retention.row_classes;
+import type_checker.retention.retained_row_classes;
 
 // Job tables (bound by their type-check graph or parser names).
 public StructuredBuffer<uint> compact_hir_count;
@@ -498,7 +498,7 @@ public uint4 scan_at(uint index)
 // ---------------------------------------------------------------------------
 // Value bindings. A checked binding is a declaration token
 // (semantic_value_decl_by_hir). Inside a body it becomes
-// (kind, value, aux) of row_classes.slang: a generic parameter leaf, a
+// (kind, value, aux) of retained_row_classes.slang: a generic parameter leaf, a
 // declaration identity, an enum variant, or a token of the body itself.
 // `span` is the containing body; a binding outside it that names no
 // declaration is FOREIGN.

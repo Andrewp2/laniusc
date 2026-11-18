@@ -22,10 +22,10 @@ import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_spare;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
-import type_checker.substitution.source_slots;
+import type_checker.substitution.substitution_scratch;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
+import type_checker.substitution.source_slot_adapter;
 
 // Flags.
 // Type bindings must agree with the call's explicit and contextual types.

@@ -100,7 +100,7 @@ fn row_word(packet: &GpuPacket, table: usize, row: u32, width: u32) -> Result<u3
 }
 
 pub(super) fn inject_pending_substitution_fault(gpu: &GpuTraitSolver, packet: &GpuPacket,
-    layout: &OutputLayout, progress: &proof::ProofProgress) -> Result<()> {
+    layout: &OutputLayout, progress: &crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::ProofProgress) -> Result<()> {
     let mut armed = packet.constant_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else { return Ok(()); };
     if fault.observation.is_some() || !matches!(fault.kind,
@@ -220,7 +220,7 @@ fn reachable_nodes(root: [u32; 2], nodes: &[u32], edges: &[u32]) -> BTreeSet<u32
 }
 
 pub(super) fn inspect_pending_normalization(gpu: &GpuTraitSolver, packet: &GpuPacket,
-    layout: &OutputLayout, progress: &proof::ProofProgress) -> Result<()> {
+    layout: &OutputLayout, progress: &crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::ProofProgress) -> Result<()> {
     let mut armed = packet.constant_admission_fault.write().unwrap();
     let Some(fault) = armed.as_mut() else { return Ok(()); };
     if fault.observation.is_some() { return Ok(()); }
@@ -230,7 +230,7 @@ pub(super) fn inspect_pending_normalization(gpu: &GpuTraitSolver, packet: &GpuPa
     let roots = table_words(gpu, packet, ROOTS, progress.reserved[ROOTS], 2)?;
     let nodes = table_words(gpu, packet, NODES, progress.reserved[NODES], 8)?;
     let edges = table_words(gpu, packet, EDGES, progress.reserved[EDGES], 2)?;
-    let works = table_words(gpu, packet, proof::WORK, progress.admitted[proof::WORK], 16)?;
+    let works = table_words(gpu, packet, crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::WORK, progress.admitted[crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::WORK], 16)?;
     let literal = fault.literal.expect("fold fixture retained the copied literal bits");
     for request in requests.chunks_exact(8).skip(pending.first as usize) {
         let root: [u32; 2] = roots[request[2] as usize * 2..request[2] as usize * 2 + 2].try_into()?;
@@ -273,7 +273,7 @@ pub(super) fn inspect_pending_normalization(gpu: &GpuTraitSolver, packet: &GpuPa
 // Real phases 46/47 and 53/54/55 still own semantic validation and publication.
 // The host copies shape/scalar/limbs; it never computes fitting or a result.
 pub(super) fn seed_binding_projection_recipe(gpu: &GpuTraitSolver, packet: &GpuPacket,
-    progress: &proof::ProofProgress, work: Span) -> Result<()> {
+    progress: &crate::compiler::gpu_compiler::trait_solver::dispatch::proof_progress::ProofProgress, work: Span) -> Result<()> {
     let mut armed = packet.constant_admission_fault.write().unwrap();
     let fault = armed.as_mut().expect("binding ABI fixture must be armed");
     ensure!(binding_recipe_needed(fault), "binding ABI fixture seeded twice");

@@ -88,7 +88,7 @@ pub(super) fn register_validation_call_env_pass(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        super::substitution_passes::SUBSTITUTION_CALL_ENVS_KERNEL,
+        super::substitution::SUBSTITUTION_CALL_ENVS_KERNEL,
         &[],
     )?;
     graph.add_indirect_dispatch(VALIDATION_CALL_ENVS_PASS, "hir_active_dispatch_args")?;
@@ -114,7 +114,7 @@ impl ValidationCallEnvOperation {
                 graph,
                 resources,
                 VALIDATION_CALL_ENVS_PASS,
-                &passes.kernel(super::substitution_passes::SUBSTITUTION_CALL_ENVS_KERNEL),
+                &passes.kernel(super::substitution::SUBSTITUTION_CALL_ENVS_KERNEL),
                 hir_dispatch_args,
             )?,
         })

@@ -26,7 +26,7 @@
 //  5 clears the request count: one lane.
 //  6 writes an explicit readiness header for boundary fault tests.
 import type_checker.retention.retention_store;
-import type_checker.retention.substitution.sb_consumer;
+import type_checker.retention.substitution.retained_substitution_results;
 
 RWStructuredBuffer<uint> fx_config;
 globallycoherent RWStructuredBuffer<uint> fx_out;

@@ -19,9 +19,9 @@
 // from R and its routed target (instance_closure_targets).
 import hir_records;
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.source_slots;
-import type_checker.substitution.call_env;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.source_slot_adapter;
+import type_checker.substitution.canonical_call_environments;
 import type_checker.closure.instance_closure;
 import type_checker.methods.method_lookup;
 import status;

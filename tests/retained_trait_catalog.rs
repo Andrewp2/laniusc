@@ -95,7 +95,7 @@ const RT_KIND_CC_VALUE: u32 = 8;
 const SCALAR_I32: u32 = 3;
 const PRIVATE: u32 = 0x8000_0000;
 const USE_WORDS: usize = 12;
-// producer.slang failure codes.
+// retained_catalog_producer.slang failure codes.
 const E_NOT_READY: u32 = 1;
 const E_PARAM_OWNER: u32 = 4;
 const E_NOMINAL: u32 = 5;
@@ -104,7 +104,7 @@ const E_REQUIRED_MEMBER: u32 = 8;
 const E_BINDING_COVERAGE: u32 = 10;
 const E_SLOT: u32 = 12;
 // The solver's catalog receipt (state, detail) for an overlapping impl
-// pair: TS_COHERENCE_CONFLICT (abi.slang), detail 0.
+// pair: TS_COHERENCE_CONFLICT (solver_abi.slang), detail 0.
 const E_COHERENCE_STATUS: [u32; 2] = [5, 0];
 // TS_INVALID_INPUT detail 84, observed when a generic impl head loses its
 // parameter (T no longer appears in the self type).

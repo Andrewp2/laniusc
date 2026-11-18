@@ -5,9 +5,9 @@
 // next dispatch (export_instance_closure_round); the final dispatch (finalize_instance_closure_exports) marks
 // it failed instead. Included by both entry files.
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
 import type_checker.closure.instance_closure;
 
 static const uint EXPORT_PENDING = 0u;

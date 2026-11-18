@@ -28,7 +28,7 @@ bool statement_expression_context(uint node, uint statement, out uint2 reference
 // A struct-literal field's context in caller scope: its reference as it is
 // when it has no context instance, else the checked row of its substituted
 // ID (field_expected.slang), never a scoped hash walk. The including
-// kernel imports type_checker.types.aggregates.field_expected and substitution.ct_rows.
+// kernel imports type_checker.types.aggregates.field_expected and type_checker.substitution.canonical_checked_type_rows.
 bool canonical_field_reference<TGraph : IScopedTypeGraph>(uint token, uint scope,
     uint type_capacity, uint tokens, inout uint2 reference)
 {

@@ -20,7 +20,7 @@ import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 // Shares the candidate keys' decl_id_by_name_token binding.
 import type_checker.canonicalization.canonical_candidates;
-import type_checker.substitution.ct_checked;
+import type_checker.substitution.checked_operand_ids;
 import status;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

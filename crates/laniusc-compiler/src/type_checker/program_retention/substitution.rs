@@ -99,7 +99,7 @@ pub(super) fn record_timed(
 pub(super) type Consumer<'a> =
     dyn FnMut(&mut wgpu::CommandEncoder, &Store, u32, &wgpu::Buffer, &wgpu::Buffer) -> Result<()> + 'a;
 
-/// Result statuses (sb_common.slang SB_*).
+/// Result statuses (retained_substitution_workspace.slang SB_*).
 pub mod status {
     pub const OK: u32 = 0;
     pub const PENDING: u32 = 1;
@@ -121,7 +121,7 @@ pub mod status {
     pub const LIMIT: u32 = 17;
 }
 
-/// Causes of an `ENV` result, in its third word group (sb_common.slang
+/// Causes of an `ENV` result, in its third word group (retained_substitution_workspace.slang
 /// SB_ENV_*).
 pub mod env_cause {
     pub const NONE: u32 = 0;
@@ -133,7 +133,7 @@ pub mod env_cause {
     pub const NONCANONICAL: u32 = 6;
 }
 
-/// Status words (sb_common.slang SB_C_*).
+/// Status words (retained_substitution_workspace.slang SB_C_*).
 pub mod words {
     pub const PHASE: usize = 0;
     pub const OVERFLOW: usize = 1;
@@ -185,7 +185,7 @@ pub mod words {
 /// `(failed child value, request tag, run, store generation)`, `(ENV cause,
 /// inner status, inner ENV cause, 0)`.
 pub const RESULT_WORDS: usize = 12;
-/// Task levels (sb_common.slang SB_LEVELS). Expansion has at most this many
+/// Task levels (retained_substitution_workspace.slang SB_LEVELS). Expansion has at most this many
 /// nonempty rounds and evaluation at most this many nonempty levels.
 pub const LEVELS: u32 = 256;
 /// Words per request: `(DeclId, binding context TermId, term reference, tag)`.
@@ -193,13 +193,13 @@ pub const LEVELS: u32 = 256;
 pub const REQUEST_WORDS: usize = 4;
 
 const KERNELS: &[&str] = &[
-    "type_checker/retention/substitution/00_begin",
-    "type_checker/retention/substitution/01_roots",
-    "type_checker/retention/substitution/02_plan",
-    "type_checker/retention/substitution/03_step",
-    "type_checker/retention/substitution/04_publish",
-    "type_checker/retention/substitution/05_finish",
-    "type_checker/retention/substitution/06_rollback",
+    "type_checker/retention/substitution/begin_retained_substitution",
+    "type_checker/retention/substitution/admit_retained_substitution_roots",
+    "type_checker/retention/substitution/plan_retained_substitution_round",
+    "type_checker/retention/substitution/process_retained_substitution_tasks",
+    "type_checker/retention/substitution/publish_retained_substitution_results",
+    "type_checker/retention/substitution/finalize_retained_substitution",
+    "type_checker/retention/substitution/roll_back_retained_substitution",
 ];
 const K_BEGIN: usize = 0;
 const K_ROOTS: usize = 1;
@@ -209,7 +209,7 @@ const K_PUBLISH: usize = 4;
 const K_FINISH: usize = 5;
 const K_ROLLBACK: usize = 6;
 
-// Indirect slots (sb_common.slang SB_D_*).
+// Indirect slots (retained_substitution_workspace.slang SB_D_*).
 const D_ROOTS: u64 = 0;
 const D_STEP: u64 = 1;
 const D_PUBLISH: u64 = 2;

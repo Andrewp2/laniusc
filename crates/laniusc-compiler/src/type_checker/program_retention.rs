@@ -280,47 +280,47 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
 ];
 
 const EXPORT_KERNELS: &[&str] = &[
-    "type_checker/retention/export/00_begin",
-    "type_checker/retention/export/01_params",
-    "type_checker/retention/export/01b_decl_tokens",
-    "type_checker/retention/export/02_rows",
-    "type_checker/retention/export/03_heights",
-    "type_checker/retention/export/04_height_plan",
-    "type_checker/retention/export/05_height_scatter",
-    "type_checker/retention/export/06_translate",
-    "type_checker/retention/export/07_advance",
-    "type_checker/retention/export/08_scan_local",
-    "type_checker/retention/export/08_scan_blocks",
-    "type_checker/retention/export/08_scan_apply",
-    "type_checker/retention/export/09_reserve",
-    "type_checker/retention/export/10_decls",
-    "type_checker/retention/export/11_rows",
-    "type_checker/retention/export/12_side",
-    "type_checker/retention/export/12b_text_clear",
-    "type_checker/retention/export/12c_text_copy",
-    "type_checker/retention/export/13_schema",
-    "type_checker/retention/export/14_uses",
-    "type_checker/retention/export/14b_trait_flags",
-    "type_checker/retention/export/14c_trait_reserve",
-    "type_checker/retention/export/14d_trait_facts",
-    "type_checker/retention/export/14e_bound_links",
-    "type_checker/retention/export/15_finish",
-    "type_checker/retention/export/16_commit",
-    "type_checker/retention/export/17_publish",
-    "type_checker/retention/export/18_rollback",
+    "type_checker/retention/export/begin_retained_export",
+    "type_checker/retention/export_types/intern_retained_generic_parameters",
+    "type_checker/retention/export_types/index_retained_declaration_tokens",
+    "type_checker/retention/export_types/collect_retained_body_metadata",
+    "type_checker/retention/export_types/count_retained_type_heights",
+    "type_checker/retention/export_types/plan_retained_type_height_buckets",
+    "type_checker/retention/export_types/scatter_retained_types_by_height",
+    "type_checker/retention/export_types/translate_retained_canonical_types",
+    "type_checker/retention/export_types/advance_retained_type_translation",
+    "type_checker/retention/export_types/scan_retained_export_row_counts",
+    "type_checker/retention/export_types/scan_retained_export_block_totals",
+    "type_checker/retention/export_types/apply_retained_export_block_offsets",
+    "type_checker/retention/export_types/reserve_retained_export_rows",
+    "type_checker/retention/export_rows/stage_retained_declarations",
+    "type_checker/retention/export_rows/write_retained_body_rows",
+    "type_checker/retention/export_rows/write_retained_body_side_tables",
+    "type_checker/retention/export_rows/clear_retained_body_text",
+    "type_checker/retention/export_rows/copy_retained_body_text",
+    "type_checker/retention/export_rows/write_retained_schema_rows",
+    "type_checker/retention/export_rows/write_retained_use_rows",
+    "type_checker/retention/export_traits/classify_retained_trait_facts",
+    "type_checker/retention/export_traits/reserve_retained_trait_facts",
+    "type_checker/retention/export_traits/write_retained_trait_facts",
+    "type_checker/retention/export_traits/link_retained_bound_calls",
+    "type_checker/retention/export/finalize_retained_export_rows",
+    "type_checker/retention/export/commit_retained_export",
+    "type_checker/retention/export/publish_retained_directory_entries",
+    "type_checker/retention/export/roll_back_retained_export",
 ];
-const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
-const UNCOMMIT_KERNEL: &str = "type_checker/retention/export/19_uncommit";
+const REHASH_KERNEL: &str = "type_checker/retention/rehash_retained_store";
+const UNCOMMIT_KERNEL: &str = "type_checker/retention/export/retract_unaccepted_retained_export";
 /// Words of the call rewrite's status (native_calls.rs).
 const NC_STATUS_WORDS: usize = 4;
-const SNAPSHOT_ROWS_KERNEL: &str = "type_checker/retention/snapshot_rows";
+const SNAPSHOT_ROWS_KERNEL: &str = "type_checker/retention/copy_retained_snapshot_rows";
 
 /// Job tables the snapshot copies by their counted rows
-/// (`snapshot_rows.slang`): the table, the table whose word 0 counts its
+/// (`copy_retained_snapshot_rows.slang`): the table, the table whose word 0 counts its
 /// rows, its words per row, and whether it holds one row per HIR row. The
 /// export kernels read these tables only below that count
-/// (retention_job.slang `valid_row`, side_tables.slang `side_rows`,
-/// trait_common.slang `method_rows` and `predicate_rows`). A table whose
+/// (retention_job.slang `valid_row`, retained_body_side_tables.slang `side_rows`,
+/// retained_trait_fact_export.slang `method_rows` and `predicate_rows`). A table whose
 /// size does not match its rows is copied whole.
 const SNAPSHOT_ROW_TABLES: &[(&str, &str, u64, bool)] = &[
     ("compact_hir_core", "compact_hir_count", 4, true),
@@ -363,7 +363,7 @@ const SNAPSHOT_ROW_TABLES: &[(&str, &str, u64, bool)] = &[
     ("compact_fields", "compact_field_count", 4, true),
     ("compact_call_args", "compact_call_arg_count", 4, true),
     ("compact_array_elements", "compact_array_element_row_count", 4, true),
-    // Keyed by parameter, field or match arm index (12_side.slang, 13_schema.slang).
+    // Keyed by parameter, field or match arm index (write_retained_body_side_tables.slang, write_retained_schema_rows.slang).
     ("semantic_param_ref_tag_by_row", "compact_param_count", 1, true),
     ("semantic_param_ref_payload_by_row", "compact_param_count", 1, true),
     ("struct_init_field_ordinal_by_row", "compact_field_count", 1, true),
@@ -422,7 +422,7 @@ impl JobTable {
     }
 }
 
-/// The `snapshot_rows.slang` entry of job table `name` (source word,
+/// The `copy_retained_snapshot_rows.slang` entry of job table `name` (source word,
 /// words per row, words, count word) and its count table, or `None` when the
 /// table is copied whole.
 fn snapshot_row_entry<'a>(
@@ -561,7 +561,7 @@ pub struct ProgramRetention {
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     rehash: PassData,
-    /// Restores the store to a job's watermark (export/19_uncommit.slang).
+    /// Restores the store to a job's watermark (retract_unaccepted_retained_export.slang).
     uncommit: PassData,
     /// Copies the counted rows of the snapshot's row tables.
     snapshot_rows: PassData,
@@ -653,7 +653,7 @@ struct ExportTail {
     follower: Option<(Vec<(wgpu::Buffer, usize)>, Box<dyn std::any::Any + Send + Sync>)>,
 }
 
-/// Restores the store to a job's watermark (export/19_uncommit.slang) when
+/// Restores the store to a job's watermark (retract_unaccepted_retained_export.slang) when
 /// dropped armed: the frontend or the lowering asked for a retry after the
 /// job's export was submitted, or the build failed.
 struct Uncommit {
@@ -694,7 +694,7 @@ impl Drop for Uncommit {
 }
 
 /// The original object's rows the call rewrite updates in place, before the
-/// object is read (shaders/type_checker/retention/native/00_provisional.slang).
+/// object is read (shaders/type_checker/retention/projection/project_provisional_native_call_symbols.slang).
 pub(crate) struct ObjectCallRows<'a> {
     /// 0: x86 undefined-symbol rows (four words per symbol) with
     /// `call_hirs`; 1: Wasm relocation rows (eight words per row).
@@ -1298,7 +1298,7 @@ impl ProgramRetention {
             .map(|pass| self.bind(pass, store, job, &[]))
             .collect::<Result<Vec<_>>>()?;
         // The trait-fact scan runs the 08 kernels again over the trait flags
-        // with their own counters (export/trait_common.slang).
+        // with their own counters (retained_trait_fact_export.slang).
         const TRAIT_SCAN: &[(&str, &str)] = &[
             ("rt_x_flags", "rt_x_tflags"),
             ("rt_x_scan", "rt_x_tscan"),

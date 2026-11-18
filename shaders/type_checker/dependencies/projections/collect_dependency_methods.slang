@@ -6,8 +6,8 @@
 import type_checker.constant_atoms;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
-import type_checker.substitution.ct_spare;
-import type_checker.substitution.ct_checked;
+import type_checker.substitution.substitution_scratch;
+import type_checker.substitution.checked_operand_ids;
 import type_checker.matches.checked_match_types;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

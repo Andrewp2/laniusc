@@ -1,5 +1,5 @@
 // Queue each type the instance table realized as a field-closure root
-// (ct_expand.slang). The closure gives its arguments, element types, fields
+// (field_closure.slang). The closure gives its arguments, element types, fields
 // and payloads checked rows, so 01c finds their native widths when it runs
 // again for the execution rows: a realized Node<i32, i32> reaches its field
 // Entry<i32, i32>, which no row of the job named before the table. One lane
@@ -8,7 +8,7 @@ import hir_records;
 import status;
 import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
-import type_checker.substitution.ct_expand;
+import type_checker.substitution.field_closure;
 import type_checker.closure.instance_table;
 
 StructuredBuffer<HirCore> compact_hir_core;

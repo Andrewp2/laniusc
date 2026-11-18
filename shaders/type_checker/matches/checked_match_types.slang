@@ -27,7 +27,7 @@
 // one pass per bound slot folds that slot's occurrences. Each pass walks
 // the pattern by re-descending from the root along a packed child path.
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_spare;
+import type_checker.substitution.substitution_scratch;
 import constant_value;
 import primitive_types;
 

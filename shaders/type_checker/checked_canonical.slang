@@ -7,12 +7,12 @@
 // Each helper takes an ICheckedIds reader. After the late canonical stage
 // every row and constant has its ID (LateIds). Inside the inference rounds a
 // row may be newer than the early stage, so OnDemandIds interns what is
-// missing (ct_checked.slang). Nothing here walks a type graph with a stack.
+// missing (checked_operand_ids.slang). Nothing here walks a type graph with a stack.
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_subst;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.canonical_substitution;
 import type_checker.checked_type_graph;
 import type_checker.constant_parameter_slots;
 import constant_value;

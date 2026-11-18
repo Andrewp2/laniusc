@@ -19,13 +19,13 @@ use crate::{
     gpu::passes_core::{self, PassData, make_pass_data_from_shader_key},
 };
 const KEYS: [&str; 7] = [
-    "type_checker/retention/method_routes/00_begin",
-    "type_checker/retention/method_routes/01_select",
-    "type_checker/retention/method_routes/02_expand",
-    "type_checker/retention/method_routes/03_terms",
-    "type_checker/retention/method_routes/04_environments",
-    "type_checker/retention/method_routes/05_finish",
-    "type_checker/retention/method_routes/06_rollback",
+    "type_checker/retention/method_routes/begin_retained_method_routing",
+    "type_checker/retention/method_routes/select_retained_method_bindings",
+    "type_checker/retention/method_routes/expand_retained_method_binding_terms",
+    "type_checker/retention/method_routes/intern_retained_method_binding_terms",
+    "type_checker/retention/method_routes/intern_retained_method_environments",
+    "type_checker/retention/method_routes/publish_retained_method_routes",
+    "type_checker/retention/method_routes/roll_back_retained_method_routes",
 ];
 
 /// Config buffers: the begin config, which the fixed-point passes also
@@ -117,7 +117,7 @@ impl MethodRoutes {
         self.queue.write_buffer_counted(&self.configs[FINAL_CONFIG], 0, &words_bytes(&words.at(1, 1)));
     }
     /// Records one run: the begin and selection passes, each fixed-point
-    /// loop as one workgroup that runs its levels (02_expand, 03_terms),
+    /// loop as one workgroup that runs its levels (expand_retained_method_binding_terms, intern_retained_method_binding_terms),
     /// and the environment, finish and rollback passes.
     #[allow(clippy::too_many_arguments)]
     fn record_batch(

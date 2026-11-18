@@ -7,7 +7,7 @@
 // These readers retain checked addressing and bounded walks. Row shape alone
 // does not prove contextual graph cycles, depth/work, closure or substitution.
 // The membership operation below checks lexical visibility for its exact atom.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.constant_atoms;
 
 public static const uint TS_ADMITTED_DOMAIN_EITHER = 0u;

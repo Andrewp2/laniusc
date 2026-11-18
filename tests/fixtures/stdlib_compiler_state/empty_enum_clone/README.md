@@ -65,7 +65,7 @@ review. The compiler owner implemented the repair. The original paths were:
 - `CheckedUnitContracts::nominal_recipes` and `read_nominal_recipes` in
   `crates/laniusc-compiler/src/type_checker/checked_contracts.rs` retain zero
   variant groups for an empty enum. Recipe admission also accepts that shape.
-- `shaders/type_checker/trait_solver/native_layout/materialize.slang`,
+- `shaders/type_checker/trait_solver/native_layout/proof_value_layout_materialization.slang`,
   `plm_expand_nominal`, explicitly returned unsupported detail 177 for
   `tail.x == 0`. This occurs after recipe identity/owner/operand checks.
 - `CheckedConcreteValueLayout::leaf_words` in
