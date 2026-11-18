@@ -47,6 +47,16 @@ public globallycoherent RWStructuredBuffer<uint> rt_x_term_map;
 public globallycoherent RWStructuredBuffer<uint> rt_x_order;
 public globallycoherent RWStructuredBuffer<uint> rt_x_args;
 public globallycoherent RWStructuredBuffer<uint4> rt_x_row;
+// A use that needs a new environment keeps the claimed slot plus one until
+// 14b publishes its final term. The key fields are immutable once claimed.
+public struct RtUseEnvironment
+{
+    public uint callee;
+    public uint env;
+    public uint term;
+}
+public globallycoherent RWStructuredBuffer<RtUseEnvironment> rt_x_use_envs;
+public RWStructuredBuffer<uint> rt_x_use_env_slot;
 //   rt_x_span         per function row: largest exclusive token end of its body
 //   rt_x_stats        per function row, 4 words: RT_STAT_* counters of its body
 //   rt_x_flags/scan   per HIR row: the uint4 scan's input and exclusive prefix

@@ -24,7 +24,7 @@ void write_groups(uint at, uint groups, bool run)
 }
 uint4 route_of(uint4 route,bool root)
 {
-    if(route.x==1u) return uint4(0xfffffffeu,0xffff0002u,dg_rank[route.y],dg_config[15]);
+    if(route.x==1u) return uint4(0xfffffffeu,0xffff0002u,dg_rank[dg_slots[route.y].y],dg_config[15]);
     if(route.x==2u) return dg_native(route.y);
     return root ? uint4(0u,0u,0u,0u) : uint4(RT_INVALID,0u,0u,dg_config[15]);
 }

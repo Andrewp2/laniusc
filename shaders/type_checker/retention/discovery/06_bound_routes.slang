@@ -18,6 +18,7 @@ void main(uint3 id:SV_DispatchThreadID)
     uint4 out=mr_out[i]; if (out.w==0u) return;
     uint4 m=dg_req_meta[i];
     if (out.w!=1u || m.x!=0u) { dg_fail(m.x,m.y,m.z,9u,out.w); return; }
+    if ((out.y & RT_PARAM_BIT)!=0u) out.y=mr_out[out.y & ~RT_PARAM_BIT].y;
     uint entry=dg_entry(out.x);
     if (entry==RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y!=2u || !rt_is_stored_term(out.y) ||
         rt_term_kind(out.y)!=RT_KIND_ENV || !rt_term_closed(out.y) || rt_term_words(out.y).x!=out.x)
@@ -26,8 +27,8 @@ void main(uint3 id:SV_DispatchThreadID)
     if (dg_generic(entry))
     {
         if (rt_dir[entry*RT_DIR_WORDS+2u].x==RT_INVALID) { dg_fail(m.x,m.y,m.z,9u,14u); return; }
-        uint target=dg_insert(out.x,out.y,m.x,m.y,m.z); if (target==RT_INVALID) return;
-        route=uint4(1u,target,0u,dg_config[15]);
+        uint slot=dg_insert(out.x,out.y,m.x,m.y,m.z); if (slot==RT_INVALID) return;
+        route=uint4(1u,slot,0u,dg_config[15]);
     }
     dg_edges[m.y]=route; dg_targets[m.y]=out.xy;
 }

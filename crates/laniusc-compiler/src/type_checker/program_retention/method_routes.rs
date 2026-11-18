@@ -95,6 +95,7 @@ impl MethodRoutes {
             ("mr_values_a", u64::from(nodes.max(1)) * 4),
             ("mr_values_b", u64::from(nodes.max(1)) * 4),
             ("mr_args", u64::from(requests.max(1)) * 64 * 4),
+            ("mr_env_slots", (u64::from(requests.max(1)) * 2).next_power_of_two() * 4),
             ("mr_out", u64::from(requests.max(1)) * 16),
         ] {
             self.ensure(name, bytes)?;
