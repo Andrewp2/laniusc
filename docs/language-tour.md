@@ -47,8 +47,9 @@ Hello, world!
 ```
 
 - `-o` names the executable. It is a static x86_64 Linux ELF file.
-- `--stdlib-root stdlib` tells the compiler where the library sources are.
-  `import std::io;` reads `stdlib/std/io.lani`.
+- `--stdlib-root stdlib` supplies the library sources, including
+  `stdlib/std/io.lani` for `import std::io;`. Builds without a library root
+  use the compiler's embedded `core`.
 - `laniusc check --stdlib-root stdlib main.lani` reports errors without
   writing a file.
 - `laniusc fmt main.lani` formats the file in place.

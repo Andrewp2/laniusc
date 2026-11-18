@@ -1,6 +1,6 @@
 use crate::common;
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use common::compile_fixture_entry_to_x86_64 as compile_entry_to_x86_64_with_stdlib;
 
 // Reuse the real I/O module inside the fixture's source root. Imports enforce
 // canonical path containment, so a symlink to the repository stdlib is invalid.

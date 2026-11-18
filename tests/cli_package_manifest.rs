@@ -32,6 +32,7 @@ fn write_package_with_stdlib_fallback(root: &Path) -> (PathBuf, PathBuf, PathBuf
     let stdlib_core_root = root.join("stdlib/core");
     fs::create_dir_all(&app_root).expect("create package app source root");
     fs::create_dir_all(&stdlib_core_root).expect("create package stdlib source root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     let stdlib_module = stdlib_core_root.join("math.lani");
     fs::write(
@@ -171,7 +172,8 @@ fn cli_package_manifest_metadata_only_prepares_stdlib_fallback_source_pack_metad
         .load_library_partition_index_for_target(SourcePackArtifactTarget::Wasm)
         .expect("metadata-only package preparation should write a wasm library partition index");
     assert_eq!(index.partition_count, 2);
-    assert_eq!(index.source_file_count, 2);
+    // The entry and disk math module, plus the two disk language-item files.
+    assert_eq!(index.source_file_count, 4);
     let stdlib_partition = store
         .load_library_partition_for_target(SourcePackArtifactTarget::Wasm, 0)
         .expect("metadata-only package preparation should write stdlib partition");
@@ -179,7 +181,8 @@ fn cli_package_manifest_metadata_only_prepares_stdlib_fallback_source_pack_metad
         .load_library_partition_for_target(SourcePackArtifactTarget::Wasm, 1)
         .expect("metadata-only package preparation should write user partition");
     assert_eq!(stdlib_partition.library_id, 0);
-    assert_eq!(stdlib_partition.source_file_count, 1);
+    // Library 0 owns disk math, core::function, and core::mem.
+    assert_eq!(stdlib_partition.source_file_count, 3);
     assert_eq!(user_partition.library_id, 1);
     assert_eq!(user_partition.source_file_count, 1);
     assert_eq!(user_partition.dependency_library_count, 1);
@@ -957,6 +960,7 @@ fn cli_package_manifest_and_lockfile_use_stdlib_as_fallback() {
     fs::create_dir_all(&app_root).expect("create package app root");
     fs::create_dir_all(&user_core_root).expect("create package core root");
     fs::create_dir_all(&stdlib_core_root).expect("create stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     fs::write(
         user_core_root.join("shadow.lani"),
