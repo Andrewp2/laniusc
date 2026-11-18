@@ -46,7 +46,7 @@ use crate::{
 /// daemon constructor from preparing only the surface kernels while omitting
 /// a reusable operation's internal scan/sort kernels.
 pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
-    &["codegen/lir", "scan/counted", "scan/counted_pair", "radix"];
+    &["codegen/lir", "scan/words", "scan/pairs", "radix"];
 
 /// Output storage measured by an earlier attempt of this same compilation.
 /// This is host orchestration policy, not an IR or shader-visible record.
@@ -248,8 +248,8 @@ impl SemanticPasses {
             value_uses_clear: load("codegen/lir/semantic/value_uses_clear"),
             value_uses_mark: load("codegen/lir/semantic/value_uses_mark"),
             count: load("codegen/lir/semantic/count"),
-            scan_local: load("scan/counted/00_local"),
-            scan_apply: load("scan/counted/02_apply"),
+            scan_local: load("scan/words/scan_counted_word_blocks"),
+            scan_apply: load("scan/words/apply_counted_word_carries"),
             schedule: load("codegen/lir/semantic/schedule"),
             scatter: load("codegen/lir/semantic/scatter"),
             try_rows: load("codegen/lir/semantic/try_rows"),

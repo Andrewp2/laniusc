@@ -13,8 +13,9 @@ A shader key is a path under shaders/ without `.slang`. A Rust file is a path
 under crates/laniusc-compiler/src ending in `.rs`. `#` starts a comment.
 
 The tool runs `git mv` for every entry, then rewrites:
-  * shader keys, with or without `.slang` or a `shaders/` prefix, in every
-    tracked text file except docs/, benchmark_artifacts/ and the root README;
+  * shader keys, source paths and generated artifact paths in tracked text
+    files, with only explicit shader source paths rewritten in docs/ and no
+    edits to benchmark_artifacts/ or the root README;
   * Slang `import` and `#include` paths, resolved the way the shader build
     resolves them, and `module` names of moved files;
   * `X.slang` mentions in shaders that shared the moved file's old folder;
@@ -241,16 +242,37 @@ def rust_files() -> list[str]:
 
 PATH_RE = re.compile(r"(?<![\w:])(?:[A-Za-z_]\w*::)+[A-Za-z_]\w*")
 USE_RE = re.compile(r"(?m)^([ \t]*(?:pub(?:\([^)]*\))?\s+)?use\s+)([^;]*);")
+PATH_ATTR_RE = re.compile(r'(#\[path\s*=\s*")([^"]+)("\])')
+PATH_MOD_RE = re.compile(PATH_ATTR_RE.pattern + r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
+
+
+def path_modules(files: list[str]) -> dict[str, tuple[str, str]]:
+    """Map each file loaded by a path attribute to its declaring file and module name."""
+    modules = {}
+    for owner in files:
+        for m in PATH_MOD_RE.finditer((CRATE_SRC / owner).read_text()):
+            target = os.path.normpath(os.path.join(os.path.dirname(owner), m.group(2)))
+            modules[target] = (owner, m.group(4))
+    return modules
 
 
 class RustRewriter:
     def __init__(self, rust_map: dict[str, str]):
         self.files = rust_files()
-        self.old_modules = {"::".join(module_of(f)) for f in self.files}
-        self.module_map = {
-            "::".join(module_of(old)): "::".join(module_of(new)) for old, new in rust_map.items()
-        }
         self.rust_map = rust_map
+        self.path_modules = path_modules(self.files) if rust_map else {}
+        self.old_modules = {"::".join(self.module(f)) for f in self.files}
+        self.module_map = {
+            "::".join(self.module(old)): "::".join(self.module(old, moved=True))
+            for old in rust_map.keys() | self.path_modules.keys()
+            if self.module(old) != self.module(old, moved=True)
+        }
+
+    def module(self, file: str, moved: bool = False) -> list[str]:
+        if file in self.path_modules:
+            owner, name = self.path_modules[file]
+            return self.module(owner, moved) + [name]
+        return module_of(self.rust_map.get(file, file) if moved else file)
 
     def map_path(self, segs: list[str]) -> list[str]:
         for n in range(len(segs), 1, -1):
@@ -306,8 +328,8 @@ class RustRewriter:
     def rewrite(self, old_file: str, text: str, external: bool = False) -> str:
         """Rewrite module paths; `external` files (tests) see the crate by name only."""
         new_file = self.rust_map.get(old_file, old_file)
-        old_mod = ["<external>"] if external else module_of(old_file)
-        new_mod = ["<external>"] if external else module_of(new_file)
+        old_mod = ["<external>"] if external else self.module(old_file)
+        new_mod = ["<external>"] if external else self.module(old_file, moved=True)
         spans = self.inline_modules(text)
         bindings: dict[str, list[str]] = {}
         renamed_bindings: dict[str, str] = {}
@@ -378,7 +400,19 @@ class RustRewriter:
                 style = "crate"
             return self.emit(new_segs, style, target_module)
 
-        return PATH_RE.sub(path_sub, text)
+        text = PATH_RE.sub(path_sub, text)
+        if external:
+            return text
+
+        def path_attr_sub(m: re.Match) -> str:
+            old_target = os.path.normpath(os.path.join(os.path.dirname(old_file), m.group(2)))
+            new_target = self.rust_map.get(old_target, old_target)
+            if old_file == new_file and old_target == new_target:
+                return m.group(0)
+            new_rel = os.path.relpath(new_target, os.path.dirname(new_file))
+            return m.group(1) + new_rel + m.group(3)
+
+        return PATH_ATTR_RE.sub(path_attr_sub, text)
 
 
 def parse_use_tree(body: str):
@@ -546,12 +580,16 @@ def fix_declarations(old_decls, reverse_modules, docs, rust_map, existed: set[st
             if not others and not body.strip():
                 git("rm", "-q", "-f", str(mod.relative_to(REPO)))
                 changed = True
+    attribute_targets = path_modules(rust_files()) if declare else {}
     for folder in sorted(declare):
         if not (CRATE_SRC / folder).is_dir():
             continue
         here = CRATE_SRC / folder
         children = sorted(
-            {p.stem for p in here.glob("*.rs") if p.stem != "mod"}
+            {
+                p.stem for p in here.glob("*.rs")
+                if p.stem != "mod" and str(p.relative_to(CRATE_SRC)) not in attribute_targets
+            }
             | {p.name for p in here.iterdir() if p.is_dir() and has_rust(p)}
         )
         owner = owner_of(folder)
@@ -670,7 +708,20 @@ def partial_paths(shader_map: dict[str, str]) -> dict[str, str]:
 
 
 def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: dict[str, str]) -> int:
-    shader_re = reference_pattern(shader_map, r"(?!\.(?!slang\b))")
+    # Root modules have names such as `status` and `scatter`. A bare
+    # occurrence can be a buffer name or label rather than a shader key.
+    shader_re = reference_pattern(
+        {k: v for k, v in shader_map.items() if "/" in k},
+        r"(?!\.(?!(?:slang|spv|reflect\.json)\b))",
+    )
+    explicit_shader_re = (
+        re.compile(
+            r"(?<=shaders/)("
+            + "|".join(map(re.escape, sorted(shader_map, key=len, reverse=True)))
+            + r")(?=\.slang\b)"
+        )
+        if shader_map else None
+    )
     rust_re = reference_pattern(rust_map, "")
     name_re = None
     if basenames:
@@ -688,6 +739,8 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
         new = text
         if shader_re:
             new = shader_re.sub(lambda m: shader_map[m.group(1)], new)
+        if explicit_shader_re:
+            new = explicit_shader_re.sub(lambda m: shader_map[m.group(1)], new)
         if rust_re:
             new = rust_re.sub(lambda m: rust_map[m.group(1)], new)
         if tail_re:
@@ -697,6 +750,16 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
         if new != text:
             write(path, new)
             count += 1
+    if explicit_shader_re:
+        for rel in git("ls-files", "docs").splitlines():
+            path = REPO / rel
+            text = text_of(path)
+            if text is None:
+                continue
+            new = explicit_shader_re.sub(lambda m: shader_map[m.group(1)], text)
+            if new != text:
+                write(path, new)
+                count += 1
     return count
 
 
@@ -713,7 +776,8 @@ def leftovers(shader_map, rust_map, module_map) -> list[str]:
     gone = {os.path.basename(k) for k in shader_map} - remaining
     modules = [k[len("crate::") :] for k in module_map if not module_exists(k)]
     needle = re.compile(
-        r"(?<![\w.\-/])(?:" + alternation(shader_map) + r")(?![\w/\-])"
+        r"(?:(?<![\w.\-/])|(?<=shaders/))(?:" + alternation(k for k in shader_map if "/" in k) + r")(?![\w/\-])"
+        + r"|(?<=shaders/)(?:" + alternation(k for k in shader_map if "/" not in k) + r")(?=\.slang\b)"
         + r"|(?:" + alternation(modules) + r")\b"
         + r"|" + alternation(rust_map)
         + r"|(?<![\w.\-])(?:" + alternation(gone) + r")\.slang\b"

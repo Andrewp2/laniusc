@@ -198,7 +198,7 @@ fn physical_gpu_typed_constant_atoms_preserve_complete_values_and_checked_counts
         &gpu.device,
         "test.constant_value",
         "main",
-        "tests/constant_value_probe",
+        "tests/probe_constant_values",
     )
     .unwrap();
     let entries = [

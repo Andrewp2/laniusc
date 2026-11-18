@@ -104,20 +104,20 @@ fn assert_typed_constant_identity_family(key: &str, cases: &[usize]) {
 
 #[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_graph() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_graph", &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    assert_typed_constant_identity_family("tests/probe_typed_constant_graph_identity", &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 }
 
 #[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_scoped() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_scoped", &[20, 21]);
+    assert_typed_constant_identity_family("tests/probe_scoped_typed_constant_identity", &[20, 21]);
 }
 
 #[test]
 fn physical_gpu_typed_constant_identity_and_claim_provenance_depth() {
-    assert_typed_constant_identity_family("tests/typed_constant_identity_depth", &[42, 43]);
+    assert_typed_constant_identity_family("tests/probe_typed_constant_identity_depth", &[42, 43]);
 }
 
-const CHECKED_IDENTITY: &str = "tests/checked_type_identity";
+const CHECKED_IDENTITY: &str = "tests/probe_checked_type_identity";
 const CHECKED_IDENTITY_CHECKS: usize = 59;
 
 /// The identity cases above on canonical IDs (checked_type_identity.slang):
@@ -208,15 +208,15 @@ fn assert_owned(key: &str, expected: &[u32], threads: u32) {
 }
 #[test]
 fn physical_gpu_typed_owned_constant_matching() {
-    assert_owned("tests/owned_typed_constants_match", &[1, 2, 2, 1, 1, 2, 2, 1, 2, 1, 1, 1], 16);
+    assert_owned("tests/probe_owned_typed_constant_matching", &[1, 2, 2, 1, 1, 2, 2, 1, 2, 1, 1, 1], 16);
 }
 #[test]
 fn physical_gpu_typed_owned_constant_overlap() {
     // Final case captures a compound type with a projected count, then revisits
     // the binding against the equivalent unprojected rigid count.
-    assert_owned("tests/owned_typed_constants_overlap", &[2, 1, 1, 2, 1, 2, 1, 2, 1, 2, 2, 3, 1], 16);
+    assert_owned("tests/probe_owned_typed_constant_overlap", &[2, 1, 1, 2, 1, 2, 1, 2, 1, 2, 2, 3, 1], 16);
 }
 #[test]
 fn physical_gpu_typed_owned_constant_parameter_coverage() {
-    assert_owned("tests/owned_typed_constants_coverage", &[1, 3, 1, 3], 4);
+    assert_owned("tests/probe_owned_typed_constant_coverage", &[1, 3, 1, 3], 4);
 }

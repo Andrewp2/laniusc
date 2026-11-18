@@ -29,7 +29,7 @@ const ARRAY_N_PROJECTED_64: u32 = N_PROJECTED_64 + 2;
 const BOX_T_N_PROJECTED_63: u32 = N_PROJECTED_64 + 3;
 const BOX_T_N_PROJECTED_64: u32 = N_PROJECTED_64 + 4;
 /// Interns the fixture page into the canonical table before each query.
-const INTERN: &str = "tests/canonical_type_boundary_intern";
+const INTERN: &str = "tests/intern_canonical_boundary_types";
 const CT_PENDING: u32 = u32::MAX;
 /// 32 preseeded IDs, 3 candidates and one fixed record per page node, plus
 /// headroom.
@@ -353,7 +353,7 @@ fn physical_gpu_canonical_type_leaf_preserves_one_step_and_rejects_constant_bind
         cases.push(Case { label, query: query(pattern, INVALID, BOOL, false),
             expected: [Some(0), None, None, Some(0)] });
     }
-    run("tests/canonical_type_leaf_boundary", &cases);
+    run("tests/probe_canonical_type_boundary_leaves", &cases);
 }
 
 #[test]
@@ -392,5 +392,5 @@ fn physical_gpu_canonical_type_identity_preserves_nested_constant_checks() {
         cases.push(Case { label, query: query(T, environment, [3, 1], false),
             expected: [Some(0), Some(0), Some(1), Some(0)] });
     }
-    run("tests/canonical_type_identity_boundary", &cases);
+    run("tests/probe_canonical_type_boundary_identity", &cases);
 }

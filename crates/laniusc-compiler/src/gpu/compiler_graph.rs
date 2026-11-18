@@ -3034,7 +3034,7 @@ impl CompilerGraphFragment for RadixSortPairGraph {
 
 /// Stable pass names for one counted exclusive prefix scan: the local block
 /// scans, then the apply, whose workgroups each sum the earlier blocks' sums
-/// for their carry (scan/block_carry.slang).
+/// for their carry (scan/blocks/block_carry.slang).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrefixScanGraphPasses {
     pub local: &'static str,
@@ -3105,19 +3105,19 @@ fn assign_prefix_scan_kernels(
     graph.assign_kernel(
         passes.local,
         if in_place {
-            "scan/counted/00_local_in_place"
+            "scan/words/scan_counted_word_blocks_in_place"
         } else {
-            "scan/counted/00_local"
+            "scan/words/scan_counted_word_blocks"
         },
     )?;
     graph.assign_kernel(
         passes.apply,
         if in_place {
-            "scan/counted/02_apply_in_place"
+            "scan/words/apply_counted_word_carries_in_place"
         } else if total_dispatch {
-            "scan/counted/02_apply_dispatch"
+            "scan/words/apply_counted_word_carries_and_size_dispatch"
         } else {
-            "scan/counted/02_apply"
+            "scan/words/apply_counted_word_carries"
         },
     )?;
     for pass in passes.names() {
@@ -3191,7 +3191,7 @@ impl PrefixScanSpec {
 
     /// Registers the scan with an apply that also writes indirect dispatch
     /// arguments for the total into `dispatch_args`
-    /// (scan/counted/02_apply_dispatch), in place of a one-lane pass that
+    /// (scan/words/apply_counted_word_carries_and_size_dispatch), in place of a one-lane pass that
     /// would read the total afterwards.
     pub(crate) fn register_with_total_dispatch(
         self,

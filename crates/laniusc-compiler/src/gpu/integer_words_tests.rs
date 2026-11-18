@@ -349,7 +349,7 @@ fn physical_gpu_integer_words_match_native_width_oracles() {
         &gpu.device,
         "test.integer_words",
         "main",
-        "tests/integer_words_probe",
+        "tests/probe_integer_word_arithmetic",
     )
     .unwrap();
     let entries = [

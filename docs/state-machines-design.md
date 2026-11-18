@@ -877,7 +877,7 @@ of [M1 decisions](#m1-decisions) and [M3](#m3-decisions) still hold.
   host still rewrote `gen fn`, before the closures;
   [M8](#m8-generators-on-the-gpu) moved it.
 - **Expansion** (`compiler/machine_elaboration/machines.rs`,
-  `shaders/machines/`). One run lexes and parses all the files of a load.
+  `shaders/desugar/machines/`). One run lexes and parses all the files of a load.
   A kernel per tree node writes a record on the first token of each machine,
   state, field, arm, transition and call argument. Prefix sums number them
   and build lists. Every token then counts and writes the pieces of text it
@@ -925,7 +925,7 @@ the host.
   for reserved names also publishes the first `gen` or `yield` token. When
   there is one, the pass rewrites the generators instead of expanding
   machines (`compiler/machine_elaboration/generators.rs`,
-  `shaders/generators/`), and the host runs the machine pass again on the
+  `shaders/desugar/generators/`), and the host runs the machine pass again on the
   result. A load without a generator runs the pass once, as before.
 - **Records and sums.** A kernel per tree node writes a record on the token
   of each generator, parameter, `let`, `yield`, statement block and block
@@ -1026,8 +1026,8 @@ Recording the machine parse is the largest remaining host cost, about 3 ms.
 
 Status: since 2026-11-17 machines, generators and closures are desugared
 in the token stream (`crates/laniusc-compiler/src/compiler/desugar.rs` and
-its modules, `shaders/desugar`, and the kernels of `shaders/machines`,
-`shaders/generators` and `shaders/closures`). The pass before the frontend
+its modules, `shaders/desugar`, and the kernels of `shaders/desugar/machines`,
+`shaders/desugar/generators` and `shaders/desugar/closures`). The pass before the frontend
 (`compiler/machine_elaboration`) is deleted with its lexes, its parse, its
 readbacks and its registry of rewritten texts: the frontend reads the
 source files as they are. The token build checks the reserved prefix.
@@ -1088,7 +1088,7 @@ tokens.
 A round is recorded only once a build of the process used its feature, so
 a program without generators records no generator round.
 
-Closures (`desugar/closures.rs`, `shaders/closures`): the round runs first,
+Closures (`desugar/closures.rs`, `shaders/desugar/closures`): the round runs first,
 so its kernels read the lexer's own tokens. `mark` and a prefix sum give
 every token its bracket depth and the number of the closure that starts at
 it; a heap of minimum depths finds the bracket around a binder (`roles`);
@@ -1111,7 +1111,7 @@ stops, and the host runs `machines/reserved` over the lexer's tokens to
 find the first one (`LNC0076`). Only source tokens pass the token build, so
 the names the rounds generate are never checked.
 
-Generators (`desugar/generators.rs`, `shaders/generators/read.slang`): the
+Generators (`desugar/generators.rs`, `shaders/desugar/generators/read_generator_records.slang`): the
 thread of each `gen` token reads its header and walks its body's
 statements, and the statements of the blocks of its `while` and `if`
 statements, without a stack: when a block ends, the records of the
@@ -1173,7 +1173,7 @@ and compares the streams.
   the dispatches it ran before. A build with a machine and no region runs
   again with one.
 - Every desugaring dispatch is indirect. A plan kernel
-  (`shaders/desugar/plan.slang`) turns the counts of one stage into the
+  (`shaders/desugar/tokens/plan_desugaring_dispatches.slang`) turns the counts of one stage into the
   workgroup counts and parameters of the next on the GPU, so the host
   records all of them before it knows a count. When the lexer has a region
   but the pack has no machine, the round's dispatches run with zero

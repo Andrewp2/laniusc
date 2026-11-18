@@ -584,7 +584,7 @@ impl GpuTypeChecker {
         );
         let [tgsx, tgsy, _] = self
             .passes
-            .kernel("scan/counted/00_local")
+            .kernel("scan/words/scan_counted_word_blocks")
             .thread_group_size;
         let (dispatch_x, dispatch_y, dispatch_z) = plan_workgroups(
             DispatchDim::D1,
@@ -1280,10 +1280,10 @@ impl GpuTypeChecker {
             InputElements::Elements1D(signature_capacity),
             [
                 self.passes
-                    .kernel("scan/counted/00_local")
+                    .kernel("scan/words/scan_counted_word_blocks")
                     .thread_group_size[0],
                 self.passes
-                    .kernel("scan/counted/00_local")
+                    .kernel("scan/words/scan_counted_word_blocks")
                     .thread_group_size[1],
                 1,
             ],

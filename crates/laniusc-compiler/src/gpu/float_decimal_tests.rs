@@ -452,7 +452,7 @@ fn physical_gpu_float_decimal_matches_native_rounding_and_bounds() {
         &gpu.device,
         "test.float_decimal",
         "main",
-        "tests/float_decimal_probe",
+        "tests/probe_decimal_float_conversion",
     )
     .unwrap();
     let entries = [

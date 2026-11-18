@@ -1321,7 +1321,7 @@ pub(super) fn reflected(
 }
 
 /// Registers a one-workgroup inclusive scan of `block_sum` into
-/// `block_prefix` (scan/blocks/inclusive).
+/// `block_prefix` (scan/blocks/scan_block_sums_inclusively).
 pub(super) fn block_scan(
     graph: &mut CompilerGraphBuilder,
     passes: &ParserPasses,

@@ -407,7 +407,7 @@ that is why the parameter type is required.
 
 Implementation: the frontend desugars closures in its token stream, in the
 first round of the desugaring (`compiler/desugar/closures.rs`,
-`shaders/closures/`; docs/state-machines-design.md, "Desugaring in the
+`shaders/desugar/closures/`; docs/state-machines-design.md, "Desugaring in the
 lexer"). `mark` flags closure starts and a prefix sum gives each token its
 bracket depth and closure number; `roles` finds binders; `records` finds
 each closure's parameter, result type and body; `captures` resolves each

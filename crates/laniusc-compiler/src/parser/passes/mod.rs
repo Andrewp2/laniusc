@@ -565,7 +565,7 @@ impl ParserPasses {
             exclusive_u32_local_scan: crate::gpu::passes_core::make_main_pass!(
                 device,
                 "exclusive_u32_local_scan",
-                shader: "scan/exclusive_u32_local"
+                shader: "scan/blocks/scan_word_blocks_exclusively"
             )?,
             hir_canonical_call_arg_scatter:
                 hir::lists::scatter_canonical_call_args::HirCanonicalCallArgScatterPass::new(device)?,

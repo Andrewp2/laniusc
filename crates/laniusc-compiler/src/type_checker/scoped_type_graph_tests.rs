@@ -256,7 +256,7 @@ fn physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity() {
     let word_count = f.cases.len() * 6;
     let results = storage_rw_for_array::<u32>(&gpu.device, "scope_probe.results", word_count);
     let pass = make_pass_data_from_shader_key(
-        &gpu.device, "test.parameter_scoped_type_graph", "main", "tests/parameter_scoped_type_graph",
+        &gpu.device, "test.parameter_scoped_type_graph", "main", "tests/probe_parameter_scoped_type_graph",
     ).unwrap();
     let entries = [
         ("gParams", params.as_entire_binding()),

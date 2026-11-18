@@ -25,7 +25,7 @@ pub(crate) struct GraphScanContract {
 
 /// A complete counted exclusive scan expressed as compiler-graph operations:
 /// local block scans, then the apply, whose workgroups each sum the earlier
-/// blocks' sums for their carry (scan/block_carry.slang).
+/// blocks' sums for their carry (scan/blocks/block_carry.slang).
 /// All pipelines, uniforms, bind groups, and allocation checks are materialized
 /// once; recording only emits the already-bound operation sequence.
 pub(crate) struct GpuResidentExclusiveScan {
@@ -91,7 +91,7 @@ impl GpuResidentExclusiveScan {
             &context,
             &resources,
             contract.local_pass,
-            kernels.kernel("scan/counted/00_local"),
+            kernels.kernel("scan/words/scan_counted_word_blocks"),
             capacity,
         )?;
         let apply_operation = ComputeOperation::direct(
@@ -99,7 +99,7 @@ impl GpuResidentExclusiveScan {
             &context,
             &resources,
             contract.apply_pass,
-            kernels.kernel("scan/counted/02_apply"),
+            kernels.kernel("scan/words/apply_counted_word_carries"),
             capacity,
         )?;
 

@@ -247,9 +247,9 @@ pub struct RootCertification<'a> {
     pub calls: &'a super::NativeCallTables,
 }
 
-/// Test kernel: the explicit-instance producer (shaders/tests/retention_projection_producer.slang).
+/// Test kernel: the explicit-instance producer (shaders/tests/publish_test_projection_instances.slang).
 #[doc(hidden)]
-pub const PRODUCER_KERNEL: &str = "tests/retention_projection_producer";
+pub const PRODUCER_KERNEL: &str = "tests/publish_test_projection_instances";
 
 /// The producer's GPU buffers: `pj_instances` (two uint4 per rank),
 /// `pj_routes` (one uint4 per route) and `pj_readiness` (one uint4). The
