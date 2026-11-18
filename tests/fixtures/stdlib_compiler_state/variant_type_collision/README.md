@@ -11,7 +11,7 @@ and optional parent. Types use namespace 3; enum variants use value namespace 2.
 Resolving a value candidate for a type-expression row must not make that row a
 value expression or overwrite its checked nominal reference.
 
-`modules/10j_consume_value_enum_units.slang` consumed all resolved value rows,
+`bind_value_path_enum_units.slang` consumed all resolved value rows,
 including type-expression rows. Its neighboring value status, enum-call and
 finalization consumers already restrict themselves to value-expression rows.
 The correction applies that same path-kind restriction before the unit-variant

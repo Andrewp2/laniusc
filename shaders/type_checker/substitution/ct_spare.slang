@@ -2,8 +2,8 @@
 // record and argument block, the parameter-slot adapter, and environment
 // lookup. Imports only the canonical tables, so a kernel that declares its
 // own checked-graph buffers can use them.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_constants;
 
 // ---------------------------------------------------------------------------
 // Spare storage. A lane's unpublished record and argument block are reused

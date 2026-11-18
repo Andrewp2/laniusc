@@ -2,7 +2,7 @@
 // (docs/compiler-call-inference-rounds.md, "Listed active blocks").
 //
 // A listed pass dispatches from inference_hir_list_args or
-// inference_token_list_args, which 03m1 writes at the start of each round's
+// inference_token_list_args, which list_inference_blocks writes at the start of each round's
 // passes. Word 0 of a block list is 0 when the pass visits every row (outside
 // the rounds, in round 1 and after a change without an owning
 // function): the dispatch is then the full grid and a lane's row is its own

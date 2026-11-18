@@ -167,7 +167,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) apply_row_args: ComputeOperation,
     /// The rounds' application (listed active blocks).
     pub(in crate::type_checker) apply_final_row_args: ComputeOperation,
-    /// Bound-directed inference (calls/03l*): clear, the resident page's
+    /// Bound-directed inference: clear, the resident page's
     /// implementations and bounds, this unit's implementations, inference.
     pub(in crate::type_checker) bound_inference: Option<BoundInferenceOperations>,
     pub(in crate::type_checker) bind_method_receiver_environment: Option<ComputeOperation>,
@@ -179,13 +179,13 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) substitution: super::substitution_passes::SubstitutionOperations,
     pub(in crate::type_checker) project_literal_contexts: Option<ComputeOperation>,
     pub(in crate::type_checker) record_literal_inference: Option<RecordLiteralInferenceOperations>,
-    pub(in crate::type_checker) field_expected_ids: super::match_passes::FieldExpectedIdOperations,
-    pub(in crate::type_checker) validation_call_envs: super::match_passes::ValidationCallEnvOperation,
+    pub(in crate::type_checker) field_expected_ids: super::struct_literal_field_types::FieldExpectedIdOperations,
+    pub(in crate::type_checker) validation_call_envs: super::struct_literal_field_types::ValidationCallEnvOperation,
     pub(in crate::type_checker) materialize_match_payloads: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_source_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_index_clear: Option<ComputeOperation>,
     /// Lists the live type rows the rounds' row passes visit, before the
-    /// rounds (type/instances/live_type_row_list.slang).
+    /// rounds (live_type_row_list.slang).
     pub(in crate::type_checker) type_row_list: Option<TypeRowListOperations>,
     /// Each function's rows once per job, and the list of the round's active
     /// blocks at the start of each round's passes

@@ -30,58 +30,58 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
 
     let clear_syntax_tokens = indirect(
         compiler_graph::PREDICATES_CLEAR_SYNTAX_TOKENS_PASS,
-        "type_checker/predicates/00a_clear_syntax_tokens",
+        "type_checker/predicates/clear_predicate_syntax_tokens",
         &token_dispatch_args,
     )?;
     let clear_bound_arg_facts = indirect(
         compiler_graph::PREDICATES_CLEAR_BOUND_ARG_FACTS_PASS,
-        "type_checker/predicates/00_clear_bound_arg_facts",
+        "type_checker/predicates/clear_bound_arg_facts",
         &hir_dispatch_args,
     )?;
     let collect_bound_arg_facts = indirect(
         compiler_graph::PREDICATES_COLLECT_BOUND_ARG_FACTS_PASS,
-        "type_checker/predicates/00b_collect_bound_arg_facts",
+        "type_checker/predicates/collect_bound_arg_facts",
         &predicate_dispatch_args,
     )?;
     let collect_method_contracts = indirect(
         compiler_graph::PREDICATES_COLLECT_METHOD_CONTRACTS_PASS,
-        "type_checker/predicates/00c_collect_method_contracts",
+        "type_checker/predicates/collect_method_contracts",
         &predicate_dispatch_args,
     )?;
     let collect = indirect(
         compiler_graph::PREDICATES_COLLECT_PASS,
-        "type_checker/predicates/01_collect",
+        "type_checker/predicates/collect_generic_bound_predicates",
         &predicate_dispatch_args,
     )?;
     let validate_bound_args = indirect(
         compiler_graph::PREDICATES_VALIDATE_BOUND_ARGS_PASS,
-        "type_checker/predicates/01a_validate_bound_args",
+        "type_checker/predicates/validate_bound_args",
         &predicate_dispatch_args,
     )?;
     let collect_impls = indirect(
         compiler_graph::PREDICATES_COLLECT_IMPLS_PASS,
-        "type_checker/predicates/01_collect_impls",
+        "type_checker/predicates/collect_implementation_headers",
         &predicate_dispatch_args,
     )?;
 
     let emit_method_validation_rows = indirect(
         compiler_graph::PREDICATES_EMIT_METHOD_VALIDATION_ROWS_PASS,
-        "type_checker/predicates/01f_emit_method_validation_rows",
+        "type_checker/predicates/emit_method_validation_rows",
         &predicate_dispatch_args,
     )?;
     let emit_method_param_validation_rows = indirect(
         compiler_graph::PREDICATES_EMIT_METHOD_PARAM_VALIDATION_ROWS_PASS,
-        "type_checker/predicates/01f1_emit_method_param_validation_rows",
+        "type_checker/predicates/emit_method_param_validation_rows",
         &predicate_dispatch_args,
     )?;
     let validate_imported_methods = indirect(
         compiler_graph::PREDICATES_VALIDATE_IMPORTED_METHODS_PASS,
-        "type_checker/predicates/01f2_validate_imported_methods",
+        "type_checker/predicates/validate_imported_methods",
         &predicate_dispatch_args,
     )?;
     let reduce_method_validation_errors = indirect(
         compiler_graph::PREDICATES_REDUCE_METHOD_VALIDATION_ERRORS_PASS,
-        "type_checker/predicates/01g_reduce_method_validation_errors",
+        "type_checker/predicates/reduce_method_validation_errors",
         &predicate_dispatch_args,
     )?;
 
@@ -96,7 +96,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         "type_check.predicates.obligation_pair_dispatch.params",
         &CountDispatchParams {
             capacity: u32::MAX,
-            // OBLIGATION_PAIR_LANES (predicates/02b_validate_obligations.slang).
+            // OBLIGATION_PAIR_LANES (validate_predicate_obligations.slang).
             multiplier: 32,
             reserved0: 0,
             reserved1: 0,
@@ -104,7 +104,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
     );
     let count_obligation_pairs = indirect(
         compiler_graph::PREDICATES_COUNT_OBLIGATION_PAIRS_PASS,
-        "type_checker/predicates/02a_count_obligations",
+        "type_checker/predicates/count_predicate_obligations",
         &predicate_dispatch_args,
     )?;
     let mut obligation_dispatch_resources = resources.clone();
@@ -114,7 +114,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         graph,
         &obligation_dispatch_resources,
         compiler_graph::PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS,
-        &passes.kernel("type_checker/count/dispatch_args"),
+        &passes.kernel("type_checker/conditions/write_count_dispatch_args"),
         &predicate_single_dispatch_args,
     )?;
     let obligation_pair_dispatch_clear = crate::gpu::operations::ClearBufferOperation::entire(
@@ -131,7 +131,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
     )?;
     let validate_obligation_pairs = indirect(
         compiler_graph::PREDICATES_VALIDATE_OBLIGATION_PAIRS_PASS,
-        "type_checker/predicates/02b_validate_obligations",
+        "type_checker/predicates/validate_predicate_obligations",
         &obligation_dispatch_args,
     )?;
 

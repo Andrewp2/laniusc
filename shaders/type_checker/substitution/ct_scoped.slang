@@ -10,8 +10,8 @@
 // Stackless: rows produced during inference are interned on demand
 // (ct_intern_checked), and the substitution and realization keep their own
 // progress records.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_mutable_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_mutable_rows;
 import type_checker.mutable_checked_type_graph;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_checked;

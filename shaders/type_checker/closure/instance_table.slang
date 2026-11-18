@@ -7,17 +7,17 @@
 // [F, F + count): F's whole subtree. A virtual row's realized expression type
 // is ct_realize(ct_subst(E, ct_ref(template row's expression reference))).
 //
-// Kernels: 05_table_keys (one lane per closure instance: eligibility, key,
-// row count), 05b_table_rank (the same lanes: rank and base by counting),
-// 05c_table_args (sizes the row dispatches), 06_table_rows / 06a (one lane
-// per virtual row, retried while a realization is busy), 06c_table_operands
+// Kernels: build_instance_table_keys (one lane per closure instance: eligibility, key,
+// row count), rank_instance_table_entries (the same lanes: rank and base by counting),
+// write_instance_table_dispatch_args (sizes the row dispatches), realize_instance_table_rows / finalize_instance_table_rows (one lane
+// per virtual row, retried while a realization is busy), validate_instance_table_operands
 // (one lane per virtual row: operand rules on the realized types),
-// 07_table_calls (one lane per virtual row: the callee instance of each call
+// resolve_instance_table_callees (one lane per virtual row: the callee instance of each call
 // row, D3).
 //
 // The table is an observation for now: the host reads it only in validation
 // mode (LANIUS_CHECK=instance-table), against the copy run's own types.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.closure.instance_closure;
 
 // Counters; see IT_COUNT_*.
@@ -34,7 +34,7 @@ public RWStructuredBuffer<uint4> instance_table;
 // (0, 0) while pending, (IT_ROW_FAILED, failure) when it could not realize.
 public RWStructuredBuffer<uint2> instance_row_refs;
 // Per virtual row: (IT_CALL_* kind, value) of the call it makes, for a call
-// row (07_table_calls); (IT_CALL_NONE, 0) for every other row.
+// row (resolve_instance_table_callees); (IT_CALL_NONE, 0) for every other row.
 public RWStructuredBuffer<uint2> instance_row_calls;
 
 // Call kinds of instance_row_calls.
@@ -60,8 +60,8 @@ public static const uint IT_NO_ENTRY = 0xffffffffu;  // it_find_entry: no such e
 public static const uint IT_SOURCE_LOCAL = 0u;  // the template rows are this job's HIR rows
 // Ranking counts over every entry; past this many the table is skipped.
 public static const uint IT_RANK_LIMIT = 16384u;
-// Lanes per instance in the rank pass (05b_table_rank); the closure's
-// advance sizes its grid (02_advance).
+// Lanes per instance in the rank pass (rank_instance_table_entries); the closure's
+// advance sizes its grid (advance_instance_closure_frontier).
 public static const uint IT_RANK_SPLIT = 8u;
 
 public void it_flag(uint bits)
@@ -121,7 +121,7 @@ public uint it_find_entry(uint function, uint env, uint entries)
     while (lo < hi)
     {
         uint mid = lo + ((hi - lo) >> 1u);
-        // The entry's own ranking key (05b), by its closure instance.
+        // The entry's own ranking key (rank_instance_table_entries), by its closure instance.
         uint4 other = instance_table_keys[instance_table[2u * mid + 1u].x];
         if (it_key_less(other, key)) lo = mid + 1u;
         else hi = mid;

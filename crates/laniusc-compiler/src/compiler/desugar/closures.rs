@@ -6,7 +6,7 @@
 //! result type). The site becomes a literal of that struct, borrowed; the
 //! struct and its impls go after the last token of the closure's file. The
 //! file imports nothing: the type checker resolves `core::function` as a
-//! language item (shaders/type_checker/modules/10c_resolve_qualified_paths).
+//! language item (shaders/type_checker/modules/paths/resolve_qualified_paths).
 //!
 //! The round runs first, so its kernels (shaders/desugar/closures) read the lexer's
 //! own tokens. A prefix sum of the bracket depth and the closure starts

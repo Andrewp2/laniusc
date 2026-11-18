@@ -4,7 +4,7 @@
 // expected environment (03k: explicit, result context, then claims ranked by
 // literal context). 03_publish_call_envs republishes them whenever their
 // bindings change; CT_NONE until the first publication.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 
 public globallycoherent RWStructuredBuffer<uint2> call_env_ct;
 

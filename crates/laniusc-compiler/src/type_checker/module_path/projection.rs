@@ -16,8 +16,8 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) validate_type_paths: ComputeOperation,
     pub(in crate::type_checker) type_aliases: Option<Box<TypeAliasProjection>>,
     pub(in crate::type_checker) project_type_instances: ComputeOperation,
-    /// Hidden interface declarations: mark (interface/public_decls/02_hidden),
-    /// count per block (03_hidden_count) and publish (04_hidden_publish).
+    /// Hidden interface declarations: mark (mark_hidden_interface_declarations),
+    /// count per block (count_hidden_interface_declarations) and publish (publish_hidden_interface_declarations).
     pub(in crate::type_checker) map_hidden_interface_decls: [ComputeOperation; 3],
     pub(in crate::type_checker) mark_value_call_paths: ComputeOperation,
     pub(in crate::type_checker) project_value_paths: ComputeOperation,

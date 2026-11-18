@@ -40,7 +40,7 @@ are under `target/stdlib-work/stream-forward-current-66e966d3/`.
    `type/instances/body_impl_bindings.slang` retain only instance/slot/member key
    and a native target triple. They carry no implementation substitution, method
    generic environment or bound-prerequisite closure.
-4. `methods/09_route_bound_members.slang::external_target` therefore cannot obtain
+4. `route_bound_method_members.slang::external_target` therefore cannot obtain
    an external target for `Forward<W>`. It can bind local generic implementation
    patterns while their definitions are resident, explaining the local control.
    `type_checker/generic_calls.rs::resolve_generic_requirements` explicitly treats
@@ -55,10 +55,10 @@ are under `target/stdlib-work/stream-forward-current-66e966d3/`.
 
 Receiver adjustment is another owned contract. Method selection accepts the
 callee and its source receiver, dereference count, matched checked type, passing
-mode and parameter reference together. `methods/08_finalize_candidates.slang`
-constructs that plan; `semantic/artifact/00_calls.slang` refuses a callable with
+mode and parameter reference together. `finalize_method_candidates.slang`
+constructs that plan; `project_semantic_call_facts.slang` refuses a callable with
 a missing/stale plan. Imported trait bound offering in
-`dependencies/15b_offer_bound_members.slang` currently rejects a path call of a
+`offer_dependency_bound_members.slang` currently rejects a path call of a
 self member; thus the explicit `W::write` probe fails before reaching the missing
 generic external-target export. Weakening receiver checks would not supply the
 implementation environment needed by ordinary dotted `writer.write` calls.

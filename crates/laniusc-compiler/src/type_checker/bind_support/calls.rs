@@ -231,7 +231,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         backend_targets: direct_name(
             compiler_graph::CALLS_BACKEND_TARGETS_PASS,
-            &passes.kernel("type_checker/calls/04_backend_targets"),
+            &passes.kernel("type_checker/calls/project_backend_call_targets"),
             token_capacity,
         )?,
         argument_matching,
@@ -293,11 +293,11 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         }),
         bind_method_receiver_environment: listed_inference(
             compiler_graph::CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
-            "type_checker/calls/03d_bind_method_receiver_environment",
+            "type_checker/calls/claims/bind_method_receiver_environment",
         )?,
         materialize_return_types: listed_inference(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
-            "type_checker/calls/03e_materialize_return_types",
+            "type_checker/calls/results/materialize_return_types",
         )?,
         call_field_closure: substitution_passes::FieldClosureOperations::new(
             device,
@@ -321,7 +321,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 graph,
                 resources,
                 compiler_graph::CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
-                &passes.kernel("type_checker/calls/03k_project_argument_contexts"),
+                &passes.kernel("type_checker/calls/arguments/project_argument_contexts"),
                 hir_dispatch_args,
             )?,
         }),
@@ -330,12 +330,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         return_type_index_clear: optional_generic(
             compiler_graph::CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
-            "type_checker/type/instances/02b_clear_application_index",
+            "type_checker/types/instances/clear_type_application_index",
             &token_dispatch_args,
         )?,
         return_type_source_index: optional_generic(
             compiler_graph::CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             &token_dispatch_args,
         )?,
         call_roots: CallRootListOperations {
@@ -443,7 +443,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         project_expression_types: listed_inference(
             compiler_graph::CALLS_PROJECT_EXPRESSION_TYPES_PASS,
-            "type_checker/calls/03g_project_expression_types",
+            "type_checker/calls/results/project_expression_types",
         )?,
         record_literal_inference: if struct_init_passes_required(parser_feature_flags) {
             let listed = |name, kernel| {
@@ -459,18 +459,18 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             Some(RecordLiteralInferenceOperations {
                 contexts: listed(
                     compiler_graph::CALLS_RECORD_CONTEXTS_PASS,
-                    "type_checker/calls/03k3_project_record_contexts",
+                    "type_checker/calls/results/project_record_contexts",
                 )?,
                 nested_contexts: listed(
                     compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
-                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                    "type_checker/types/aggregates/propagate_nested_struct_contexts",
                 )?,
                 fields_and_references: ComputeOperation::indirect(
                     device,
                     graph,
                     resources,
                     compiler_graph::CALLS_RECORD_FIELDS_AND_REFS_PASS,
-                    &passes.kernel("type_checker/calls/03k4_record_fields_and_refs"),
+                    &passes.kernel("type_checker/calls/results/project_record_field_expectations_and_references"),
                     &typed_buffer_from_resources(resources, "struct_literal_record_args")?,
                 )?,
                 rows_clear: crate::gpu::operations::ClearBufferOperation::entire(
@@ -496,14 +496,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         } else {
             None
         },
-        field_expected_ids: super::super::match_passes::FieldExpectedIdOperations::new(
+        field_expected_ids: crate::type_checker::struct_literal_field_types::FieldExpectedIdOperations::new(
             device,
             graph,
             resources,
             passes,
             struct_init_passes_required(parser_feature_flags),
         )?,
-        validation_call_envs: super::super::match_passes::ValidationCallEnvOperation::new(
+        validation_call_envs: crate::type_checker::struct_literal_field_types::ValidationCallEnvOperation::new(
             device,
             graph,
             resources,
@@ -512,14 +512,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )?,
         project_literal_contexts: listed_inference(
             compiler_graph::CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
-            "type_checker/calls/03k1_project_literal_contexts",
+            "type_checker/calls/results/project_literal_contexts",
         )?,
         materialize_match_payloads: if match_passes_required(parser_feature_flags)
             && has_dependency_interfaces
         {
             inference(
                 compiler_graph::CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
-                "type_checker/calls/03k2_materialize_match_payloads",
+                "type_checker/calls/results/materialize_match_payloads",
             )?
         } else {
             None
@@ -527,7 +527,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         project_array_literal_elements: if array_passes_required(parser_feature_flags) {
             listed_inference(
                 compiler_graph::CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
-                "type_checker/calls/03h_project_array_literal_elements",
+                "type_checker/calls/results/project_array_literal_elements",
             )?
         } else {
             None
@@ -535,7 +535,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         materialize_array_literals: if array_passes_required(parser_feature_flags) {
             listed_inference(
                 compiler_graph::CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
-                "type_checker/calls/03i_materialize_array_literals",
+                "type_checker/calls/results/materialize_array_literals",
             )?
         } else {
             None
@@ -543,14 +543,14 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         validate_array_literals: if array_passes_required(parser_feature_flags) {
             inference(
                 compiler_graph::CALLS_VALIDATE_ARRAY_LITERALS_PASS,
-                "type_checker/calls/03j_validate_array_literals",
+                "type_checker/calls/results/validate_array_literals",
             )?
         } else {
             None
         },
         infer_return_bindings: listed_inference(
             compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
-            "type_checker/calls/03f_infer_return_bindings",
+            "type_checker/calls/inference/infer_return_bindings",
         )?,
         inference_round_reset: crate::gpu::operations::ClearBufferOperation::range(
             graph,

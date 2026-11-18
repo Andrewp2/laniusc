@@ -4,7 +4,7 @@
 // (block_carry.slang); workgroup 0 sums every block for the total.
 //
 // With SCAN_TOTAL_DISPATCH defined, workgroup 0 also writes the indirect
-// dispatch arguments for the total, as type_checker/count/dispatch_args
+// dispatch arguments for the total, as type_checker/conditions/write_count_dispatch_args
 // would from the total buffer.
 
 import scan.blocks.block_carry;

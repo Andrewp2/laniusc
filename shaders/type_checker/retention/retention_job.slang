@@ -9,7 +9,7 @@
 import primitive_types;
 import hir_records;
 import callable_identity;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.row_classes;
 

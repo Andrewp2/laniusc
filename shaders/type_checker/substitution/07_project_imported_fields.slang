@@ -2,7 +2,7 @@
 // (live_type_rows.slang). The inference rounds use
 // 07b_project_listed_imported_fields.
 #include "imported_fields.slang"
-#include "../type/instances/live_type_rows.slang"
+#include "../types/instances/live_type_rows.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

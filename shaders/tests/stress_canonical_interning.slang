@@ -2,7 +2,7 @@
 // mode 0: every lane interns a nested chain whose keys are heavily shared
 // with other lanes, building each parent from the IDs returned for its
 // children. mode 1: validate uniqueness, structure and published facts.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import primitive_types;
 
 struct Params

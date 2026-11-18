@@ -27,7 +27,7 @@ pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
 ///
 /// The claim scan's apply writes the indirect domain shared by building,
 /// validation, and every downstream lookup consumer. Claim emission
-/// (03a1_emit_generic_claims) clears the bucket heads.
+/// (emit_generic_claims) clears the bucket heads.
 pub(in crate::type_checker) struct CallClaimIndexOperation {
     dispatch_args: LaniusBuffer<u32>,
     build: ComputeOperation,

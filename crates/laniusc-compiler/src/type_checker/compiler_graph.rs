@@ -1,15 +1,15 @@
 use super::{
-    semantic_interface::{
+    *,
+    interface::{
         DECLARATION_WORDS,
-        IMPLEMENTATION_WORDS,
         IMPLEMENTATION_METHOD_BINDING_WORDS,
+        IMPLEMENTATION_WORDS,
         MEMBER_WORDS,
-        PREDICATE_WORDS,
         MODULE_SEGMENT_WORDS,
         MODULE_WORDS,
+        PREDICATE_WORDS,
         TYPE_WORDS,
     },
-    *,
 };
 use crate::{
     gpu::{
@@ -273,7 +273,7 @@ pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::Compa
     crate::gpu::compiler_graph::CompactionSpec {
         mark: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
             "type_check.semantic_artifact.callable_mark",
-            "type_checker/semantic/artifact/02_mark_callable_rows",
+            "type_checker/semantics/mark_callable_rows",
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
         )
@@ -282,7 +282,7 @@ pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::Compa
         scan: RETAINED_CALLABLE_SCAN,
         scatter: crate::gpu::compiler_graph::ReflectedComputeSpec::new(
             "type_check.semantic_artifact.callable_scatter",
-            "type_checker/semantic/artifact/03_scatter_callable_rows",
+            "type_checker/semantics/scatter_callable_rows",
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
         )
@@ -302,7 +302,7 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_CLEAR_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.clear";
 pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
     "type_check.semantic_artifact.struct_literal_refs_early.project";
-/// A body replay's canonical re-arm (canonical/03_rearm), ahead of the
+/// A body replay's canonical re-arm (rearm_canonical_type_candidates), ahead of the
 /// replayed match passes.
 pub(super) const BODY_SPECIALIZATION_CANONICAL_REARM_PASS: &str =
     "type_check.body_specialization.canonical_rearm";
@@ -351,7 +351,7 @@ pub(super) const CALLS_RECORD_NESTED_CONTEXTS_PASS: &str =
 pub(super) const CALLS_RECORD_IMPORTED_FIELDS_PASS: &str =
     "type_check.calls.record_imported_fields";
 /// Record-literal field expectations and dense struct-literal references in
-/// one dispatch (calls/03k4_record_fields_and_refs).
+/// one dispatch (project_record_field_expectations_and_references).
 pub(super) const CALLS_RECORD_FIELDS_AND_REFS_PASS: &str =
     "type_check.calls.record_fields_and_refs";
 
@@ -367,34 +367,34 @@ pub(super) const CALLS_RETURN_IMPORTED_FIELDS_PASS: &str =
 /// The inference rounds' row passes (the closed application index twice and
 /// the imported fields) visit the source rows that hold a type, listed once
 /// before the rounds, and the generated rows
-/// (shaders/type_checker/type/instances/live_type_row_list.slang).
+/// (shaders/type_checker/types/instances/live_type_row_list.slang).
 pub(super) const CALLS_TYPE_ROW_LIST_CLEAR_PASS: &str = "type_check.calls.type_rows.clear";
 pub(super) const CALLS_TYPE_ROW_LIST_PASS: &str = "type_check.calls.type_rows.list";
 pub(super) const CALLS_TYPE_ROW_LIST_ARGS_PASS: &str = "type_check.calls.type_rows.args";
-pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/type/instances/02d_list_type_rows";
+pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/types/instances/list_type_rows";
 pub(super) const CALLS_TYPE_ROW_LIST_ARGS_KERNEL: &str =
-    "type_checker/type/instances/02e_type_row_list_args";
+    "type_checker/types/instances/write_type_row_dispatch_args";
 /// The inference rounds' masked passes visit the listed blocks of rows that
 /// hold an item of an active function (shaders/type_checker/calls/
 /// inference_blocks.slang): each function's rows are recorded once before the
 /// rounds, and the list is written at the start of each round's passes.
 pub(super) const CALLS_INFERENCE_BLOCKS_CLEAR_PASS: &str = "type_check.calls.inference_blocks.clear";
 pub(super) const CALLS_INFERENCE_RANGES_PASS: &str = "type_check.calls.inference_blocks.ranges";
-pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/03m0_inference_ranges";
+pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/inference/list_inference_ranges";
 pub(super) const CALLS_INFERENCE_LIST_ARGS_PASS: &str = "type_check.calls.inference_blocks.list_args";
-pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/03m2_inference_list_args";
+pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/inference/write_inference_list_dispatch_args";
 pub(super) const CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS: &str = "type_check.calls.struct_literal_rows.clear";
 pub(super) const CALLS_STRUCT_LITERAL_ROWS_PASS: &str = "type_check.calls.struct_literal_rows.list";
-pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/03k5_list_struct_literal_rows";
+pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/results/list_struct_literal_rows";
 pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_PASS: &str = "type_check.calls.struct_literal_rows.args";
-pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/03k6_struct_literal_row_args";
+pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/results/write_struct_literal_dispatch_args";
 pub(super) const CALLS_CALL_ROOTS_COUNT_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_count";
 pub(super) const CALLS_CALL_ROOTS_ARGS_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_args";
 pub(super) const CALLS_CALL_ROOTS_LIST_PASS: &str = "type_check.substitution.call_roots.list";
 pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/04a_list_call_roots";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_KERNEL: &str =
-    "type_checker/calls/03m1_inference_block_list";
+    "type_checker/calls/inference/list_inference_blocks";
 /// The rounds' passes over HIR rows that dispatch from the listed blocks.
 pub(super) const LISTED_HIR_INFERENCE_PASSES: &[&str] = &[
     CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
@@ -409,10 +409,10 @@ pub(super) const LISTED_HIR_INFERENCE_PASSES: &[&str] = &[
 ];
 /// The rounds' passes over tokens that dispatch from the listed blocks.
 pub(super) const LISTED_TOKEN_INFERENCE_PASSES: &[&str] = &[TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS];
-/// The rounds' closed application index is `02c_index_closed_applications`
+/// The rounds' closed application index is `index_closed_applications`
 /// with `gTypeRowList.listed` set (`TypeRowListParams`).
 pub(super) const LISTED_APPLICATION_INDEX_KERNEL: &str =
-    "type_checker/type/instances/02c_index_closed_applications";
+    "type_checker/types/instances/index_closed_applications";
 pub(super) const LISTED_IMPORTED_FIELDS_KERNEL: &str =
     "type_checker/substitution/07b_project_listed_imported_fields";
 pub(super) const CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS: &str =
@@ -497,10 +497,10 @@ pub(super) const VISIBLE_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
     small_pass: VISIBLE_SORT_PASS,
     passes: radix_sort_graph_passes!("type_check.visible.sort_hir_decl_keys"),
     kernels: RadixSortKernels::new(
-        "type_checker/visible/03e_sort_hir_decl_keys",
-        "type_checker/visible/03f_sort_hir_decl_keys_scatter",
+        "type_checker/visibility/sort_hir_decl_keys",
+        "type_checker/visibility/scatter_sorted_hir_decl_keys",
     )
-    .with_small("type_checker/visible/03d2_sort_hir_decl_keys_small"),
+    .with_small("type_checker/visibility/sort_small_hir_decl_keys"),
     resources: RadixSortResources {
         count: "hir_visible_decl_count_out",
         order: "hir_visible_decl_key_order",
@@ -580,14 +580,14 @@ pub(crate) const CALL_INFERENCE_STALL_DETAIL: u32 = 16;
 pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
-    "type_checker/type/instances/00g_specialize_checked_references";
+    "type_checker/types/specialization/specialize_checked_references";
 /// The call constants a replay closed: claims and contextual constants that
 /// reach a body parameter through count projections fold to atoms once the
 /// body's constants are installed.
 pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS: &str =
     "type_check.body_specialization.constant_claims";
 pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL: &str =
-    "type_checker/type/instances/00g2_fold_body_constant_claims";
+    "type_checker/types/specialization/fold_body_constant_claims";
 /// The body canonical stage and the substitution restart follow this body
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
@@ -600,7 +600,7 @@ pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
 /// The rows a body reference specialization pass visits
-/// (00g_specialize_checked_references.slang, gReferenceExtent): every row,
+/// (specialize_checked_references.slang, gReferenceExtent): every row,
 /// or the rows below a GPU-written allocation count, strided over
 /// BODY_REFERENCE_LANES lanes.
 pub(super) const BODY_REFERENCE_EXTENT_ALL: u32 = 0;
@@ -610,7 +610,7 @@ pub(super) const BODY_REFERENCE_EXTENT_CALL_CONTEXTS: u32 = 3;
 pub(super) const BODY_REFERENCE_EXTENT_EXPLICIT_BINDINGS: u32 = 4;
 pub(super) const BODY_REFERENCE_EXTENT_IMPORTED_FIELDS: u32 = 5;
 /// Lanes of a bounded body reference pass and of the constant-claim fold
-/// (00g2_fold_body_constant_claims.slang, LANES).
+/// (fold_body_constant_claims.slang, LANES).
 pub(super) const BODY_REFERENCE_LANES: u32 = 1 << 18;
 pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str, u32)] = &[
     (
@@ -841,10 +841,10 @@ pub(super) const MODULE_DECL_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefi
     small_pass: MODULE_DECL_KEY_SORT_PASS,
     passes: radix_sort_graph_passes!("type_check.modules.decl_keys"),
     kernels: RadixSortKernels::new(
-        "type_checker/modules/06_sort_decl_keys",
-        "type_checker/modules/06b_sort_decl_keys_scatter",
+        "type_checker/modules/declarations/sort_decl_keys",
+        "type_checker/modules/declarations/scatter_sorted_decl_keys",
     )
-    .with_small("type_checker/modules/06a2_sort_decl_keys_small"),
+    .with_small("type_checker/modules/declarations/sort_decl_keys_small"),
     resources: RadixSortResources {
         count: "decl_count_out",
         order: "decl_key_to_decl_id",
@@ -1867,48 +1867,48 @@ impl SemanticInterfaceScanGraph {
             )
             .map_err(anyhow::Error::msg)?;
         const IDENTITY_KERNELS: &[&str] = &[
-            "type_checker/interface/00_identity_sizes",
-            "type_checker/interface/01_identity_records",
-            "type_checker/interface/02_identity_bytes",
-            "type_checker/interface/artifact/materialize",
+            "type_checker/interface/size_interface_identities",
+            "type_checker/interface/scatter_interface_identity_records",
+            "type_checker/interface/copy_interface_identity_bytes",
+            "type_checker/interface/materialize_interface_artifact",
         ];
         const TOPOLOGY_KERNELS: &[&str] = &[
-            "type_checker/interface/implementations/00_init",
-            "type_checker/interface/implementations/00a_mark_methods",
-            "type_checker/interface/implementations/00_classify",
-            "type_checker/interface/implementations/02_map_seed",
-            "type_checker/interface/implementations/01_method_counts",
-            "type_checker/interface/implementations/03_methods",
-            "type_checker/interface/implementations/04_totals",
-            "type_checker/interface/implementations/05_scatter",
-            "type_checker/interface/implementations/06_finish",
-            "type_checker/interface/type_topology/00_init",
-            "type_checker/interface/type_topology/01_attach_unary",
-            "type_checker/interface/type_topology/02_seed_declarations",
-            "type_checker/interface/type_topology/02b_seed_params",
-            "type_checker/interface/type_topology/02c_seed_fields",
-            "type_checker/interface/type_topology/02d_seed_variants",
-            "type_checker/interface/predicates/00_classify",
-            "type_checker/interface/type_topology/02e_seed_predicates",
-            "type_checker/interface/predicates/01_scatter",
-            "type_checker/interface/type_topology/05_mark_reverse",
-            "type_checker/interface/type_topology/06_scatter",
-            "type_checker/interface/type_topology/08_edge_counts",
-            "type_checker/interface/type_topology/10_resolve_local_decl",
-            "type_checker/interface/type_topology/12_type_records",
-            "type_checker/interface/signature/00_flags",
-            "type_checker/interface/signature/01_totals",
-            "type_checker/interface/signature/01b_direct_types",
-            "type_checker/interface/signature/01c_synthetic_types",
-            "type_checker/interface/signature/02_param_edges",
-            "type_checker/interface/signature/02b_variant_payload_edges",
-            "type_checker/interface/signature/03_return_edges",
-            "type_checker/interface/members/00_variant_counts",
-            "type_checker/interface/members/00b_generic_counts",
-            "type_checker/interface/members/00c_method_counts",
-            "type_checker/interface/members/01_counts",
-            "type_checker/interface/members/02_scatter_hir",
-            "type_checker/interface/members/03_scatter_generic",
+            "type_checker/interface/implementations/initialize_interface_implementation_inventory",
+            "type_checker/interface/implementations/mark_interface_implementation_methods",
+            "type_checker/interface/implementations/classify_interface_implementations",
+            "type_checker/interface/implementations/seed_interface_implementation_map",
+            "type_checker/interface/implementations/count_interface_implementation_methods",
+            "type_checker/interface/implementations/export_interface_method_contracts",
+            "type_checker/interface/implementations/publish_interface_implementation_totals",
+            "type_checker/interface/implementations/scatter_interface_implementations",
+            "type_checker/interface/implementations/finalize_interface_implementation_predicates",
+            "type_checker/interface/type_topology/clear_interface_type_topology",
+            "type_checker/interface/type_topology/attach_interface_unary_type_operands",
+            "type_checker/interface/type_topology/seed_interface_declaration_type_roots",
+            "type_checker/interface/type_topology/seed_interface_parameter_type_roots",
+            "type_checker/interface/type_topology/seed_interface_field_type_roots",
+            "type_checker/interface/type_topology/seed_interface_variant_type_roots",
+            "type_checker/interface/members/classify_interface_predicates",
+            "type_checker/interface/type_topology/seed_interface_predicate_type_roots",
+            "type_checker/interface/members/scatter_interface_predicates",
+            "type_checker/interface/type_topology/size_interface_type_trees",
+            "type_checker/interface/type_topology/scatter_interface_type_roots",
+            "type_checker/interface/type_topology/count_interface_type_edges",
+            "type_checker/interface/type_topology/resolve_interface_local_types",
+            "type_checker/interface/type_topology/export_interface_type_records",
+            "type_checker/interface/signature/size_interface_signature_records",
+            "type_checker/interface/signature/publish_interface_signature_totals",
+            "type_checker/interface/signature/select_direct_interface_signature_types",
+            "type_checker/interface/signature/emit_synthetic_interface_signature_types",
+            "type_checker/interface/signature/scatter_interface_parameter_edges",
+            "type_checker/interface/signature/scatter_interface_variant_payload_edges",
+            "type_checker/interface/signature/scatter_interface_return_edges",
+            "type_checker/interface/members/count_interface_variant_members",
+            "type_checker/interface/members/count_interface_generic_members",
+            "type_checker/interface/members/count_interface_method_members",
+            "type_checker/interface/members/count_interface_members",
+            "type_checker/interface/members/scatter_interface_hir_members",
+            "type_checker/interface/members/scatter_interface_generic_members",
         ];
         builder
             .import_reflected_resources_from(upstream_graph, kernels, IDENTITY_KERNELS)
@@ -2069,25 +2069,25 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/00_init",
+                "type_checker/interface/type_topology/clear_interface_type_topology",
             )
             .map_err(anyhow::Error::msg)?;
         add_kernel!(
             "type_check.interface.type_topology.attach_unary",
-            "type_checker/interface/type_topology/01_attach_unary"
+            "type_checker/interface/type_topology/attach_interface_unary_type_operands"
         );
-        add_kernel_writes!("type_check.interface.implementations.init", "type_checker/interface/implementations/00_init",
+        add_kernel_writes!("type_check.interface.implementations.init", "type_checker/interface/implementations/initialize_interface_implementation_inventory",
             "interface_implementation_flag" => "semantic_interface.implementations.flag",
             "interface_implementation_index_by_hir" => "semantic_interface.implementations.index_by_hir",
             "interface_implementation_member_count" => "semantic_interface.implementations.member_count",
             "interface_implementation_method_count" => "semantic_interface.implementations.method_count",
             "interface_implementation_first_method_row" => "semantic_interface.implementations.first_method_row");
-        add_kernel!("type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/00a_mark_methods");
-        add_kernel_writes!("type_check.interface.implementations.classify", "type_checker/interface/implementations/00_classify",
+        add_kernel!("type_check.interface.implementations.mark_methods", "type_checker/interface/implementations/mark_interface_implementation_methods");
+        add_kernel_writes!("type_check.interface.implementations.classify", "type_checker/interface/implementations/classify_interface_implementations",
             "interface_implementation_argument_count" => "semantic_interface.implementations.argument_count");
         add_scan!(SemanticInterfaceScan::Implementations);
         add_scan!(SemanticInterfaceScan::ImplementationArguments);
-        add_kernel!("type_check.interface.implementations.map_seed", "type_checker/interface/implementations/02_map_seed");
+        add_kernel!("type_check.interface.implementations.map_seed", "type_checker/interface/implementations/seed_interface_implementation_map");
         let direct_type_hir = builder
             .resource_id("semantic_interface.type.direct_hir_by_decl")
             .expect("semantic-interface direct declaration type");
@@ -2097,7 +2097,7 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/02_seed_declarations",
+                "type_checker/interface/type_topology/seed_interface_declaration_type_roots",
                 &[ReflectedResourceBinding {
                     binding: "interface_decl_direct_type_hir",
                     resource: direct_type_hir,
@@ -2108,15 +2108,15 @@ impl SemanticInterfaceScanGraph {
         for (name, kernel) in [
             (
                 "type_check.interface.type_topology.seed_params",
-                "type_checker/interface/type_topology/02b_seed_params",
+                "type_checker/interface/type_topology/seed_interface_parameter_type_roots",
             ),
             (
                 "type_check.interface.type_topology.seed_fields",
-                "type_checker/interface/type_topology/02c_seed_fields",
+                "type_checker/interface/type_topology/seed_interface_field_type_roots",
             ),
             (
                 "type_check.interface.type_topology.seed_variants",
-                "type_checker/interface/type_topology/02d_seed_variants",
+                "type_checker/interface/type_topology/seed_interface_variant_type_roots",
             ),
         ] {
             builder
@@ -2132,7 +2132,7 @@ impl SemanticInterfaceScanGraph {
         }
         add_kernel_writes!(
             "type_check.interface.predicates.classify",
-            "type_checker/interface/predicates/00_classify",
+            "type_checker/interface/members/classify_interface_predicates",
             "interface_predicate_flag" => "semantic_interface.predicates.flag",
             "interface_predicate_argument_count" => "semantic_interface.predicates.argument_count",
             "interface_predicate_owner" => "semantic_interface.predicates.owner",
@@ -2141,7 +2141,7 @@ impl SemanticInterfaceScanGraph {
         );
         add_kernel!(
             "type_check.interface.type_topology.seed_predicates",
-            "type_checker/interface/type_topology/02e_seed_predicates"
+            "type_checker/interface/type_topology/seed_interface_predicate_type_roots"
         );
         add_scan!(SemanticInterfaceScan::Predicates);
         add_scan!(SemanticInterfaceScan::PredicateArguments);
@@ -2154,7 +2154,7 @@ impl SemanticInterfaceScanGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Types,
                 kernels,
-                "type_checker/interface/type_topology/05_mark_reverse",
+                "type_checker/interface/type_topology/size_interface_type_trees",
                 &[ReflectedResourceBinding {
                     binding: "interface_type_reverse_flag",
                     resource: reverse_flag,
@@ -2165,22 +2165,22 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::TypeOrder);
         add_kernel!(
             "type_check.interface.type_topology.scatter",
-            "type_checker/interface/type_topology/06_scatter"
+            "type_checker/interface/type_topology/scatter_interface_type_roots"
         );
         add_kernel_writes!(
             "type_check.interface.type_topology.edge_counts",
-            "type_checker/interface/type_topology/08_edge_counts",
+            "type_checker/interface/type_topology/count_interface_type_edges",
             "interface_type_edge_count" => "semantic_interface.type.edge_count"
         );
         add_scan!(SemanticInterfaceScan::TypeEdges);
         add_kernel_writes!(
             "type_check.interface.type_topology.resolve_local_decl",
-            "type_checker/interface/type_topology/10_resolve_local_decl",
+            "type_checker/interface/type_topology/resolve_interface_local_types",
             "interface_type_local_decl_by_hir" => "semantic_interface.type.local_decl_by_hir"
         );
         add_kernel_writes!(
             "type_check.interface.signature.flags",
-            "type_checker/interface/signature/00_flags",
+            "type_checker/interface/signature/size_interface_signature_records",
             "interface_signature_type_flag" => "semantic_interface.signature.type_flag",
             "interface_signature_edge_count" => "semantic_interface.signature.edge_count",
             "interface_signature_type_by_decl" => "semantic_interface.signature.type_by_decl"
@@ -2189,36 +2189,36 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::SignatureEdges);
         add_kernel_writes!(
             "type_check.interface.signature.totals",
-            "type_checker/interface/signature/01_totals",
+            "type_checker/interface/signature/publish_interface_signature_totals",
             "interface_types" => "semantic_interface.type.types",
             "interface_complete_type_count" => "semantic_interface.complete_type_count",
             "interface_complete_edge_total" => "semantic_interface.complete_edge_total"
         );
         add_kernel!(
             "type_check.interface.signature.direct_types",
-            "type_checker/interface/signature/01b_direct_types"
+            "type_checker/interface/signature/select_direct_interface_signature_types"
         );
         add_kernel_writes!(
             "type_check.interface.signature.synthetic_types",
-            "type_checker/interface/signature/01c_synthetic_types",
+            "type_checker/interface/signature/emit_synthetic_interface_signature_types",
             "interface_type_edges" => "semantic_interface.type.edges"
         );
         for (name, kernel) in [
             (
                 "type_check.interface.signature.param_edges",
-                "type_checker/interface/signature/02_param_edges",
+                "type_checker/interface/signature/scatter_interface_parameter_edges",
             ),
             (
                 "type_check.interface.signature.variant_payload_edges",
-                "type_checker/interface/signature/02b_variant_payload_edges",
+                "type_checker/interface/signature/scatter_interface_variant_payload_edges",
             ),
             (
                 "type_check.interface.signature.return_edges",
-                "type_checker/interface/signature/03_return_edges",
+                "type_checker/interface/signature/scatter_interface_return_edges",
             ),
             (
                 "type_check.interface.members.variant_counts",
-                "type_checker/interface/members/00_variant_counts",
+                "type_checker/interface/members/count_interface_variant_members",
             ),
         ] {
             builder
@@ -2234,52 +2234,52 @@ impl SemanticInterfaceScanGraph {
         }
         add_kernel_writes!(
             "type_check.interface.members.generic_counts",
-            "type_checker/interface/members/00b_generic_counts",
+            "type_checker/interface/members/count_interface_generic_members",
             "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
         );
         add_kernel_writes!(
             "type_check.interface.members.counts",
-            "type_checker/interface/members/01_counts",
+            "type_checker/interface/members/count_interface_members",
             "interface_member_count" => "semantic_interface.members.row_count",
             "interface_member_cursor" => "semantic_interface.members.cursor"
         );
         add_kernel!(
             "type_check.interface.members.method_counts",
-            "type_checker/interface/members/00c_method_counts"
+            "type_checker/interface/members/count_interface_method_members"
         );
-        add_kernel!("type_check.interface.implementations.method_counts", "type_checker/interface/implementations/01_method_counts");
+        add_kernel!("type_check.interface.implementations.method_counts", "type_checker/interface/implementations/count_interface_implementation_methods");
         add_scan!(SemanticInterfaceScan::Members);
         add_scan!(SemanticInterfaceScan::ImplementationMembers);
         add_scan!(SemanticInterfaceScan::ImplementationMethods);
-        add_kernel_writes!("type_check.interface.implementations.totals", "type_checker/interface/implementations/04_totals",
+        add_kernel_writes!("type_check.interface.implementations.totals", "type_checker/interface/implementations/publish_interface_implementation_totals",
             "interface_member_total" => "semantic_interface.complete_member_count");
         add_kernel_writes!(
             "type_check.interface.members.scatter_hir",
-            "type_checker/interface/members/02_scatter_hir",
+            "type_checker/interface/members/scatter_interface_hir_members",
             "interface_member_words" => "semantic_interface.members.records",
             "interface_member_name_id" => "semantic_interface.members.name_id"
         );
         add_kernel_writes!(
             "type_check.interface.members.scatter_generic",
-            "type_checker/interface/members/03_scatter_generic",
+            "type_checker/interface/members/scatter_interface_generic_members",
             "interface_member_index_by_generic_row" => "semantic_interface.members.index_by_generic_row"
         );
-        add_kernel_writes!("type_check.interface.implementations.methods", "type_checker/interface/implementations/03_methods",
+        add_kernel_writes!("type_check.interface.implementations.methods", "type_checker/interface/implementations/export_interface_method_contracts",
             "interface_implementation_method_binding_words" => "semantic_interface.implementations.method_binding_words");
         add_kernel!(
             "type_check.interface.type_topology.type_records",
-            "type_checker/interface/type_topology/12_type_records"
+            "type_checker/interface/type_topology/export_interface_type_records"
         );
-        add_kernel_writes!("type_check.interface.implementations.scatter", "type_checker/interface/implementations/05_scatter",
+        add_kernel_writes!("type_check.interface.implementations.scatter", "type_checker/interface/implementations/scatter_interface_implementations",
             "interface_implementation_words" => "semantic_interface.implementations.words",
             "interface_implementation_arguments" => "semantic_interface.implementations.arguments");
         add_kernel_writes!(
             "type_check.interface.predicates.scatter",
-            "type_checker/interface/predicates/01_scatter",
+            "type_checker/interface/members/scatter_interface_predicates",
             "interface_predicate_words" => "semantic_interface.predicates.words",
             "interface_predicate_arguments" => "semantic_interface.predicate_arguments.words"
         );
-        add_kernel!("type_check.interface.implementations.finish", "type_checker/interface/implementations/06_finish");
+        add_kernel!("type_check.interface.implementations.finish", "type_checker/interface/implementations/finalize_interface_implementation_predicates");
         for name in [
             "type_check.interface.predicates.classify",
             "type_check.interface.type_topology.seed_predicates",
@@ -2312,13 +2312,13 @@ impl SemanticInterfaceScanGraph {
         add_scan!(SemanticInterfaceScan::Modules);
         add_kernel!(
             "type_check.interface.identity_sizes",
-            "type_checker/interface/00_identity_sizes",
+            "type_checker/interface/size_interface_identities",
             ResourceDomain::Declarations
         );
         add_scan!(SemanticInterfaceScan::Names);
         add_kernel_writes!(
             "type_check.interface.identity_records",
-            "type_checker/interface/01_identity_records",
+            "type_checker/interface/scatter_interface_identity_records",
             ResourceDomain::Declarations,
             "interface_modules" => "semantic_interface.modules",
             "interface_module_segments" => "semantic_interface.module_segments",
@@ -2326,12 +2326,12 @@ impl SemanticInterfaceScanGraph {
         );
         add_kernel!(
             "type_check.interface.identity_bytes",
-            "type_checker/interface/02_identity_bytes",
+            "type_checker/interface/copy_interface_identity_bytes",
             ResourceDomain::Bytes
         );
         add_kernel!(
             "type_check.interface.artifact",
-            "type_checker/interface/artifact/materialize",
+            "type_checker/interface/materialize_interface_artifact",
             ResourceDomain::ArtifactBytes
         );
         let artifact_length = builder
@@ -2825,7 +2825,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/09_init_canonical_type_roots",
+        "type_checker/dependencies/projections/seed_dependency_canonical_type_roots",
         reflected_bindings![
             "canonical_type_roots" => roots_a: Write,
             "checked_constant_atoms" => constant_atoms: Write,
@@ -2839,7 +2839,7 @@ fn add_dependency_type_index_passes(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Declarations,
                 kernels,
-                "type_checker/dependencies/10_jump_canonical_type_roots",
+                "type_checker/dependencies/projections/jump_dependency_canonical_type_roots",
                 reflected_bindings![
                     "canonical_type_roots_in" => roots_in: Read,
                     "canonical_type_roots_out" => roots_out: Write,
@@ -2863,7 +2863,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/12_clear_declaration_generic_arity",
+        "type_checker/dependencies/projections/clear_dependency_generic_arity",
         reflected_bindings![
             "declaration_generic_arity" => declaration_generic_arity: Write,
             "dependency_declaration_constant_arity" => declaration_constant_arity: Write,
@@ -2875,7 +2875,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/13_count_declaration_generic_arity",
+        "type_checker/dependencies/projections/count_dependency_generic_arity",
         reflected_bindings![
             "declaration_generic_arity" => declaration_generic_arity: ReadWrite,
             "declaration_field_count" => declaration_field_count: ReadWrite,
@@ -3172,14 +3172,14 @@ fn build_graph(
         _hir_active_count as "hir_active_count" in HirNodes => 4;
     });
     // The listed live type rows of the inference rounds
-    // (type/instances/live_type_row_list.slang).
+    // (live_type_row_list.slang).
     graph_resources!(graph, Workspace {
         type_live_rows as "type_live_rows" in Tokens => token_rows * 4;
         type_live_row_count as "type_live_row_count" in Calls => 16;
         _type_live_row_args as "type_live_row_args" in DispatchArguments [StorageIndirect] => 12;
     });
     // The listed active blocks of the inference rounds
-    // (calls/03m0_inference_ranges.slang).
+    // (list_inference_ranges.slang).
     graph_resources!(graph, Workspace {
         inference_block_tables as "inference_block_tables" in Calls =>
             (8 + 5 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks)) * 4;
@@ -3194,7 +3194,7 @@ fn build_graph(
         call_root_count as "call_root_count" in Calls => 4;
         call_root_args as "call_root_args" in DispatchArguments [StorageIndirect] => 12;
         // The rows of the rounds' struct-literal passes
-        // (calls/03k5_list_struct_literal_rows.slang).
+        // (list_struct_literal_rows.slang).
         _struct_literal_field_rows as "struct_literal_field_rows" in Tokens => token_rows * 4;
         _struct_literal_hir_rows as "struct_literal_hir_rows" in HirNodes => hir_rows * 4;
         struct_literal_row_counts as "struct_literal_row_counts" in Calls => 8;
@@ -3206,7 +3206,7 @@ fn build_graph(
     // 03m1 wrote them.
     graph.mark_zero_initialized(inference_hir_blocks)?;
     graph.mark_zero_initialized(inference_token_blocks)?;
-    // Method call keys (methods/06) append to the list wherever they run.
+    // Method call keys (mark_method_call_keys) append to the list wherever they run.
     // Before the list is built they append to a stale list, which the
     // clear and the listing then replace, so no pass reads what they wrote.
     graph.mark_zero_initialized(type_live_rows)?;
@@ -3217,7 +3217,7 @@ fn build_graph(
         _type_instance_decl_token as "type_instance_decl_token" in Types => type_rows * 4;
         _type_instance_aggregate_word_count as "type_instance_aggregate_word_count" in Types => type_rows * 4;
         _type_native_word_count as "type_native_word_count" in Types => type_rows * 4;
-        // 01c_generic_native_words: a layout entry per row and per local
+        // project_generic_native_word_counts: a layout entry per row and per local
         // nominal declaration.
         _type_native_word_memo as "type_native_word_memo" in Types => (type_rows + token_rows) * 4;
         _type_native_scalar_identity as "type_native_scalar_identity" in Types => type_rows * 4;
@@ -3252,7 +3252,7 @@ fn build_graph(
         _interface_public_decl_local_id as "interface_public_decl_local_id" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_local as "interface_public_decl_index_by_local" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_hir as "interface_public_decl_index_by_hir" in HirNodes => hir_rows * 4;
-        // 03_hidden_count: the public count, then one count per 256 records.
+        // count_hidden_interface_declarations: the public count, then one count per 256 records.
         _interface_hidden_block_count as "interface_hidden_block_count" in Declarations => (record_rows.div_ceil(256) + 1) * 4;
         _import_visible_type_lookup_state as "import_visible_type_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_type_duplicate_of as "import_visible_type_duplicate_of" in Declarations => import_visible_rows * 4;
@@ -3655,7 +3655,7 @@ fn build_graph(
         predicate_obligation_pair_total in HirNodes => 4;
         predicate_obligation_pair_dispatch_args in DispatchArguments [StorageIndirect] => 12;
         // What the unit leaves for the whole-program trait solver
-        // (closure/04e_solver_demand.slang): three counts and a spare word.
+        // (count_instance_solver_demand.slang): three counts and a spare word.
         solver_demand in HirNodes => 16;
     });
     graph_resources!(graph, Workspace {
@@ -3877,7 +3877,7 @@ fn build_graph(
         _call_explicit_constant_valid_mask as "call_explicit_constant_valid_mask" in Tokens => token_rows * 4;
         _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
-        // Binding rows, then the applications listed for 03a0b and its
+        // Binding rows, then the applications listed for validate_explicit_constants and its
         // overflow flag.
         _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 12;
         _call_explicit_application_list as "call_explicit_application_list" in Tokens => token_rows * 4;
@@ -4209,7 +4209,7 @@ fn build_graph(
         _type_semantic_count_out as "type_semantic_count_out" in HirNodes => 4;
         _type_semantic_row_by_ordinal as "type_semantic_row_by_ordinal" in HirNodes => hir_rows * 4;
     });
-    // Constant reference rounds (semantic/artifact/const_fold.slang): the
+    // Constant reference rounds (const_fold.slang): the
     // round counter and staged count, and each round's workgroups.
     graph_resources!(graph, Workspace {
         local_const_fold_state in HirNodes => 8;
@@ -4236,7 +4236,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/features/00_collect",
+        "type_checker/semantics/collect_semantic_features",
         &[],
     )?;
     graph.add_pass_access(
@@ -4248,14 +4248,14 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/semantic/features/01_dispatch_args",
+        "type_checker/semantics/write_semantic_feature_dispatch_args",
     )?;
     graph.add_kernel_pass_by_name(
         IF_DEPTH_CLEAR_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/01_clear",
+        "type_checker/control_flow/clear_if_depth_deltas",
         reflected_bindings!["if_delta" => if_delta: Write],
     )?;
     graph.add_kernel_pass_by_name(
@@ -4263,7 +4263,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/loop/depth/02_mark",
+        "type_checker/control_flow/mark_if_boundaries",
         &[],
     )?;
     graph.add_indirect_dispatch(IF_DEPTH_MARK_PASS, "hir_active_dispatch_args")?;
@@ -4272,7 +4272,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/03_local",
+        "type_checker/control_flow/scan_if_depths_in_blocks",
         reflected_bindings![
             "if_depth_inblock" => if_depth_inblock: Write,
             "block_sum" => if_block_sum: Write,
@@ -4285,8 +4285,8 @@ fn build_graph(
             up_first: IF_DEPTH_SCAN_UP_FIRST_PASS,
             up_rest: IF_DEPTH_SCAN_UP_REST_PASS,
             down: IF_DEPTH_SCAN_DOWN_PASS,
-            up_kernel: "type_checker/loop/depth/04_hierarchy_up",
-            down_kernel: "type_checker/loop/depth/04_hierarchy_down",
+            up_kernel: "type_checker/control_flow/sum_if_depth_blocks_up",
+            down_kernel: "type_checker/control_flow/propagate_if_depth_prefixes_down",
         },
         prefix_scan_hierarchy_levels(token_blocks),
         if_block_sum,
@@ -4299,7 +4299,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/05_apply",
+        "type_checker/control_flow/publish_if_nesting_depths",
         reflected_bindings![
             "block_prefix" => if_block_prefix: Read,
             "if_depth" => if_depth: Write,
@@ -4310,7 +4310,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/names/00_clear",
+        "type_checker/symbols/clear_language_names",
         reflected_bindings![
             "language_name_id" => _language_name_id: Write,
             "name_max_len" => name_max_len: Write,
@@ -4326,7 +4326,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/00_prepare",
+        "type_checker/symbols/prepare_name_hashes",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: Write,
@@ -4341,7 +4341,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/01_insert",
+        "type_checker/symbols/intern_exact_names",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: ReadWrite,
@@ -4353,7 +4353,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/02_assign_ids",
+        "type_checker/symbols/assign_exact_name_ids",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: ReadWrite,
@@ -4370,7 +4370,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/decls/00a_clear_type_codes",
+        "type_checker/symbols/clear_language_type_codes",
         reflected_bindings![
             "language_type_code_by_name_id" => _language_type_code_by_name_id: Write,
             "language_entrypoint_tag_by_name_id" => _language_entrypoint_tag_by_name_id: Write,
@@ -4382,7 +4382,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/decls/00_materialize",
+        "type_checker/symbols/materialize_language_declarations",
         reflected_bindings!["language_decl_name_id" => _language_decl_name_id: Write],
     )?;
     graph.add_kernel_pass_by_name(
@@ -4390,7 +4390,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/predicates/00a_clear_syntax_tokens",
+        "type_checker/predicates/clear_predicate_syntax_tokens",
         reflected_bindings!["predicate_syntax_token" => predicate_syntax_token: Write],
     )?;
     graph.add_indirect_dispatch(
@@ -4571,7 +4571,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/type/instances/00a_mark_generic_param_records",
+            "type_checker/types/parameters/mark_generic_param_records",
             reflected_bindings![
                 "compact_hir_count" => compact_hir_count: Read,
                 "compact_hir_core" => compact_hir_core: Read,
@@ -4586,7 +4586,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Declarations,
             kernels,
-            "type_checker/type/instances/00b_decl_generic_params",
+            "type_checker/types/parameters/collect_declaration_generic_parameters",
             reflected_bindings![
                 "generic_param_count_out" => generic_param_count_out: Write,
                 "generic_param_owner_token" => generic_param_owner_token: Write,
@@ -4606,7 +4606,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/type/instances/00e_generic_param_use_slots",
+            "type_checker/types/parameters/resolve_generic_parameter_use_slots",
             &[],
         )?;
     } else {
@@ -4686,13 +4686,13 @@ fn build_graph(
     let (substitution_records, substitution_argument_words) =
         super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
     let (closure_records, closure_argument_words) =
-        super::instance_closure_passes::closure_canonical_extra(hir_rows);
+        super::closure::closure_canonical_extra(hir_rows);
     let (dependency_closure_records, dependency_closure_argument_words) =
-        super::instance_closure_passes::closure_dependency_canonical_extra();
-    let canonical_records = super::canonical_passes::register_canonical_passes(
+        super::closure::closure_dependency_canonical_extra();
+    let canonical_records = super::canonicalization::register_canonical_passes(
         &mut graph,
         kernels,
-        super::canonical_passes::CanonicalCapacity {
+        super::canonicalization::CanonicalCapacity {
             token_rows,
             hir_rows,
             type_rows,
@@ -4740,7 +4740,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_TYPE_INSTANCES_PROJECT.name, "path_dispatch_args")?;
-    super::canonical_passes::register_canonical_dependency_passes(
+    super::canonicalization::register_canonical_dependency_passes(
         &mut graph,
         kernels,
         dependency_canonical_type_roots,
@@ -4788,7 +4788,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/expression_types/00_init",
+                "type_checker/semantics/resolve_scalar_expression_types",
                 reflected_bindings!["compact_expr_scalar_type_out" => scalar_a: Write],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4796,7 +4796,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01_expression_refs",
+                "type_checker/semantics/project_checked_expression_references",
                 reflected_bindings![
                     "compact_expr_scalar_type" => final_scalar,
                     "type_instance_decl_token" => _type_instance_decl_token: Read,
@@ -4819,7 +4819,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01a_struct_literal_refs",
+                "type_checker/semantics/project_checked_struct_literal_references",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4827,7 +4827,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01b_array_index_refs",
+                "type_checker/semantics/project_checked_array_index_references",
                 reflected_bindings![
                     "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: ReadWrite,
                     "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: ReadWrite,
@@ -4839,7 +4839,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/semantic/artifact/01e_operator_refs",
+                "type_checker/semantics/project_checked_operator_references",
                 reflected_bindings![
                     "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: ReadWrite,
                     "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: ReadWrite,
@@ -4850,7 +4850,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_expr",
+                "type_checker/conditions/validate_expression_conditions",
                 reflected_bindings!["compact_expr_scalar_type" => final_scalar],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4858,7 +4858,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_stmt",
+                "type_checker/conditions/validate_statement_types",
                 reflected_bindings!["compact_expr_scalar_type" => final_scalar],
             )?;
             let distinct_hir_node_by_token = graph.add_storage(
@@ -4870,7 +4870,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_distinct_nodes",
+                "type_checker/conditions/index_distinct_type_brands",
                 reflected_bindings!["distinct_hir_node_by_token" => distinct_hir_node_by_token: Write],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4878,7 +4878,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_distinct",
+                "type_checker/conditions/validate_distinct_type_brands",
                 reflected_bindings!["distinct_hir_node_by_token" => distinct_hir_node_by_token: Read],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4886,7 +4886,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_exclusive",
+                "type_checker/conditions/validate_exclusive_reference_arguments",
                 reflected_bindings![],
             )?;
             graph.add_kernel_pass_by_name(
@@ -4894,7 +4894,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/compact_aggregate_requests",
+                "type_checker/conditions/request_aggregate_type_comparisons",
                 &[],
             )?;
             aggregate_scan(AGGREGATE_FINAL_SCAN_PASSES).register_with_total_dispatch(
@@ -4907,7 +4907,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::CallArguments,
                 kernels,
-                "type_checker/conditions/aggregate_args",
+                "type_checker/conditions/validate_aggregate_type_arguments",
                 reflected_bindings![
                     "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
                 ],
@@ -4966,7 +4966,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/01h_clear_semantic_type_rows",
+        "type_checker/types/instances/clear_semantic_type_rows",
         reflected_bindings![
             "type_semantic_row_by_token" => type_semantic_row_by_token: Write,
             "type_semantic_scan_input" => type_semantic_scan_input: Write,
@@ -4983,7 +4983,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/01_clear",
+        "type_checker/control_flow/clear_function_contexts",
         reflected_bindings![
             "enclosing_fn" => enclosing_fn: Write,
             "enclosing_fn_end" => enclosing_fn_end: Write,
@@ -5000,7 +5000,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/fn/context/02_mark",
+        "type_checker/control_flow/mark_function_boundaries",
         &[],
     )?;
     graph.add_indirect_dispatch(FN_CONTEXT_MARK_PASS, "hir_active_dispatch_args")?;
@@ -5009,7 +5009,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/03_local",
+        "type_checker/control_flow/scan_function_boundaries_in_blocks",
         reflected_bindings![
             "fn_event_inblock" => fn_event_inblock: Write,
             "block_sum" => fn_block_sum: Write,
@@ -5022,8 +5022,8 @@ fn build_graph(
             up_first: FN_CONTEXT_SCAN_UP_FIRST_PASS,
             up_rest: FN_CONTEXT_SCAN_UP_REST_PASS,
             down: FN_CONTEXT_SCAN_DOWN_PASS,
-            up_kernel: "type_checker/fn/context/04_hierarchy_up",
-            down_kernel: "type_checker/fn/context/04_hierarchy_down",
+            up_kernel: "type_checker/control_flow/scan_function_boundary_blocks_up",
+            down_kernel: "type_checker/control_flow/propagate_function_boundary_prefixes_down",
         },
         prefix_scan_hierarchy_levels(token_blocks),
         fn_block_sum,
@@ -5036,7 +5036,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/05_apply",
+        "type_checker/control_flow/resolve_enclosing_functions",
         reflected_bindings![
             "block_prefix" => fn_block_prefix: Read,
             "enclosing_fn" => enclosing_fn: Write,
@@ -5139,7 +5139,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/03a_member_receivers",
+                "type_checker/types/aggregates/seed_member_receivers",
                 member_receiver_overrides,
             )?;
             STRUCT_FIELD_LOOKUP_CLEAR.register_kernel(graph, kernels)?;
@@ -5149,7 +5149,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/03_member_results",
+                "type_checker/types/aggregates/project_member_field_results",
                 application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
@@ -5157,7 +5157,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Tokens,
                 kernels,
-                "type_checker/type/instances/03b_member_substitute",
+                "type_checker/types/aggregates/publish_substituted_member_types",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -5165,7 +5165,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/04a_struct_init_clear",
+        "type_checker/types/aggregates/clear_struct_init_expectations",
         reflected_bindings![
             "struct_init_field_context_instance" => struct_init_field_context_instance: Write,
             "struct_init_field_expected_ref_tag" => struct_init_field_expected_ref_tag: Write,
@@ -5182,7 +5182,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04a2_struct_init_contexts",
+                "type_checker/types/aggregates/project_struct_init_contexts",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -5190,7 +5190,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04a3_nested_struct_contexts",
+                "type_checker/types/aggregates/propagate_nested_struct_contexts",
                 application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
@@ -5212,7 +5212,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04_struct_init_fields",
+                "type_checker/types/aggregates/project_struct_init_fields",
                 &[],
             )?;
             graph.add_pass(PassDesc {
@@ -5282,13 +5282,13 @@ fn build_graph(
             })?;
             graph.assign_kernel(
                 SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS,
-                "type_checker/semantic/artifact/01a_struct_literal_refs",
+                "type_checker/semantics/project_checked_struct_literal_references",
             )?;
             graph.require_complete_reflection(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)?;
-            super::match_passes::register_field_expected_ids_pass(
+            super::struct_literal_field_types::register_field_expected_ids_pass(
                 graph,
                 kernels,
-                super::match_passes::FIELD_EXPECTED_IDS_EARLY_PASS,
+                super::struct_literal_field_types::FIELD_EXPECTED_IDS_EARLY_PASS,
             )?;
             Ok(())
         };
@@ -5297,7 +5297,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/visible/01/clear/resident",
+        "type_checker/visibility/clear_resident_visibility",
         reflected_bindings![
             "visible_decl" => visible_decl: Write,
             "visible_type" => visible_type: Write,
@@ -5312,7 +5312,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/count/dispatch_args",
+        "type_checker/conditions/write_count_dispatch_args",
         reflected_bindings![
             "count_in" => compact_match_payload_row_count,
             "dispatch_args" => match_payload_dispatch_args: Write,
@@ -5362,10 +5362,10 @@ fn build_graph(
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
     // Canonical identities of the declared rows, in recording order: after
     // the decl refs and ahead of the closed application index.
-    super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
+    super::canonicalization::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
     super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
-    super::match_passes::register_match_storage(&mut graph, token_rows)?;
+    super::struct_literal_field_types::register_match_storage(&mut graph, token_rows)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(
@@ -5373,7 +5373,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -5397,7 +5397,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -5425,7 +5425,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03a_member_receivers",
+        "type_checker/types/aggregates/seed_member_receivers",
         member_receiver_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5433,7 +5433,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03_member_results",
+        "type_checker/types/aggregates/project_member_field_results",
         application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5441,7 +5441,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/03b_member_substitute",
+        "type_checker/types/aggregates/publish_substituted_member_types",
         &[],
     )?;
     // Bound predicates, their owner chains and member contracts are needed by
@@ -5471,7 +5471,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00_clear_bound_arg_facts",
+        "type_checker/predicates/clear_bound_arg_facts",
         predicate_clear_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5479,7 +5479,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00b_collect_bound_arg_facts",
+        "type_checker/predicates/collect_bound_arg_facts",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5487,7 +5487,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/00c_collect_method_contracts",
+        "type_checker/predicates/collect_method_contracts",
         reflected_bindings![
             "predicate_method_contract_owner_hir" => predicate_method_contract_owner_hir: Write,
             "predicate_method_contract_name_token" => predicate_method_contract_name_token: Write,
@@ -5505,7 +5505,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/01_collect",
+        "type_checker/predicates/collect_generic_bound_predicates",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5513,7 +5513,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/predicates/01a_validate_bound_args",
+        "type_checker/predicates/validate_bound_args",
         &[],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5521,7 +5521,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/scope/hir",
+        "type_checker/visibility/publish_hir_scope_types",
         &[],
     )?;
     CALLS_RESOLVE.register_kernel(&mut graph, kernels)?;
@@ -5670,11 +5670,11 @@ fn build_graph(
     for (name, kernel) in [
         (
             CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
-            "type_checker/type/instances/02b_clear_application_index",
+            "type_checker/types/instances/clear_type_application_index",
         ),
         (
             CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
         ),
     ] {
         graph.add_kernel_pass_by_name(
@@ -5959,7 +5959,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -5988,25 +5988,25 @@ fn build_graph(
     for (name, kernel, domain, bindings) in [
         (
             CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
-            "type_checker/calls/03d_bind_method_receiver_environment",
+            "type_checker/calls/claims/bind_method_receiver_environment",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
-            "type_checker/calls/03k_project_argument_contexts",
+            "type_checker/calls/arguments/project_argument_contexts",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_MATERIALIZE_RETURN_TYPES_PASS,
-            "type_checker/calls/03e_materialize_return_types",
+            "type_checker/calls/results/materialize_return_types",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
-            "type_checker/calls/03k2_materialize_match_payloads",
+            "type_checker/calls/results/materialize_match_payloads",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
@@ -6024,49 +6024,49 @@ fn build_graph(
         ),
         (
             TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
-            "type_checker/type/instances/03a_member_receivers",
+            "type_checker/types/aggregates/seed_member_receivers",
             ResourceDomain::HirNodes,
             member_receiver_overrides,
         ),
         (
             TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
-            "type_checker/type/instances/03_member_results",
+            "type_checker/types/aggregates/project_member_field_results",
             ResourceDomain::HirNodes,
             application_bindings,
         ),
         (
             TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
-            "type_checker/type/instances/03b_member_substitute",
+            "type_checker/types/aggregates/publish_substituted_member_types",
             ResourceDomain::Tokens,
             &[][..],
         ),
         (
             MATCH_PAYLOADS_TYPE_INFERENCE.name,
-            "type_checker/modules/10m2_type_match_payloads",
+            "type_checker/matches/type_match_payloads",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             MATCH_EXPRS_TYPE_INFERENCE.name,
-            "type_checker/modules/10n_type_match_exprs",
+            "type_checker/matches/type_match_exprs",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
-            "type_checker/calls/03k1_project_literal_contexts",
+            "type_checker/calls/results/project_literal_contexts",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_PROJECT_EXPRESSION_TYPES_PASS,
-            "type_checker/calls/03g_project_expression_types",
+            "type_checker/calls/results/project_expression_types",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
-            "type_checker/calls/03h_project_array_literal_elements",
+            "type_checker/calls/results/project_array_literal_elements",
             ResourceDomain::HirNodes,
             reflected_bindings![
                 "array_literal_element_ref_tag" => _array_literal_element_ref_tag: Write,
@@ -6075,19 +6075,19 @@ fn build_graph(
         ),
         (
             CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
-            "type_checker/calls/03i_materialize_array_literals",
+            "type_checker/calls/results/materialize_array_literals",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_VALIDATE_ARRAY_LITERALS_PASS,
-            "type_checker/calls/03j_validate_array_literals",
+            "type_checker/calls/results/validate_array_literals",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_INFER_RETURN_BINDINGS_PASS,
-            "type_checker/calls/03f_infer_return_bindings",
+            "type_checker/calls/inference/infer_return_bindings",
             ResourceDomain::HirNodes,
             &[][..],
         ),
@@ -6121,7 +6121,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/calls/03k3_project_record_contexts",
+                "type_checker/calls/results/project_record_contexts",
                 reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
             )?;
             graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "inference_hir_list_args")?;
@@ -6133,17 +6133,17 @@ fn build_graph(
             for (record_name, record_kernel, record_bindings) in [
                 (
                     CALLS_RECORD_NESTED_CONTEXTS_PASS,
-                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                    "type_checker/types/aggregates/propagate_nested_struct_contexts",
                     &application_bindings[..],
                 ),
                 (
                     CALLS_RECORD_IMPORTED_FIELDS_PASS,
-                    "type_checker/dependencies/16_project_struct_literals",
+                    "type_checker/dependencies/projections/project_dependency_struct_literals",
                     reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
                 ),
                 (
                     CALLS_RECORD_FIELDS_AND_REFS_PASS,
-                    "type_checker/calls/03k4_record_fields_and_refs",
+                    "type_checker/calls/results/project_record_field_expectations_and_references",
                     &[][..],
                 ),
             ] {
@@ -6166,10 +6166,10 @@ fn build_graph(
                     },
                 )?;
             }
-            super::match_passes::register_field_expected_ids_pass(
+            super::struct_literal_field_types::register_field_expected_ids_pass(
                 &mut graph,
                 kernels,
-                super::match_passes::FIELD_EXPECTED_IDS_INFERENCE_PASS,
+                super::struct_literal_field_types::FIELD_EXPECTED_IDS_INFERENCE_PASS,
             )?;
         }
         graph.add_kernel_pass_by_name(
@@ -6248,7 +6248,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03a_member_receivers",
+        "type_checker/types/aggregates/seed_member_receivers",
         member_receiver_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -6256,7 +6256,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03_member_results",
+        "type_checker/types/aggregates/project_member_field_results",
         application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
@@ -6264,7 +6264,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/03b_member_substitute",
+        "type_checker/types/aggregates/publish_substituted_member_types",
         &[],
     )?;
     // Struct-literal field contexts are substituted before array literals
@@ -6275,7 +6275,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/04b_struct_init_substitute",
+        "type_checker/types/aggregates/substitute_struct_init_field_types",
         application_bindings,
     )?;
     TYPE_INSTANCES_ARRAY_RETURN_REFS.register_kernel(&mut graph, kernels)?;
@@ -6288,7 +6288,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/08_validate_aggregate_access",
+        "type_checker/types/aggregates/validate_aggregate_access",
         &[],
     )?;
     {
@@ -6297,7 +6297,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01_collect_impls",
+            "type_checker/predicates/collect_implementation_headers",
             reflected_bindings![
                 "predicate_impl_lookup_next" => predicate_impl_lookup_next: Write,
             ],
@@ -6307,7 +6307,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f_emit_method_validation_rows",
+            "type_checker/predicates/emit_method_validation_rows",
             reflected_bindings![
                 "predicate_method_validation_owner_node" => predicate_method_validation_owner_node: Write,
                 "predicate_method_validation_peer_node" => predicate_method_validation_peer_node: Write,
@@ -6319,7 +6319,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f1_emit_method_param_validation_rows",
+            "type_checker/predicates/emit_method_param_validation_rows",
             &[],
         )?;
         add_dependency_type_index_passes(
@@ -6333,7 +6333,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01f2_validate_imported_methods",
+            "type_checker/predicates/validate_imported_methods",
             reflected_bindings![
                 "canonical_type_roots" => dependency_canonical_type_roots: Read,
             ],
@@ -6343,7 +6343,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/01g_reduce_method_validation_errors",
+            "type_checker/predicates/reduce_method_validation_errors",
             &[],
         )?;
         graph.add_buffer_clear_pass(
@@ -6357,7 +6357,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/02a_count_obligations",
+            "type_checker/predicates/count_predicate_obligations",
             reflected_bindings![
                 "predicate_obligation_count_by_call" => predicate_obligation_count_by_call: Write,
             ],
@@ -6375,7 +6375,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::DispatchArguments,
             kernels,
-            "type_checker/count/dispatch_args",
+            "type_checker/conditions/write_count_dispatch_args",
             reflected_bindings![
                 "count_in" => predicate_obligation_pair_total,
                 "dispatch_args" => predicate_obligation_pair_dispatch_args: Write,
@@ -6386,7 +6386,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/predicates/02b_validate_obligations",
+            "type_checker/predicates/validate_predicate_obligations",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -6449,7 +6449,7 @@ fn build_graph(
         graph.add_indirect_dispatch(pass, "token_active_dispatch_args")?;
     }
     ReturnValidationOperation::register(&mut graph, kernels)?;
-    super::match_passes::register_validation_call_env_pass(&mut graph, kernels)?;
+    super::struct_literal_field_types::register_validation_call_env_pass(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -6469,7 +6469,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08_validate_call_args",
+        "type_checker/dependencies/projections/validate_dependency_call_arguments",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
         ],
@@ -6479,7 +6479,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -6492,7 +6492,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -6512,7 +6512,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/calls/04_backend_targets",
+        "type_checker/calls/project_backend_call_targets",
         reflected_bindings![
             "call_dependency_library_id" => _call_dependency_library_id: Read,
             "backend_call_fn_index" => backend_call_fn_index: Write,
@@ -6521,8 +6521,8 @@ fn build_graph(
     // The instance closure of an original job reads the checked call
     // environments and realizes its instances' arguments as checked rows. It
     // precedes the body passes: they bind in place the functions it selects
-    // (closure/inplace_read.slang).
-    super::instance_closure_passes::register_instance_closure_passes(
+    // (inplace_instance_lookup.slang).
+    super::closure::register_instance_closure_passes(
         &mut graph,
         kernels,
         hir_rows,
@@ -6540,7 +6540,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/00f_apply_body_specialization",
+        "type_checker/types/specialization/apply_body_specialization",
         &[],
     )?;
     for &(name, tag_column, payload_column, _) in BODY_REFERENCE_SPECIALIZATION_PASSES {
@@ -6565,12 +6565,12 @@ fn build_graph(
     for (name, kernel, domain) in [
         (
             "type_check.body_specialization.aggregates",
-            "type_checker/type/instances/01d_collect_aggregate_details",
+            "type_checker/types/instances/collect_aggregate_details",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.constants",
-            "type_checker/type/instances/00g_apply_body_constants",
+            "type_checker/types/specialization/apply_body_constants",
             ResourceDomain::Types,
         ),
         (
@@ -6580,32 +6580,32 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.arguments",
-            "type_checker/type/instances/01e_collect_named_arg_refs",
+            "type_checker/types/instances/collect_named_arg_refs",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.declarations",
-            "type_checker/type/instances/01f_decl_refs",
+            "type_checker/types/instances/project_declaration_type_references",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.bindings",
-            "type_checker/type/instances/01f_decl_refs",
+            "type_checker/types/instances/project_declaration_type_references",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.clear_application_index",
-            "type_checker/type/instances/02b_clear_application_index",
+            "type_checker/types/instances/clear_type_application_index",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.index_applications",
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.index_generated_applications",
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
@@ -6615,69 +6615,69 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.member_receivers",
-            "type_checker/type/instances/03a_member_receivers",
+            "type_checker/types/aggregates/seed_member_receivers",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.member_results",
-            "type_checker/type/instances/03_member_results",
+            "type_checker/types/aggregates/project_member_field_results",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.member_substitute",
-            "type_checker/type/instances/03b_member_substitute",
+            "type_checker/types/aggregates/publish_substituted_member_types",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.literal_contexts",
-            "type_checker/type/instances/04a2_struct_init_contexts",
+            "type_checker/types/aggregates/project_struct_init_contexts",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.nested_literal_contexts",
-            "type_checker/type/instances/04a3_nested_struct_contexts",
+            "type_checker/types/aggregates/propagate_nested_struct_contexts",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.literal_fields",
-            "type_checker/type/instances/04_struct_init_fields",
+            "type_checker/types/aggregates/project_struct_init_fields",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.literal_substitute",
-            "type_checker/type/instances/04b_struct_init_substitute",
+            "type_checker/types/aggregates/substitute_struct_init_field_types",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.array_literal_refs",
-            "type_checker/type/instances/05b_array_literal_return_refs",
+            "type_checker/types/aggregates/project_array_literal_return_references",
             ResourceDomain::HirNodes,
         ),
         // The replay rewrote rows and constants the early canonical stage
         // interned: re-arm them, so the match passes intern what they read.
         (
             BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
-            super::canonical_passes::CANONICAL_REARM_KERNEL,
+            super::canonicalization::CANONICAL_REARM_KERNEL,
             ResourceDomain::Types,
         ),
         (
             "type_check.body_specialization.payloads",
-            "type_checker/modules/10m2_type_match_payloads",
+            "type_checker/matches/type_match_payloads",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.matches",
-            "type_checker/modules/10n_type_match_exprs",
+            "type_checker/matches/type_match_exprs",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.bound_members",
-            "type_checker/methods/09_route_bound_members",
+            "type_checker/methods/route_bound_method_members",
             ResourceDomain::HirNodes,
         ),
     ] {
         if name == BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
-            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 1)?;
+            super::closure::register_inplace_rearm_pass(&mut graph, kernels, 1)?;
         }
         graph.add_kernel_pass_by_name(
             name,
@@ -6687,11 +6687,11 @@ fn build_graph(
             kernel,
             if kernel == IMPORTED_FIELDS_KERNEL {
                 imported_field_ct_overrides
-            } else if kernel == "type_checker/type/instances/03a_member_receivers" {
+            } else if kernel == "type_checker/types/aggregates/seed_member_receivers" {
                 member_receiver_overrides
-            } else if kernel == "type_checker/type/instances/03_member_results"
-                || kernel == "type_checker/type/instances/04a3_nested_struct_contexts"
-                || kernel == "type_checker/type/instances/04b_struct_init_substitute"
+            } else if kernel == "type_checker/types/aggregates/project_member_field_results"
+                || kernel == "type_checker/types/aggregates/propagate_nested_struct_contexts"
+                || kernel == "type_checker/types/aggregates/substitute_struct_init_field_types"
             {
                 // Field types under a receiver application are realized.
                 application_bindings
@@ -6700,8 +6700,8 @@ fn build_graph(
             },
         )?;
         if name == BODY_CANONICAL_AFTER_PASS {
-            super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
-            super::canonical_passes::register_canonical_body_passes(&mut graph, kernels)?;
+            super::closure::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
+            super::canonicalization::register_canonical_body_passes(&mut graph, kernels)?;
             super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
         }
         if name == BODY_FIELD_CLOSURE_AFTER_PASS {
@@ -6720,7 +6720,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00_calls",
+        "type_checker/semantics/project_semantic_call_facts",
         reflected_bindings![
             "call_fn_index" => _call_fn_index: Read,
             "backend_call_fn_index" => backend_call_fn_index: Read,
@@ -6756,13 +6756,13 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00c_generic_call_results",
+        "type_checker/semantics/project_generic_call_results",
         &[],
     )?;
-    super::instance_closure_passes::register_inplace_guard_pass(&mut graph, kernels)?;
-    super::instance_closure_passes::register_solver_demand_pass(&mut graph, kernels)?;
-    super::instance_closure_passes::register_inplace_rearm_pass(&mut graph, kernels, 2)?;
-    super::canonical_passes::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
+    super::closure::register_inplace_guard_pass(&mut graph, kernels)?;
+    super::closure::register_solver_demand_pass(&mut graph, kernels)?;
+    super::closure::register_inplace_rearm_pass(&mut graph, kernels, 2)?;
+    super::canonicalization::register_canonical_late_passes(&mut graph, kernels, type_rows)?;
     // Rows the inference rounds created are interned only by the late stage;
     // seed their IDs' rows before the layout and projection passes read them.
     graph.add_kernel_pass_by_name(
@@ -6784,7 +6784,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/semantic/artifact/01c_generic_native_words",
+        "type_checker/semantics/project_generic_native_word_counts",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "type_native_word_count" => _type_native_word_count: Write,
@@ -6796,7 +6796,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/01d_member_layout",
+        "type_checker/semantics/publish_checked_member_layouts",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "semantic_member_field_word_offset_by_hir" => semantic_member_field_word_offset_by_hir: Write,
@@ -6814,7 +6814,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00_project",
+        "type_checker/semantics/project_checked_semantic_artifact",
         reflected_bindings![
             "path_id_by_owner_hir" => _path_id_by_owner_hir: Read,
             "resolved_dependency_value_metadata" => resolved_dependency_value_metadata: Read,
@@ -6851,7 +6851,7 @@ fn build_graph(
     )?;
     // The instance table (D2) realizes the closure's instances' rows from
     // the final expression references.
-    super::instance_closure_passes::register_instance_table_passes(
+    super::closure::register_instance_table_passes(
         &mut graph,
         kernels,
         hir_rows,
@@ -6872,7 +6872,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00a_local_const_literals",
+        "type_checker/semantics/fold_local_constant_literals",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
@@ -6887,7 +6887,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00a1_local_const_fold_round",
+        "type_checker/semantics/write_constant_fold_round_args",
         reflected_bindings![
             "local_const_fold_state" => local_const_fold_state: ReadWrite,
             "local_const_fold_dispatch_args" => local_const_fold_dispatch_args: Write,
@@ -6898,7 +6898,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00b_local_const_references",
+        "type_checker/semantics/resolve_local_constant_references",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_expr_scalar_type" => final_scalar: Read,
@@ -6920,7 +6920,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/semantic/artifact/00b2_local_const_fold_publish",
+        "type_checker/semantics/publish_local_constant_values",
         reflected_bindings![
             "compact_hir_expr_parent" => _compact_hir_expr_parent: Read,
             "compact_hir_nearest_fn" => _compact_hir_nearest_fn: Read,
@@ -6941,7 +6941,7 @@ fn build_graph(
     // The table's selected instances become execution rows lowering reads
     // like the job's own (closure/instance_exec.slang), once every checked
     // fact of their templates is final.
-    super::instance_closure_passes::register_instance_exec_passes(
+    super::closure::register_instance_exec_passes(
         &mut graph,
         kernels,
         hir_rows,
@@ -7302,7 +7302,7 @@ mod tests {
                     .pass_id(VISIBLE_RADIX_SORT.passes.order_to_temporary.histogram)
                     .unwrap(),
             ),
-            Some("type_checker/visible/03e_sort_hir_decl_keys"),
+            Some("type_checker/visibility/sort_hir_decl_keys"),
         );
         assert!(
             graph.repeated_regions().len() >= 4,

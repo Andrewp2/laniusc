@@ -308,11 +308,11 @@ impl GpuTypeChecker {
         resources.buffer("gReferenceExtent", &reference_extent_all);
         resources.buffer("gExplicitOperandParams", &self.params_buf);
         // Dependency kernels with their own gParams layout read this job's
-        // lookup capacities here (dependencies/15b).
+        // lookup capacities here (offer_dependency_bound_members).
         resources.buffer("gTypeCheckParams", &self.params_buf);
         resources.buffer("gConstantStoragePlan", &constant_storage_plan);
         resources.buffer(
-            instance_closure_passes::CLOSURE_SUMMARY_INPUTS,
+            crate::type_checker::closure::CLOSURE_SUMMARY_INPUTS,
             &self.closure_summary_inputs,
         );
         resources.buffer("token_words", token_buf);
@@ -637,7 +637,7 @@ impl GpuTypeChecker {
             &typecheck_graph,
             &resources,
             compiler_graph::SCOPE_HIR_PASS,
-            &passes.kernel("type_checker/scope/hir"),
+            &passes.kernel("type_checker/visibility/publish_hir_scope_types"),
             &token_active_dispatch_args,
         )?;
         let if_depth_bind_groups = create_if_depth_bind_groups(

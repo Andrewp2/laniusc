@@ -9,8 +9,10 @@
 //! slot form, where every parameter of the caller is the dependency slot leaf
 //! of its composed binding slot. A dependent job uploads the summaries of its
 //! dependencies, interns their environment nodes, seeds closure roots from
-//! its own closed calls into them and expands through their edges on the GPU
-//! (closure/00b, 01b and 03b), so their instances join its first replay
+//! its own closed calls into them and expands through their edges on the GPU.
+//! The passes are `import_dependency_closure_summaries`,
+//! `mark_dependency_closure_roots` and `expand_dependency_closure`. Their
+//! instances join the dependent job's first replay
 //! round as kind-2 closure origins admitted in that job.
 //!
 //! The summary is built from the unit's already-decoded retained facts
@@ -45,7 +47,7 @@ const INVALID: u32 = u32::MAX;
 /// HIR row + 1, which never has the high bit).
 pub(crate) const SUMMARY_TAG: u32 = 0x8000_0000;
 
-/// Node kinds (closure/summary.slang). They mirror the dependency page's
+/// Node kinds (dependency_closure_summary.slang). They mirror the dependency page's
 /// type node kinds where one exists, with the slot leaves immediate.
 pub(crate) const NODE_SCALAR: u32 = 1; // w0 = scalar code
 pub(crate) const NODE_TYPE_SLOT: u32 = 2; // w0 = composed type slot
@@ -60,7 +62,7 @@ pub(crate) const NODE_PROJECTION: u32 = 10; // w0 = target scalar, w1 = child pa
 /// Function row flag: the function has a call the summary cannot spell.
 pub(crate) const SUMMARY_FN_INCOMPLETE: u32 = 1;
 
-/// A node interns in the round after its children (00b_import_summary): a
+/// A node interns in the round after its children (import_dependency_closure_summaries): a
 /// node deeper than this is left out with every edge that names it.
 pub(crate) const SUMMARY_IMPORT_ROUNDS: u32 = 8;
 /// Operands of one named node (canonical_dependency's NOMINAL_LIMIT).

@@ -14,11 +14,11 @@
 // the virtual function has no generic parameters, its own source tokens and
 // therefore its own function, local, place, temporary and schedule identity.
 //
-// Kernels: 08_exec_select (one lane per table entry: eligibility and block
-// sizes), 08a_exec_members (one lane per table row: member layouts under a
-// changed receiver and realized nominal declarations), 08b_exec_layout (one
-// lane: bases and counts), 09_exec_rows (one lane per virtual row),
-// 09b_exec_tables (one lane per virtual side-table slot), 09c_exec_counts
+// Kernels: select_instance_execution_rows (one lane per table entry: eligibility and block
+// sizes), derive_instance_execution_members (one lane per table row: member layouts under a
+// changed receiver and realized nominal declarations), assign_instance_execution_row_offsets (one
+// lane: bases and counts), publish_instance_execution_rows (one lane per virtual row),
+// publish_instance_execution_tables (one lane per virtual side-table slot), publish_instance_execution_counts
 // (one lane, every job: the lowering's row counts).
 import type_checker.closure.instance_table;
 
@@ -28,7 +28,7 @@ public RWStructuredBuffer<uint> instance_exec_counts;
 public RWStructuredBuffer<uint4> instance_exec_entries;
 // Selected table entries in execution order (ascending virtual rows).
 public RWStructuredBuffer<uint> instance_exec_list;
-// Per instance table row (08a_exec_members): x and y are a member row's
+// Per instance table row (derive_instance_execution_members): x and y are a member row's
 // word offset and word count under its realized receiver when the
 // environment changes the receiver, INVALID otherwise; z is the declaration
 // token of a nominal scalar the environment realizes, INVALID otherwise.

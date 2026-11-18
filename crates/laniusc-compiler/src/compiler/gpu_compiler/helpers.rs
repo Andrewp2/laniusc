@@ -9,7 +9,7 @@ pub(super) fn trace_wasm_compile(stage: &str) {
 
 /// A type-mismatch detail flag: an argument's array length does not fit the
 /// scalar (the low bits) of the constant parameter it binds
-/// (calls/03a1_emit_generic_claims.slang).
+/// (emit_generic_claims.slang).
 pub(super) const ASSIGN_MISMATCH_COUNT_FIT: u32 = 0x4000_0000;
 
 /// The declared scalar of a count-fit mismatch detail.

@@ -10864,7 +10864,7 @@ fn qualified_enum_variants_reject_ambiguous_and_unrelated_names() {
             }).expect_err("ambiguous names and unrelated enum families must not emit code");
             let diagnostic = error.to_public_diagnostic();
             // `A::Absent()` names no associated item of `A`, which is a call
-            // resolution failure (conditions/compact_calls.slang).
+            // resolution failure (diagnose_unresolved_calls.slang).
             assert!(matches!(diagnostic.code.as_str(), "LNC0005" | "LNC0006" | "LNC0027" | "LNC0042"), "{expression}, imported={imported}: {error:?}");
             assert!(diagnostic.primary_label.is_some(), "{error:?}");
         }
@@ -11276,7 +11276,7 @@ fn main() -> i32 { return go(21); }
 fn generic_bound_member_calls_route_to_generic_implementations() {
     // Replay routes the member to the implementation the instance's evidence
     // selected, and binds that implementation's own parameter from the
-    // subject (methods/09_route_bound_members).
+    // subject (route_bound_method_members).
     execute_with_status("generic implementation", r#"
 trait Read { fn read(&self) -> i32; }
 struct Box<U> { v: U, n: i32 }

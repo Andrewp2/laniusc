@@ -1,7 +1,7 @@
-// Word offsets of inference_block_tables (03m0_inference_ranges.slang).
-//   [0] functions listed, [1] workgroups of 03m1 that finished the round's
+// Word offsets of inference_block_tables (type_checker/calls/inference/list_inference_ranges.slang).
+//   [0] functions listed, [1] workgroups of list_inference_blocks that finished the round's
 //   list, [2] HIR blocks listed so far, [3] token blocks listed so far,
-//   [4] workgroups of 03m1, [5] always-active HIR blocks, [6] always-active
+//   [4] workgroups of list_inference_blocks, [5] always-active HIR blocks, [6] always-active
 //   token blocks, [7] unused;
 //   from 8, four words per stamp row g (inference_activity.slang): the
 //   largest ~row and the largest row + 1 of g's HIR rows, then the same for

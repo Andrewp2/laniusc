@@ -9,8 +9,8 @@
 //
 // The word is never a scalar identity (scalar_is_integer/float are false
 // for it), so readers that need a scalar see no context. The literal's row
-// takes the parameter reference (01e_operator_refs), each instance realizes
-// it (instance table), and closure/06c checks the literal's kind, range and
+// takes the parameter reference (project_checked_operator_references), each instance realizes
+// it (instance table), and validate_instance_table_operands checks the literal's kind, range and
 // float status against that instance's scalar. The template has no type for
 // the literal, so the template checks do not apply one.
 import primitive_types;

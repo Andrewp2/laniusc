@@ -2,7 +2,7 @@
 //
 // The exporter encodes every payload word by its class, and a consumer
 // decodes and validates the word by the same class. The classes mirror the
-// compact HIR writers (closure/09_exec_rows.slang payload_of): a payload
+// compact HIR writers (publish_instance_execution_rows.slang payload_of): a payload
 // word is a body row, a body token, a statement/expression context, an
 // index into one of the body's side tables, or a plain value (an item kind,
 // an operator form, literal words).

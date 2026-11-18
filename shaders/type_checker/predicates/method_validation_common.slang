@@ -348,7 +348,7 @@ struct TraitMethodContractGraph : IScopedTypeGraph
     {
         uint root = valid_hir(environment) ? compact_hir_payload[environment].b : INVALID;
         // The trait's `Self` is the slot after its declared type parameters
-        // (type/instances/00e); the impl's subject type binds it.
+        // (resolve_generic_parameter_use_slots); the impl's subject type binds it.
         uint type_node = valid_hir(root) && slot == type_arg_count(root)
             ? compact_hir_payload[environment].c
             : type_arg_for_slot(root, slot);

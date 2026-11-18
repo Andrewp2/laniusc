@@ -15,7 +15,7 @@
 //! reflection. Bindings that are not kept move after the kept ones, so no two
 //! variables share a number. The numbering must stay dense: NVIDIA 615.71
 //! crashes compiling a large kernel whose layout leaves five or more binding
-//! numbers unused (`type_checker/calls/03d_bind_method_receiver_environment`
+//! numbers unused (`type_checker/calls/claims/bind_method_receiver_environment`
 //! with 95 of its 104 bindings).
 //!
 //! SPIR-V 1.3 entry points list only their input and output variables, so a

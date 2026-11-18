@@ -1,7 +1,7 @@
 // Operand rules of operators, conditions and indexing, over checked scalar
 // type codes. One definition serves the template rows
-// (conditions/compact_expr) and each instance of a generic body
-// (closure/06c_table_operands), so both report the same LNC0006 for the
+// (validate_expression_conditions) and each instance of a generic body
+// (validate_instance_table_operands), so both report the same LNC0006 for the
 // same operand type. TY_UNKNOWN passes every rule: it is an operand whose
 // type is not resolved here (a type parameter in a template, or a type
 // another pass checks), never a resolved type that is not a scalar. A

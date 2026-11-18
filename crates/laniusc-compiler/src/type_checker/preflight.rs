@@ -77,7 +77,7 @@ impl TypeCheckPreflightGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 passes,
-                "type_checker/modules/00a_count_record_candidates",
+                "type_checker/modules/records/count_record_candidates",
                 &[],
             )
             .map_err(anyhow::Error::msg)?;
@@ -175,8 +175,8 @@ impl GpuTypeChecker {
             dependency_interfaces_present: 0,
             retain_callable_owners: 0,
             trait_obligation_mode: 0,
-            canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
-            canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
+            canonical_library_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
+            canonical_unit_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
             workspace_token_rows: token_capacity,
         };
         self.params_buf.write(queue, 0, &type_check_params_bytes(&params));
@@ -223,7 +223,7 @@ impl GpuTypeChecker {
             PREFLIGHT_COUNT_PASS,
             &self
                 .passes
-                .kernel("type_checker/modules/00a_count_record_candidates"),
+                .kernel("type_checker/modules/records/count_record_candidates"),
             parse_bufs.tree_capacity,
         )?;
         clear.record(encoder);

@@ -23,7 +23,7 @@ public StructuredBuffer<uint> call_const_claim_lookup_next;
 public StructuredBuffer<uint4> call_const_env_binding;
 public static const uint CALL_CONST_ENV_ACCEPTED = 0x80000000u;
 
-// 03a3b_publish_call_environment validates each complete (callee, slot)
+// publish_call_environment validates each complete (callee, slot)
 // argument relation once per claim index and stores the outcome at the
 // group's first chain row. Readers find that row and load it; they never
 // inspect or compare claim descriptors again.

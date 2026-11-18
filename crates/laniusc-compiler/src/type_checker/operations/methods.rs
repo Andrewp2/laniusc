@@ -31,35 +31,35 @@ const METHOD_CLEAR_OUTPUTS: &[(&str, AccessMode)] = &[
 ];
 
 pub(in crate::type_checker) const METHODS_CLEAR: ReflectedComputeSpec =
-    method_pass!("clear", Tokens, "type_checker/methods/01_clear")
+    method_pass!("clear", Tokens, "type_checker/methods/clear_method_metadata")
         .with_modes(METHOD_CLEAR_OUTPUTS)
         .with_indirect_dispatch("token_active_dispatch_args");
 pub(in crate::type_checker) const METHODS_COLLECT: ReflectedComputeSpec =
-    method_pass!("collect", Declarations, "type_checker/methods/02_collect")
+    method_pass!("collect", Declarations, "type_checker/methods/collect_implemented_methods")
         .with_indirect_dispatch("method_compact_dispatch_args");
 pub(in crate::type_checker) const METHODS_ATTACH_METADATA: ReflectedComputeSpec = method_pass!(
     "attach_metadata",
     Declarations,
-    "type_checker/methods/02b_attach_metadata"
+    "type_checker/methods/attach_method_metadata"
 )
 .with_indirect_dispatch("method_compact_dispatch_args");
 pub(in crate::type_checker) const METHODS_BIND_SELF_RECEIVERS: ReflectedComputeSpec = method_pass!(
     "bind_self_receivers",
     HirNodes,
-    "type_checker/methods/02c_bind_self_receivers"
+    "type_checker/methods/bind_self_receivers"
 )
 .with_indirect_dispatch("method_hir_dispatch_args");
 pub(in crate::type_checker) const METHODS_LOOKUP_CLEAR: ReflectedComputeSpec = method_pass!(
     "lookup.clear",
     Declarations,
-    "type_checker/methods/03_clear_lookup"
+    "type_checker/methods/clear_method_lookup"
 )
 .initializer()
 .with_indirect_dispatch("method_compact_dispatch_args");
 pub(in crate::type_checker) const METHODS_LOOKUP_BUILD: ReflectedComputeSpec = method_pass!(
     "lookup.build",
     Declarations,
-    "type_checker/methods/03_build_lookup"
+    "type_checker/methods/build_method_lookup"
 )
 .with_modes(&[
     ("method_lookup_head", AccessMode::ReadWrite),
@@ -69,7 +69,7 @@ pub(in crate::type_checker) const METHODS_LOOKUP_BUILD: ReflectedComputeSpec = m
 pub(in crate::type_checker) const METHODS_VALIDATE_KEYS: ReflectedComputeSpec = method_pass!(
     "lookup.validate",
     Declarations,
-    "type_checker/methods/05_validate_keys"
+    "type_checker/methods/validate_method_keys"
 )
 .with_modes(&[
     ("method_key_status", AccessMode::Write),
@@ -80,7 +80,7 @@ pub(in crate::type_checker) const METHODS_VALIDATE_KEYS: ReflectedComputeSpec = 
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS: ReflectedComputeSpec = method_pass!(
     "mark_call_keys",
     HirNodes,
-    "type_checker/methods/06_mark_call_keys"
+    "type_checker/methods/mark_method_call_keys"
 )
 .with_name("type_check.methods.mark_call_keys.direct")
 .with_indirect_dispatch("method_token_hir_dispatch_args");
@@ -97,18 +97,18 @@ pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_CONDITION_FINALIZATION:
 const MARK_CALL_RETURN_KEYS: ReflectedComputeSpec = method_pass!(
     "mark_call_return_keys",
     HirNodes,
-    "type_checker/methods/06b_mark_call_return_keys"
+    "type_checker/methods/mark_method_keys_for_call_result_receivers"
 )
 .with_indirect_dispatch("method_hir_dispatch_args");
 const FINALIZE_CANDIDATES: ReflectedComputeSpec =
-    method_pass!("finalize_candidates", Calls, "type_checker/methods/08_finalize_candidates")
+    method_pass!("finalize_candidates", Calls, "type_checker/methods/finalize_method_candidates")
         .with_indirect_dispatch("method_token_dispatch_args");
 // Each transaction's lane first resets the token's record, after source
 // producers; the reset preserves the accepted result and selection ownership
 // (only the per-job clear initializes ownership). The lane then only
 // contributes local candidates; finalization publishes.
 const RESOLVE_TABLE: ReflectedComputeSpec =
-    method_pass!("resolve_table", Calls, "type_checker/methods/07_resolve_table")
+    method_pass!("resolve_table", Calls, "type_checker/methods/collect_local_method_candidates")
         .with_indirect_dispatch("method_token_dispatch_args");
 // Required members reached through a lexical `P: Trait` bound compete in the
 // same transaction, after local table candidates and before dependency pages.
@@ -116,12 +116,12 @@ const RESOLVE_TABLE: ReflectedComputeSpec =
 const OFFER_BOUND_MEMBERS: ReflectedComputeSpec = method_pass!(
     "offer_bound_members",
     HirNodes,
-    "type_checker/methods/07a_offer_bound_members"
+    "type_checker/methods/offer_bound_method_members"
 )
 .with_indirect_dispatch("method_hir_dispatch_args");
 
 // The eight preliminary lookup sweeps dispatch from one gated copy of the
-// method grids (see methods/08b_arm_lookup_sweeps): the method-token grid, the
+// method grids (see arm_method_lookup_sweeps): the method-token grid, the
 // method-HIR grid, the token-or-HIR grid and the active-HIR grid, in that
 // order, then the change count of the last sweep that changed a target.
 pub(in crate::type_checker) const METHOD_LOOKUP_DISPATCH_ARGS: &str = "method_lookup_dispatch_args";
@@ -133,13 +133,13 @@ pub(in crate::type_checker) const METHOD_LOOKUP_DISPATCH_ARGS_BYTES: u64 = 52;
 pub(in crate::type_checker) const METHODS_ARM_LOOKUP_SWEEPS: ReflectedComputeSpec = method_pass!(
     "lookup_sweeps.arm",
     DispatchArguments,
-    "type_checker/methods/08b_arm_lookup_sweeps"
+    "type_checker/methods/arm_method_lookup_sweeps"
 )
 .initializer();
 pub(in crate::type_checker) const METHODS_GATE_LOOKUP_SWEEP: ReflectedComputeSpec = method_pass!(
     "lookup_sweeps.gate",
     DispatchArguments,
-    "type_checker/methods/08c_gate_lookup_sweep"
+    "type_checker/methods/gate_method_lookup_sweep"
 );
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS: ReflectedComputeSpec =
     MARK_CALL_RETURN_KEYS.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
@@ -150,7 +150,7 @@ pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec =
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS: ReflectedComputeSpec =
     OFFER_BOUND_MEMBERS.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
-    method_pass!("resolve", HirNodes, "type_checker/methods/03/resolve")
+    method_pass!("resolve", HirNodes, "type_checker/methods/validate_and_publish_method_calls")
         .with_indirect_dispatch("method_token_hir_dispatch_args");
 
 // Method targets depend on inferred call results and unannotated bindings.

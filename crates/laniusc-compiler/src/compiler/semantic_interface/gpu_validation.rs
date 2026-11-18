@@ -20,17 +20,17 @@ use crate::gpu::{
 use super::GPU_SEMANTIC_INTERFACE_VERSION;
 
 const LABEL: &str = "type_check.interface.validate";
-const PLAN_SHADER: &str = "type_checker/interface/validate/00_plan";
+const PLAN_SHADER: &str = "type_checker/interface/validation/plan_interface_validation";
 /// The record kernels in dispatch order. Kernel `k` reads its indirect
 /// arguments at words `3k..3k + 3` of the arguments the plan wrote.
 const RECORD_SHADERS: [(&str, &str); 7] = [
-    ("type_checker/interface/validate/01_clear", "type_check.interface.validate.clear"),
-    ("type_checker/interface/validate/02_owners", "type_check.interface.validate.owners"),
-    ("type_checker/interface/validate/03_records", "type_check.interface.validate.records"),
-    ("type_checker/interface/validate/04_scopes", "type_check.interface.validate.scopes"),
-    ("type_checker/interface/validate/04a_implementation_rows", "type_check.interface.validate.implementation_rows"),
-    ("type_checker/interface/validate/05_implementations", "type_check.interface.validate.implementations"),
-    ("type_checker/interface/validate/06_predicates", "type_check.interface.validate.predicates"),
+    ("type_checker/interface/validation/clear_interface_validation_tables", "type_check.interface.validate.clear"),
+    ("type_checker/interface/validation/index_interface_owners", "type_check.interface.validate.owners"),
+    ("type_checker/interface/validation/validate_interface_records", "type_check.interface.validate.records"),
+    ("type_checker/interface/validation/validate_interface_scopes", "type_check.interface.validate.scopes"),
+    ("type_checker/interface/validation/validate_interface_implementation_rows", "type_check.interface.validate.implementation_rows"),
+    ("type_checker/interface/validation/validate_interface_implementations", "type_check.interface.validate.implementations"),
+    ("type_checker/interface/validation/validate_interface_predicates", "type_check.interface.validate.predicates"),
 ];
 const STATE_WORDS: usize = 40;
 const ARGS_WORDS: usize = 3 * RECORD_SHADERS.len();

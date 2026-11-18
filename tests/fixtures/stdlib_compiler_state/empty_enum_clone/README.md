@@ -69,7 +69,7 @@ review. The compiler owner implemented the repair. The original paths were:
   `plm_expand_nominal`, explicitly returned unsupported detail 177 for
   `tail.x == 0`. This occurs after recipe identity/owner/operand checks.
 - `CheckedConcreteValueLayout::leaf_words` in
-  `shaders/type_checker/semantic/artifact/01c_generic_native_words.slang` had no
+  `shaders/type_checker/semantics/project_generic_native_word_counts.slang` had no
   complete leaf case for a recognized empty enum. Its layout step and the
   shared `concrete_value_layout_walk.slang` reject zero groups as missing or
   unsupported layout. That rejection remains correct for unknown metadata.

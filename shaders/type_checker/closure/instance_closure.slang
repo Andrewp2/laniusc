@@ -3,25 +3,25 @@
 // instead of one frontend replay per instantiation depth:
 //
 // - edges: each call to a local generic body, linked under the generic
-//   function that contains it (01_mark);
+//   function that contains it (mark_instance_closure_roots_and_edges);
 // - roots: each such call in a nongeneric function whose environment is
-//   complete and closed, at depth 1 (01_mark);
+//   complete and closed, at depth 1 (mark_instance_closure_roots_and_edges);
 // - rounds: each frontier instance (F, E) substitutes E into the call
 //   environment of every edge of F and inserts the callee's instance one
-//   level deeper (03_expand, 02_advance between rounds);
-// - export: the arguments of every instance as checked rows (04_export).
+//   level deeper (expand_instance_closure_frontier, advance_instance_closure_frontier between rounds);
+// - export: the arguments of every instance as checked rows (export_instance_closure_round).
 //
 // An instance is keyed by its tagged environment: the callee's substituted
 // call environment with words.x = callee HIR row + 1. Interning makes that
 // key exact, and ct_env_binding reads only words.y/z, so a tagged
 // environment substitutes like the call environment it came from.
 //
-// The instance table (05_table_keys) and its execution rows read the
+// The instance table (build_instance_table_keys) and its execution rows read the
 // closure only when it is complete: any IC_FLAG_* (a full table, or a
 // frontier left at the level limit, IC_FLAG_DEPTH, as polymorphic recursion
 // leaves it) flags the table and no entry is lowered in the job. The host
 // then ignores the closure and replays what it misses.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 
 // Counters and round state; see IC_COUNT_*.
 public RWStructuredBuffer<uint> instance_closure_counts;
@@ -47,7 +47,7 @@ public RWStructuredBuffer<uint4> instance_closure_targets;
 // call (+1) of each call row; 0 ends a list.
 public RWStructuredBuffer<uint> instance_closure_edge_head;
 public RWStructuredBuffer<uint> instance_closure_edge_next;
-// The value environment of each edge call (call_env_ct.x when 01_mark linked
+// The value environment of each edge call (call_env_ct.x when mark_instance_closure_roots_and_edges linked
 // it). The instance table reads it after the body passes have republished
 // call_env_ct for the specialized rows.
 public RWStructuredBuffer<uint> instance_closure_edge_env;
@@ -70,12 +70,12 @@ public static const uint IC_FLAG_DEPTH = 8u;      // a frontier was left at the 
 // Expansion rounds; instances deeper than IC_LEVELS + 1 are never found
 // (instance_closure_passes.rs, INSTANCE_CLOSURE_LEVELS).
 public static const uint IC_LEVELS = 16u;
-// Lanes per frontier instance in an expansion round (03_expand,
-// 03b_expand_dependency). Instances take divergent paths through
+// Lanes per frontier instance in an expansion round (expand_instance_closure_frontier,
+// expand_dependency_closure). Instances take divergent paths through
 // substitution, and a wave runs its lanes' paths one after another, so a
-// wave works on one instance at most. 03_expand's first lane walks the
+// wave works on one instance at most. expand_instance_closure_frontier's first lane walks the
 // call edges and lane IC_BOUND_LANE, the first of the next wave, the
-// bound-member edges; 03b uses the first lane only.
+// bound-member edges; expand_dependency_closure uses the first lane only.
 public static const uint IC_LANES_PER_INSTANCE = 64u;
 public static const uint IC_BOUND_LANE = 32u;
 

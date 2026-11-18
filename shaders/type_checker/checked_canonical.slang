@@ -8,8 +8,8 @@
 // every row and constant has its ID (LateIds). Inside the inference rounds a
 // row may be newer than the early stage, so OnDemandIds interns what is
 // missing (ct_checked.slang). Nothing here walks a type graph with a stack.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_checked_rows;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_subst;
