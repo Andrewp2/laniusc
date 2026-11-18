@@ -759,6 +759,20 @@ mod tests {
     };
 
     #[test]
+    fn shader_language_symbol_count_matches_rust() {
+        let source = include_str!(
+            "../../../../shaders/type_checker/symbols/language_symbol_count.slang"
+        );
+        let count = source
+            .lines()
+            .find_map(|line| line.strip_prefix("public static const uint LANGUAGE_SYMBOL_COUNT = "))
+            .and_then(|value| value.strip_suffix("u;"))
+            .and_then(|value| value.parse::<u32>().ok())
+            .expect("the shader must declare LANGUAGE_SYMBOL_COUNT as a uint literal");
+        assert_eq!(count, super::LANGUAGE_SYMBOL_COUNT);
+    }
+
+    #[test]
     fn declaration_radix_layout_groups_only_by_module() {
         assert_eq!(decl_key_radix_layout(0, 0), (1, 1));
         assert_eq!(decl_key_radix_layout(312_822, 69_510), (3, 3));

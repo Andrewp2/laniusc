@@ -1,3 +1,5 @@
+import type_checker.symbols.language_symbol_count;
+
 struct Params
 {
     uint n_tokens;
@@ -11,7 +13,6 @@ RWStructuredBuffer<uint> language_name_id;
 RWStructuredBuffer<uint> name_max_len;
 
 static const uint INVALID = 0xffffffffu;
-static const uint LANGUAGE_NAME_COUNT = 88u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -20,6 +21,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = dtid.x;
     if (i == 0u)
         name_max_len[0u] = 0u;
-    if (i < LANGUAGE_NAME_COUNT)
+    if (i < LANGUAGE_SYMBOL_COUNT)
         language_name_id[i] = INVALID;
 }

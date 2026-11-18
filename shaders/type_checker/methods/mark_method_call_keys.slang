@@ -25,6 +25,7 @@ import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.module_lookup;
 import type_checker.calls.inference_activity;
+import type_checker.symbols.language_symbol_count;
 
 struct Params
 {
@@ -142,7 +143,6 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;

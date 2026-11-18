@@ -1,3 +1,5 @@
+import type_checker.symbols.language_symbol_count;
+
 struct Params
 {
     uint n_tokens;
@@ -21,8 +23,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-static const uint LANGUAGE_NAME_COUNT = 88u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 static const uint LANGUAGE_DECL_COUNT = 34u;
 static const uint LANGUAGE_DECL_KIND_ENTRYPOINT = 1u;
 static const uint LANGUAGE_DECL_KIND_INTRINSIC = 2u;
@@ -44,7 +44,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint symbol_slot = language_decl_symbol_slot[i];
     uint kind = language_decl_kind[i];
     uint tag = language_decl_tag[i];
-    uint name_id = kind != 0u && tag != 0u && symbol_slot < LANGUAGE_NAME_COUNT
+    uint name_id = kind != 0u && tag != 0u && symbol_slot < LANGUAGE_SYMBOL_COUNT
                        ? language_name_id[symbol_slot]
                        : INVALID;
     language_decl_name_id[i] = name_id;

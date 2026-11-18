@@ -8,6 +8,7 @@ import hir_records;
 import fixed.compact_method;
 import atomics;
 import type_checker.predicates.method_contract_lookup;
+import type_checker.symbols.language_symbol_count;
 
 struct Params
 {
@@ -53,7 +54,6 @@ static const uint PREDICATE_STATUS_METHOD_ARITY_MISMATCH = 7u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE = 17u;
 static const uint MAX_METHOD_SIGNATURE_PARAMS = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 static const uint METHOD_PARAM_COUNT_UNSUPPORTED = MAX_METHOD_SIGNATURE_PARAMS + 1u;
 static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
 static const uint METHOD_SIGNATURE_HAS_WHERE = 2u;

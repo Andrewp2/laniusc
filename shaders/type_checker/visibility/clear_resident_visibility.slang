@@ -4,6 +4,8 @@
 // declaration scope is carried by compact declaration records and a segment tree
 // over those records.
 
+import type_checker.symbols.language_symbol_count;
+
 struct Params
 {
     uint n_tokens;
@@ -24,7 +26,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 
 uint linear_thread_id(uint3 dtid)
 {

@@ -5,6 +5,7 @@
 import hir_records;
 import gpu_index;
 import status;
+import type_checker.symbols.language_symbol_count;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -42,7 +43,6 @@ static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
 static const uint PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM = 8u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_CALL_MISMATCH = 10u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [ForceInline]

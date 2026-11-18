@@ -1,5 +1,6 @@
 import hir_records;
 import primitive_types;
+import type_checker.symbols.language_symbol_count;
 
 // HIR-driven scalar/path type-reference collection.
 //
@@ -48,7 +49,6 @@ static const uint HIR_TYPE_FORM_NEVER = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TY_UNKNOWN = 0u;
-static const uint LANGUAGE_SYMBOL_COUNT = 88u;
 
 uint linear_thread_id(uint3 dtid)
 {
