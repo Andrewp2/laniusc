@@ -97,6 +97,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirArrayElementL
                 "hir_array_element_next".into(),
                 b.hir_array_element_next.as_entire_binding(),
             ),
+            (
+                "hir_list_rank_flag".into(),
+                b.hir_list_rank_flag.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_block_sum".into(),
+                b.hir_list_rank_block_sum.as_entire_binding(),
+            ),
         ])
     }
 }

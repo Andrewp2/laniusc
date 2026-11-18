@@ -47,6 +47,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmScatt
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
+                "hir_match_rank_node".into(),
+                b.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_count".into(),
+                b.hir_match_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_owner_a".into(),
                 b.hir_match_arm_owner_a.as_entire_binding(),
             ),

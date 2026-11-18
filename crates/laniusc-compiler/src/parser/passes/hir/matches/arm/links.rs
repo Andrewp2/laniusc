@@ -46,6 +46,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmLinks
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            (
+                "hir_match_rank_node".into(),
+                b.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_count".into(),
+                b.hir_match_rank_count.as_entire_binding(),
+            ),
             ("parent".into(), b.parent.as_entire_binding()),
             ("first_child".into(), b.first_child.as_entire_binding()),
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),

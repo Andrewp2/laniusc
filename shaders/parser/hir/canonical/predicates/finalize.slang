@@ -95,6 +95,7 @@ bool direct_generic_bound(uint raw, uint anchor)
     // Type-root ownership is the canonical, pointer-jumped relation. Raw
     // type-argument owners may still name grammar forwarding wrappers, which
     // can incorrectly classify a predicate root as its own nested argument.
+    // Bound types are type rows, where the type-root owner is defined.
     uint raw_root = type_root_owner[raw];
     uint dense_root = valid_raw(raw_root) ? raw_to_hir[raw_root] : INVALID;
     return dense_root == INVALID || dense_root == dense;

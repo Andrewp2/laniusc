@@ -45,6 +45,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldSc
                     b.ll1_status.as_entire_binding()
                 },
             ),
+            (
+                "hir_struct_rank_node".into(),
+                b.hir_struct_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_struct_rank_count".into(),
+                b.hir_struct_rank_count.as_entire_binding(),
+            ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
                 "hir_struct_field_owner_a".into(),

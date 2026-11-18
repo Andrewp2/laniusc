@@ -434,31 +434,15 @@ impl GpuParser {
                 // relation published by hir_type_path_leaf_scatter. The
                 // identity passes above also provide the required storage
                 // visibility boundary after the optional dependency batch.
-                self.passes
-                    .hir_type_arg_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // The links pass also lists the arguments with an owner or a
+                // link, so it covers every block of the tree.
+                self.passes.hir_type_arg_links.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
-                bufs.clear_operations()
-                    .record_hir_type_arg_secondary_rows(ctx.encoder);
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_type_fields_params,
-                        &bufs.hir_type_arg_owner_a,
-                        &bufs.hir_type_arg_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::TypeArguments,
-                    )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_type_arg_rank_prefix_local",
-                );
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
@@ -509,25 +493,15 @@ impl GpuParser {
                     .hir_type_arg_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_scatter");
-                self.passes
-                    .hir_type_root_owner_init
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                // Type nodes are a small fraction of tree nodes: compact the
-                // owned or linked type nodes and walk only those rows.
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_type_fields_params,
-                        &bufs.hir_type_root_owner,
-                        &bufs.hir_type_arg_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::TypeRoots,
-                    )?;
+                // Type nodes are a small fraction of tree nodes: the owner
+                // init lists them, so it covers every block of the tree, and
+                // the walk runs over that list only.
+                self.passes.hir_type_root_owner_init.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
@@ -562,10 +536,8 @@ impl GpuParser {
                         .expect("resident parser requires a bind-group cache"),
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_root_owner");
-                self.passes
-                    .hir_enum_variant_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_links");
+                // The enum family's rows first: the links, the rank step and
+                // the scatter run over them only.
                 self.passes.hir_enum_rank_prefix_local.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(
@@ -596,6 +568,10 @@ impl GpuParser {
                     "parser.hir_enum_rank_compact_scatter",
                 );
                 self.passes
+                    .hir_enum_variant_links
+                    .record_pass_indirect(&mut ctx, &bufs.hir_enum_rank_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_links");
+                self.passes
                     .hir_enum_variant_rank_step
                     .record_steps_indirect(
                         ctx.device,
@@ -609,7 +585,7 @@ impl GpuParser {
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_rank_step");
                 self.passes
                     .hir_enum_variant_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_enum_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_scatter");
                 bufs.clear_operations().record_hir_item_kind(ctx.encoder);
                 self.passes
@@ -622,26 +598,15 @@ impl GpuParser {
                     .hir_path_segment_root
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_root");
-                self.passes
-                    .hir_path_segment_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // The links pass also lists the path segments, so it covers
+                // every block of the tree like a list prefix pass.
+                self.passes.hir_path_segment_links.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_links");
-                // Path segments are a small fraction of tree nodes: compact
-                // the owned or linked segments and walk only those rows.
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_type_fields_params,
-                        &bufs.hir_path_segment_owner_a,
-                        &bufs.hir_path_segment_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::PathSegments,
-                    )?;
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
@@ -681,7 +646,7 @@ impl GpuParser {
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_step");
                 self.passes
                     .hir_path_segment_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_list_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_path_segment_scatter");
                 self.passes
                     .hir_type_alias_owner_init
@@ -989,12 +954,9 @@ impl GpuParser {
                                 .expect("resident parser requires a bind-group cache"),
                             ListRankInvocation::StringOffsets,
                         )?;
-                    self.passes.hir_string_offset_scatter.record_pass(
-                        &mut ctx,
-                        crate::gpu::passes_core::InputElements::Elements1D(
-                            bufs.tree_n_node_blocks.saturating_mul(256),
-                        ),
-                    )?;
+                    self.passes
+                        .hir_string_offset_scatter
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     bufs.clear_operations()
                         .record_hir_string_storage(ctx.encoder);
                     self.passes.hir_string_decode.record_with_source(
@@ -1043,29 +1005,15 @@ impl GpuParser {
                 // other active rows before reading them.
                 bufs.clear_operations()
                     .record_hir_call_arg_count(ctx.encoder);
-                self.passes
-                    .hir_call_arg_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // The links pass also lists the call arguments, so it covers
+                // every block of the tree like a list prefix pass.
+                self.passes.hir_call_arg_links.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_links");
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_call_fields_params,
-                        &bufs.hir_call_arg_owner_a,
-                        &bufs.hir_call_arg_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::CallArguments,
-                    )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_call_arg_rank_prefix_local",
-                );
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
@@ -1114,7 +1062,7 @@ impl GpuParser {
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_ordinal_step");
                 self.passes
                     .hir_call_arg_ordinal_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_list_rank_dispatch_args)?;
                 stamp_timer(
                     timer_ref,
                     ctx.encoder,
@@ -1127,29 +1075,15 @@ impl GpuParser {
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_family_mark");
                 crate::parser::passes::record_canonical_call_arguments(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_compact");
-                self.passes
-                    .hir_array_element_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                // The links pass also lists the array elements, so it covers
+                // every block of the tree like a list prefix pass.
+                self.passes.hir_array_element_links.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_links");
-                self.passes
-                    .hir_list_rank_prefix_local
-                    .record_for_owner_link(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_array_fields_params,
-                        &bufs.hir_array_element_owner_a,
-                        &bufs.hir_array_element_link_a,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                        ListRankInvocation::ArrayElements,
-                    )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_array_element_rank_prefix_local",
-                );
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_list_rank_scan(
@@ -1198,33 +1132,13 @@ impl GpuParser {
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_rank_step");
                 self.passes
                     .hir_array_element_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_list_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_scatter");
                 crate::parser::passes::record_canonical_array_elements(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_compact");
                 if bufs.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_MATCHES != 0 {
-                    self.passes
-                        .hir_match_arm_owner_init
-                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_init");
-                    self.passes.hir_tree_relations.record_steps_for_buffers(
-                        ctx.device,
-                        ctx.encoder,
-                        ctx.buffers,
-                        &bufs.hir_semantic_parent_link_a,
-                        &bufs.hir_match_pattern_owner_arm,
-                        &bufs.hir_semantic_parent_link_b,
-                        &bufs.hir_semantic_parent_value_b,
-                        crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER,
-                        ctx.bg_cache
-                            .as_deref_mut()
-                            .expect("resident parser requires a bind-group cache"),
-                    )?;
-                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_step");
-                    self.passes
-                        .hir_match_arm_links
-                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_links");
+                    // The match family's rows first: every match kernel below
+                    // runs over them only.
                     self.passes.hir_match_rank_prefix_local.record_pass(
                         &mut ctx,
                         crate::gpu::passes_core::InputElements::Elements1D(
@@ -1258,6 +1172,31 @@ impl GpuParser {
                         ctx.encoder,
                         "parser.hir_match_rank_compact_scatter",
                     );
+                    self.passes
+                        .hir_match_arm_owner_init
+                        .record_pass_indirect(&mut ctx, &bufs.hir_match_rank_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_init");
+                    self.passes.hir_tree_relations.record_family_row_steps(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_match_rank_node,
+                        &bufs.hir_match_rank_count,
+                        &bufs.hir_match_rank_dispatch_args,
+                        &bufs.hir_semantic_parent_link_a,
+                        &bufs.hir_match_pattern_owner_arm,
+                        &bufs.hir_semantic_parent_link_b,
+                        &bufs.hir_semantic_parent_value_b,
+                        crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER,
+                        ctx.bg_cache
+                            .as_deref_mut()
+                            .expect("resident parser requires a bind-group cache"),
+                    )?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_owner_step");
+                    self.passes
+                        .hir_match_arm_links
+                        .record_pass_indirect(&mut ctx, &bufs.hir_match_rank_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_links");
                     self.passes.hir_match_arm_rank_step.record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
@@ -1270,32 +1209,22 @@ impl GpuParser {
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_rank_step");
                     self.passes
                         .hir_match_arm_scatter
-                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                        .record_pass_indirect(&mut ctx, &bufs.hir_match_rank_dispatch_args)?;
                     stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_scatter");
                     crate::parser::passes::record_canonical_matches(&mut ctx, &self.passes)?;
                 } else {
                     crate::parser::passes::clear_canonical_match_outputs(&mut ctx)?;
                 }
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_compact");
-                self.passes
-                    .hir_struct_fields
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_fields");
-                self.passes
-                    .hir_struct_field_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
-                self.passes.hir_struct_rank_prefix_local.record_pass(
+                // The links pass also lists the struct fields, so it covers
+                // every block of the tree.
+                self.passes.hir_struct_field_links.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(
                         bufs.tree_n_node_blocks.saturating_mul(256),
                     ),
                 )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_struct_rank_prefix_local",
-                );
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_struct_rank_scan(
@@ -1348,7 +1277,7 @@ impl GpuParser {
                 );
                 self.passes
                     .hir_struct_field_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_struct_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_scatter");
                 crate::parser::passes::record_canonical_fields(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_field_compact");

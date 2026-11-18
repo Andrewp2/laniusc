@@ -9,6 +9,7 @@ struct Params {
     uint retain_debug_rows;
 };
 ConstantBuffer<Params> gHirString;
+StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_list_rank_local_prefix;
@@ -20,6 +21,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 uint block_count() { return (gHirString.n + WG_SIZE - 1u) / WG_SIZE; }
+uint active_node_count() { return gHirString.uses_status_count != 0u ? min(gHirString.n, tree_count_status[5u]) : gHirString.n; }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -28,7 +30,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (node == 0u)
         hir_string_pool_len[0] = inclusive_scan_total(block_count(), hir_list_rank_block_prefix);
-    if (node >= gHirString.n)
+    // Rows past the active tree hold an earlier job's words.
+    if (node >= active_node_count())
         return;
     if (hir_expr_record[node * 4u] != 28u)
         return;

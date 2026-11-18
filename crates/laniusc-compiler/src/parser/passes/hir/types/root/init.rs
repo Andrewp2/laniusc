@@ -65,6 +65,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeRootOwner
                 "hir_type_root_owner_b".into(),
                 b.hir_type_arg_owner_b.as_entire_binding(),
             ),
+            (
+                "hir_list_rank_flag".into(),
+                b.hir_list_rank_flag.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_block_sum".into(),
+                b.hir_list_rank_block_sum.as_entire_binding(),
+            ),
         ])
     }
 }

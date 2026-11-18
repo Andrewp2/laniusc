@@ -13,6 +13,10 @@ StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_call_arg_ordinal;
 StructuredBuffer<uint> hir_call_arg_end;
 StructuredBuffer<uint> hir_call_arg_count;
+// The call argument list from the argument links pass: the argument arrays
+// are defined on those rows only.
+StructuredBuffer<uint> hir_list_rank_node;
+StructuredBuffer<uint> hir_list_rank_count;
 RWStructuredBuffer<uint> family_count;
 RWStructuredBuffer<HirCallArg> hir_call_args;
 RWStructuredBuffer<HirRange> hir_call_arg_ranges;
@@ -46,9 +50,11 @@ uint file_for_raw(uint raw) {
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID) {
-    uint raw = tid(dtid);
+    uint list_row = tid(dtid);
     uint total = inclusive_scan_total(block_count(), family_block_prefix);
-    if (raw == 0u) family_count[0u] = total;
+    if (list_row == 0u) family_count[0u] = total;
+    if (list_row >= hir_list_rank_count[0u]) return;
+    uint raw = hir_list_rank_node[list_row];
     if (raw >= gCanonical.raw_capacity || hir_call_arg_end[raw] == INVALID) return;
     uint call_raw = hir_call_arg_parent_call[raw];
     if (call_raw >= gCanonical.raw_capacity) return;

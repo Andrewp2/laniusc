@@ -55,6 +55,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCallArgOrdina
                 b.hir_call_arg_rank_a.as_entire_binding(),
             ),
             (
+                "hir_list_rank_node".into(),
+                b.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                b.hir_list_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_call_arg_parent_call".into(),
                 b.hir_call_arg_parent_call.as_entire_binding(),
             ),

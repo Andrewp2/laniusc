@@ -20,6 +20,10 @@ StructuredBuffer<uint> hir_struct_lit_field_owner_a;
 StructuredBuffer<uint> hir_struct_lit_field_rank_a;
 StructuredBuffer<uint> hir_struct_lit_field_previous;
 StructuredBuffer<uint> hir_token_pos;
+// The struct field list from the links pass: the field arrays are defined on
+// those rows only.
+StructuredBuffer<uint> hir_struct_rank_node;
+StructuredBuffer<uint> hir_struct_rank_count;
 
 RWStructuredBuffer<uint> hir_struct_field_parent_struct;
 RWStructuredBuffer<uint> hir_struct_field_ordinal;
@@ -92,8 +96,11 @@ void publish_literal_field(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirStruct.n || !valid_node(node))
+    uint row = linear_thread_id(dtid);
+    if (row >= gHirStruct.n || row >= hir_struct_rank_count[0u])
+        return;
+    uint node = hir_struct_rank_node[row];
+    if (!valid_node(node))
         return;
 
     uint prod = node_kind[node];

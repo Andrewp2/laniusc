@@ -209,6 +209,16 @@ pub struct Check {
     /// `instance-table`: include realized instance rows in standalone
     /// checked-unit readback.
     pub instance_table: bool,
+    /// `parser-poison[=WORD]`: before each job, fill every resettable parser
+    /// buffer with a fixed pattern instead of leaving the previous job's
+    /// words. Zero-initialized resources are cleared after the fill as usual,
+    /// so a read of a row the job did not write sees the pattern. Without
+    /// `WORD` the words are pseudo-random values below 2, 16, 256 or 4096,
+    /// a quarter each, independent from buffer to buffer: they look like
+    /// the flags, ordinals, counts and row ids a previous job leaves, so a
+    /// chain of stale reads passes the checks a reader makes before it uses
+    /// a row. With `WORD` every word is `WORD`.
+    pub parser_poison: Option<ParserPoison>,
 
 }
 
@@ -220,6 +230,36 @@ impl Default for Check {
             canonical: false,
             canonical_retry: 0,
             instance_table: false,
+            parser_poison: None,
+        }
+    }
+}
+
+/// The pattern of `LANIUS_CHECK=parser-poison`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserPoison {
+    /// Pseudo-random words below 2, 16, 256 or 4096, a quarter each.
+    Small,
+    /// Every word is this word.
+    Word(u32),
+}
+
+impl ParserPoison {
+    /// The words of the pattern, starting at word 0 of a buffer.
+    pub fn words(self, count: usize) -> Vec<u32> {
+        match self {
+            Self::Small => (0..count as u32)
+                .map(|index| {
+                    let mut x = index.wrapping_mul(0x9e37_79b1) ^ 0x5bd1_e995;
+                    x ^= x >> 15;
+                    x = x.wrapping_mul(0x2c1b_3c6d);
+                    x ^= x >> 12;
+                    x = x.wrapping_mul(0x297a_2d39);
+                    x ^= x >> 15;
+                    x & [0x1, 0xf, 0xff, 0xfff][(x >> 30) as usize]
+                })
+                .collect(),
+            Self::Word(word) => vec![word; count],
         }
     }
 }
@@ -450,6 +490,7 @@ impl Check {
         "canonical",
         "canonical-retry=N",
         "instance-table",
+        "parser-poison[=WORD]",
     ];
 
     fn parse(value: Option<String>) -> Self {
@@ -459,6 +500,20 @@ impl Check {
             "indirect-dispatch" => flag(&mut check.indirect_dispatch, argument),
             "canonical" => flag(&mut check.canonical, argument),
             "instance-table" => flag(&mut check.instance_table, argument),
+            "parser-poison" => match argument {
+                None => {
+                    check.parser_poison = Some(ParserPoison::Small);
+                    true
+                }
+                Some(text) => {
+                    let parsed = match text.strip_prefix("0x") {
+                        Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                        None => text.parse::<u32>().ok(),
+                    };
+                    check.parser_poison = parsed.map(ParserPoison::Word);
+                    parsed.is_some()
+                }
+            },
             "canonical-retry" => match argument.map(str::parse::<u32>) {
                 Some(Ok(shift)) => {
                     check.canonical_retry = shift.min(16);

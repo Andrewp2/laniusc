@@ -372,7 +372,7 @@ impl GpuParser {
             .unwrap_or(bufs.tree_capacity)
             .min(bufs.tree_capacity)
             .max(1);
-        let cleared_bytes = bufs.clear_job_storage(encoder, active_tree_capacity);
+        let cleared_bytes = bufs.clear_job_storage(&self.device, encoder, active_tree_capacity);
         if crate::options::get().report.host_timing {
             let (allocations, bytes) = bufs.resettable_storage_totals();
             eprintln!(

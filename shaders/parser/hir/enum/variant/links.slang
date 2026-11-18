@@ -3,6 +3,10 @@
 // Enum variant and tuple-payload lists are right-recursive. First list entries
 // seed the owning enum/variant, and later entries point at their previous
 // sibling. A separate pointer-jump pass computes owners and ordinals.
+//
+// The pass runs over the enum family's rows (hir_enum_rank_node: enum
+// variants and type rows). The variant arrays are not written, and are
+// undefined, on any other row.
 
 import generated_parse_production_ids;
 
@@ -35,6 +39,8 @@ RWStructuredBuffer<uint> hir_variant_ordinal;
 RWStructuredBuffer<uint> hir_variant_payload_start;
 RWStructuredBuffer<uint> hir_variant_payload_count;
 RWStructuredBuffer<uint> hir_variant_payload_node;
+StructuredBuffer<uint> hir_enum_rank_node;
+StructuredBuffer<uint> hir_enum_rank_count;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -285,7 +291,10 @@ void seed_payload_type(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_enum_rank_count[0u])
+        return;
+    uint node = hir_enum_rank_node[row];
     if (node >= gHirEnum.n)
         return;
 
@@ -308,8 +317,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 2u] = INVALID;
         hir_variant_payload_node[node * VARIANT_PAYLOAD_SLOT_STRIDE + 3u] = INVALID;
     }
-    else if (node == 0u)
+    else if (row == 0u)
     {
+        // Row 0 of the payload arrays is a sentinel that readers may index.
         hir_variant_payload_start[0u] = INVALID;
         hir_variant_payload_count[0u] = 0u;
         hir_variant_payload_node[0u] = INVALID;
