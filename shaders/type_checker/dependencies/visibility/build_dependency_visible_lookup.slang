@@ -1,9 +1,9 @@
 // Build a parallel exact-name candidate table for imported declarations.
 
-import dependency_interface;
-import atomics;
-import gpu_index;
-import status;
+import shared.semantics.dependency_interface;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params
 {

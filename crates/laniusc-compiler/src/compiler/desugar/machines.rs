@@ -20,7 +20,7 @@ use super::gpu::Gpu;
 use crate::gpu::buffers::LaniusBuffer;
 
 /// The strings the kernels insert, in the order of the `C_*` ids in
-/// shaders/machines/machine_common.slang.
+/// shaders/desugar/machines/machine_layout.slang.
 pub(super) const CONSTANTS: [&str; 77] = [
     "pub ",
     "enum ",
@@ -112,17 +112,17 @@ pub(super) const STATE_ROW_WORDS: usize = 8;
 pub(super) const REACH_STEPS: usize = 8;
 
 
-const READ: &str = "machines/read";
-const MARKS: &str = "machines/marks";
-const LISTS: &str = "machines/lists";
-const CONTEXT: &str = "machines/context";
-const RESOLVE: &str = "machines/resolve";
-const ARMS: &str = "machines/arms";
-const REACH: &str = "machines/reach";
-const STATES: &str = "machines/states";
-const PIECES: &str = "machines/pieces";
+const READ: &str = "desugar/machines/read_machine_records";
+const MARKS: &str = "desugar/machines/mark_machines_and_transitions";
+const LISTS: &str = "desugar/machines/list_machine_tokens";
+const CONTEXT: &str = "desugar/machines/mark_machine_fields_and_arms";
+const RESOLVE: &str = "desugar/machines/resolve_machine_references";
+const ARMS: &str = "desugar/machines/classify_machine_arm_events";
+const REACH: &str = "desugar/machines/extend_machine_state_reachability";
+const STATES: &str = "desugar/machines/check_machine_state_rules";
+const PIECES: &str = "desugar/machines/write_machine_pieces";
 
-// Plan modes and the machine layout of shaders/desugar/plan.slang.
+// Plan modes and the machine layout of shaders/desugar/tokens/plan_desugaring_dispatches.slang.
 const PLAN_MACHINES: u32 = 8;
 const PLAN_PIECES: u32 = 9;
 const A_TOKENS: u32 = 16;

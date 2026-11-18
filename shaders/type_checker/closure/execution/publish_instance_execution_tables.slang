@@ -4,7 +4,7 @@
 // type is its type row's realized reference (as project_proof_implementation_application reads it); a
 // field keeps its declaration ordinal; a match arm's payload range moves
 // with the payload block.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
 

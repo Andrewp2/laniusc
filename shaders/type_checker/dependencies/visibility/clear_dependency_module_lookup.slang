@@ -2,7 +2,7 @@
 // source-pack type-check may be recorded more than once when a speculative
 // capacity is retried, so upload-time initialization alone is insufficient.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

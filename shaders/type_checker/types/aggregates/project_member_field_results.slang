@@ -1,4 +1,4 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 import type_checker.mutable_checked_type_graph;
 import type_checker.checked_index_reference;
 import type_checker.substitution.scoped_reference_substitution;
@@ -11,8 +11,8 @@ import type_checker.substitution.scoped_reference_substitution;
 // transition, so layout and result types remain receiver-dependent at every
 // depth without token rescans or fixed retry counts.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.types.aggregates.struct_field_lookup;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;

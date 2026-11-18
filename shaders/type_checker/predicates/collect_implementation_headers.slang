@@ -1,6 +1,6 @@
 // Validate trait and inherent impl-header rows from the bounds/impl shared module.
 
-import atomics;
+import shared.buffers.atomics;
 import type_checker.predicates.impl_lookup;
 
 #define PREDICATE_COLLECT_IMPL_RECORDS 1

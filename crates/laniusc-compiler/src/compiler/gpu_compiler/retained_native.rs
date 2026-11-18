@@ -25,14 +25,17 @@ use super::{
     *,
 };
 use crate::{
-    codegen::x86::{
-        finalize::{GpuX86SymbolFinalizer, X86RouteTable, X86SymbolColumns},
-    },
+    codegen::x86::symbol_finalization::{GpuX86SymbolFinalizer, X86RouteTable, X86SymbolColumns},
     type_checker::program_retention::{
         NativeCallTables,
         ProgramRetention,
         ProgramRetentionCapacity,
-        discovery::{DiscoveryCapacity, DiscoveryOutcome, DiscoveryReport, RetainedDiscovery},
+        discovery::{
+            DiscoveryCapacity,
+            DiscoveryOutcome,
+            DiscoveryReport,
+            RetainedDiscovery,
+        },
         projection::{
             ProjectionGateFault,
             ProjectionOptions,
@@ -210,14 +213,14 @@ where
         source_bytes: u32,
         tokens: u32,
         rows: u32,
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
         last: bool,
     ) -> anyhow::Result<Self::Recorded> {
         let (keys, event) = (&self.instance_keys, &mut self.event);
         let recorded = self.compiler.record_projected_batch(
             self.target, source_bytes, tokens, rows, hir, semantic,
-            x86::finalize::NATIVE_RESERVED_LIBRARY, x86::finalize::NATIVE_NS_INSTANCE,
+            crate::codegen::x86::symbol_finalization::NATIVE_RESERVED_LIBRARY, crate::codegen::x86::symbol_finalization::NATIVE_NS_INSTANCE,
             &mut |parked| event(InstanceEvent::Submitted { parked, last, keys }),
         )?;
         Ok((recorded, last))
@@ -226,7 +229,7 @@ where
     fn finish(
         &mut self,
         (recorded, last): Self::Recorded,
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
     ) -> anyhow::Result<CompiledSourcePackObject> {
         let (keys, event) = (&self.instance_keys, &mut self.event);

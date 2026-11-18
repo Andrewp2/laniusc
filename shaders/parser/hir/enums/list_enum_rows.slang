@@ -1,7 +1,7 @@
 // Scatter enum variant/payload nodes into a dense rank worklist and publish
 // indirect dispatch args for the pointer-jump rank pass.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

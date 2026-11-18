@@ -9,11 +9,11 @@
 // ordinary argument and result inference reads, never in positional type
 // slots. Explicit and contextual types must agree with the bindings, and
 // constants merge with the call's constant binding.
-import hir_records;
-import status;
-import dependency_interface;
-import dependency_method_index;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
+import shared.semantics.semantic_interface_layout;
 import type_checker.methods.method_candidate;
 import type_checker.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;

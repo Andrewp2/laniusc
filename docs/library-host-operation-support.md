@@ -33,9 +33,9 @@ operations really trap. Use the operation row and its exact wrapper contract.
 ## Direct native operations
 
 Implementation anchors for this table are
-[`HostService`](../crates/laniusc-compiler/src/codegen/lowering_ir.rs),
-the [shader IDs](../shaders/codegen/lowering_ir.slang),
-the [native dispatch and thunks](../shaders/codegen/lir/x86/runtime_abi.slang),
+[`HostService`](../crates/laniusc-compiler/src/codegen/lir/lowering_ir.rs),
+the [shader IDs](../shaders/codegen/lir/lowering_ir.slang),
+the [native dispatch and thunks](../shaders/codegen/lir/x86/runtime/native_runtime_abi.slang),
 and the [diagnostic catalog](../crates/laniusc-compiler/src/compiler/diagnostics.rs).
 “Native tests” names existing test targets, not newly repeated executions.
 

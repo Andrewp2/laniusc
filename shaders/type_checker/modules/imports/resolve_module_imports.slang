@@ -16,8 +16,8 @@
 //   not make declarations visible, resolve value/type paths, perform CPU path
 //   lookup, scan source bytes, use hashes, or apply same-source shortcuts.
 
-import status;
-import hir_records;
+import shared.buffers.status;
+import shared.syntax.hir_records;
 import type_checker.modules.module_lookup;
 
 struct Params

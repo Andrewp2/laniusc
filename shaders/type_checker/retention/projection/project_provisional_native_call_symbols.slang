@@ -6,12 +6,12 @@
 //
 // Mode 0 (x86): one lane per undefined symbol k < nc_config[4]; nc_rows holds
 // four words per symbol (library, unit, local, 0) and nc_call_hirs[k] is the
-// call HIR of symbol k (x86_object_artifact.rs). nc_identity receives the
+// call HIR of symbol k (codegen/lir/x86/objects.rs). nc_identity receives the
 // symbol's final identity words, three per symbol, which the resident link
-// parks for the object (link/resident.rs, region 6).
+// parks for the object (codegen/x86/link/resident_linking.rs, region 6).
 // Mode 1 (Wasm): one lane per relocation row r < nc_config[4]; nc_rows holds
 // eight words per row, and a symbol row (word 1 is 2) carries the identity in
-// words 4 to 6 and the call HIR in word 7 (wasm_object_artifact.rs).
+// words 4 to 6 and the call HIR in word 7 (codegen/lir/wasm/objects.rs).
 //
 // A call whose retained use is DIRECT and whose callee has a retained body
 // (a generic template the original object does not define) gets the
@@ -21,12 +21,12 @@
 // the certification (certify_retained_native_abi.slang): the accepted result term
 // and the translated term of every argument, as the caller's job checked
 // them.
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
-import codegen.x86.finalize.symbol_identity;
+import codegen.x86.symbol_finalization.read_retained_symbol_identities;
 
 // (mode, lanes, generation, argument capacity, row count). The row count
 // is copied from the object's own total.

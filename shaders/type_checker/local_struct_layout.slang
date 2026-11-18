@@ -1,8 +1,8 @@
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 // Read the checked, fixed local struct layout at a dependency call boundary.
 // An unknown, symbolic, overflowing, or cyclic layout is never a word-count
 // estimate. All inputs remain resident; no host type reconstruction is needed.
-import hir_records;
+import shared.syntax.hir_records;
 
 // Call checking reads immutable type rows; dependency projection reads the
 // same rows from its writable resource. Both provide identical checked data.

@@ -3,9 +3,9 @@
 // the array length checks (validate_resolved_type_references and
 // project_checked_array_index_references) report it there instead of an invalid or
 // unsupported array.
-import primitive_types;
-import hir_records;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.constant_value;
 import type_checker.argument_context;
 
 static const uint HIR_TYPE = 5u;

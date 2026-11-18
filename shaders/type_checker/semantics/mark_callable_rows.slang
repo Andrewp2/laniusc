@@ -1,8 +1,8 @@
 // Retain calls independently of their explicit argument count. Borrowed
 // receiver calls and zero-argument generic calls still need an environment.
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 
 struct Params {
     uint n_tokens; uint source_len; uint n_hir_nodes;

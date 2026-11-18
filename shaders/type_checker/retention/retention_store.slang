@@ -23,7 +23,7 @@
 // Equality is always a comparison of complete records; the hash only picks
 // the first probe, and rt_config[RT_CFG_HASH_MASK] can force every key onto
 // one probe chain to prove that collisions never merge distinct keys.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public globallycoherent RWStructuredBuffer<uint> rt_counts;
 public RWStructuredBuffer<uint> rt_config;

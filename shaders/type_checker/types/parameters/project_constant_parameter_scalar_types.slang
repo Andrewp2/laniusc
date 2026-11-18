@@ -2,8 +2,8 @@
 // imported or local explicit argument binding. Repeat after alias normalization
 // if it refines annotations. Final declaration checking rejects unresolved or
 // non-scalar annotations; this pass never guesses from source spelling.
-import hir_records;
-import constant_value;
+import shared.syntax.hir_records;
+import shared.semantics.constant_value;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

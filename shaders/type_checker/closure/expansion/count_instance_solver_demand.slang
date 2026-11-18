@@ -16,8 +16,8 @@
 // zero exactly when the unit's own job has decided every bound and emitted
 // every body the unit needs; the host then links the unit without reading
 // its call and contract facts back.
-import hir_records;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.semantics.checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

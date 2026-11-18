@@ -1,5 +1,5 @@
-import primitive_types;
-import thread_scratch;
+import shared.semantics.primitive_types;
+import shared.buffers.thread_scratch;
 // Every address is checked before dereference. Logical row IDs span a frozen
 // catalog prefix followed by a retained batch suffix; capacity is not identity.
 public static const uint TS_INVALID = 0xffffffffu;

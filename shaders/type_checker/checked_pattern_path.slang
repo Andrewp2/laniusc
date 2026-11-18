@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Variant pattern wrappers can own their path directly or through the first
 // child. Both page-local projection and retained match binding use this HIR

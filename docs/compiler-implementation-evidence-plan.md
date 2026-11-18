@@ -265,7 +265,7 @@ validation reports diagnostics without changing `predicate_status`; export must
 also require successful final validation and complete method checks.
 
 Native callable identity already has the form `(library, unit, symbol)`.
-`codegen/lir/semantic/function_scatter.slang` selects the symbol;
+`codegen/lir/semantics/functions/scatter_semantic_functions.slang` selects the symbol;
 `function_method.slang` supplies public implementation method symbols; x86 object
 definitions and relocations preserve the triple. Public implementation methods
 use the `0x80000000` symbol namespace, while private callables use the existing

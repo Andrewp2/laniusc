@@ -1,6 +1,6 @@
 // Clear the exact-name hash table and hash every compacted source/language name.
 
-import name_hash_common;
+import shared.search.name_hash_common;
 
 RWStructuredBuffer<uint> unique_name_count;
 

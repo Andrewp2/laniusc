@@ -348,10 +348,10 @@ fn fixture_programs() -> (Vec<u32>, Vec<u32>) {
 // Disjoint case ownership is checked before any pipeline is prepared. Fixed
 // cases keep their ordinary inference setup and fixed check in one state.
 const FAMILIES: [(&str, &[u32]); 4] = [
-    ("tests/owned_type_constraints_match", &[0, 1, 2, 4, 19, 21, 22, 23, 27, 28, 29, 30, 31]),
-    ("tests/owned_type_constraints_fixed", &[3, 5, 6, 7]),
-    ("tests/owned_type_constraints_overlap", &[8, 9, 10, 11, 12, 13, 20]),
-    ("tests/owned_type_constraints_coverage", &[14, 15, 16, 17, 18, 24, 25, 26]),
+    ("tests/probe_owned_constraint_matching", &[0, 1, 2, 4, 19, 21, 22, 23, 27, 28, 29, 30, 31]),
+    ("tests/probe_fixed_owned_constraints", &[3, 5, 6, 7]),
+    ("tests/probe_owned_constraint_overlap", &[8, 9, 10, 11, 12, 13, 20]),
+    ("tests/probe_owned_constraint_coverage", &[14, 15, 16, 17, 18, 24, 25, 26]),
 ];
 
 #[test]

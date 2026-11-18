@@ -3,8 +3,8 @@
 // literal and each lane one storage workspace. Only a job with more literals
 // than lane pairs makes a pair take a second literal. Ordinary parser lanes
 // never reserve private digit arrays.
-import float_decimal;
-import primitive_types;
+import shared.numbers.float_decimal;
+import shared.semantics.primitive_types;
 
 struct Params { uint n; uint source_len; uint uses_status_count;
     uint token_capacity; uint retain_debug_rows; };

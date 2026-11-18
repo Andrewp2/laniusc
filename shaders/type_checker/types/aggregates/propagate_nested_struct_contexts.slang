@@ -1,4 +1,4 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // One lane owns each contextualized literal tree. Child literals receive the
 // checked field type under the parent's environment before field validation.
 // No lane consumes another lane's mutable literal-context output.
@@ -7,11 +7,11 @@ import semantic_interface_layout;
 // ancestor in the HIR, and the walk resumes the parent after the field row
 // whose value is the child. A field type is substituted under the parent's
 // application over canonical IDs (ct_scoped_reference).
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.mutable_checked_type_graph;
 import type_checker.substitution.scoped_reference_substitution;
 import type_checker.types.aggregates.struct_field_lookup;
-import status;
+import shared.buffers.status;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

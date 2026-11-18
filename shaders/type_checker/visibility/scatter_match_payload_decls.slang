@@ -4,8 +4,8 @@
 // table. A later token-domain scan/scatter therefore materializes both kinds
 // directly in source order.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.symbols.language_symbol_count;
 
 struct Params

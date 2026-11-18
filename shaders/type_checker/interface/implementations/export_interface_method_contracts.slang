@@ -1,12 +1,12 @@
 // Emit one lexical implementation's complete header and callable contracts.
 // Every method/header position is deterministic within its disjoint segment.
-import hir_records;
-import atomics;
-import callable_identity;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.semantics.callable_identity;
+import shared.semantics.semantic_interface_layout;
 import type_checker.constant_parameter_slots;
 import type_checker.interface.method_parameters;
-import constant_value;
+import shared.semantics.constant_value;
 import type_checker.constant_atoms;
 import type_checker.interface.scalar_leaves;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };

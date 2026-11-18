@@ -4,8 +4,8 @@
 // atomic OR into a one-word summary, so this remains parallel over the active
 // HIR rather than rediscovering source structure on the host.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 
 struct Params
 {

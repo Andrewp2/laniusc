@@ -3,10 +3,10 @@
 // takes precedence over module imports in the same module: their rows of that
 // name get no owner, so lookups never see them.
 
-import dependency_interface;
-import gpu_index;
-import status;
-import byte_packing;
+import shared.semantics.dependency_interface;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
+import shared.buffers.byte_packing;
 
 struct Params
 {

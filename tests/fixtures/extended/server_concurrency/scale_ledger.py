@@ -23,7 +23,7 @@ def raw_runtime_pairs(image):
     phoff, phsize, phcount = header[5], header[9], header[10]
     assert phsize == 56 and 0 < phcount < 1024
     assert phoff <= len(image) and phsize * phcount <= len(image) - phoff
-    # runtime_abi.slang retains the exact register setup, mmap error handling
+    # native_runtime_abi.slang retains the exact register setup, mmap error handling
     # and adjacent munmap helper. Full-width storage changes only its flags
     # immediate from PRIVATE|ANON|32BIT to PRIVATE|ANON. Historical retained
     # executables still use the first profile; no other opcode is optional.

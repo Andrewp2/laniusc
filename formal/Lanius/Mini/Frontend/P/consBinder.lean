@@ -25,7 +25,7 @@ def consBinder (id : Nat) (rest : Option Bound) : Option Bound :=
   | none => none
   | some b => some ({ ids := id :: b.ids, scope := b.scope } : Bound)
 
-/-- Some enum of the program has a variant spelled name. laniusc reads a payload pattern whose name resolves to a variant as a check of that payload, not a binder (match_payload_binding in shaders/codegen/lir/semantic/local_mark.slang); a payload pattern spelled like any variant is never read as a binder. -/
+/-- Some enum of the program has a variant spelled name. laniusc reads a payload pattern whose name resolves to a variant as a check of that payload, not a binder (match_payload_binding in shaders/codegen/lir/semantics/places/mark_semantic_locals.slang); a payload pattern spelled like any variant is never read as a binder. -/
 def anyVariant (types : List TypeDecl) (name : List Nat) : Bool :=
   match types with
   | [] => false

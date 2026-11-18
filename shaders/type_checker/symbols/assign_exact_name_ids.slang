@@ -1,7 +1,7 @@
 // Resolve exact-name table entries to deterministic representative input ids.
 
-import name_hash_common;
-import atomics;
+import shared.search.name_hash_common;
+import shared.buffers.atomics;
 
 RWStructuredBuffer<uint> sorted_name_id;
 RWStructuredBuffer<uint> name_id_by_input;

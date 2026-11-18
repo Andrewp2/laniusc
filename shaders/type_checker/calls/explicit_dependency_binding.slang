@@ -1,8 +1,8 @@
-import hir_records;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.semantics.semantic_interface_layout;
 // Retain source-order to lexical-slot mappings while the callable's exporting
 // page is resident. Receiver/impl headers have different lexical scope IDs.
-import dependency_interface;
+import shared.semantics.dependency_interface;
 import type_checker.calls.explicit_binding_metadata;
 import type_checker.calls.explicit_constant_operand;
 

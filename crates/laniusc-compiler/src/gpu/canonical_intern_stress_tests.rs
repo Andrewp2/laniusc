@@ -17,8 +17,8 @@ use super::{
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
-const STRESS: &str = "tests/canonical_intern_stress";
-const CONTROL: &str = "tests/canonical_intern_incoherent";
+const STRESS: &str = "tests/stress_canonical_interning";
+const CONTROL: &str = "tests/stress_incoherent_canonical_interning";
 const LANES: u32 = 1 << 20;
 const RECORDS: usize = 4 << 20;
 const ARGS: usize = 24 << 20;
@@ -261,7 +261,7 @@ fn physical_gpu_incoherent_interning_control_reports_duplicates() {
     eprintln!("[canonical_control] {failing_runs}/{runs} incoherent runs produced duplicates or broken chains");
 }
 
-const BRIDGE: &str = "tests/canonical_bridge_decode";
+const BRIDGE: &str = "tests/probe_canonical_bridge_decoding";
 const BRIDGE_CHECKS: usize = 63;
 
 /// Decode gate for the canonical bridge graph (canonical_bridge.slang): one

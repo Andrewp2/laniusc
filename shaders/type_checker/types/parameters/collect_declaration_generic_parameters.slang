@@ -4,9 +4,9 @@
 // never by a raw parser node. Named declarations use their name token; impls
 // and other unnamed owners use the dense HIR core's anchor token.
 
-import hir_records;
-import atomics;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.buffers.status;
 
 struct Params
 {

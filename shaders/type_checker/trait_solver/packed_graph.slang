@@ -1,4 +1,4 @@
-import constant_value;
+import shared.semantics.constant_value;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.admitted_rows;

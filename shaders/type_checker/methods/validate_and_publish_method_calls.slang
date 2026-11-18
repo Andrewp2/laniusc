@@ -5,10 +5,10 @@
 // records. It does not rediscover calls by scanning token neighborhoods,
 // matching parentheses/commas in token ranges, or walking child lists.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.methods.method_candidate;
-import gpu_index;
-import status;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params
 {

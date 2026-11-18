@@ -3,14 +3,14 @@
 // lookup; this pass only translates its page-local declaration row into the
 // stable library/unit/local identity retained across dependency pages.
 
-import dependency_interface;
-import dependency_return_layout;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_return_layout;
+import shared.buffers.gpu_index;
 import type_checker.calls.explicit_dependency_binding;
 import type_checker.calls.explicit_application_owner;
 import type_checker.calls.explicit_binding_metadata;
 import type_checker.calls.explicit_constant_operand;
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params
 {

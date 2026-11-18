@@ -208,7 +208,7 @@ on the main stack.
   `ComputePassBatch` and Pass helpers capture. These cover the
   type checker, compiler-graph operations, parser passes and x86
   codegen/link. Hand-rolled dispatches in `scans.rs`, `syntax.rs`, the lexer
-  passes, `lowering.rs` and `control.rs` do not. A capture of one of those
+  passes, `codegen/lir/semantics.rs` and `control.rs` do not. A capture of one of those
   ends with "no dispatch captured (0 dispatches ...)".
 - Bindings whose buffer lacks COPY_SRC are skipped with a warning. The replay
   then needs `--zero` for them.
@@ -234,7 +234,7 @@ byte for byte, on all of these kernels:
 | type_checker/calls/01a_clear_entrypoints | per-thread clear | 0 |
 | parser/brackets/01_scan_inblock | groupshared scan, barriers (fibers) | 511 words |
 | type_checker/names/hash/01_insert | atomic compare-exchange hash insert, 18 groups | 78 words |
-| codegen/x86/link/symbol_partition_insert | atomics | 2 words |
+| codegen/x86/link/symbols/index_x86_link_symbol_definitions | atomics | 2 words |
 | parser/tokens/to/kinds | 4.7k lines of C++, barriers | 94 words |
 | type_checker/calls/03e_materialize_return_types | walker, 23k lines of C++ | 4 words |
 | type_checker/calls/03d_bind_method_receiver_environment | walker, 20k lines, 107 bindings | 0 (dispatches #0–5) |

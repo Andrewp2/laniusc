@@ -14,9 +14,9 @@ source replay until the retained path covers the remaining forms.
 | Layout constants (no buffers) | `shaders/type_checker/retention/substitution/sb_layout.slang` |
 | Consumer check | `shaders/type_checker/retention/substitution/sb_consumer.slang` |
 | Host object | `crates/laniusc-compiler/src/type_checker/program_retention/substitution.rs` |
-| Test fixture interpreter | `shaders/tests/retention_subst_fixture.slang` |
-| Test request producer over retained uses | `shaders/tests/retention_subst_uses.slang` |
-| Test consumer | `shaders/tests/retention_subst_consumer.slang` |
+| Test fixture interpreter | `shaders/tests/seed_retained_substitution_fixture.slang` |
+| Test request producer over retained uses | `shaders/tests/request_substitution_for_retained_uses.slang` |
+| Test consumer | `shaders/tests/check_retained_substitution_publication.slang` |
 | Tests | `tests/retained_substitution.rs` (in the `compiler` binary) |
 
 ## Producer contract

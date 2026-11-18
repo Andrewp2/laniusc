@@ -5,7 +5,7 @@
 // module-visible query must reject multiple matches rather than choose an
 // arbitrary parent. The table still contains at most declaration_count rows.
 
-import atomics;
+import shared.buffers.atomics;
 
 public static const uint DECL_LOOKUP_EMPTY = 0u;
 public static const uint DECL_LOOKUP_INVALID = 0xffffffffu;

@@ -7,7 +7,7 @@ public static const uint PJ_FLAG_ENTRY = 1u;
 public static const uint PJ_READY_ROUTES = 1u;
 public static const uint PJ_READY_PROOFS = 4u; // discovery checked every bounded direct use
 
-// Native identities (codegen/x86/finalize.rs).
+// Native identities (codegen/x86/symbol_finalization.rs).
 public static const uint PJ_NATIVE_LIBRARY = 0xfffffffeu;
 public static const uint PJ_NATIVE_NS_INSTANCE = 0xffff0002u;
 public static const uint PJ_ROUTE_NONE = 0xffffffffu;

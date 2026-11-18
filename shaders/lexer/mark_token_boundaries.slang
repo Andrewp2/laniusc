@@ -11,9 +11,9 @@
 #define CHUNK_COUNT 3
 #define CHUNK_WIDTH_CAP ((WORKGROUP_SIZE + CHUNK_COUNT - 1) / CHUNK_COUNT)
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import utils; // PF_* bits, load helpers, etc.
-import generated_token_ids;
+import shared.syntax.generated_token_ids;
 
 struct Params
 {

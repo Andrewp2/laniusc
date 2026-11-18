@@ -1,6 +1,6 @@
 // Hierarchical inclusive scan of bracket block (sum, minimum-prefix) summaries.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

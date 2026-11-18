@@ -1,8 +1,8 @@
 // Imported parameter references name exact owned interface members. Read the
 // accepted callable environment; receiver shape and nominal argument position
 // cannot establish lexical bindings and are never a fallback here.
-import dependency_interface;
-import semantic_interface_layout;
+import shared.semantics.dependency_interface;
+import shared.semantics.semantic_interface_layout;
 import type_checker.calls.checked_call_environment;
 import type_checker.calls.contextual_call_environment;
 

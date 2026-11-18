@@ -1,6 +1,6 @@
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.native_layout.recipe_abi;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 bool plr_dispatch_row(uint local, uint count, out uint row)
 {

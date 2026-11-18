@@ -1,4 +1,4 @@
-import prefix_scan;
+import shared.collectives.prefix_scan;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 RWStructuredBuffer<uint> canonical_flag;

@@ -1,7 +1,7 @@
 import parser.tokens.contexts.generic_parameter_keywords;
 // Top-level brace semantic kinds for token retagging.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

@@ -2,8 +2,8 @@
 // projections. Concrete refs are (1, atom row); parameter refs are (2, exact
 // declaration token); projection refs are (3, projection row). The row domains
 // are distinct even when physical integers happen to be equal.
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 import type_checker.constant_parameter_slots;
 
 // Producers inspect admitted prefixes and publish through this same binding.

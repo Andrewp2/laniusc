@@ -1,7 +1,7 @@
 // Seed the canonical HIR path root -> semantic owner relation.
 
 import generated_parse_production_ids;
-import atomics;
+import shared.buffers.atomics;
 
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirPath;

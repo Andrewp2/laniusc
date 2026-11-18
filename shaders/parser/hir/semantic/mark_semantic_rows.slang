@@ -4,7 +4,7 @@
 // parser tree nodes that have semantic HIR meaning, compute per-block exclusive
 // prefixes, and publish block sums for the global block-prefix scan.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

@@ -3,7 +3,7 @@
 // `>>` is generic, while this phase prevents it from poisoning all following
 // token contexts.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n_tokens; uint n_blocks; uint scan_step; };
 ConstantBuffer<Params> gParams;

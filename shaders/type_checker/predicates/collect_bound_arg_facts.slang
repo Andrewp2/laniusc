@@ -1,5 +1,5 @@
 // Publish predicate syntax links from canonical HIR and ordered argument rows.
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params
 {

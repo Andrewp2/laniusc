@@ -9,9 +9,9 @@
 // spelling, source bytes, helper names, callee bodies, or expression
 // punctuation.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.checked_array_counts;
-import status;
+import shared.buffers.status;
 import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;

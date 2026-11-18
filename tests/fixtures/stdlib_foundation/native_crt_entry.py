@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[3]
-module = root / "shaders/codegen/lir/x86/crt_entry.slang"
+module = root / "shaders/codegen/lir/x86/runtime/crt_entry.slang"
 source = module.read_text()
 constants = {
     key: int(value)

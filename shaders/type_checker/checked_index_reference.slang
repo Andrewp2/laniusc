@@ -1,7 +1,7 @@
 // Project an index argument from its checked named array/slice base. The
 // start token of an index names its base and cannot provide the result type.
-import hir_records;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.concrete_type_equality;
 
 public bool checked_index_root(uint node, uint hir_count,

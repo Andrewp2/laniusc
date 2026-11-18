@@ -34,7 +34,7 @@ pub(crate) use link::{
 };
 
 mod object;
-pub(crate) mod finalize;
+pub(crate) mod symbol_finalization;
 mod file_object;
 pub(crate) use file_object::GpuX86FileObject;
 pub(crate) mod native;
@@ -113,123 +113,123 @@ impl GpuX86Linker {
         let linker = Self {
             link_layout_scan_local_pass: load_x86_pass!(
                 "link_layout_scan_local",
-                "codegen/x86/link/layout_scan_local.spv",
-                "codegen/x86/link/layout_scan_local.reflect.json"
+                "codegen/x86/link/sections/scan_x86_link_section_sizes.spv",
+                "codegen/x86/link/sections/scan_x86_link_section_sizes.reflect.json"
             ),
             link_layout_scan_blocks_pass: load_x86_pass!(
                 "link_layout_scan_blocks",
-                "codegen/x86/link/layout_scan_blocks.spv",
-                "codegen/x86/link/layout_scan_blocks.reflect.json"
+                "codegen/x86/link/sections/scan_x86_link_section_blocks.spv",
+                "codegen/x86/link/sections/scan_x86_link_section_blocks.reflect.json"
             ),
             link_layout_pass: load_x86_pass!(
                 "link_layout",
-                "codegen/x86/link/layout.spv",
-                "codegen/x86/link/layout.reflect.json"
+                "codegen/x86/link/sections/plan_linked_x86_sections.spv",
+                "codegen/x86/link/sections/plan_linked_x86_sections.reflect.json"
             ),
             link_copy_sections_pass: load_x86_pass!(
                 "link_copy_sections",
-                "codegen/x86/link/copy_sections.spv",
-                "codegen/x86/link/copy_sections.reflect.json"
+                "codegen/x86/link/sections/scatter_linked_x86_sections.spv",
+                "codegen/x86/link/sections/scatter_linked_x86_sections.reflect.json"
             ),
             link_symbol_partition_clear_pass: load_x86_pass!(
                 "link_symbol_partition_clear",
-                "codegen/x86/link/symbol_partition_clear.spv",
-                "codegen/x86/link/symbol_partition_clear.reflect.json"
+                "codegen/x86/link/symbols/clear_x86_link_symbol_partition.spv",
+                "codegen/x86/link/symbols/clear_x86_link_symbol_partition.reflect.json"
             ),
             link_symbol_partition_insert_pass: load_x86_pass!(
                 "link_symbol_partition_insert",
-                "codegen/x86/link/symbol_partition_insert.spv",
-                "codegen/x86/link/symbol_partition_insert.reflect.json"
+                "codegen/x86/link/symbols/index_x86_link_symbol_definitions.spv",
+                "codegen/x86/link/symbols/index_x86_link_symbol_definitions.reflect.json"
             ),
             link_symbol_partition_define_pass: load_x86_pass!(
                 "link_symbol_partition_define",
-                "codegen/x86/link/symbol_partition_define.spv",
-                "codegen/x86/link/symbol_partition_define.reflect.json"
+                "codegen/x86/link/symbols/write_x86_link_symbol_definitions.spv",
+                "codegen/x86/link/symbols/write_x86_link_symbol_definitions.reflect.json"
             ),
             link_symbol_partition_resolve_pass: load_x86_pass!(
                 "link_symbol_partition_resolve",
-                "codegen/x86/link/symbol_partition_resolve.spv",
-                "codegen/x86/link/symbol_partition_resolve.reflect.json"
+                "codegen/x86/link/symbols/resolve_x86_link_symbols.spv",
+                "codegen/x86/link/symbols/resolve_x86_link_symbols.reflect.json"
             ),
             link_relocate_pass: load_x86_pass!(
                 "link_relocate",
-                "codegen/x86/link/relocate.spv",
-                "codegen/x86/link/relocate.reflect.json"
+                "codegen/x86/link/sections/apply_x86_link_relocations.spv",
+                "codegen/x86/link/sections/apply_x86_link_relocations.reflect.json"
             ),
             elf_write_pass: load_x86_pass!(
                 "elf_write",
-                "codegen/x86/elf/write.spv",
-                "codegen/x86/elf/write.reflect.json"
+                "codegen/x86/link/sections/write_static_elf.spv",
+                "codegen/x86/link/sections/write_static_elf.reflect.json"
             ),
             elf_dynamic_write_pass: load_x86_pass!(
                 "elf_dynamic_write",
-                "codegen/x86/elf/dynamic_write.spv",
-                "codegen/x86/elf/dynamic_write.reflect.json"
+                "codegen/x86/link/sections/write_dynamic_elf.spv",
+                "codegen/x86/link/sections/write_dynamic_elf.reflect.json"
             ),
             rl_compare_pass: load_x86_pass!(
                 "link_resident_rl_compare",
-                "codegen/x86/link/resident/rl_compare.spv",
-                "codegen/x86/link/resident/rl_compare.reflect.json"
+                "codegen/x86/link/resident_linking/compare_resident_runtime_bytes.spv",
+                "codegen/x86/link/resident_linking/compare_resident_runtime_bytes.reflect.json"
             ),
             rl_plan_pass: load_x86_pass!(
                 "link_resident_rl_plan",
-                "codegen/x86/link/resident/rl_plan.spv",
-                "codegen/x86/link/resident/rl_plan.reflect.json"
+                "codegen/x86/link/resident_linking/plan_resident_link.spv",
+                "codegen/x86/link/resident_linking/plan_resident_link.reflect.json"
             ),
             rl_bind_pass: load_x86_pass!(
                 "link_resident_rl_bind",
-                "codegen/x86/link/resident/rl_bind.spv",
-                "codegen/x86/link/resident/rl_bind.reflect.json"
+                "codegen/x86/link/resident_linking/index_resident_c_bindings.spv",
+                "codegen/x86/link/resident_linking/index_resident_c_bindings.reflect.json"
             ),
             rl_define_pass: load_x86_pass!(
                 "link_resident_rl_define",
-                "codegen/x86/link/resident/rl_define.spv",
-                "codegen/x86/link/resident/rl_define.reflect.json"
+                "codegen/x86/link/resident_linking/write_resident_symbol_definitions.spv",
+                "codegen/x86/link/resident_linking/write_resident_symbol_definitions.reflect.json"
             ),
             rl_insert_pass: load_x86_pass!(
                 "link_resident_rl_insert",
-                "codegen/x86/link/resident/rl_insert.spv",
-                "codegen/x86/link/resident/rl_insert.reflect.json"
+                "codegen/x86/link/resident_linking/index_resident_symbol_definitions.spv",
+                "codegen/x86/link/resident_linking/index_resident_symbol_definitions.reflect.json"
             ),
             rl_undefined_pass: load_x86_pass!(
                 "link_resident_rl_undefined",
-                "codegen/x86/link/resident/rl_undefined.spv",
-                "codegen/x86/link/resident/rl_undefined.reflect.json"
+                "codegen/x86/link/resident_linking/resolve_resident_undefined_symbols.spv",
+                "codegen/x86/link/resident_linking/resolve_resident_undefined_symbols.reflect.json"
             ),
             rl_park_pass: load_x86_pass!(
                 "link_resident_rl_park",
-                "codegen/x86/link/resident/rl_park.spv",
-                "codegen/x86/link/resident/rl_park.reflect.json"
+                "codegen/x86/link/resident_linking/park_resident_link_object.spv",
+                "codegen/x86/link/resident_linking/park_resident_link_object.reflect.json"
             ),
             rl_dynsym_pass: load_x86_pass!(
                 "link_resident_rl_dynsym",
-                "codegen/x86/link/resident/rl_dynsym.spv",
-                "codegen/x86/link/resident/rl_dynsym.reflect.json"
+                "codegen/x86/link/resident_linking/write_resident_dynamic_symbols.spv",
+                "codegen/x86/link/resident_linking/write_resident_dynamic_symbols.reflect.json"
             ),
             rl_name_hash_pass: load_x86_pass!(
                 "link_resident_rl_name_hash",
-                "codegen/x86/link/resident/rl_name_hash.spv",
-                "codegen/x86/link/resident/rl_name_hash.reflect.json"
+                "codegen/x86/link/resident_linking/index_resident_c_names.spv",
+                "codegen/x86/link/resident_linking/index_resident_c_names.reflect.json"
             ),
             rl_import_match_pass: load_x86_pass!(
                 "link_resident_rl_import_match",
-                "codegen/x86/link/resident/rl_import_match.spv",
-                "codegen/x86/link/resident/rl_import_match.reflect.json"
+                "codegen/x86/link/resident_linking/match_resident_c_imports.spv",
+                "codegen/x86/link/resident_linking/match_resident_c_imports.reflect.json"
             ),
             rl_dynamic_rows_pass: load_x86_pass!(
                 "link_resident_rl_dynamic_rows",
-                "codegen/x86/link/resident/rl_dynamic_rows.spv",
-                "codegen/x86/link/resident/rl_dynamic_rows.reflect.json"
+                "codegen/x86/link/resident_linking/collect_resident_dynamic_imports.spv",
+                "codegen/x86/link/resident_linking/collect_resident_dynamic_imports.reflect.json"
             ),
             rl_gather_pass: load_x86_pass!(
                 "link_resident_rl_gather",
-                "codegen/x86/link/resident/rl_gather.spv",
-                "codegen/x86/link/resident/rl_gather.reflect.json"
+                "codegen/x86/link/resident_linking/gather_resident_link_sections.spv",
+                "codegen/x86/link/resident_linking/gather_resident_link_sections.reflect.json"
             ),
             rl_reloc_pass: load_x86_pass!(
                 "link_resident_rl_reloc",
-                "codegen/x86/link/resident/rl_reloc.spv",
-                "codegen/x86/link/resident/rl_reloc.reflect.json"
+                "codegen/x86/link/resident_linking/apply_resident_link_relocations.spv",
+                "codegen/x86/link/resident_linking/apply_resident_link_relocations.reflect.json"
             ),
             resident_store: Mutex::new(None),
             job_buffers: CapacityBufferCache::default(),

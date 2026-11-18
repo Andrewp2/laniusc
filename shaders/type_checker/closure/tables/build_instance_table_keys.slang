@@ -4,7 +4,7 @@
 // row count of the function's subtree; every other instance gets an INVALID
 // key. Lanes count the entries and their rows. An incomplete closure
 // (any IC_FLAG_*) leaves the table flagged, so no entry is lowered.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;

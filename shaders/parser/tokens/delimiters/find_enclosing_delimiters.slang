@@ -22,8 +22,8 @@
 // block minimum tree from 02_build_min_tree, so it reads O(log distance) rows
 // instead of scanning blocks (blocked_search_tree.slang).
 
-import blocked_search_tree;
-import segment_tree;
+import shared.search.blocked_search_tree;
+import shared.search.segment_tree;
 
 struct Params
 {

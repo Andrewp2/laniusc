@@ -6,7 +6,7 @@
 //! region `k` (the previous round's; region 0 is never written) and writes
 //! region `k + 1`; a uniform record per (walk, round) tells the kernel which
 //! word indices those are. A round whose previous round changed nothing
-//! returns at once (see `shaders/hir_walk_state.slang`). The recorded
+//! returns at once (see `shaders/shared/syntax/hir_walk_state.slang`). The recorded
 //! dispatches, their order and the ping-pong parity are the same as without
 //! the early exit, and no value is read back.
 

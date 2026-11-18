@@ -10,8 +10,8 @@
 //   It does not resolve names, scan source bytes, use token spelling, or apply
 //   helper/body-shape shortcuts.
 
-import gpu_index;
-import radix;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
 
 struct Params
 {

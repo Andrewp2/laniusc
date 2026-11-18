@@ -42,11 +42,16 @@ use super::{
     words_bytes,
 };
 use crate::{
-    codegen::{lowering::GpuSemanticHirInputs, x86::GpuX86RelocatableObject},
+    codegen::{lir::semantics::GpuSemanticHirInputs, x86::GpuX86RelocatableObject},
     compiler::GpuCompiler,
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
+        passes_core::{
+            self,
+            PassData,
+            make_pass_data_from_shader_key,
+            map_readback_blocking,
+        },
     },
     parser::buffers::{
         HirArrayElement,
@@ -68,7 +73,7 @@ use crate::{
     type_checker::{GpuCheckedCallArtifact, GpuSemanticArtifactView},
 };
 
-/// Native identity of instance objects and symbols (codegen/x86/finalize.rs).
+/// Native identity of instance objects and symbols (codegen/x86/symbol_finalization.rs).
 pub const NATIVE_LIBRARY: u32 = 0xffff_fffe;
 pub const NATIVE_NS_INSTANCE: u32 = 0xffff_0002;
 /// Route of a use that is not a call (a struct literal).
@@ -247,9 +252,9 @@ pub struct RootCertification<'a> {
     pub calls: &'a super::NativeCallTables,
 }
 
-/// Test kernel: the explicit-instance producer (shaders/tests/retention_projection_producer.slang).
+/// Test kernel: the explicit-instance producer (shaders/tests/publish_test_projection_instances.slang).
 #[doc(hidden)]
-pub const PRODUCER_KERNEL: &str = "tests/retention_projection_producer";
+pub const PRODUCER_KERNEL: &str = "tests/publish_test_projection_instances";
 
 /// The producer's GPU buffers: `pj_instances` (two uint4 per rank),
 /// `pj_routes` (one uint4 per route) and `pj_readiness` (one uint4). The

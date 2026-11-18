@@ -1,8 +1,8 @@
 
 module utils;
 
-import byte_packing;
-import gpu_index;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
 
 public static const uint HIGH_BIT = 0x8000u;
 public static const uint PF_EMIT = 1u << 0;

@@ -2,7 +2,7 @@
 // intentionally excluded from the canonical HIR phase boundary.
 
 import generated_parse_production_ids;
-import canonical_hir_identity;
+import shared.syntax.canonical_hir_identity;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;

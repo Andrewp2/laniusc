@@ -11,7 +11,7 @@ an ordinary call and counted an inlined callee body. Scatter instead emitted
 a C callback entry address. The inconsistent row counts produced a duplicate
 callback thunk whose result store overwrote the saved frame pointer.
 
-`shaders/codegen/lir/x86/c_entry.slang` now supplies one classification shared
+`shaders/codegen/lir/x86/emission/native_c_callback_stubs.slang` now supplies one classification shared
 by count and scatter. Function addresses have no call-argument or callee-body
 rows. No IR format, runtime, ABI or formal-proof change was required.
 

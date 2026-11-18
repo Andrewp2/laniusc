@@ -145,9 +145,9 @@ def summarize_passes(events: list[tuple[str, float]]) -> list[dict[str, object]]
 
 
 def compiler_phase(pass_name: str) -> str:
-    if pass_name.startswith(("codegen/lir/semantic/", "codegen/lir/functions/")):
+    if pass_name.startswith(("codegen/lir/semantics/", "codegen/lir/functions/")):
         return "semantic_lir"
-    if pass_name.startswith("codegen/lir/schedule/"):
+    if pass_name.startswith("codegen/lir/scheduling/"):
         return "target_lir"
     if pass_name.startswith("codegen/lir/x86/"):
         return "x86_codegen"

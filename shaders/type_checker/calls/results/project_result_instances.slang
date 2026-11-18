@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Seed complete declaration-side result references by dense call-site ID,
 // and the synthesized slot of a call whose declared return is a scalar (unit

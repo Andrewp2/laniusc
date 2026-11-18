@@ -5,7 +5,7 @@
 //   - compact_boundaries_kept  : uses KEPT-end predicate ((emit&keep_emit)||(eof&keep_eof))
 
 import utils;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct LexParams
 {

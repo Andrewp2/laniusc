@@ -3,7 +3,7 @@
 // The pass runs over the array element list (hir_list_rank_node) that the
 // element links pass marked; other rows are not read or written.
 
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

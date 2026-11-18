@@ -7294,7 +7294,7 @@ mod tests {
         }
         assert_eq!(
             graph.pass_kernel(graph.pass_id(NAMES_SCAN.passes.local).unwrap()),
-            Some("scan/counted/00_local"),
+            Some("scan/words/scan_counted_word_blocks"),
         );
         assert_eq!(
             graph.pass_kernel(

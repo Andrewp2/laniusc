@@ -1,5 +1,5 @@
 #include "../normalized_member_lookup.slang"
-import byte_packing;
+import shared.buffers.byte_packing;
 struct NameSpan { uint start; uint len; uint kind; uint token_index; };
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;

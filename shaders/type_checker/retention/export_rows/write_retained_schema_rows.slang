@@ -5,7 +5,7 @@
 //                                      variant ordinal, declared term)
 // with kind RT_SCHEMA_FIELD or RT_SCHEMA_PAYLOAD. Every term must be owned
 // by the declaration's binder chain.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.export_lane_index;

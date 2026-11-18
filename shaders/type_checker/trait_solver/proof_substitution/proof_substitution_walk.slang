@@ -1,7 +1,7 @@
 // Substitution walk dispatches shared by proof work admission and
 // implementation proof admission. The walk itself is in
 // proof_substitution_admission.slang.
-import thread_scratch;
+import shared.buffers.thread_scratch;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.catalog.catalog_io;

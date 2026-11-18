@@ -20,7 +20,7 @@
 //   source bytes, hash token text, perform CPU lookup, or compare names by
 //   spelling.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.module_lookup;

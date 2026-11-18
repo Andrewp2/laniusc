@@ -10,7 +10,7 @@
 //   pj_readiness  (generation, flags, instance count, route count)
 // A global row is base_rows[rank] + relative row; its order is the
 // lexicographic (rank, row) order, which also orders the errors.
-__exported import primitive_types;
+__exported import shared.semantics.primitive_types;
 __exported import type_checker.retention.retention_store;
 __exported import type_checker.retention.retained_row_classes;
 __exported import type_checker.retention.projection_rows.retained_projection_layout;

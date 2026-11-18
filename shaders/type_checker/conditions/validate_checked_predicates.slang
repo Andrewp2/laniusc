@@ -2,11 +2,11 @@
 // One lane may own one row from each dense family. No raw production, parent,
 // sibling, or raw-to-compact relation crosses this pass boundary.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.explicit_call_environment;
-import fixed.compact_method;
-import gpu_index;
-import status;
+import shared.search.compact_method_lookup;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 struct PredicateDiagnosticFact

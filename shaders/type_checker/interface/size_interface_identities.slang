@@ -4,8 +4,8 @@
 // value-declaration domains. A following exclusive GPU scan over
 // interface_name_ref_len assigns non-overlapping byte ranges.
 
-import gpu_index;
-import atomics;
+import shared.buffers.gpu_index;
+import shared.buffers.atomics;
 
 struct Params
 {

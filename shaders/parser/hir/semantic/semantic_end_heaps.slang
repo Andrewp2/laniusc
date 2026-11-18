@@ -16,9 +16,9 @@
 // semantic_end_leaf_base() leaves. Rows and blocks past the semantic rows
 // hold 0, which no query matches.
 
-import segment_tree;
-import prefix_scan;
-import blocked_search_tree;
+import shared.search.segment_tree;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 
 public static const uint SEMANTIC_END_FANOUT = 256u;
 public static const uint SEMANTIC_END_FANOUT_LEVELS = 8u;

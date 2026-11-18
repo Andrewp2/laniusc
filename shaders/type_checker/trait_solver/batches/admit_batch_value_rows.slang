@@ -2,7 +2,7 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.batches.batch_admission_dispatch;
 import type_checker.trait_solver.batches.batch_row_admission;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 // The batch rows of the value graph in one dispatch: atoms (1), nodes (5),
 // edges (6) and roots (7), lane by lane in that table order over each

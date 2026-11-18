@@ -5,7 +5,7 @@
 // parameters are never confused with its methods' because their owners
 // differ. Type-alias parameters have no identity: aliases are normalized
 // before any canonical term names them.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.export_lane_index;

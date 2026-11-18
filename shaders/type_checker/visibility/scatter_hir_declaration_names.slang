@@ -4,7 +4,7 @@
 // their distinct declaration token. The prefix of the token flag is therefore
 // both the compact destination and the declaration's source-order rank.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.symbols.language_symbol_count;
 
 struct Params

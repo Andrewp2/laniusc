@@ -1,7 +1,7 @@
 import parser.tokens.contexts.generic_parameter_keywords;
 // Apply prefix-scanned statement phase rows.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 import parser.tokens.contexts.token_context_before_block;
 
 struct Params

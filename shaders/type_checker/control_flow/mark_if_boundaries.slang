@@ -1,5 +1,5 @@
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 
 struct Params
 {

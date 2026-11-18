@@ -1,7 +1,7 @@
 // Marks every non-representative declaration with an equal exact namespace key.
 
-import gpu_index;
-import status;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.modules.decl_lookup;
 
 struct Params

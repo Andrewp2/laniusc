@@ -5,9 +5,9 @@
 // the heap over the blocks from their roots. The global exclusive depth is
 // phase-local and no longer retained by this pass.
 
-import blocked_search_tree;
-import gpu_index;
-import prefix_scan;
+import shared.search.blocked_search_tree;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

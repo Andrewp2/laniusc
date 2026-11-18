@@ -4,7 +4,7 @@
 // parameter atom. The selected graph side is part of variable identity.
 import type_checker.concrete_type_equality;
 import type_checker.type_constraint_structure;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 public static const uint OWNED_CONSTRAINT_INVALID = 0xffffffffu;
 public static const uint OWNED_CONSTRAINT_MATCHED = 1u;

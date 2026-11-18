@@ -1,7 +1,7 @@
 // Ordinary callables apply their final segment. An enum constructor can apply
 // its resolved parent type instead; name resolution owns that distinction.
 // Method receiver arguments still belong to the separate receiver producer.
-import hir_records;
+import shared.syntax.hir_records;
 
 public uint explicit_variant_application_token(uint leaf, uint qualifier, uint token_capacity,
     StructuredBuffer<HirRange> arguments, out bool repeated)

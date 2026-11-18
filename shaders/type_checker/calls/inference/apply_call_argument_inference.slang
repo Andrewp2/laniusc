@@ -1,6 +1,6 @@
 // Apply row-dispatched generic direct call inference.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 

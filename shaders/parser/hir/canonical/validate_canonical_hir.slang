@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 

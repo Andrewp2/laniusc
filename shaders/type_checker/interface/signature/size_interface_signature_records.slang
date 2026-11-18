@@ -1,8 +1,8 @@
 // Size synthetic declaration-signature records and their edge ranges. One
 // thread handles one persisted public declaration; scans provide stable bases.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;

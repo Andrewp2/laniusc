@@ -6,7 +6,7 @@
 // receiving type it would bind those parameters, which no caller-side row can
 // spell. Its let takes the materialized result row (infer_return_bindings) instead.
 
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

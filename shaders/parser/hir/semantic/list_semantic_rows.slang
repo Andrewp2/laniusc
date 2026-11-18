@@ -8,7 +8,7 @@
 //   - hir_semantic_dense_node[dense_row] = original parse node
 //   - hir_semantic_count[0] = dense semantic row count
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

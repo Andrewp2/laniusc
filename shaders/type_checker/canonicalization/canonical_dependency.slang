@@ -9,9 +9,9 @@
 // parameter slots (ct_dep_type_param, ct_dep_const_param).
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_constants;
-import dependency_interface;
-import constant_value;
-import primitive_types;
+import shared.semantics.dependency_interface;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 
 // Alias roots of the resident page (seed_dependency_canonical_type_roots, 10): a type alias node
 // points at its signature node, every other node at itself.

@@ -378,7 +378,7 @@ fn walk_script(visitor: &mut impl InputVisitor, path: &Path, depth: usize) -> Re
 }
 
 /// One input's names for the resident link's GPU name match
-/// (`shaders/codegen/x86/link/resident/rl_cnames.slang`), built once per
+/// (`shaders/codegen/x86/link/resident_linking/resident_c_name_lookup.slang`), built once per
 /// version of the file: a system input, like the tables it comes from.
 pub(crate) struct PackedTable {
     /// Export names, then version names, without terminators.

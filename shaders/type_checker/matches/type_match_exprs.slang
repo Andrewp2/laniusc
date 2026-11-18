@@ -1,9 +1,9 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Join immutable complete arm types. The first arm's lane owns each match;
 // pending arms defer publication, and complete mismatches are diagnosed.
-import hir_records;
-import hir_expr_semantics;
-import status;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.status;
 import type_checker.checked_index_reference;
 import type_checker.checked_canonical;
 import type_checker.canonicalization.canonical_candidates;

@@ -1,0 +1,70 @@
+import codegen.lir.lowering_ir;
+import codegen.lir.optimization_ir;
+import codegen.lir.optimization.control_flow.index_optimization_execution_owners;
+import shared.buffers.gpu_index;
+
+struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> target_lir_total;
+StructuredBuffer<uint> opt_ir_total;
+StructuredBuffer<X86LirCore> target_lir_core;
+StructuredBuffer<uint> target_lir_flags;
+StructuredBuffer<uint> target_semantic_origin;
+StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<uint> opt_ir_semantic_row;
+RWStructuredBuffer<LoweringStatus> lowering_status;
+
+static const uint DISPATCH_X_STRIDE = 16776960u;
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint page_row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (page_row >= gParams.page_capacity) return;
+    uint row = gParams.target_start + page_row;
+    uint required = target_lir_total[0u];
+    if (row == 0u && required > gParams.target_capacity)
+    {
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_TARGET_CAPACITY);
+        InterlockedMax(lowering_status[0u].required_capacity, required);
+        InterlockedMin(lowering_status[0u].available_capacity, gParams.target_capacity);
+    }
+    if (row >= min(required, gParams.target_capacity)) return;
+    uint opt_row = target_semantic_origin[page_row];
+    uint node_total = min(opt_ir_total[0u], gParams.semantic_capacity);
+    if (!opt_ir_node_is_executable(opt_row, node_total))
+    {
+        InterlockedOr(lowering_status[0u].flags,
+            LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
+        InterlockedMin(lowering_status[0u].first_unsupported_opt_row, opt_row);
+        return;
+    }
+    if ((target_lir_flags[page_row] & TARGET_LIR_FLAG_UNSUPPORTED) == 0u) return;
+    uint semantic_row = opt_row < gParams.semantic_capacity
+        ? opt_ir_semantic_row[opt_row] : 0xffffffffu;
+    uint source_hir = opt_row < gParams.semantic_capacity
+        ? opt_ir_source_hir[opt_row] : target_lir_core[page_row].source_hir;
+    InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_UNSUPPORTED_TARGET);
+    InterlockedMin(lowering_status[0u].first_unsupported_hir, source_hir);
+    InterlockedMin(lowering_status[0u].first_unsupported_semantic_row, semantic_row);
+    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, opt_row);
+    InterlockedMin(lowering_status[0u].first_unsupported_target_op,
+        target_lir_core[page_row].op);
+    // Preserve a more specific diagnostic published by an earlier validation
+    // pass. Generic unsupported rows still need a source-addressable reason so
+    // the CLI can identify the missing backend operation instead of reporting
+    // an opaque compiler gap.
+    uint prior_reason;
+    InterlockedCompareExchange(
+        lowering_status[0u].diagnostic_reason,
+        LOWERING_DIAGNOSTIC_NONE,
+        LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION,
+        prior_reason);
+    if (prior_reason == LOWERING_DIAGNOSTIC_NONE)
+    {
+        lowering_status[0u].diagnostic_detail_kind =
+            LOWERING_DIAGNOSTIC_DETAIL_HIR;
+        lowering_status[0u].diagnostic_detail = source_hir;
+    }
+}

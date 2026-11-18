@@ -1,7 +1,7 @@
 // A call returning one of its generic parameter types has the checked type
 // of the corresponding argument. Follow that accepted per-call relation;
 // declaration-token caches cannot represent distinct compound instantiations.
-import hir_records;
+import shared.syntax.hir_records;
 
 public uint generic_result_type_origin(uint node, uint hir_count,
     StructuredBuffer<HirCore> cores, StructuredBuffer<HirPayload> payloads,

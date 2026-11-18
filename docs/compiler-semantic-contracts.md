@@ -98,7 +98,7 @@ locals without initializers.
 
 Lowering:
 
-- `semantic_lir_is_zero_let` (`codegen/lir/semantic/common.slang`) gives the
+- `semantic_lir_is_zero_let` (`codegen/lir/semantics/instructions/semantic_instruction_recipes.slang`) gives the
   statement two rows at its first token: the zero value, then the
   `VALUE_SET`. If the declaration's address is taken, the `VALUE_SET` becomes
   a `PLACE_STORE`.
@@ -202,7 +202,7 @@ stores again, so a receiver in a loop sees the current value.
 - `count` appends two rows to the receiver: `PLACE_STORE` into the home, then
   `ADDRESS` of it. The call argument reads the last row.
 
-The predicate is in `codegen/lir/semantic/receiver_temporary.slang`. Names,
+The predicate is in `codegen/lir/semantics/layouts/receiver_temporaries.slang`. Names,
 fields, indexes and paths still borrow their own storage.
 
 Parentheses own no rows. Lowering adjusts, borrows or stores the expression
@@ -1378,7 +1378,7 @@ conditions, and range bounds use the same rule. This fixes the nested-match SSA
 failure, which also reproduced without generics, and preserves observable sibling
 argument order and skipped effects.
 
-Native frame metadata has a pure shared owner in `codegen/lir/x86/frame_layout.slang`.
+Native frame metadata has a pure shared owner in `codegen/lir/x86/allocation/native_frame_layout.slang`.
 Byte counting, emission, and relocation placement consume the same implicit
 epilogue width, including saved-register restores. The former fixed-width estimate
 corrupted the final imported call in a void helper. Both that reduced program and
@@ -1481,10 +1481,10 @@ Counts, retained logs, and remaining language/runtime dependencies are in
 | Expected expression context | `argument_context.slang`, `declared_expression_context.slang`, `calls/03k_project_argument_contexts.slang`, `calls/array_shape_context.slang`, `calls/03k1_project_literal_contexts.slang`, `calls/03k3_project_record_contexts.slang`, `array_literal_expected.slang` | Expressions consume retained complete parameter patterns and declaration/return/field context. Eligible scalar/array integer literals, bare records, and match arms receive context in both inference facts and final semantic types; known values and explicit applications retain their actual types. |
 | Lexical parameter identity and substitution | `type/instances/lexical_parameter_lookup.slang`, `match/ct_match.slang`, `calls/checked_constant_environment.slang`, `type_checker/generic_calls.rs`, `compiler/semantic_interface.rs` | Declaration uses, structural length constraints, export/import, required binding checks, retention, and replay preserve exact parameter ownership and separate type/constant domains. |
 | Accepted result environments | `calls/contextual_call_environment.slang`, `calls/03a4b_contextual_result_requests.slang`, `dependencies/08a_validate_call_results.slang` | Declaration result matching publishes independent type/constant masks and references. Expected-context readers prefer these facts; argument-only readers preserve actual argument evidence. Final validation compares accepted call results and checks every argument against the closed environment. |
-| Constant value facts and body closure | `visible/04_hir_names.slang`, `type/instances/01f_decl_refs.slang`, `semantic/artifact/const_fold.slang`, `semantic/artifact/00b_local_const_references.slang`, `codegen/lir/semantic/function_templates.slang` | Value lookup preserves lexical declaration identity and declared types. Bound values execute; symbolic constant uses keep bodies pending until concrete replay. Mutation and noninteger array lengths reject explicitly. Constant initializers fold on the GPU in `LOCAL_CONST_FOLD_ROUNDS` (8) deterministic rounds, so a constant may refer to other constants (local or imported) 8 levels deep; a public constant that does not fold fails the interface export with a named `LNC0057` message, never as zero. |
-| Concrete value layout and native storage capabilities | `concrete_value_layout.slang`, `codegen/lir/semantic/concrete_struct_layout.slang`, `codegen/lir/x86/storage_layout.slang` | Field ranges, copies, address generation, byte counting, and emission consume concrete widths and explicit storage conventions. Incompatible borrowing rejects before ELF publication. |
-| Expression completion and effect order | `codegen/lir/semantic/materialize.slang`, parser-owned compact expression forest and match-arm records | Producers finish before consuming calls and effects. Structured control recipes share completion boundaries; sibling effects follow source order. SSA validation remains enabled. |
-| Finalized native frame layout | `codegen/lir/x86/frame_layout.slang`, `codegen/lir/x86/location_common.slang` | Byte counting, emission, and relocation placement share frame and result-move widths. The resource graph retains function metadata and saved-register masks through relocation publication. |
+| Constant value facts and body closure | `visible/04_hir_names.slang`, `type/instances/01f_decl_refs.slang`, `semantic/artifact/const_fold.slang`, `semantic/artifact/00b_local_const_references.slang`, `codegen/lir/semantics/functions/mark_generic_function_templates.slang` | Value lookup preserves lexical declaration identity and declared types. Bound values execute; symbolic constant uses keep bodies pending until concrete replay. Mutation and noninteger array lengths reject explicitly. Constant initializers fold on the GPU in `LOCAL_CONST_FOLD_ROUNDS` (8) deterministic rounds, so a constant may refer to other constants (local or imported) 8 levels deep; a public constant that does not fold fails the interface export with a named `LNC0057` message, never as zero. |
+| Concrete value layout and native storage capabilities | `concrete_value_layout.slang`, `codegen/lir/semantics/layouts/concrete_struct_layout.slang`, `codegen/lir/x86/allocation/native_place_storage_layout.slang` | Field ranges, copies, address generation, byte counting, and emission consume concrete widths and explicit storage conventions. Incompatible borrowing rejects before ELF publication. |
+| Expression completion and effect order | `codegen/lir/semantics/instructions/materialize_semantic_operations.slang`, parser-owned compact expression forest and match-arm records | Producers finish before consuming calls and effects. Structured control recipes share completion boundaries; sibling effects follow source order. SSA validation remains enabled. |
+| Finalized native frame layout | `codegen/lir/x86/allocation/native_frame_layout.slang`, `codegen/lir/x86/allocation/native_value_location_rules.slang` | Byte counting, emission, and relocation placement share frame and result-move widths. The resource graph retains function metadata and saved-register masks through relocation publication. |
 | Concrete body identity, scheduling, and reuse | `type_checker/generic_body.rs`, `compiler/gpu_compiler/body_specialization.rs`, `compiler/gpu_compiler/typecheck.rs` | Scheduling uses canonical semantic arguments, checks layout agreement separately, requires declared bindings, and bounds replay/native output. |
 
 Shader paths in the table are relative to `shaders/type_checker/`, except paths

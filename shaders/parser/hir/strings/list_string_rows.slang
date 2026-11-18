@@ -1,5 +1,5 @@
 // Scatter string nodes and publish one-workgroup-per-string indirect arguments.
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirString;

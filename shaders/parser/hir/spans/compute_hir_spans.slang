@@ -1,7 +1,7 @@
 // Compute token spans for HIR-facing parse nodes.
 
 import generated_parse_production_ids;
-import segment_tree;
+import shared.search.segment_tree;
 
 struct Params
 {

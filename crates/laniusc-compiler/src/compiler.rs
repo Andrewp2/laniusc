@@ -20,8 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::codegen::unit::artifact_key_for_output as source_pack_artifact_key_for_output;
 use crate::{
     codegen::{
-        lowering_ir::LoweringTarget,
-        lowering_pipeline::GpuLoweringWorkspaceCache,
+        lir::{lowering_ir::LoweringTarget, pipeline::GpuLoweringWorkspaceCache},
         unit::{
             CompilationUnit,
             CompilationUnitLimits,
@@ -67,18 +66,12 @@ use crate::{
         wasm,
         x86,
     },
-    gpu::{
-        device::{self, GpuDevice},
-        timer::GpuTimer,
-    },
+    gpu::{device::{self, GpuDevice}, timer::GpuTimer},
     lexer::{
         buffers::GpuBuffers as LexerBuffers,
         driver::{GpuLexer, ResidentLexerParserInputs},
     },
-    parser::{
-        driver::{GpuParser, Ll1AcceptResult},
-        tables::PrecomputedParseTables,
-    },
+    parser::{driver::{GpuParser, Ll1AcceptResult}, tables::PrecomputedParseTables},
     type_checker as gpu_type_checker,
 };
 

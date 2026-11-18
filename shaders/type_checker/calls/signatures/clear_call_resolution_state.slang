@@ -1,4 +1,4 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.calls.contextual_call_environment;
 
 struct Params

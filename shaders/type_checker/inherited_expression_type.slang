@@ -1,7 +1,7 @@
 // The result-type edge shared by symbolic operator projection and instance
 // realization. This is the left-operand chain already used by resolve_scalar_expression_types.
-import hir_records;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 
 public bool expression_inherits_operand_type(uint kind, uint form)
 {

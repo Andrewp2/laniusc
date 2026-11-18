@@ -79,7 +79,7 @@ The raw binding appends language/HostService slot 74. Slots 63..73 remain
 language names, types, or intrinsics and are not host services. Service IDs stay
 unchanged. After the [raw host-width repair](stdlib-raw-host-width.md), the
 32-byte bridge starts at runtime offset 2,063 in a 2,095-byte block. Its assembly
-source is `shaders/codegen/lir/x86/runtime_linux_syscall.s`; the table oracle
+source is `shaders/codegen/lir/x86/runtime/runtime_linux_syscall.s`; the table oracle
 checks its relocated offset and every byte. Runtime emission derives its GPU
 dispatch from the checked block length rather than a fixed byte limit.
 

@@ -3,9 +3,9 @@
 // reserve their supplied argument rows now and publish checked patterns only
 // after resolving the target on its active interface page.
 
-import dependency_interface;
-import hir_records;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 
 struct Params
 {

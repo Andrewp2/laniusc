@@ -1,8 +1,8 @@
 // Parallel open-address construction for dependency module identities.
 
-import dependency_interface;
-import atomics;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
 
 struct Params
 {

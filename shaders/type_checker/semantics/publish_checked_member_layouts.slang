@@ -1,11 +1,11 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Publish checked field ranges for local and imported nominal applications.
 // Imported ranges outlive their declaration page. Native lowering consumes
 // these facts instead of substituting fields under the receiver again.
 // This pass consumes widths after their producer finishes; it never evaluates
 // layout from syntax or another lane's partially published type rows.
-import hir_records;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 import type_checker.dependencies.record_fields;
 import type_checker.checked_canonical;
 import type_checker.checked_type_graph;

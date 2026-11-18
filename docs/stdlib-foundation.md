@@ -2732,7 +2732,7 @@ also fixes the imported struct-return relocation path described below.
     `getrandom(ptr, 4, 0x100) = -1 EINVAL` after
     `std::env::current_dir_read(ptr, 256)`. The compiler task confirmed no
     file conflict, then the x86 runtime binding in
-    `shaders/codegen/lir/x86/runtime_abi.slang` gained a `cdq` after loading
+    `shaders/codegen/lir/x86/runtime/native_runtime_abi.slang` gained a `cdq` after loading
     positive syscall 318. That clears EDX before `syscall`. The reproducer
     now exits 0 and `strace` shows `getrandom(ptr, 4, 0) = 4`. A focused
     native test and the host smoke sample exercise the sequence; the sample

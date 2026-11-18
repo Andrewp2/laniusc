@@ -644,7 +644,7 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         "type_checker/calls/claims/admit_context_constants",
         "type_checker/calls/claims/validate_const_claims",
         "type_checker/calls/claims/validate_explicit_applications",
-        "tests/constant_claim_publication",
+        "tests/read_published_constant_claims",
     ];
     let passes: Vec<_> = keys
         .iter()

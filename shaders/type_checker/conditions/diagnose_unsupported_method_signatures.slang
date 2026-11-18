@@ -2,10 +2,10 @@
 // One lane owns one dense method row; no raw production or ancestor lookup is
 // needed after canonical HIR has published the signature metadata.
 
-import hir_records;
-import fixed.compact_method;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.search.compact_method_lookup;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 

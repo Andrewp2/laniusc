@@ -1,6 +1,6 @@
 use super::*;
 use crate::codegen::{
-    lowering_ir::LoweringArtifactKind,
+    lir::lowering_ir::LoweringArtifactKind,
     unit::DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES,
 };
 
@@ -155,7 +155,7 @@ fn prepare_codegen_kernels(
     trait_solver::prepare_solver_kernels(device)?;
     crate::gpu::kernels::KernelRegistry::prepare_prefixes(
         device,
-        crate::codegen::lowering::LOWERING_KERNEL_PREFIXES,
+        crate::codegen::lir::semantics::LOWERING_KERNEL_PREFIXES,
         |key| {
             let target_enabled = if key.contains("/x86/") {
                 backends.x86
@@ -512,9 +512,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         hir_nodes: u32,
         artifact_kind: LoweringArtifactKind,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
-    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    ) -> Result<std::sync::Arc<crate::codegen::lir::pipeline::GpuLoweringPipeline>, String>
     {
         let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
             .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
@@ -554,9 +554,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         tokens: u32,
         hir_nodes: u32,
         artifact_kind: LoweringArtifactKind,
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
-    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    ) -> Result<std::sync::Arc<crate::codegen::lir::pipeline::GpuLoweringPipeline>, String>
     {
         let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
             .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
@@ -591,7 +591,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     pub(super) fn grow_projected_lowering_output(
         &self,
         target: LoweringTarget,
-        demand: crate::codegen::lowering::LoweringOutputDemand,
+        demand: crate::codegen::lir::semantics::LoweringOutputDemand,
     ) -> Result<(), String> {
         match target {
             LoweringTarget::X86_64 => &self.x86_lowering,
@@ -605,7 +605,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     pub(super) fn lowering_pipeline(
         &self,
         target: LoweringTarget,
-    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    ) -> Result<std::sync::Arc<crate::codegen::lir::pipeline::GpuLoweringPipeline>, String>
     {
         match target {
             LoweringTarget::X86_64 => &self.x86_lowering,
@@ -653,7 +653,7 @@ impl<'gpu> GpuCompiler<'gpu> {
 mod tests {
     use super::{GpuCompiler, GpuCompilerBackends};
     use crate::{
-        codegen::lowering_ir::{LoweringArtifactKind, LoweringTarget},
+        codegen::lir::lowering_ir::{LoweringArtifactKind, LoweringTarget},
         gpu::{
             buffers::readback_bytes,
             passes_core::{map_readback_blocking, submit_with_progress},
@@ -900,7 +900,7 @@ mod tests {
         use std::sync::atomic::Ordering;
 
         use crate::{
-            codegen::lowering_pipeline::TEST_JOB_SIZED_DIRECT_OPS,
+            codegen::lir::pipeline::TEST_JOB_SIZED_DIRECT_OPS,
             gpu::compiler_graph::{TEST_PHASE_RESET_POISON, TEST_PHASE_RESET_POISONED_BYTES},
         };
 
@@ -1098,7 +1098,7 @@ mod tests {
     // conservative bounds (the workspace's pairs) has to give the same
     // artifact byte for byte. The enum cases nest as deep as they have
     // declarations, so they check the by-value layout walk
-    // (function_layout_words.slang) through every nesting level.
+    // (compute_semantic_aggregate_widths.slang) through every nesting level.
     //
     // Both compiles go through the production entry points on both targets;
     // only the bounds differ (TEST_CONSERVATIVE_LOWERING_BOUNDS). The cases
@@ -1107,10 +1107,7 @@ mod tests {
     fn run_job_bounds_equivalence() {
         use std::sync::atomic::Ordering;
 
-        use crate::codegen::{
-            lowering::LoweringJobBounds,
-            lowering_pipeline::TEST_CONSERVATIVE_LOWERING_BOUNDS,
-        };
+        use crate::codegen::lir::{pipeline::TEST_CONSERVATIVE_LOWERING_BOUNDS, semantics::LoweringJobBounds};
 
         struct ConservativeBounds;
         impl ConservativeBounds {
@@ -1269,7 +1266,7 @@ mod tests {
     // lowering binds writable in arenas of their own
     // (OUTPUTS_LOWERING_BINDS_WRITABLE).
     fn run_lowering_after_a_larger_check() {
-        use crate::codegen::lowering::LoweringJobBounds;
+        use crate::codegen::lir::semantics::LoweringJobBounds;
 
         let gpu = crate::gpu::device::global();
         let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
@@ -1581,7 +1578,7 @@ mod tests {
                         &gpu.queue,
                         &mut encoder,
                         None,
-                        crate::codegen::lowering::LoweringJobBounds::CONSERVATIVE,
+                        crate::codegen::lir::semantics::LoweringJobBounds::CONSERVATIVE,
                     )
                     .unwrap_or_else(|error| {
                         panic!("record {target:?} lowering for {case}: {error}")

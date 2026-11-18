@@ -9,8 +9,8 @@
 // rows after the last page; a later normalization then follows nested alias targets without
 // depending on dependency page order. Normalization rewrites rows interned
 // here, so the early stage re-arms them (CT_COUNT_EARLY_REARM).
-import dependency_interface;
-import status;
+import shared.semantics.dependency_interface;
+import shared.buffers.status;
 import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;

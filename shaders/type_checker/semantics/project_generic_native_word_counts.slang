@@ -1,20 +1,20 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.checked_array_counts;
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 import type_checker.checked_canonical;
 import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 // Checked native widths for concrete generic values. These facts stay private
 // to body compilation; durable type and object records are unchanged.
 
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.local_struct_layout;
 import type_checker.native_nominal_identity;
 import type_checker.concrete_value_layout;
 import type_checker.dependencies.retained_value_layout;
-import status;
+import shared.buffers.status;
 
 bool valid_instance(uint instance)
 {

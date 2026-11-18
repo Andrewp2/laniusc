@@ -1,9 +1,9 @@
 // The parser rounds each source spelling independently to binary32 and binary64.
 // Consumers select both bits and decode status using the same checked scalar.
 // This module performs no floating arithmetic or cross-width conversion.
-import hir_records;
-import primitive_types;
-import constant_value;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 
 public bool selected_float_literal_status(uint packed, uint scalar, out uint status)
 {

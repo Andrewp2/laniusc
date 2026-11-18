@@ -34,8 +34,8 @@
 // - A type result taller than 64 levels is DEPTH. An ENV is not a type: its
 //   height is one more than its tallest binding, and only the bindings,
 //   which are types and values, are held to the 64-level limit.
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.retained_substitution_workspace;
 

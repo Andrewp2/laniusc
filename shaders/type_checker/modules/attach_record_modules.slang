@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // GPU record-to-module-id attachment.
 //

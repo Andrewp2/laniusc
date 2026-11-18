@@ -8,12 +8,13 @@
 //! file imports nothing: the type checker resolves `core::function` as a
 //! language item (shaders/type_checker/modules/paths/resolve_qualified_paths).
 //!
-//! The round runs first, so its kernels (shaders/closures) read the lexer's
+//! The round runs first, so its kernels (shaders/desugar/closures) read the lexer's
 //! own tokens. A prefix sum of the bracket depth and the closure starts
 //! gives every token its depth and its closure, a heap of minimum depths
 //! finds the bracket around a binder, and the captures are the first uses of
-//! the enclosing function's typed locals in a body. shaders/closures/
-//! pieces.slang writes the pieces that the shared stages splice in.
+//! the enclosing function's typed locals in a body. The kernel
+//! `shaders/desugar/closures/write_closure_pieces.slang` writes the pieces
+//! that the shared stages splice in.
 
 use anyhow::Result;
 
@@ -30,7 +31,7 @@ use super::{
 use crate::{gpu::buffers::LaniusBuffer, lexer::tables::tokens::TokenKind};
 
 /// The strings the kernels insert, in the order of the `C_*` ids in
-/// shaders/closures/closure_common.slang.
+/// shaders/desugar/closures/closure_layout.slang.
 /// A string that follows a copied type starts with a space, so a type that
 /// ends in `>` does not join it into `>=` or `>>`.
 const CONSTANTS: [&str; 39] = [
@@ -81,18 +82,18 @@ fn keyword(_word: &str) -> Option<TokenKind> {
     None
 }
 
-const MARK: &str = "closures/mark";
-const DEPTH_BLOCKS: &str = "closures/depth_blocks";
-const DEPTH_TREE: &str = "closures/depth_tree";
-const ROLES: &str = "closures/roles";
-const RECORDS: &str = "closures/records";
-const CAPTURES: &str = "closures/captures";
-const PIECES: &str = "closures/pieces";
+const MARK: &str = "desugar/closures/mark_closure_starts_and_depths";
+const DEPTH_BLOCKS: &str = "desugar/closures/build_closure_depth_block_heaps";
+const DEPTH_TREE: &str = "desugar/closures/build_closure_depth_top_heap";
+const ROLES: &str = "desugar/closures/classify_closure_binders";
+const RECORDS: &str = "desugar/closures/read_closure_records";
+const CAPTURES: &str = "desugar/closures/find_closure_captures";
+const PIECES: &str = "desugar/closures/write_closure_pieces";
 
 const RECORD_WORDS: usize = 12;
 const NO_ERROR: u32 = u32::MAX;
 
-// The plan mode and the closure layout of shaders/desugar/plan.slang.
+// The plan mode and the closure layout of shaders/desugar/tokens/plan_desugaring_dispatches.slang.
 const PLAN_PIECES: u32 = 11;
 const A_TOKENS: u32 = 16;
 const A_SCAN: u32 = 17;
@@ -132,7 +133,7 @@ pub(super) fn constant_strings() -> (&'static [&'static str], fn(&str) -> Option
 }
 
 /// The leaves of the heap of minimum depths over blocks of 256 tokens, for
-/// `rows` token rows (`closure_leaf_base` in shaders/desugar/plan.slang).
+/// `rows` token rows (`closure_leaf_base` in shaders/desugar/tokens/plan_desugaring_dispatches.slang).
 fn leaf_base(rows: usize) -> u32 {
     (rows.div_ceil(256).max(1) as u32).next_power_of_two()
 }

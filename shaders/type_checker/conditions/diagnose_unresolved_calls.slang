@@ -2,9 +2,9 @@
 // resolution has already published its semantic facts; this pass only reduces
 // those facts to the earliest source diagnostic.
 
-import hir_records;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.symbols.language_symbol_count;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

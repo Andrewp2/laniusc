@@ -6,7 +6,7 @@
 // as a checked row (scoped_reference_substitution.slang).
 import type_checker.mutable_checked_type_graph;
 import type_checker.substitution.scoped_reference_substitution;
-import status;
+import shared.buffers.status;
 
 struct Params
 {

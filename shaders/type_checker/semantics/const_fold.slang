@@ -17,9 +17,9 @@
 // constants that refer to each other folds in d rounds. The host records
 // LOCAL_CONST_FOLD_ROUNDS rounds (type_checker/mod.rs); a deeper constant
 // stays unevaluated and a public one fails the interface export by name.
-import integer_words;
-import primitive_types;
-import hir_records;
+import shared.numbers.integer_words;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 
 public StructuredBuffer<uint> compact_hir_count;
 public StructuredBuffer<HirCore> compact_hir_core;

@@ -12,7 +12,7 @@
 // blocks, and index_top the heap over the groups. Entries hold
 // (minimum, occurrences).
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 public static const uint CHILD_INDEX_FANOUT = 256u;
 

@@ -5,7 +5,7 @@
 // (project_struct_init_fields, 04b, project_dependency_struct_literals), and the reference projection
 // changes no other HIR row. One lane per HIR row and per field row;
 // struct_literal_row_counts was cleared before.
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

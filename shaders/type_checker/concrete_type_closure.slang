@@ -3,7 +3,7 @@
 // Unsubstituted parameters, unavailable rows, cycles, and excessive depth fail
 // closed before machine layout is considered.
 import type_checker.concrete_type_equality;
-import constant_value;
+import shared.semantics.constant_value;
 
 static const uint CONCRETE_CLOSURE_INVALID = 0xffffffffu;
 // References deeper than this below the instance fail closed.

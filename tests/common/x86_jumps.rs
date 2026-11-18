@@ -25,7 +25,7 @@
 //! is not checked.
 //!
 //! The native runtime block (the literal byte arrays of
-//! `shaders/codegen/lir/x86/runtime_abi.slang`, emitted as one contiguous
+//! `shaders/codegen/lir/x86/runtime/native_runtime_abi.slang`, emitted as one contiguous
 //! block) counts as one function. It is hand-written assembly whose entries
 //! call and jump to one another (the allocator calls its own mmap block and
 //! re-enters `alloc` after deciding its mode), and
@@ -54,7 +54,7 @@ const PT_LOAD: u32 = 1;
 const PF_X: u32 = 1;
 const OBJDUMP_TIMEOUT: Duration = Duration::from_secs(45);
 const REPORTED_PROBLEMS: usize = 12;
-const RUNTIME_SOURCE: &str = "shaders/codegen/lir/x86/runtime_abi.slang";
+const RUNTIME_SOURCE: &str = "shaders/codegen/lir/x86/runtime/native_runtime_abi.slang";
 
 /// The runtime block: the bytes of every `static const uint NAME[N] = { ... };`
 /// array of the runtime source, in order (the layout the compiler emits), the

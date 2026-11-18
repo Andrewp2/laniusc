@@ -9,10 +9,10 @@
 // - This pass only reorders compact declaration rows. It does not inspect source
 //   text, token spelling, helper names, or function body shapes.
 
-import gpu_index;
-import radix;
-import scatter;
-import stable_radix_scatter;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
+import shared.collectives.scatter;
+import radix.stable_radix_scatter;
 
 struct Params
 {

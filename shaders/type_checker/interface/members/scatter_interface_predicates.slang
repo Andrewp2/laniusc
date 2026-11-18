@@ -1,8 +1,8 @@
 // Serialize only accepted contract facts. Subject leaves retain exact member
 // ownership; trait references are translated into persistent declaration ids.
-import hir_records;
-import atomics;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.semantics.semantic_interface_layout;
 import type_checker.predicates.trait_reference;
 import type_checker.interface.method_parameters;
 import type_checker.interface.scalar_leaves;

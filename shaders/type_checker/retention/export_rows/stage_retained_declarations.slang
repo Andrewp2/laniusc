@@ -7,8 +7,8 @@
 // parameters before its method's, then the impl's constant parameters before
 // the method's, including unused ones. A trait and its required members end
 // the type domain with the trait's implicit Self.
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;

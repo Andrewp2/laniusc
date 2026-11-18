@@ -1,6 +1,9 @@
 //! Retained instance projection (docs/compiler-retained-projection.md).
 
-use laniusc_compiler::{codegen::lowering_capture, compiler::compile_source_to_x86_64_with_gpu_codegen};
+use laniusc_compiler::{
+    codegen::lir::input_capture,
+    compiler::compile_source_to_x86_64_with_gpu_codegen,
+};
 
 #[allow(unused_imports)]
 use crate::common;
@@ -23,7 +26,7 @@ fn main() -> i32 {
 }
 "#;
 
-fn dump(capture: &lowering_capture::Capture) {
+fn dump(capture: &input_capture::Capture) {
     let n = capture["hir.count"][0] as usize;
     let word = |name: &str, i: usize, stride: usize| -> Vec<u32> {
         capture.get(name).map(|w| w[i * stride..(i * stride + stride).min(w.len())].to_vec()).unwrap_or_default()
@@ -68,9 +71,9 @@ fn dump(capture: &lowering_capture::Capture) {
 
 #[test]
 fn retained_projection_oracle_columns() {
-    lowering_capture::arm(1 << 14);
+    input_capture::arm(1 << 14);
     let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(ORACLE)).expect("oracle compiles");
-    let captures = lowering_capture::take();
+    let captures = input_capture::take();
     eprintln!("{} lowering jobs, {} bytes", captures.len(), bytes.len());
     for c in &captures { dump(c); }
     if let Ok(path) = std::env::var("LANIUS_PROJECTION_ORACLE_DUMP") {

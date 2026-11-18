@@ -1,7 +1,7 @@
 // Shared fixed-argument checks for the frontend and retained instances.
 // `scalar` is 0 for a non-scalar or unresolved reference; `sequence` means
 // an array or slice. The caller owns reference decoding and source spans.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public bool intrinsic_fixed_argument_violation(uint intrinsic, uint scalar, bool sequence, out uint detail)
 {

@@ -741,9 +741,9 @@ schedule region, function ID, and qualified native symbol. GPU counts and scans
 allocate these ranges. Keeping this schema in the design does not justify
 adding unused runtime structs before the first executable consumer exists.
 
-Today, [`project.slang`](../shaders/codegen/lir/semantic/project.slang) assigns
+Today, [`project.slang`](../shaders/codegen/lir/semantics/instructions/project_semantic_values.slang) assigns
 one function identity per HIR row, and
-[`function_scatter.slang`](../shaders/codegen/lir/semantic/function_scatter.slang)
+[`function_scatter.slang`](../shaders/codegen/lir/semantics/functions/scatter_semantic_functions.slang)
 assigns one function per source token. Local/place identities also use source
 tokens. Several instances of one template would overwrite these maps. Give
 each instance disjoint parameter, local, place, and temporary ranges, and
@@ -768,7 +768,7 @@ instruction relation.
 ### Object symbol finalization, 2026-11-14
 
 `GpuX86SymbolFinalizer` in
-[`finalize.rs`](../crates/laniusc-compiler/src/codegen/x86/finalize.rs)
+[`symbol_finalization.rs`](../crates/laniusc-compiler/src/codegen/x86/symbol_finalization.rs)
 implements the native x86 finalization boundary from section 6 of the design.
 General compilation does not call it yet.
 
@@ -781,7 +781,7 @@ General compilation does not call it yet.
 | Required flags | routes published (1) and caller/target ABI certified (2) |
 | Host transfer | object-format symbol rows and identity bytes, from memory or a spilled object file |
 
-Seven kernels in `shaders/codegen/x86/finalize/` run in one submission.
+Seven kernels in `shaders/codegen/x86/symbol_finalization/` run in one submission.
 Each lane handles one object, route, symbol or identity word.
 Identity lengths do not change, so no scan is needed.
 The kernels reject a stale or unflagged readiness row and any missing route.

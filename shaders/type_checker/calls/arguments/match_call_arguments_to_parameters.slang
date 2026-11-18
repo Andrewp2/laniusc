@@ -1,6 +1,6 @@
 import type_checker.methods.method_candidate;
 StructuredBuffer<MethodCandidate> method_candidate;
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.inference_activity;
 
 // Match compact arguments to compact parameter rows.

@@ -1,7 +1,7 @@
 // Export accepted lexical implementation owners in compact HIR order.
 // Inherent visibility comes from public methods, independently of pub impl.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.predicates.trait_reference;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

@@ -8,7 +8,7 @@
 // - This pass consumes declaration records only. It does not inspect source
 //   bytes, token spelling, helper names, or function-body shapes.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

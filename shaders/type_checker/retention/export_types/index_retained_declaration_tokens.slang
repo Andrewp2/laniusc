@@ -6,7 +6,7 @@
 // callee row (RT_X_MARK_CALLEE) and each match pattern row: an arm's
 // pattern and every payload pattern (RT_X_MARK_PATTERN). Arms and payloads
 // never outnumber HIR rows, so the HIR lanes cover them.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.export_lane_index;

@@ -4,7 +4,7 @@
 // single shader invocation. It keeps scheduling on GPU counts without adding a
 // host readback or picking one stream as a proxy for the other.
 
-import uint_math;
+import shared.numbers.uint_math;
 
 struct Params
 {

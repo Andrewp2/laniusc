@@ -1,6 +1,6 @@
 // Insert names in parallel, resolving hash collisions with exact byte equality.
 
-import name_hash_common;
+import shared.search.name_hash_common;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

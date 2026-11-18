@@ -70,38 +70,38 @@ impl GpuWasmLinker {
         let link_module_pass = spawn_pass!(
             "link_module",
             "codegen_wasm_link_module",
-            "codegen/wasm/link/module.spv",
-            "codegen/wasm/link/module.reflect.json"
+            "codegen/wasm/link/write_linked_wasm_module.spv",
+            "codegen/wasm/link/write_linked_wasm_module.reflect.json"
         );
         let link_symbol_clear_pass = spawn_pass!(
             "link_symbol_clear",
             "codegen_wasm_link_symbol_clear",
-            "codegen/wasm/link/symbol_clear.spv",
-            "codegen/wasm/link/symbol_clear.reflect.json"
+            "codegen/wasm/link/clear_wasm_link_symbol_table.spv",
+            "codegen/wasm/link/clear_wasm_link_symbol_table.reflect.json"
         );
         let link_symbol_insert_pass = spawn_pass!(
             "link_symbol_insert",
             "codegen_wasm_link_symbol_insert",
-            "codegen/wasm/link/symbol_insert.spv",
-            "codegen/wasm/link/symbol_insert.reflect.json"
+            "codegen/wasm/link/index_wasm_link_symbol_definitions.spv",
+            "codegen/wasm/link/index_wasm_link_symbol_definitions.reflect.json"
         );
         let link_symbol_define_pass = spawn_pass!(
             "link_symbol_define",
             "codegen_wasm_link_symbol_define",
-            "codegen/wasm/link/symbol_define.spv",
-            "codegen/wasm/link/symbol_define.reflect.json"
+            "codegen/wasm/link/write_wasm_link_symbol_definitions.spv",
+            "codegen/wasm/link/write_wasm_link_symbol_definitions.reflect.json"
         );
         let link_resolve_pass = spawn_pass!(
             "link_resolve",
             "codegen_wasm_link_resolve",
-            "codegen/wasm/link/resolve.spv",
-            "codegen/wasm/link/resolve.reflect.json"
+            "codegen/wasm/link/resolve_wasm_link_symbols.spv",
+            "codegen/wasm/link/resolve_wasm_link_symbols.reflect.json"
         );
         let link_relocate_pass = spawn_pass!(
             "link_relocate",
             "codegen_wasm_link_relocate",
-            "codegen/wasm/link/relocate.spv",
-            "codegen/wasm/link/relocate.reflect.json"
+            "codegen/wasm/link/apply_wasm_link_relocations.spv",
+            "codegen/wasm/link/apply_wasm_link_relocations.reflect.json"
         );
 
         let linker = Self {

@@ -21,7 +21,7 @@ under "Not exported completely".
 | Production substitution | `shaders/type_checker/retention/substitution/`, [guide](compiler-retained-substitution.md) |
 | Trait catalog and bound goals from the store | `shaders/type_checker/trait_solver/retained/`, [guide](compiler-retained-trait-catalog.md) |
 | Host object | `crates/laniusc-compiler/src/type_checker/program_retention.rs` |
-| Acceptance probe | `shaders/tests/retention_resolve.slang`, `tests/program_retention.rs` |
+| Acceptance probe | `shaders/tests/probe_retained_use_resolution.slang`, `tests/program_retention.rs` |
 
 ## Lifetime and integration
 
@@ -309,7 +309,7 @@ parent identities, verify the complete defining binder's arity, and check
 distinct method bindings. Export currently checks local member identity and
 producer counts; the cross-unit checks below run only in the test probe.
 
-`shaders/tests/retention_traits.slang` validates the facts from the store
+`shaders/tests/probe_retained_trait_facts.slang` validates the facts from the store
 alone, per entry: exact owners and ordinals, subjects in the entry's binder
 map, trait terms over a committed `TRAIT` with matching arity, argument
 leaves inside the owner's chain, required members committed as

@@ -312,7 +312,7 @@ const COMPILE_PATH: &[Entry] = &[
 const DEBUG: &[(&str, &str, &str)] = &[
     ("bin/shader_dispatch_replay.rs", "replay", "the shader replay tool"),
     (
-        "codegen/lowering_capture.rs",
+        "codegen/lir/input_capture.rs",
         "lowering capture",
         "the lowering capture tool",
     ),

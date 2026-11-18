@@ -4,7 +4,7 @@
 import type_checker.substitution.substitution_scratch;
 import type_checker.checked_type_graph;
 import type_checker.constant_parameter_slots;
-import constant_value;
+import shared.semantics.constant_value;
 
 public struct CheckedSlots : ICtSlots
 {

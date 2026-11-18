@@ -19,7 +19,7 @@
 // not contiguous raises an invariant and marks the owner's entry
 // incomplete through its statistics (step 15). Trait terms come from the
 // keys claimed in classify_retained_trait_facts.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;

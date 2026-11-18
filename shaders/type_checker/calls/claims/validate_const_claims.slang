@@ -2,8 +2,8 @@ import type_checker.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
 // Validate complete constant references only after expression inference closes.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;
 import type_checker.calls.explicit_call_environment;

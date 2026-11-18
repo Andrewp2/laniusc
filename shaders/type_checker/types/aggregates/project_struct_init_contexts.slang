@@ -6,8 +6,8 @@
 // field. Broader nested context propagation should be added as another explicit
 // relation, not by restoring per-consumer tree walks.
 
-import hir_records;
-import external_type_identity;
+import shared.syntax.hir_records;
+import shared.semantics.external_type_identity;
 import type_checker.argument_context;
 
 struct Params

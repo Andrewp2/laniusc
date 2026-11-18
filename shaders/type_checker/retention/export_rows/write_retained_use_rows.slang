@@ -15,9 +15,9 @@
 // callee's parameters. Callee identity is never a row or token: a local
 // function or method is its declaration key, a dependency function its
 // (library, unit, local) triple, an enum constructor its enum's DeclId.
-import hir_records;
-import primitive_types;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;

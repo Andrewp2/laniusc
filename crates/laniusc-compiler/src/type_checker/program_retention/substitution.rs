@@ -216,15 +216,15 @@ const D_PUBLISH: u64 = 2;
 const D_ROLLBACK: u64 = 3;
 const D_SLOTS: u64 = 4;
 
-/// Test kernel: single-lane construction script (shaders/tests/retention_subst_fixture.slang).
+/// Test kernel: single-lane construction script (shaders/tests/seed_retained_substitution_fixture.slang).
 #[doc(hidden)]
-pub const FIXTURE_KERNEL: &str = "tests/retention_subst_fixture";
-/// Test kernel: requests from retained uses (shaders/tests/retention_subst_uses.slang).
+pub const FIXTURE_KERNEL: &str = "tests/seed_retained_substitution_fixture";
+/// Test kernel: requests from retained uses (shaders/tests/request_substitution_for_retained_uses.slang).
 #[doc(hidden)]
-pub const USES_KERNEL: &str = "tests/retention_subst_uses";
-/// Test kernel: the GPU consumer's publication check (shaders/tests/retention_subst_consumer.slang).
+pub const USES_KERNEL: &str = "tests/request_substitution_for_retained_uses";
+/// Test kernel: the GPU consumer's publication check (shaders/tests/check_retained_substitution_publication.slang).
 #[doc(hidden)]
-pub const CONSUMER_KERNEL: &str = "tests/retention_subst_consumer";
+pub const CONSUMER_KERNEL: &str = "tests/check_retained_substitution_publication";
 
 /// Rounds of the first batch; each further batch of one attempt doubles.
 /// A round is one expansion round, the scatter or one evaluation level, so

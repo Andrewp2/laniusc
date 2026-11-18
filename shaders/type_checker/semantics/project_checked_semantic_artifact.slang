@@ -1,14 +1,14 @@
-import primitive_types;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 import parser.token_features;
 import type_checker.calls.explicit_call_environment;
 import type_checker.semantics.constant_reference;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.predicate_scalar_subject;
-import gpu_index;
-import native_c_abi;
+import shared.buffers.gpu_index;
+import shared.native_interfaces.native_c_abi;
 import type_checker.local_struct_layout;
-import status;
+import shared.buffers.status;
 
 // Projection columns are sparse by their compact semantic domain. Value,
 // enclosing-function, control-depth, and expression-type columns cover every
@@ -126,7 +126,7 @@ RWStructuredBuffer<uint> semantic_type_external_library_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
-#include "../../codegen/lir/semantic/function_method.slang"
+#include "../../codegen/lir/semantics/functions/compact_method_functions.slang"
 #include "../types/parameters/lexical_parameter_lookup.slang"
 
 static const uint INVALID = 0xffffffffu;

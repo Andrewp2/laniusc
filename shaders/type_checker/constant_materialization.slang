@@ -1,4 +1,4 @@
-import constant_value;
+import shared.semantics.constant_value;
 import type_checker.concrete_type_equality;
 import type_checker.constant_atoms;
 // Copy a checked constant recipe into immutable source-owned storage after

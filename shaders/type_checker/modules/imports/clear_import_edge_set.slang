@@ -1,6 +1,6 @@
 // Clears the exact resolved-import hash set before one compilation job.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.import_edge_set;
 
 struct Params

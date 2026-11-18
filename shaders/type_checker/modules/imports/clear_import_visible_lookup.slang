@@ -1,6 +1,6 @@
 // Clears one exact imported-visibility lookup table.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.import_visible_lookup;
 
 struct Params

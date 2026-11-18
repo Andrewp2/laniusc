@@ -4,15 +4,12 @@ use crate::gpu::copies::CountedCommands;
 use super::*;
 use crate::compiler::desugar;
 use crate::{
-    codegen::{
-        lowering::{LoweringJobBounds, LoweringOutputDemand},
+    codegen::lir::{
         lowering_ir::LoweringArtifactKind,
+        semantics::{LoweringJobBounds, LoweringOutputDemand},
     },
     gpu::buffers::LaniusBuffer,
-    lexer::{
-        types::{GpuToken, Token},
-        util::read_tokens_from_mapped,
-    },
+    lexer::{types::{GpuToken, Token}, util::read_tokens_from_mapped},
     type_checker::{GpuTypeCheckCode, GpuTypeCheckError},
 };
 
@@ -727,9 +724,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                     &semantic,
                 )
                 .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
-            if crate::codegen::lowering_capture::armed() {
-                crate::codegen::lowering_capture::record(device, encoder,
-                    crate::codegen::lowering::named_lowering_inputs((&hir).into(), semantic.view()));
+            if crate::codegen::lir::input_capture::armed() {
+                crate::codegen::lir::input_capture::record(device, encoder,
+                    crate::codegen::lir::semantics::named_lowering_inputs((&hir).into(), semantic.view()));
             }
             pipeline
                 .record(device, queue, encoder, timer.as_deref_mut(), lowering_bounds)
@@ -757,14 +754,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                 gpu_type_checker::FrontendTraitCheck::PendingOriginal
                     if self.type_checker.attached_program_retention()
                         .is_some_and(|store| store.native_projection()) =>
-                    crate::codegen::lowering::ObjectFunctions::NonGeneric,
+                    crate::codegen::lir::semantics::ObjectFunctions::NonGeneric,
                 gpu_type_checker::FrontendTraitCheck::Strict
                 | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
-                    crate::codegen::lowering::ObjectFunctions::All,
+                    crate::codegen::lir::semantics::ObjectFunctions::All,
             };
-            if crate::codegen::lowering_capture::armed() {
-                crate::codegen::lowering_capture::record(device, encoder,
-                    crate::codegen::lowering::named_lowering_inputs((&hir).into(), semantic.view()));
+            if crate::codegen::lir::input_capture::armed() {
+                crate::codegen::lir::input_capture::record(device, encoder,
+                    crate::codegen::lir::semantics::named_lowering_inputs((&hir).into(), semantic.view()));
             }
             pipeline
                 .record_object(device, queue, encoder, library_id, unit_id, object_functions,
@@ -1275,7 +1272,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         artifact_kind: LoweringArtifactKind,
         hir: &crate::parser::buffers::GpuHirView,
         semantic: &gpu_type_checker::OwnedGpuSemanticArtifact,
-    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    ) -> Result<std::sync::Arc<crate::codegen::lir::pipeline::GpuLoweringPipeline>, String>
     {
         self.type_checker
             .with_post_typecheck_workspace(semantic, |workspace| {
@@ -1287,7 +1284,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 let [count, call_arg_count, field_count, match_arm_count,
                     match_payload_row_count, array_element_row_count, string_count,
                     param_count] = view.lowering_counts;
-                let hir_inputs = crate::codegen::lowering::GpuSemanticHirInputs {
+                let hir_inputs = crate::codegen::lir::semantics::GpuSemanticHirInputs {
                     count,
                     call_arg_count,
                     field_count,
@@ -2914,9 +2911,9 @@ impl NativeObjectStore {
     }
 }
 
-impl From<crate::codegen::x86_object_artifact::GpuX86FinishedObject> for CompiledSourcePackObject {
-    fn from(object: crate::codegen::x86_object_artifact::GpuX86FinishedObject) -> Self {
-        use crate::codegen::x86_object_artifact::GpuX86FinishedObject;
+impl From<crate::codegen::lir::x86::objects::GpuX86FinishedObject> for CompiledSourcePackObject {
+    fn from(object: crate::codegen::lir::x86::objects::GpuX86FinishedObject) -> Self {
+        use crate::codegen::lir::x86::objects::GpuX86FinishedObject;
         match object {
             GpuX86FinishedObject::Host(object) => Self::X86_64(object),
             GpuX86FinishedObject::Parked(object) => Self::X86_64File(object),
@@ -3023,7 +3020,7 @@ fn lowering_error_to_compile_error_for_source(
     target: LoweringTarget,
     error: anyhow::Error,
 ) -> CompileError {
-    let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+    let Some(failure) = error.downcast_ref::<crate::codegen::lir::pipeline::LoweringFailure>()
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
@@ -3064,7 +3061,7 @@ fn lowering_error_to_compile_error_for_source_pack(
     target: LoweringTarget,
     error: anyhow::Error,
 ) -> CompileError {
-    let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+    let Some(failure) = error.downcast_ref::<crate::codegen::lir::pipeline::LoweringFailure>()
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
@@ -3133,7 +3130,7 @@ fn lowering_backend_note(target: LoweringTarget) -> &'static str {
 /// because the Wasm opcode of an unsupported row is a placeholder.
 fn lowering_unsupported_op_note(
     target: LoweringTarget,
-    status: crate::codegen::lowering_ir::LoweringStatus,
+    status: crate::codegen::lir::lowering_ir::LoweringStatus,
 ) -> Option<String> {
     if status.first_unsupported_target_op == u32::MAX {
         return None;
@@ -3247,7 +3244,7 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
 #[cfg(test)]
 fn lowering_error_to_compile_error_without_source(error: anyhow::Error) -> CompileError {
     let diagnostic = error
-        .downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
+        .downcast_ref::<crate::codegen::lir::pipeline::LoweringFailure>()
         .and_then(|failure| semantic_lowering_capacity_failure(failure.status));
     match diagnostic {
         Some(diagnostic) => CompileError::Diagnostic(diagnostic),
@@ -3256,11 +3253,11 @@ fn lowering_error_to_compile_error_without_source(error: anyhow::Error) -> Compi
 }
 
 fn semantic_lowering_capacity_failure(
-    status: crate::codegen::lowering_ir::LoweringStatus,
+    status: crate::codegen::lir::lowering_ir::LoweringStatus,
 ) -> Option<Diagnostic> {
     // Other failures reuse the capacity words for their own domain or details.
     // Report semantic row counts only when that is the sole failure flag.
-    if status.flags != crate::codegen::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY {
+    if status.flags != crate::codegen::lir::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY {
         return None;
     }
     Some(
@@ -3274,10 +3271,10 @@ fn semantic_lowering_capacity_failure(
 }
 
 fn optimizer_incoming_failure(
-    status: crate::codegen::lowering_ir::LoweringStatus,
+    status: crate::codegen::lir::lowering_ir::LoweringStatus,
 ) -> Option<Diagnostic> {
     if status.diagnostic_reason
-        != crate::codegen::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE
+        != crate::codegen::lir::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE
     {
         return None;
     }
@@ -3289,7 +3286,7 @@ fn optimizer_incoming_failure(
         ))
         .with_help("this is an internal compiler failure, not unsupported Lanius syntax");
     if status.diagnostic_detail_kind
-        == crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE
+        == crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE
     {
         diagnostic = diagnostic.with_note(format!(
             "sample unresolved packed SSA source: 0x{:08x}",
@@ -3300,7 +3297,7 @@ fn optimizer_incoming_failure(
 }
 
 fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
-    use crate::codegen::lowering_ir::*;
+    use crate::codegen::lir::lowering_ir::*;
     match reason {
         LOWERING_DIAGNOSTIC_X86_ENTRYPOINT_PARAMETERS => {
             Some("unsupported x86 entrypoint parameters")
@@ -3325,7 +3322,7 @@ fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
             Some("unsupported x86 short-circuit trapping operand")
         }
         LOWERING_DIAGNOSTIC_X86_MATCH_EXPRESSION => Some("unsupported x86 match expression"),
-        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION => {
+        crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION => {
             Some("operation is not implemented by the x86 backend")
         }
         LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION => {
@@ -3355,15 +3352,15 @@ fn lowering_diagnostic_token(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     hir: &crate::parser::buffers::GpuHirView,
-    status: crate::codegen::lowering_ir::LoweringStatus,
+    status: crate::codegen::lir::lowering_ir::LoweringStatus,
 ) -> Result<u32, String> {
     // Generic target failures can be reported by many lanes at once. The
     // diagnostic-detail lane is nondeterministic, but first_unsupported_hir
     // is an atomic minimum and gives a stable source location.
     if matches!(
         status.diagnostic_reason,
-        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION
-            | crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION
+        crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION
+            | crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION
     ) && status.first_unsupported_hir != u32::MAX
     {
         return read_hir_token_start_for_diagnostic(
@@ -3374,10 +3371,10 @@ fn lowering_diagnostic_token(
         );
     }
     match status.diagnostic_detail_kind {
-        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_TOKEN => {
+        crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_TOKEN => {
             Ok(status.diagnostic_detail)
         }
-        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_HIR => {
+        crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_HIR => {
             read_hir_token_start_for_diagnostic(device, queue, hir, status.diagnostic_detail)
         }
         _ => Err("lowering diagnostic has no source-addressable detail".into()),
@@ -4912,14 +4909,14 @@ mod tests {
 
     #[test]
     fn semantic_capacity_failure_preserves_counts_in_public_diagnostic() {
-        let status = crate::codegen::lowering_ir::LoweringStatus {
-            flags: crate::codegen::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY,
+        let status = crate::codegen::lir::lowering_ir::LoweringStatus {
+            flags: crate::codegen::lir::lowering_ir::opcode::LOWERING_STATUS_SEMANTIC_CAPACITY,
             required_capacity: 5,
             available_capacity: 4,
             ..Default::default()
         };
         let error = lowering_error_to_compile_error_without_source(
-            crate::codegen::lowering_pipeline::LoweringFailure { status }.into(),
+            crate::codegen::lir::pipeline::LoweringFailure { status }.into(),
         );
         assert!(matches!(error, CompileError::Diagnostic(_)));
         let diagnostic = error.to_public_diagnostic();
@@ -4935,8 +4932,8 @@ mod tests {
 
     #[test]
     fn mixed_semantic_capacity_failure_preserves_existing_failure_details() {
-        use crate::codegen::lowering_ir::opcode;
-        let status = crate::codegen::lowering_ir::LoweringStatus {
+        use crate::codegen::lir::lowering_ir::opcode;
+        let status = crate::codegen::lir::lowering_ir::LoweringStatus {
             flags: opcode::LOWERING_STATUS_SEMANTIC_CAPACITY
                 | opcode::LOWERING_STATUS_OPTIMIZATION_STRUCTURE,
             required_capacity: 91,
@@ -4944,7 +4941,7 @@ mod tests {
             diagnostic_reason: opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
             first_unsupported_opt_row: 7,
             diagnostic_detail_kind:
-                crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
+                crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
             diagnostic_detail: 0x1234,
             ..Default::default()
         };
@@ -4959,7 +4956,7 @@ mod tests {
         assert!(!rendered.contains("instruction rows"));
 
         // The source-free conversion keeps its original raw phase error.
-        let failure = crate::codegen::lowering_pipeline::LoweringFailure { status };
+        let failure = crate::codegen::lir::pipeline::LoweringFailure { status };
         let original = failure.to_string();
         let error = lowering_error_to_compile_error_without_source(failure.into());
         match &error {
@@ -4973,9 +4970,9 @@ mod tests {
 
     #[test]
     fn unresolved_ssa_incoming_is_a_compiler_failure_not_an_unsupported_feature() {
-        let status = crate::codegen::lowering_ir::LoweringStatus {
+        let status = crate::codegen::lir::lowering_ir::LoweringStatus {
             diagnostic_reason:
-                crate::codegen::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
+                crate::codegen::lir::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
             first_unsupported_opt_row: 7,
             first_unsupported_target_op: 31,
             ..Default::default()
@@ -4985,9 +4982,9 @@ mod tests {
         let rendered = diagnostic.render();
         assert!(rendered.contains("first unresolved incoming relation row: 7"));
         assert!(!rendered.contains("unsupported target LIR opcode"));
-        let with_source = crate::codegen::lowering_ir::LoweringStatus {
+        let with_source = crate::codegen::lir::lowering_ir::LoweringStatus {
             diagnostic_detail_kind:
-                crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
+                crate::codegen::lir::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
             ..status
         };
         let rendered = optimizer_incoming_failure(with_source)

@@ -136,7 +136,7 @@ impl CatalogKernels {
 }
 
 /// Dispatch-local thread slots in the shared thread-scratch table
-/// (shaders/thread_scratch.slang). A pass that declares `thread_scratch`
+/// (shaders/shared/buffers/thread_scratch.slang). A pass that declares `thread_scratch`
 /// dispatches at most this many rows at a time; slot = row - dispatch_first.
 /// INTERIM: the table holds per-thread walker stacks moved out of local
 /// memory. Trait solver on canonical type IDs (plan P7) deletes them.
@@ -146,7 +146,7 @@ pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
 /// implementation (catalog_index.slang TS_COHERENCE_CHECKERS).
 const GROUP_SLOT_KERNELS: &[&str] = &["type_checker/trait_solver/catalog/check_implementation_coherence"];
 const COHERENCE_CHECKERS: u32 = 8;
-/// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
+/// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/shared/buffers/thread_scratch.slang.
 pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
 
 /// Each dispatch has immutable parameters. A separate compute pass is a WGPU
@@ -1786,7 +1786,7 @@ impl ImplementationApplicationKernel {
 mod tests {
     #[test]
     fn thread_scratch_layout_matches_shader() {
-        let shader = include_str!("../../../../../../../shaders/thread_scratch.slang");
+        let shader = include_str!("../../../../../../../shaders/shared/buffers/thread_scratch.slang");
         let cells = format!("THREAD_SCRATCH_CELLS = {}u;", super::THREAD_SCRATCH_CELLS);
         assert!(shader.contains(&cells), "host and shader disagree on {cells}");
         assert!(shader.contains("THREAD_SCRATCH_GROUP = 32u;"));

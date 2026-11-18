@@ -6,9 +6,9 @@
 // insertion outcome also identifies the canonical slot, avoiding a redundant
 // lookup dispatch after the table has been populated.
 
-import atomics;
-import gpu_index;
-import status;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.modules.path_prefix_common;
 
 struct Params { uint segment_capacity; uint step; uint reserved0; uint reserved1; };

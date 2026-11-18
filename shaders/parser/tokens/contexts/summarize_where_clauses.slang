@@ -4,7 +4,7 @@
 // statement/body boundaries. The apply pass turns that block summary into a
 // per-token context row so comma classification does not walk source tokens.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

@@ -4,7 +4,7 @@
 // O(log distance) heap nodes instead of climbing the raw parent chain, which
 // runs through long statement and item spines.
 
-import blocked_search_tree;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.semantic_end_heaps;
 
 struct Params

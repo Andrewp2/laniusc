@@ -1,7 +1,7 @@
 // Bound operands are separate checked roots. Their syntactic parent is the
 // contract application, which has no runtime value-type representation.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

@@ -5,10 +5,10 @@
 // admitted later). Each call owns its accepted result constraints.
 // Inference publishes all ordered bindings only after the entire graph has
 // matched.
-import hir_records;
-import hir_expr_semantics;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.calls.contextual_call_environment;
 import type_checker.argument_context;

@@ -4,7 +4,7 @@
 // while a lane writes one. Seeded rows only move to a smaller index, so the
 // row of an ID is stable once every source spelling of it is seeded.
 import type_checker.canonicalization.canonical_api;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public globallycoherent RWStructuredBuffer<uint> ct_row_of;
 

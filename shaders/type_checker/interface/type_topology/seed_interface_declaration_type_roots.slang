@@ -3,8 +3,8 @@
 // declarations, but their receiver and return types still belong to the owning
 // public type declaration's reachable interface graph.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

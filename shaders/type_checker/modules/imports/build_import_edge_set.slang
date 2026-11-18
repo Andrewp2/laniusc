@@ -1,6 +1,6 @@
 // Publishes every valid resolved import edge into the exact GPU hash set.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.import_edge_set;
 
 struct Params

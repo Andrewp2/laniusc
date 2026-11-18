@@ -1,6 +1,6 @@
 // Publish pointer-jumped generic type-argument owners, ordinals, and links.
 
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

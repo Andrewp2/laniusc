@@ -5,7 +5,7 @@
 // consumers should read these rows instead of walking parse-tree ancestors or
 // child lists to rediscover method ownership.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params

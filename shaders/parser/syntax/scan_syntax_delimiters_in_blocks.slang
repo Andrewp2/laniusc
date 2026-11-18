@@ -1,6 +1,6 @@
 // Syntax delimiter block-local depth scans for (), [], {}, and raw angle classes.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

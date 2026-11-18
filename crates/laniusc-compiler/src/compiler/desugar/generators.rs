@@ -25,14 +25,14 @@
 //! full. So each state's code is a copy of the body from its point to the
 //! next yield, and the machine rules (R2-R5) and proofs apply unchanged.
 //!
-//! The subset, checked by shaders/generators/check.slang: every local is
+//! The subset, checked by shaders/desugar/generators/check_generator_rules.slang: every local is
 //! declared once with a type (`let x: T = e;`), parameters are not assigned,
 //! `return` has no value, and a loop that contains a `yield` is a `while`
 //! with no `break` or `continue` of its own (the rest of its body after a
 //! yield runs outside the loop). `yield` and `return` are not allowed inside
 //! a `match`, a `for` or a plain block.
 //!
-//! shaders/generators/read.slang reads each generator from the token stream.
+//! shaders/desugar/generators/read_generator_records.slang reads each generator from the token stream.
 //! Prefix sums over the tokens give each `yield` its number, its depth and
 //! the locals in scope, and one thread per piece writes the pieces of the
 //! machine's text, which the shared stages splice in where the generator
@@ -58,7 +58,7 @@ use super::{
 use crate::{gpu::buffers::LaniusBuffer, lexer::tables::tokens::TokenKind};
 
 /// The strings the kernels insert, in the order of the `GC_*` ids in
-/// shaders/generators/generator_common.slang.
+/// shaders/desugar/generators/generator_layout.slang.
 const CONSTANTS: [&str; 43] = [
     "",
     "pub ",
@@ -124,16 +124,16 @@ fn keyword(word: &str) -> Option<TokenKind> {
 const RECORD_WORDS: usize = 7;
 const DETAIL_WORDS: usize = 4;
 
-const READ: &str = "generators/read";
-const MARKS: &str = "generators/marks";
-const LISTS: &str = "generators/lists";
-const DIRECT: &str = "generators/direct";
-const CONTEXT: &str = "generators/context";
-const CHECK: &str = "generators/check";
-const SCOPE: &str = "generators/scope";
-const PIECES: &str = "generators/pieces";
+const READ: &str = "desugar/generators/read_generator_records";
+const MARKS: &str = "desugar/generators/mark_generators_and_yields";
+const LISTS: &str = "desugar/generators/list_generator_tokens";
+const DIRECT: &str = "desugar/generators/count_generator_locals_by_scope";
+const CONTEXT: &str = "desugar/generators/mark_generator_locals_and_depths";
+const CHECK: &str = "desugar/generators/check_generator_rules";
+const SCOPE: &str = "desugar/generators/collect_locals_at_yields";
+const PIECES: &str = "desugar/generators/write_generator_pieces";
 
-// The plan mode and the generator layout of shaders/desugar/plan.slang.
+// The plan mode and the generator layout of shaders/desugar/tokens/plan_desugaring_dispatches.slang.
 const PLAN_PIECES: u32 = 10;
 const A_TOKENS: u32 = 16;
 const A_RECORD_WORDS: u32 = 17;

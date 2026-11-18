@@ -15,7 +15,7 @@ replays sources, and this path does not remove that replay. The list under
 | Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` and `02g` (binding sort), `09_fill_words` |
 | Publication kernels | `retained/publish.slang`, entries `07_publish_routes`, `08_publish_finish` |
 | Route ABI | `retained/route_abi.slang` |
-| GPU consumer (test) | `shaders/tests/retained_route_query.slang` |
+| GPU consumer (test) | `shaders/tests/query_retained_trait_routes.slang` |
 | Host driver | `crates/laniusc-compiler/src/compiler/gpu_compiler/trait_solver/dispatch/retained.rs` |
 | Catalog layout from counts | `trait_solver/catalog/retained.rs` |
 | Batch layout from counts | `trait_solver/packet/retained.rs` |
@@ -366,7 +366,7 @@ equals the header's. It then reads, without host help:
    nominal atom gives a `DeclId`.
 
 These bindings are the impl's environment, the one the selected method is
-specialized with. `shaders/tests/retained_route_query.slang` is this
+specialized with. `shaders/tests/query_retained_trait_routes.slang` is this
 consumer. The test asserts its answers against store records for 47
 requests. These cover private, generic, nested-bound and constant impls,
 an assumption, and all 40 members of the wide trait. The test also covers

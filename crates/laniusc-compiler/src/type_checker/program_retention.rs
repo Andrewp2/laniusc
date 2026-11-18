@@ -380,14 +380,14 @@ const SNAPSHOT_ROWS_PARAMS: [&str; 4] = [
     "snapshot_rows.params2",
     "snapshot_rows.params3",
 ];
-const RESOLVE_KERNEL: &str = "tests/retention_resolve";
-const TRAIT_PROBE_KERNEL: &str = "tests/retention_traits";
+const RESOLVE_KERNEL: &str = "tests/probe_retained_use_resolution";
+const TRAIT_PROBE_KERNEL: &str = "tests/probe_retained_trait_facts";
 
 /// Words per directory entry the trait-fact probe writes
-/// (shaders/tests/retention_traits.slang).
+/// (shaders/tests/probe_retained_trait_facts.slang).
 pub const TRAIT_PROBE_WORDS: usize = 16;
 
-/// Words per use the acceptance probe writes (shaders/tests/retention_resolve.slang).
+/// Words per use the acceptance probe writes (shaders/tests/probe_retained_use_resolution.slang).
 pub const PROBE_WORDS: usize = 40;
 
 fn storage(device: &wgpu::Device, label: &str, bytes: u64, indirect: bool) -> wgpu::Buffer {
@@ -1571,7 +1571,7 @@ impl ProgramRetention {
         Ok(())
     }
 
-    /// Trait-fact probe (shaders/tests/retention_traits.slang): reads only
+    /// Trait-fact probe (shaders/tests/probe_retained_trait_facts.slang): reads only
     /// the store and returns `TRAIT_PROBE_WORDS` words per directory entry.
     #[doc(hidden)]
     pub fn trait_probe(&self) -> Result<Vec<u32>> {
@@ -1658,7 +1658,7 @@ impl ProgramRetention {
         })
     }
 
-    /// Acceptance probe (shaders/tests/retention_resolve.slang): reads only
+    /// Acceptance probe (shaders/tests/probe_retained_use_resolution.slang): reads only
     /// the store and returns `PROBE_WORDS` words per committed use, then
     /// per explicit request `(callee DeclId, type argument count, argument
     /// 0, argument 1)`.

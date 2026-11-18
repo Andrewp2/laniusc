@@ -4,7 +4,7 @@
 // and references have fixed widths. Enums carry a discriminant followed by
 // storage for their widest realized variant payload.
 import type_checker.retention.projection_rows.retained_projection_type_tables;
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 import type_checker.retention.projection_schema.retained_schema_projection;
 
 static const uint DIR_STRUCT = 5u;

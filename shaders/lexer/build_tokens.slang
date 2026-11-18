@@ -1,6 +1,6 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 import utils;
-import atomics;
+import shared.buffers.atomics;
 
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> token_count;
@@ -579,7 +579,7 @@ uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file
     return keyword ? candidate : TK_IDENT;
 }
 
-// Where `|` or `||` cannot be a binary operator (shaders/closures/mark.slang).
+// Where `|` or `||` cannot be a binary operator (shaders/desugar/closures/mark_closure_starts_and_depths.slang).
 bool closure_prefix(uint kind)
 {
     return kind == TK_LPAREN || kind == TK_COMMA || kind == TK_ASSIGN || kind == TK_RETURN ||

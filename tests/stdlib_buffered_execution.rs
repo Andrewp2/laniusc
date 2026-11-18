@@ -183,7 +183,7 @@ fn imported_nested_readers_and_writers_compose_through_copy() {
 fn each_of_four_construction_failures_releases_exact_preceding_owners() {
     // Current Linux x86 source path, not a page-rounding guess:
     // core::mem::size_of<u8>() is 1; Vec::relocate calls alloc(capacity,8).
-    // shaders/codegen/lir/x86/runtime_abi.slang alloc_bytes forwards that size
+    // shaders/codegen/lir/x86/runtime/native_runtime_abi.slang alloc_bytes forwards that size
     // unchanged into mmap's length argument; dealloc forwards the same length
     // to munmap. Kernel page granularity does not change these traced args.
     let executable = executable("allocation");

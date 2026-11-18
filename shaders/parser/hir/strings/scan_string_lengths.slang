@@ -1,5 +1,5 @@
 // Prefix-scan raw string reservation lengths over HIR node order.
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params {
     uint n;

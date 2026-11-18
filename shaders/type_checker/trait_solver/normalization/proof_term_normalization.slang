@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.trait_solver.constant_atoms;
 // Copy an admitted root into an independently owned normalized store. Type
 // nodes, typed literal nodes, and pending count projections all acquire this
@@ -7,8 +7,8 @@ import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
-import constant_value;
-import thread_scratch;
+import shared.semantics.constant_value;
+import shared.buffers.thread_scratch;
 
 public interface IProofNormalizationGraph
 {

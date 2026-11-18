@@ -4,10 +4,10 @@
 # line may have none. Limits only go down: when a kernel shrinks, run
 # tools/ratchet_inlined_budget.py. Never add a kernel. The target for every
 # kernel is at most 1024 bytes, and 0 for new or rewritten ones.
-3328 tests/canonical_type_identity_boundary
-2076 tests/typed_constant_identity_graph
-2048 codegen/lir/semantic/aggregate_elements
-2048 tests/parameter_scoped_type_graph
+3328 tests/probe_canonical_type_boundary_identity
+2076 tests/probe_typed_constant_graph_identity
+2048 codegen/lir/semantics/instructions/write_semantic_aggregate_elements
+2048 tests/probe_parameter_scoped_type_graph
 2048 type_checker/calls/results/project_expression_types
 2048 type_checker/calls/results/project_array_literal_elements
 2048 type_checker/canonicalization/validate_canonical_type_equivalence

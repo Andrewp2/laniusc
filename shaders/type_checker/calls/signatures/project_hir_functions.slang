@@ -6,8 +6,8 @@
 // and declaration-type pass so this shader stays within the WebGPU storage
 // buffer limit.
 
-import hir_records;
-import lookup;
+import shared.syntax.hir_records;
+import shared.search.lookup;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.symbols.language_symbol_count;
 

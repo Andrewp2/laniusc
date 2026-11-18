@@ -11,8 +11,8 @@
 // - It does not resolve paths, scan source bytes, use hashes, append with
 //   atomics, perform CPU lookup, or apply same-source shortcuts.
 
-import gpu_index;
-import range_query;
+import shared.buffers.gpu_index;
+import shared.search.range_query;
 
 struct Params
 {

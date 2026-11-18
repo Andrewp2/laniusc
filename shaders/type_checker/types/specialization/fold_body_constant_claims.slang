@@ -10,7 +10,7 @@
 // does not fit, is left as it is. The reader binds exactly the parameters apply_body_specialization
 // published (type_const_param_value_by_token), the same table the host reads
 // for a bare parameter, so a fold is per replay entry wherever that table is.
-import constant_value;
+import shared.semantics.constant_value;
 import type_checker.constant_atoms;
 import type_checker.constant_atoms_identity;
 import type_checker.constant_publication;

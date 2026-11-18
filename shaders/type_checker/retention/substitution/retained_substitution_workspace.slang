@@ -33,8 +33,8 @@
 // A task's level is height(term) + height(env) - 1 (height(term) for
 // env 0). Every child task has a strictly lower level, so evaluation in
 // increasing level order sees every child result.
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.retention.retention_store;
 __exported import type_checker.retention.substitution.retained_substitution_layout;
 

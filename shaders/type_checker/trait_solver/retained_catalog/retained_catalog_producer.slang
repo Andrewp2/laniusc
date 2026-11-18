@@ -12,8 +12,8 @@
 // and committed jobs. Each lane counts the rows it owns in 16 counters
 // (RC_C_*), an exclusive scan ranks them, and the fill pass writes each row
 // at its rank. Output order is the store's record order, never atomic order.
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.retention.retention_store;
 __exported import type_checker.trait_solver.retained_catalog.retained_catalog_configuration;
 

@@ -3,11 +3,11 @@
 // indices belong to the page and are never published as persistent evidence.
 
 #include "method_validation_common.slang"
-import semantic_interface_layout;
-import dependency_interface;
+import shared.semantics.semantic_interface_layout;
+import shared.semantics.dependency_interface;
 import type_checker.dependencies.canonical_field_types;
 import type_checker.dependencies.canonical_field_stackless;
-import byte_packing;
+import shared.buffers.byte_packing;
 
 struct NameSpan { uint start; uint len; uint kind; uint token_index; };
 StructuredBuffer<NameSpan> name_spans;

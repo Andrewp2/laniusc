@@ -239,7 +239,7 @@ of the executable:
 
 A native build that compiles its objects in memory links them on the GPU from
 the buffers the lowering wrote. The host does not read or upload object bytes
-for the link. `codegen/x86/link/resident.rs` runs the link:
+for the link. `codegen/x86/link/resident_linking.rs` runs the link:
 
 1. Lowering copies each object's metadata, relocation rows, symbol rows, text
    and rodata into a store the linker keeps. The original-call rewrite in
@@ -285,7 +285,7 @@ and `retained_native_resident_emit_retries_after_a_capacity_failure` in
 `tests/retained_native.rs` force each path and compare the executable with
 an unforced build.
 
-The shaders are in `shaders/codegen/x86/link/resident/`. Every check the host
+The shaders are in `shaders/codegen/x86/link/resident_linking/`. Every check the host
 link makes has a GPU error bit. Any error, a C driver link, or a store that
 does not hold the build's objects falls back to the host link, which reports
 the exact diagnostic.

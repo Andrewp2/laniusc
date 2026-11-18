@@ -5,8 +5,8 @@
 // apply pass turns those rows into the latest event before each token, which
 // tokens_to_kinds consumes.
 
-import prefix_scan;
-import segment_tree;
+import shared.collectives.prefix_scan;
+import shared.search.segment_tree;
 
 struct Params
 {

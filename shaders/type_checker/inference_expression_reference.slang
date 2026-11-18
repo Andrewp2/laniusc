@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 #include "named_expression_reference.slang"
 // Included by fact producers with read-only or writable declaration columns.
 // Read complete roots from earlier dispatches. Index chains are traversed from

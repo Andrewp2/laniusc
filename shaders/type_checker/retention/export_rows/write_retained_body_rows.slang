@@ -15,7 +15,7 @@
 // RT_REL_FOREIGN and is counted FOREIGN; untranslated and unowned terms are
 // counted too. Nothing else of the job (canonical IDs, absolute rows or
 // tokens, declaration tokens) is written.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.retained_row_classes;

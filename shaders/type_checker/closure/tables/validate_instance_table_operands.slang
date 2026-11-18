@@ -28,11 +28,11 @@
 // the instances that calls of this job reach (instance_closure.slang), so
 // each has a checked call; a capacity or closure flag leaves no rows to
 // check.
-import primitive_types;
-import integer_words;
-import hir_records;
-import hir_expr_semantics;
-import status;
+import shared.semantics.primitive_types;
+import shared.numbers.integer_words;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.status;
 import type_checker.checked_index_reference;
 import type_checker.operator_operand_rules;
 import type_checker.float_literal_selection;

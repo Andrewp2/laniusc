@@ -6,7 +6,7 @@ import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.normalization.proof_normalization_stages;
 import type_checker.trait_solver.proof_frontier.proof_demand;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

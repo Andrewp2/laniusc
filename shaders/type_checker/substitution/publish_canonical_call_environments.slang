@@ -12,8 +12,8 @@
 // A binding is interned on demand (checked_operand_ids.slang) and the environment is
 // built by canonical_binding_environments.slang, which re-interns it only when its bindings differ
 // from the published one, so a stable call reserves nothing in later rounds.
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_constants;
 import type_checker.substitution.checked_operand_ids;

@@ -5,7 +5,7 @@
 // the closes of all earlier blocks, so each lane walks a contiguous run of
 // blocks with a running close count, and a workgroup scan of the runs' totals
 // supplies the closes before each run.
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n; uint uses_status_count; uint n_prefix_blocks; uint max_tree_leaf_base; };
 ConstantBuffer<Params> gTree;

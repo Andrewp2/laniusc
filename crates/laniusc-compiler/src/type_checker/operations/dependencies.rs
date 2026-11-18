@@ -197,7 +197,7 @@ pub(in crate::type_checker) const DEPENDENCY_MODULE_LOOKUP_BUILD: ReflectedCompu
 );
 
 /// The method index of the page in the dependency slot
-/// (`shaders/dependency_method_index.slang`), cleared and rebuilt each time a
+/// (`shaders/shared/semantics/dependency_method_index.slang`), cleared and rebuilt each time a
 /// page enters the slot.
 pub(in crate::type_checker) const DEPENDENCY_METHOD_LOOKUP_CLEAR: ReflectedComputeSpec =
     typecheck_pass!(

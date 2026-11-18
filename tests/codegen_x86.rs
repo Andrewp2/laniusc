@@ -27,7 +27,7 @@ fn main() -> i32 {
 #[test]
 fn x86_reads_every_element_of_wide_array_literals() {
     // Wide literals take the per-element liveness pass and the dense element
-    // index (lir/x86/optimize_element_liveness, lir/x86/aggregate_facts).
+    // index (mark_x86_live_aggregate_elements, native_aggregate_facts).
     // Negative, computed and call elements must stay live, and each element
     // of a two-word struct array must land in its own words.
     const WORDS: i32 = 1500;

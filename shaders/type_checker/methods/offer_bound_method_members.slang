@@ -23,8 +23,8 @@
 // rows, and its callee member, or the leaf of its callee path, names the
 // method token (mark_method_call_keys keys an associated call at the leaf).
 
-import gpu_index;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 import type_checker.methods.method_candidate;
 import type_checker.predicates.predicate_owner_lookup;
 import type_checker.predicates.method_contract_lookup;

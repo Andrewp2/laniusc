@@ -4,7 +4,7 @@
 // can consume HIR records instead of rediscovering operators from token shapes.
 
 import generated_parse_production_ids;
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

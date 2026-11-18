@@ -3,7 +3,7 @@
 // paying one device-wide barrier for every binary-doubling step. Rounds after
 // the walk converges return at once (hir_walk_state).
 
-import hir_walk_state;
+import shared.syntax.hir_walk_state;
 
 struct Params
 {

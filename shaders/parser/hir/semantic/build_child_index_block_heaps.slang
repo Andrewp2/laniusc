@@ -2,7 +2,7 @@
 // (minimum, count) heap over each group of 256 block aggregates from
 // project_semantic_navigation.slang. One workgroup owns one group.
 
-import blocked_search_tree;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.semantic_end_heaps;
 import parser.hir.semantic.child_index_heaps;
 

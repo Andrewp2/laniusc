@@ -17,14 +17,14 @@
 // implementation's method is concrete and needs no instance. A generic one's
 // method is inserted one level deeper with the environment its pattern binds
 // from R and its routed target (instance_closure_targets).
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_substitution;
 import type_checker.substitution.source_slot_adapter;
 import type_checker.substitution.canonical_call_environments;
 import type_checker.closure.instance_closure;
 import type_checker.methods.method_lookup;
-import status;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

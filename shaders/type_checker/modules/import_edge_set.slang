@@ -4,7 +4,7 @@
 // immutable import relation supplies the key, so publication needs only one
 // atomic word and queries still compare both module ids exactly.
 
-import atomics;
+import shared.buffers.atomics;
 
 public static const uint IMPORT_EDGE_SET_EMPTY = 0u;
 public static const uint IMPORT_EDGE_SET_INVALID = 0xffffffffu;

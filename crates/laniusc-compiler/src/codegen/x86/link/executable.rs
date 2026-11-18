@@ -5,8 +5,8 @@ use anyhow::{Result, bail};
 
 use super::{
     GpuX86LinkInput,
-    dynamic::{X86DynamicImage, X86DynamicRows},
-    paged::GpuX86PagedExecutablePlan,
+    dynamic_sections::{X86DynamicImage, X86DynamicRows},
+    paged_input::GpuX86PagedExecutablePlan,
 };
 use crate::{
     codegen::x86::{GpuX86Linker, support::u32_words_bytes},
@@ -404,7 +404,7 @@ impl GpuX86Linker {
         let mut emitted_len = 0usize;
         let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.splices");
         let splices =
-            super::splice::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
+            super::call_splicing::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
         drop(span);
         for page in &plan.pages {
             if emitted_len != page.output_base as usize {
@@ -796,7 +796,7 @@ pub(super) fn relocation_words(
     relocations: &[super::GpuX86LinkRelocationRecord],
     object_bases: &[[u32; 2]],
     indices: &[usize],
-    splices: &[Option<[u8; super::splice::SPLICE_SLOT_BYTES]>],
+    splices: &[Option<[u8; super::call_splicing::SPLICE_SLOT_BYTES]>],
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
     let mut a = Vec::with_capacity(indices.len() * 4);
     let mut b = Vec::with_capacity(indices.len() * 4);

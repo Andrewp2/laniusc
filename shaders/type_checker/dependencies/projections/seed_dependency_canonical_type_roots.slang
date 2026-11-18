@@ -3,8 +3,8 @@ import type_checker.constant_storage_plan;
 // point at their checked signature type; all other nodes are roots. Later
 // parallel pointer-jumping rounds flatten arbitrary alias chains.
 
-import dependency_interface;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.buffers.gpu_index;
 
 struct Params
 {

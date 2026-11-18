@@ -80,7 +80,7 @@ have the correct two-word instance layout.
 
 The native direct call therefore reserves and captures both returned words.
 The bad calls retain aggregate classification but declare zero result words,
-so [result capture](../shaders/codegen/lir/x86/instruction_plan.slang) publishes
+so [result capture](../shaders/codegen/lir/x86/emission/native_instruction_encoding_plan.slang) publishes
 an empty aggregate address without storing the returned tag or payload. Each
 destination then copies two words from that carrier. The lost width is visible
 before native emission; it does not require a storage-overlap or SSA hypothesis.

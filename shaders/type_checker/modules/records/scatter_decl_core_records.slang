@@ -8,8 +8,8 @@
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
 
-import hir_records;
-import scatter;
+import shared.syntax.hir_records;
+import shared.collectives.scatter;
 
 struct Params
 {

@@ -1,5 +1,5 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.trait_solver.constant_atoms;
 // Binding-owned prefixes are private until the complete substitution wave is
 // checked. Its exact source is reconstructed from the admitted goal match.

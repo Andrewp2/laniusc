@@ -9,11 +9,11 @@ import type_checker.constant_parameter_slots;
 // against it once (ct_match) for the closed-pattern mismatch and the legacy
 // scalar slot cache. Claims themselves are emitted by emit_generic_claims.
 
-import dependency_interface;
+import shared.semantics.dependency_interface;
 import type_checker.calls.parameter_pattern_page;
-import hir_records;
-import atomics;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.syntax.hir_expr_semantics;
 import type_checker.checked_index_reference;
 import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
@@ -23,8 +23,8 @@ import type_checker.canonicalization.canonical_dependency;
 import type_checker.substitution.substitution_scratch;
 import type_checker.substitution.checked_operand_ids;
 import type_checker.matches.checked_match_types;
-import constant_value;
-import status;
+import shared.semantics.constant_value;
+import shared.buffers.status;
 import type_checker.intrinsic_operand_rules;
 import type_checker.calls.inference_activity;
 

@@ -16,7 +16,7 @@ struct InclusiveBlockScanParams {
 }
 
 /// Capacity-dependent parameters of an inclusive scan over precomputed
-/// block sums. One workgroup scans every block (scan/blocks/inclusive).
+/// block sums. One workgroup scans every block (scan/blocks/scan_block_sums_inclusively).
 pub struct InclusiveBlockScanPlan {
     params: LaniusBuffer<InclusiveBlockScanParams>,
 }
@@ -50,7 +50,7 @@ impl InclusiveBlockScanKernels {
                 device,
                 "scan.blocks.inclusive",
                 "main",
-                "scan/blocks/inclusive",
+                "scan/blocks/scan_block_sums_inclusively",
             )?,
         })
     }

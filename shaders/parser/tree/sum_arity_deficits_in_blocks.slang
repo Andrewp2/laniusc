@@ -4,7 +4,7 @@
 // E[p] = sum_{k < p}(1 - a[k]). Parent/span recovery can then search for
 // previous/next prefix thresholds instead of replaying subtrees directly.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

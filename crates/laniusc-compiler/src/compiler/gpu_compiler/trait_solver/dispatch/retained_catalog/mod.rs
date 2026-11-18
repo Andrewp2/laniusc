@@ -80,7 +80,7 @@ const SORT_STEP: usize = 14;
 const SORT_FINISH: usize = 15;
 const PUBLISH_ROUTES: usize = 16;
 const PUBLISH_FINISH: usize = 17;
-const QUERY_KEY: &str = "tests/retained_route_query";
+const QUERY_KEY: &str = "tests/query_retained_trait_routes";
 /// Byte stride of one bitonic step's (k, j) in the stage buffer: the
 /// storage offset alignment of every supported device.
 const STAGE_STRIDE: u64 = 256;
@@ -1324,7 +1324,7 @@ impl RetainedTraitPublication {
         super::words(&self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], crate::debug_readback_label!("retained routes"))?[0])
     }
 
-    /// Runs the GPU consumer shaders/tests/retained_route_query.slang over
+    /// Runs the GPU consumer shaders/tests/query_retained_trait_routes.slang over
     /// `requests` (use, obligation ordinal, required symbol) against
     /// `identity`, and reads its 16-word answers back for assertions.
     #[doc(hidden)]

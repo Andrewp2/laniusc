@@ -9,8 +9,8 @@
 // that token's statement starts: braces opened and closed inside the
 // statement hold only larger keys.
 
-import prefix_scan;
-import blocked_search_tree;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 import parser.tokens.contexts.generic_parameter_keywords;
 
 struct Params

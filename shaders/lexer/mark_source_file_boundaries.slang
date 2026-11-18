@@ -1,4 +1,4 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 
 StructuredBuffer<uint> source_file_count;
 StructuredBuffer<uint> source_file_start;

@@ -9,10 +9,10 @@
 // Types compare by canonical ID (docs/canonical-type-ids.md). A lane plans
 // its declaration's new type, interns it and the published one on demand
 // from one site, then validates, compares and publishes.
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
-import dependency_interface;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
+import shared.semantics.dependency_interface;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
@@ -21,7 +21,7 @@ import type_checker.canonicalization.canonical_checked_rows;
 // Shares the candidate keys' decl_id_by_name_token binding.
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.substitution.checked_operand_ids;
-import status;
+import shared.buffers.status;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 

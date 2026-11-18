@@ -1,7 +1,7 @@
 // Second dependency-page visit: publish only the shared finalized winner.
 // No candidate is selected here and no page-local signature escapes as a key.
 #include "../method_candidates.slang"
-import dependency_return_layout;
+import shared.semantics.dependency_return_layout;
 import type_checker.calls.explicit_dependency_binding;
 import type_checker.calls.explicit_constant_operand;
 import type_checker.calls.inference_activity;

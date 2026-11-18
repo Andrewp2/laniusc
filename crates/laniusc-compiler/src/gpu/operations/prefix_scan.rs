@@ -24,43 +24,43 @@ struct PrefixScanPasses<'a> {
 
 fn standard_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     PrefixScanPasses {
-        local: kernels.kernel("scan/counted/00_local"),
-        apply: kernels.kernel("scan/counted/02_apply"),
+        local: kernels.kernel("scan/words/scan_counted_word_blocks"),
+        apply: kernels.kernel("scan/words/apply_counted_word_carries"),
     }
 }
 
 fn in_place_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     PrefixScanPasses {
-        local: kernels.kernel("scan/counted/00_local_in_place"),
-        apply: kernels.kernel("scan/counted/02_apply_in_place"),
+        local: kernels.kernel("scan/words/scan_counted_word_blocks_in_place"),
+        apply: kernels.kernel("scan/words/apply_counted_word_carries_in_place"),
     }
 }
 
 fn total_dispatch_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     PrefixScanPasses {
-        local: kernels.kernel("scan/counted/00_local"),
-        apply: kernels.kernel("scan/counted/02_apply_dispatch"),
+        local: kernels.kernel("scan/words/scan_counted_word_blocks"),
+        apply: kernels.kernel("scan/words/apply_counted_word_carries_and_size_dispatch"),
     }
 }
 
 fn pair_total_dispatch_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
     Some(PrefixScanPasses {
-        local: kernels.optional("scan/counted_pair/00_local")?,
-        apply: kernels.optional("scan/counted_pair/03_apply_dispatch")?,
+        local: kernels.optional("scan/pairs/scan_counted_pair_blocks")?,
+        apply: kernels.optional("scan/pairs/apply_counted_pair_carries_and_size_dispatch")?,
     })
 }
 
 fn pair_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
     Some(PrefixScanPasses {
-        local: kernels.optional("scan/counted_pair/00_local")?,
-        apply: kernels.optional("scan/counted_pair/03_apply")?,
+        local: kernels.optional("scan/pairs/scan_counted_pair_blocks")?,
+        apply: kernels.optional("scan/pairs/apply_counted_pair_carries")?,
     })
 }
 
 fn pair_in_place_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
     Some(PrefixScanPasses {
-        local: kernels.optional("scan/counted_pair/00_local_in_place")?,
-        apply: kernels.optional("scan/counted_pair/03_apply_in_place")?,
+        local: kernels.optional("scan/pairs/scan_counted_pair_blocks_in_place")?,
+        apply: kernels.optional("scan/pairs/apply_counted_pair_carries_in_place")?,
     })
 }
 
@@ -80,7 +80,7 @@ where
 }
 
 /// Indirect dispatch arguments an apply writes for its scan's total
-/// (scan/total_dispatch.slang): the `ScanTotalDispatchParams` uniform and
+/// (scan/blocks/scan_total_dispatch.slang): the `ScanTotalDispatchParams` uniform and
 /// the argument buffer.
 #[derive(Clone, Copy)]
 pub(crate) struct ScanTotalDispatch<'a> {

@@ -5,7 +5,7 @@
 // of a trait impl marks its row (y) and counts at its impl (w). A
 // generic-bound predicate without an exportable owner is an invariant
 // failure: its fact would otherwise be silently omitted.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.export_lane_index;

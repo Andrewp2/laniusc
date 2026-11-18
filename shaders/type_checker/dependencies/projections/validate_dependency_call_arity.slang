@@ -1,11 +1,11 @@
 // Check imported call arity once per call HIR row. Argument-row validation
 // cannot detect missing arguments because a zero-argument call has no rows.
 
-import dependency_interface;
-import dependency_method_index;
-import hir_records;
-import gpu_index;
-import status;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params
 {

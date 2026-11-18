@@ -5,7 +5,7 @@
 // context. The apply pass then classifies brace owners without walking backward
 // through source tokens.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

@@ -1,7 +1,7 @@
 //! ct_match cases on the physical GPU (shaders/type_checker/matches/checked_match_types.slang).
 //! One lane interns every case's pattern and actual, matches them, and
 //! checks the interned environment against records it builds afterwards
-//! (shaders/tests/ct_match_cases.slang). The same kernel runs on the CPU
+//! (shaders/tests/probe_canonical_type_matching.slang). The same kernel runs on the CPU
 //! replay with zero-filled buffers.
 
 use std::collections::BTreeMap;
@@ -12,7 +12,7 @@ use super::{
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
-const CASES_KERNEL: &str = "tests/ct_match_cases";
+const CASES_KERNEL: &str = "tests/probe_canonical_type_matching";
 const CASES: usize = 25;
 const CHECKS: usize = CASES * 4;
 

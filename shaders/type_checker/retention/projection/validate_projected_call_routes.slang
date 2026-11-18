@@ -14,8 +14,8 @@
 //   symbolic.
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
-import native_c_entry;
-import native_c_abi;
+import shared.native_interfaces.native_c_entry;
+import shared.native_interfaces.native_c_abi;
 import type_checker.operator_operand_rules;
 import type_checker.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;

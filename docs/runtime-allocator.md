@@ -3,8 +3,8 @@
 `alloc::allocator::{alloc, dealloc, realloc}` are host calls into the x86_64
 runtime block that every native executable and object carries (a linked
 executable keeps one copy, from its entry object)
-([`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime_abi.slang); readable
-source in [`runtime_raw_width.s`](../shaders/codegen/lir/x86/runtime_raw_width.s),
+([`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime/native_runtime_abi.slang); readable
+source in [`runtime_raw_width.s`](../shaders/codegen/lir/x86/runtime/runtime_raw_width.s),
 section `.text.alloc_bytes`). Until this change every allocation was its own
 anonymous `mmap`, so each one also took a page fault, and every release was a
 `munmap`. The runtime now pools small blocks.

@@ -10,7 +10,7 @@
 import type_checker.concrete_type_equality;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 // Hash frames, 2 cells per depth: (ref, next), then (count, 0, 0, 0).
 #define SCOPED_TYPE_HASH_WALK scoped_type_ref_hash_scratch

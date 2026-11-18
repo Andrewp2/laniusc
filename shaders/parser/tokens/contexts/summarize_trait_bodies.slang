@@ -3,7 +3,7 @@
 // The syntax checker consumes this prefix-scanned record to decide whether a
 // `fn` token belongs to a trait body without walking backward through tokens.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

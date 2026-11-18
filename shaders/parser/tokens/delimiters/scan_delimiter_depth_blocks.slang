@@ -4,7 +4,7 @@
 // Blocks are scanned in tiles of 256, in order: depths are summed and
 // events take their maximum, each from the tiles before.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

@@ -6,7 +6,7 @@
 //   rejects direct two-module cycles without scanning source bytes or walking
 //   module graphs on the CPU. Longer cycles require the GPU topological check.
 
-import status;
+import shared.buffers.status;
 import type_checker.modules.import_edge_set;
 
 struct Params

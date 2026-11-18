@@ -8,7 +8,7 @@
 //   qualified paths, perform same-source shortcuts, use hash-only lookup, or
 //   ask the CPU to classify paths.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.modules.record_candidates;
 
 struct Params

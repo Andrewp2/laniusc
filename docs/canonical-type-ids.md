@@ -201,7 +201,7 @@ Allocation stays bounded:
 `crates/laniusc-compiler/src/gpu/canonical_intern_stress_tests.rs` exercise the
 protocol:
 
-- `shaders/tests/canonical_intern_stress.slang` uses 1M lanes. Each lane
+- `shaders/tests/stress_canonical_interning.slang` uses 1M lanes. Each lane
   interns one nested chain of 1–12 levels. A level is a slice, an array whose
   length is a count class, a 3–6-operand named type with shared leaves, or a
   reference.

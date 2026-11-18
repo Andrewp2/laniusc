@@ -2,7 +2,7 @@
 // Each token is one independent input element; the workgroup scan composes the
 // associative (sum, minimum-prefix) monoid.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n_tokens; uint n_blocks; uint scan_step; };
 ConstantBuffer<Params> gParams;

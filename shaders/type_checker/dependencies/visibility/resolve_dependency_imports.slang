@@ -3,10 +3,10 @@
 // path is no module, an item import's prefix is: import_item_name_id then
 // holds the leaf's name.
 
-import dependency_interface;
-import byte_packing;
-import gpu_index;
-import status;
+import shared.semantics.dependency_interface;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params
 {

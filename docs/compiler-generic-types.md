@@ -231,7 +231,7 @@ required-member execution, and refreshed performance acceptance remain open.
 Two native typed-operands runs timed out during pipeline initialization, before
 source execution. The second trace records 374 completed pipelines and two still
 being created: `type_checker/calls/03a1_emit_generic_claims` and
-`codegen/lir/semantic/aggregate_elements`.
+`codegen/lir/semantics/instructions/write_semantic_aggregate_elements`.
 Evidence, failures, and separate build/source/artifact hashes are recorded in
 `tests/fixtures/stdlib_compiler_state/typed-constant-build-checkpoint/`.
 
@@ -2451,7 +2451,7 @@ absence, and owned-copy checks.
 Relocation placement now consumes the exact implicit epilogue width, including
 saved-register restores. The former four-byte estimate patched instruction bytes
 after the final imported call and left that call unresolved. The pure
-`codegen/lir/x86/frame_layout.slang` module owns frame eligibility, base slots,
+`codegen/lir/x86/allocation/native_frame_layout.slang` module owns frame eligibility, base slots,
 and epilogue width for byte counting, emission, and object relocation placement.
 The resource graph retains the finalized function and saved-register metadata
 through relocation publication. The reduced void function and original mixed

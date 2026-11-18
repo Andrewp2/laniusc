@@ -3,7 +3,7 @@
 // The pass runs over the path segment list (hir_list_rank_node) that the
 // segment links pass marked.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params { uint n; uint uses_status_count; uint retain_debug_rows; };

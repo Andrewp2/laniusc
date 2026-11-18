@@ -8,10 +8,10 @@ import type_checker.constant_parameter_slots;
 // the owning call when the argument is a complete bounded array that the
 // callee returns unchanged.
 
-import hir_records;
-import primitive_types;
-import atomics;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
+import shared.buffers.atomics;
+import shared.syntax.hir_expr_semantics;
 import type_checker.checked_index_reference;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;

@@ -3,13 +3,13 @@
 // row; variable-length type arguments are expanded by the downstream scan and
 // aggregate_args pass, never walked serially here.
 
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;
-import hir_records;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 

@@ -1,5 +1,5 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 // Producers alone allocate immutable scalar/projection rows. Matchers never
 // publish transient references.
 import type_checker.constant_atoms;

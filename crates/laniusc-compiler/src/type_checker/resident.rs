@@ -427,7 +427,7 @@ impl GpuTypeChecker {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let passes = TypeCheckPasses::prepare_prefixes(
             device,
-            &["type_checker", "scan/counted", "scan/counted_pair", "radix"],
+            &["type_checker", "scan/words", "scan/pairs", "radix"],
             |key| {
                 // Program catalogs own these pipelines separately and can outlive
                 // source-job workspaces. Source checking never dispatches them.
@@ -439,7 +439,7 @@ impl GpuTypeChecker {
                 {
                     return false;
                 }
-                !key.starts_with("scan/counted_pair/")
+                !key.starts_with("scan/pairs/")
                     || device.limits().max_storage_buffers_per_shader_stage >= 7
             },
         )?;

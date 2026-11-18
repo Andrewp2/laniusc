@@ -2,7 +2,7 @@
 // openers.  Clamping through min-prefix makes an ordinary shift an underflow
 // that cannot perturb generic depth later in the source.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n_tokens; uint n_blocks; uint scan_step; };
 ConstantBuffer<Params> gParams;

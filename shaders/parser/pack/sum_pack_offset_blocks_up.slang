@@ -1,6 +1,6 @@
 // Paired 256-way upsweep over packed parser offset block sums.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

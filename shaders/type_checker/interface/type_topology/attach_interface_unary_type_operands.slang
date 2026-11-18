@@ -1,7 +1,7 @@
 // Attach compact type arguments and unary operands to their dense HIR parents.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

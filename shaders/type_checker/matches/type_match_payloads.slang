@@ -4,10 +4,10 @@ import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.checked_index_reference;
 import type_checker.checked_pattern_path;
-import hir_expr_semantics;
-import hir_records;
-import primitive_types;
-import status;
+import shared.syntax.hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
+import shared.buffers.status;
 import type_checker.calls.inference_activity;
 
 // Substitute enum match payload types from compact HIR family rows, and

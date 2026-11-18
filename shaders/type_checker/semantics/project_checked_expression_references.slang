@@ -1,11 +1,11 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Project one canonical checked type reference per dense expression HIR row.
 // Downstream validation consumes this artifact instead of reconstructing an
 // expression's type from token-keyed declaration and call work tables.
 
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 
 bool valid_instance(uint instance)
 {

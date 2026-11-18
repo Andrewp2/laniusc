@@ -5,7 +5,7 @@
 // single atomic publication word is sufficient and every probe compares the
 // complete key.
 
-import atomics;
+import shared.buffers.atomics;
 
 public static const uint IMPORT_VISIBLE_LOOKUP_EMPTY = 0u;
 public static const uint IMPORT_VISIBLE_LOOKUP_INVALID = 0xffffffffu;

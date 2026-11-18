@@ -3,7 +3,7 @@
 // nothing it allocated becomes visible. Clears the job's status words and
 // publishes the indirect arguments of the row-, parameter- and record-
 // parallel steps from the job's live counts.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;

@@ -3,7 +3,7 @@ use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, anyhow};
 
-use super::{GpuWasmLinkInput, paged::GpuWasmPagedExecutablePlan};
+use super::{GpuWasmLinkInput, paged_input::GpuWasmPagedExecutablePlan};
 use crate::{
     codegen::wasm::GpuWasmLinker,
     gpu::{

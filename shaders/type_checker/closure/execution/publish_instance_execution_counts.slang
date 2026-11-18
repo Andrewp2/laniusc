@@ -2,7 +2,7 @@
 // type check. Lowering reads the job's compact HIR and side tables through
 // these counts, which include the execution rows a selected instance
 // appended (none when the job built no table: its counters are clear).
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
 

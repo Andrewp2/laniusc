@@ -1,8 +1,8 @@
 // Count the union of compact module/import/declaration/path candidate rows.
 
-import hir_records;
-import atomics;
-import prefix_scan;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.collectives.prefix_scan;
 import type_checker.modules.record_candidates;
 
 struct Params

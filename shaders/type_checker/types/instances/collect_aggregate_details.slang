@@ -1,15 +1,15 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // HIR-driven array, slice, and reference children.
 //
 // This pass runs after scalar/path refs, named instances, and aggregate headers
 // are present. References retain their own identity and point to a checked
 // referent; they must never collapse to an owned value of that type.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.explicit_constant_operand;
 import type_checker.checked_array_counts;
 import type_checker.constant_publication;
-import status;
+import shared.buffers.status;
 
 struct Params
 {

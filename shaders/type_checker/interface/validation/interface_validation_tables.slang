@@ -18,9 +18,9 @@
 //   29..32 scratch offsets, 33 scratch words, 34 symbol table capacity,
 //   35..36 scratch offsets of the predicate summaries, 37..38 of the
 //   implementation row results
-__exported import primitive_types;
-__exported import constant_value;
-__exported import atomics;
+__exported import shared.semantics.primitive_types;
+__exported import shared.semantics.constant_value;
+__exported import shared.buffers.atomics;
 
 public StructuredBuffer<uint> validate_artifact_words;
 public StructuredBuffer<uint> validate_artifact_length;

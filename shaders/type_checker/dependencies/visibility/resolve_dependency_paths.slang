@@ -1,11 +1,11 @@
 // Resolve still-unmatched one-segment paths to canonical dependency identities.
 
-import dependency_interface;
-import semantic_interface_layout;
+import shared.semantics.dependency_interface;
+import shared.semantics.semantic_interface_layout;
 import type_checker.modules.qualified_type_parent;
 import type_checker.modules.decl_lookup;
-import byte_packing;
-import gpu_index;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
 
 struct Params
 {

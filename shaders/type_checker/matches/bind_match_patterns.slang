@@ -4,8 +4,8 @@
 // are compact family ids, node references are dense HIR ids, and declarations
 // and visible bindings use declaration-row and token ids respectively.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 

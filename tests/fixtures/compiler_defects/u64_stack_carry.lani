@@ -3,8 +3,8 @@ module app::main;
 // Expected exit 10 (Python: c = ((f*(j+7)+c) mod 2**64) >> 32, then c & 127).
 //
 // Before 2026-10-31 the x86_64 backend register-allocated only unit, bool,
-// i32, u32, char and pointers (scalar_gpr_type in decl_slots_scatter.slang,
-// scalar_gpr_result in allocation_words.slang), so `carry`, `wide` and
+// i32, u32, char and pointers (scalar_gpr_type in scatter_x86_declaration_locations.slang,
+// scalar_gpr_result in allocate_x86_registers_and_spill_words.slang), so `carry`, `wide` and
 // `factor` lived at -0xNN(%rbp). Loop body before (0.42 s, 4.2 ns/iteration):
 //   mov -0xb8(%rbp),%rax; mov %rax,-0x30(%rbp)     factor copied every pass
 //   mov -0x58(%rbp),%rax; mov -0x60(%rbp),%rcx; add %rcx,%rax; mov %rax,-0x68(%rbp)

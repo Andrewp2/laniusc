@@ -13,7 +13,7 @@
 // it (instance table), and validate_instance_table_operands checks the literal's kind, range and
 // float status against that instance's scalar. The template has no type for
 // the literal, so the template checks do not apply one.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public static const uint LITERAL_CONTEXT_SYMBOLIC = 0x80000000u;
 

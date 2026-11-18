@@ -10,8 +10,8 @@
 // It consumes the compact row inference state; it does not inspect source
 // bytes, token spellings, token kinds, helper names, or function bodies.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 struct Params
 {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate stdlib/core/float_tables.lani: Eisel-Lemire and Schubfach power tables,
-and shaders/float_decimal_pow5.slang: the same powers of five for the GPU
-literal parser (shaders/float_decimal.slang).
+and shaders/shared/numbers/float_decimal_pow5.slang: the same powers of five for the GPU
+literal parser (shaders/shared/numbers/float_decimal.slang).
 
 pow5: for q in [-342, 308], the 128-bit truncated/normalized 5^q used by the
 Eisel-Lemire parser (same construction as fast_float and Rust's dec2flt).
@@ -95,7 +95,7 @@ def main():
     lines += ['}', '']
     root = Path(__file__).resolve().parent.parent
     root.joinpath('stdlib/core/float_tables.lani').write_text('\n'.join(lines))
-    root.joinpath('shaders/float_decimal_pow5.slang').write_text(slang_pow5(p5))
+    root.joinpath('shaders/shared/numbers/float_decimal_pow5.slang').write_text(slang_pow5(p5))
 
 
 def slang_pow5(values):

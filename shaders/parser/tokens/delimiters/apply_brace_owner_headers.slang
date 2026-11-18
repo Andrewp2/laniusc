@@ -1,8 +1,8 @@
 import parser.tokens.contexts.generic_parameter_keywords;
 // Apply prefix-scanned brace-owner header context.
 
-import prefix_scan;
-import segment_tree;
+import shared.collectives.prefix_scan;
+import shared.search.segment_tree;
 
 struct Params
 {

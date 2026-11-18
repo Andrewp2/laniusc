@@ -5,10 +5,10 @@ import type_checker.constant_parameter_slots;
 // publish_local_constant_values, so this round's result never depends on workgroup order. The first
 // round also projects constant-parameter values.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.semantics.constant_reference;
 import type_checker.semantics.const_fold;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
 ConstantBuffer<Params> gParams;

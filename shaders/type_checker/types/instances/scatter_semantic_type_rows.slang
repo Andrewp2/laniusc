@@ -1,7 +1,7 @@
 // Materialize the inverse of the compact-HIR type-node prefix relation. This
 // turns a compact type ordinal into a dense HIR row in O(1).
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

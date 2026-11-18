@@ -4,9 +4,9 @@
 // compact parameter-family row. No raw production, parent, sibling, or
 // raw-to-compact relation crosses this pass boundary.
 
-import hir_records;
-import fixed.compact_method;
-import atomics;
+import shared.syntax.hir_records;
+import shared.search.compact_method_lookup;
+import shared.buffers.atomics;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.symbols.language_symbol_count;
 

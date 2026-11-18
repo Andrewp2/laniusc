@@ -2,7 +2,7 @@
 //! (docs/compiler-retained-substitution.md).
 //!
 //! Synthetic programs are built in the store by a single-lane GPU script
-//! (`shaders/tests/retention_subst_fixture.slang`): every declaration,
+//! (`shaders/tests/seed_retained_substitution_fixture.slang`): every declaration,
 //! parameter, term, environment and expected result is interned by the
 //! store itself. The script also writes the requests. The export test makes
 //! its requests on the GPU from the uses two frontend jobs retained.

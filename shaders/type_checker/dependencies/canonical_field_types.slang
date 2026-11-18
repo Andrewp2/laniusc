@@ -1,10 +1,10 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.concrete_type_equality;
 // Resolve declaration-side interface trees under a checked receiver. Canonical
 // row numbers stay on the active page; completed applications use stable
 // checked references. Hashes select buckets only, never establish equality.
-import dependency_interface;
+import shared.semantics.dependency_interface;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
 import type_checker.dependencies.constant_view;

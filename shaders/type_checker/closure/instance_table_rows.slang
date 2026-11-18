@@ -5,8 +5,8 @@
 // whose realization meets a row another lane is realizing stays pending for
 // the next dispatch (realize_instance_table_rows); the final dispatch (finalize_instance_table_rows) fails it
 // instead. Included by both entry files.
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 import type_checker.inherited_expression_type;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_substitution;

@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 // Published claim provenance authorizes an evidence merge, never a change to
 // ordinary typed constant identity. Source refs keep their original fit graph.

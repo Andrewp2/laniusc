@@ -2,7 +2,7 @@
 // marked token performs two independent parallel range queries against the
 // already-published raw-angle depth tree; no token walks source text.
 
-import segment_tree;
+import shared.search.segment_tree;
 
 // n_blocks covers the current job; match_tree_leaf_base is the physical
 // layout of the resident min tree, which 02_build_min_tree builds over every

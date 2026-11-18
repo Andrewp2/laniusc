@@ -2,7 +2,7 @@
 // parser-context consumers can keep their additive depth interface by reading
 // these global values with a zero block prefix.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n_tokens; uint n_blocks; uint scan_step; };
 ConstantBuffer<Params> gParams;

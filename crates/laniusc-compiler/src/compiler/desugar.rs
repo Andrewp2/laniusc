@@ -14,7 +14,7 @@
 //! build its tokens and splice them in, the same way for every round.
 //!
 //! Every dispatch is recorded before any count is known. A plan kernel
-//! (shaders/desugar/plan.slang) turns the counts of one stage into the
+//! (shaders/desugar/tokens/plan_desugaring_dispatches.slang) turns the counts of one stage into the
 //! indirect dispatch sizes and kernel parameters of the next, so a round
 //! whose feature the pack does not use runs every dispatch with zero
 //! workgroups, and the host reads nothing back. A round is recorded only
@@ -345,7 +345,7 @@ pub(crate) fn without_desugaring<T>(f: impl FnOnce() -> T) -> T {
     out
 }
 
-// Layout of shaders/desugar/desugar_common.slang.
+// Layout of shaders/desugar/tokens/desugaring_layout.slang.
 const S_LIVE: usize = 1;
 const S_F0: usize = 2;
 const S_F1: usize = 3;
@@ -385,19 +385,19 @@ const PLAN_SPLICE: u32 = 3;
 const PLAN_FINISH: u32 = 4;
 
 /// Kernels of the desugaring, by shader artifact key.
-const PLAN: &str = "desugar/plan";
-const CLEAR: &str = "desugar/clear";
-const SCAN: &str = "closures/scan";
-const EXPAND: &str = "desugar/expand";
-const EMIT: &str = "desugar/emit";
-const TEXT_MARKS: &str = "desugar/text_marks";
-const TEXT_TOKENS: &str = "desugar/text_tokens";
-const SPLICE_MARKS: &str = "desugar/splice_marks";
-const SPLICE_INSERTED: &str = "desugar/splice_inserted";
-const SPLICE_KEPT: &str = "desugar/splice_kept";
-const SPLICE_GENERATED: &str = "desugar/splice_generated";
-const COPY_BACK: &str = "desugar/copy_back";
-const RESERVED: &str = "machines/reserved";
+const PLAN: &str = "desugar/tokens/plan_desugaring_dispatches";
+const CLEAR: &str = "desugar/tokens/clear_desugaring_buffer";
+const SCAN: &str = "desugar/closures/scan_four_word_rows";
+const EXPAND: &str = "desugar/tokens/expand_token_range_pieces";
+const EMIT: &str = "desugar/tokens/emit_generated_text";
+const TEXT_MARKS: &str = "desugar/tokens/mark_generated_text";
+const TEXT_TOKENS: &str = "desugar/tokens/build_generated_tokens";
+const SPLICE_MARKS: &str = "desugar/tokens/mark_tokens_for_splicing";
+const SPLICE_INSERTED: &str = "desugar/tokens/count_inserted_tokens";
+const SPLICE_KEPT: &str = "desugar/tokens/splice_kept_tokens";
+const SPLICE_GENERATED: &str = "desugar/tokens/splice_generated_tokens";
+const COPY_BACK: &str = "desugar/tokens/publish_spliced_tokens";
+const RESERVED: &str = "desugar/machines/find_reserved_desugaring_names";
 
 #[derive(encase::ShaderType)]
 struct PlanParams {

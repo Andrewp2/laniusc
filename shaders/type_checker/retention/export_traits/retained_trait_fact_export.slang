@@ -11,7 +11,7 @@
 //   z: predicates the row owns                         (predicate block base)
 //   w: bindings the row (a trait impl) owns           (binding block base)
 // Step reserve_retained_trait_facts copies its totals to rt_x_counts[RT_X_TRAIT_TOTAL + 0..3].
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export_types.retained_export_type_rows;

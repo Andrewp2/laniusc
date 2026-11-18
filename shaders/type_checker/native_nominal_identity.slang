@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Resolve a bare nominal reference only through the completed native-layout
 // producer's identity rows. The legacy struct and enum code ranges overlap;

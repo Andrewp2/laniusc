@@ -77,11 +77,11 @@ Native x86_64 Linux calls use a closed service catalog:
 - `shaders/type_checker/semantic/artifact/00_project.slang:173` maps extern
   declarations to known service slots. Merely writing another extern name does
   not add a binding.
-- `crates/laniusc-compiler/src/codegen/lowering_ir.rs:59` enumerates
-  `HostService`; `shaders/codegen/lowering_ir.slang:437` defines matching IDs.
-- `shaders/codegen/lir/x86/runtime_abi.slang:54` maps those IDs to native thunk
+- `crates/laniusc-compiler/src/codegen/lir/lowering_ir.rs:59` enumerates
+  `HostService`; `shaders/codegen/lir/lowering_ir.slang:437` defines matching IDs.
+- `shaders/codegen/lir/x86/runtime/native_runtime_abi.slang:54` maps those IDs to native thunk
   offsets. An unknown service has no offset.
-- `shaders/codegen/lir/x86/count.slang:240` rejects an ordinary remaining extern
+- `shaders/codegen/lir/x86/instructions/count_x86_instructions.slang:240` rejects an ordinary remaining extern
   call or unsupported host call. The same file, at line 191, restricts expanded
   extern arguments to six register slots.
 
@@ -108,7 +108,7 @@ cannot be inferred from that success.
 ### File operations that required bindings
 
 The existing open thunks use fixed flags and mode:
-`shaders/codegen/lir/x86/runtime_path_ops.s:36` through line 79 select read-only,
+`shaders/codegen/lir/x86/runtime/runtime_path_ops.s:36` through line 79 select read-only,
 write/create/truncate, or write/create/append, requesting `0666` for creation.
 There is no configurable descriptor-relative open. The checked source wrapper
 is `stdlib/std/file.lani:37`; its `flush` at line 106 drains no library buffer

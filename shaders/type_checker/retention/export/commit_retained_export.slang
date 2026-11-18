@@ -10,7 +10,7 @@ import type_checker.retention.retention_job;
 import type_checker.retention.export.export_lane_index;
 import type_checker.retention.export.export_dispatch_args;
 import type_checker.retention.export_rows.retained_body_source_tables;
-import hir_records;
+import shared.syntax.hir_records;
 
 // Publishes the job's first fault as the build's, located at the first
 // token of its row when the fault names one.

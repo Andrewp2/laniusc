@@ -1,6 +1,6 @@
 // Propagates hierarchical carries through bracket block summaries.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

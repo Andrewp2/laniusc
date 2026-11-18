@@ -24,7 +24,7 @@
 //   5..7  the trait's stable identity
 //   8     the trait argument count, at most BOUND_PREDICATE_ARGUMENTS
 //   9..15 the trait argument patterns, over the function's parameters
-import atomics;
+import shared.buffers.atomics;
 
 public RWStructuredBuffer<uint> bound_inference_counts;
 public RWStructuredBuffer<uint> bound_implementation_rows;

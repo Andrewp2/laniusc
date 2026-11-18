@@ -577,7 +577,7 @@ fn checked_goals(s: &Store, report: &RetainedTraitCheck) -> Vec<Goal> {
     sorted(all)
 }
 
-// tests/retained_route_query.slang answers.
+// tests/query_retained_trait_routes.slang answers.
 const RQ_FOUND: u32 = 1;
 const RQ_HEADER: u32 = 2;
 const RQ_STALE: u32 = 3;

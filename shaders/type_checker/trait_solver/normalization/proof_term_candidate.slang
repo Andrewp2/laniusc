@@ -1,5 +1,5 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 // Validator-only view of a completely emitted term wave. Initialization must
 // already admit the store layout, then count/reserve/emit must finish before a
 // compute-pass barrier. Node/edge rows and all directory counts stay frozen

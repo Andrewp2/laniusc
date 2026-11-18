@@ -3,7 +3,7 @@
 // here instead of declaring them, so the fused kernel declares each once.
 // Add a binding here when a new fusion shares it.
 
-import hir_records;
+import shared.syntax.hir_records;
 
 // A prefix of the type checker's parameter block (TypeCheckParams in
 // type_checker/params.rs).

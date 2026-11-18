@@ -4,7 +4,7 @@
 // record count on the GPU. It keeps later passes sized to the compact stream
 // without adding a host readback.
 
-import uint_math;
+import shared.numbers.uint_math;
 
 struct Params
 {

@@ -1,9 +1,9 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Count generic type and const parameters with one lane per canonical member.
 
-import dependency_interface;
-import atomics;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
 
 struct Params
 {

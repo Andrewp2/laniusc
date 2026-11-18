@@ -28,8 +28,8 @@
 // the pattern by re-descending from the root along a packed child path.
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.substitution_scratch;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 
 // Flags: root 0 (root 1) may accept an actual array for a pattern slice.
 public static const uint CT_MATCH_SLICE_ROOT0 = 1u;

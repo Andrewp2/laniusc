@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.symbols.language_symbol_count;
 
 struct Params

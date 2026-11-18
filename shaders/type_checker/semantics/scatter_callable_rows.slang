@@ -1,5 +1,5 @@
-import gpu_index;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 
 struct Params {
     uint n_tokens; uint source_len; uint n_hir_nodes;

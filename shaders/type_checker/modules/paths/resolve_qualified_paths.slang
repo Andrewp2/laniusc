@@ -15,7 +15,7 @@
 // - It does not scan source bytes, perform CPU lookup, or apply same-source
 //   shortcuts.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.qualified_type_parent;
 import type_checker.modules.import_edge_set;
 import type_checker.modules.decl_lookup;
