@@ -62,6 +62,9 @@ enum DeferredParserFinish<T> {
     /// readbacks, need more rounds or capacity; the type checker records the
     /// next attempt with them.
     RetryWithSynchronousTypeCheck,
+    /// A native job's export overflowed the program retention store and
+    /// rolled back on the GPU; the store has grown and the job runs again.
+    RetryWithGrownRetention,
     RetryWithLoweringOutput {
         target: LoweringTarget,
         demand: LoweringOutputDemand,
@@ -645,6 +648,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             encoder,
             "compile.source-pack.typecheck",
         );
+        // A native build's export runs right behind the type check, while
+        // the host records the semantic interface and lowering.
+        if let (Some(store), Some(snapshot)) = (&type_check.program_retention, &retention_snapshot)
+            && store.native_projection()
+        {
+            store
+                .submit_export_now(snapshot, u64::from(bufs.n))
+                .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
+        }
         // The GPU waits for the semantic interface's host recording here;
         // without this boundary the trace charges that wait to its first pass.
         if let Some(timer) = timer.as_deref_mut() {
@@ -952,7 +964,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         object_request: Option<LoweringObjectRequest>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
-        prepare_retention_export(&deferred.recorded);
+        self.submit_retention_export_tail(&deferred.recorded, object_request)?;
         let ll1 = deferred
             .check
             .read_status_result(device)
@@ -1011,10 +1023,19 @@ impl<'gpu> GpuCompiler<'gpu> {
             )),
             None => None,
         };
-        // The export was recorded while the host waited for the job
-        // (`prepare_retention_export`). It is submitted as soon as the x86
-        // object has passed every lowering retry point, so its GPU work
-        // overlaps the semantic interface's finish and the payload decode.
+        // A native job's export and the work behind it were submitted
+        // before the frontend's wait; the host reads their words with the
+        // job's object. Another store's export is submitted here, once the
+        // x86 object has passed every lowering retry point.
+        let native_retention = retention.filter(|(store, _)| store.native_projection());
+        let export_reads = native_retention
+            .map(|(store, snapshot)| store.export_reads(snapshot))
+            .unwrap_or_default();
+        let export_regions = export_reads
+            .iter()
+            .map(|(buffer, words)| crate::gpu::readback::ReadbackRegion::from_wgpu(buffer, words * 4))
+            .collect::<Vec<_>>();
+        let mut export_words: Option<Vec<Vec<u8>>> = None;
         let mut export_submitted = None;
         let object_status = match object_request {
             Some(request) if request.target() == LoweringTarget::X86_64 => {
@@ -1025,6 +1046,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     .read_x86_object_status(device)
                     .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
                 if let Some((store, snapshot)) = retention
+                    && !store.native_projection()
                     && pipeline.check_x86_object(&status).is_ok()
                 {
                     export_submitted = Some(store.submit_export_job(snapshot));
@@ -1096,13 +1118,33 @@ impl<'gpu> GpuCompiler<'gpu> {
             .filter(|(store, _)| store.native_projection())
             .and_then(|_| self.x86_linker().ok())
             .and_then(|linker| linker.parking_store());
-        let mut native_object = if let Some(request) = object_request {
+        let native_object = if let Some(request) = object_request {
             let target = request.target();
             let (library_id, unit_id) = request.ids();
             let pipeline = self
                 .lowering_pipeline(target)
                 .map_err(CompileError::GpuCodegen)?;
             let result = match target {
+                LoweringTarget::X86_64 if native_retention.is_some() => pipeline
+                    .finish_x86_object_with_reads(
+                        device,
+                        queue,
+                        library_id,
+                        unit_id,
+                        object_status.expect("an x86 object request reads its status"),
+                        keep.as_ref(),
+                        &export_regions,
+                    )
+                    .map(|(object, hirs, words)| {
+                        export_words = Some(words);
+                        (CompiledSourcePackObject::from(object), hirs)
+                    }),
+                LoweringTarget::Wasm if native_retention.is_some() => pipeline
+                    .finish_wasm_object_with_reads(device, queue, library_id, unit_id, &export_regions)
+                    .map(|(object, hirs, words)| {
+                        export_words = Some(words);
+                        (CompiledSourcePackObject::Wasm(object), hirs)
+                    }),
                 LoweringTarget::X86_64 => pipeline
                     .finish_x86_object_then(
                         device,
@@ -1153,35 +1195,35 @@ impl<'gpu> GpuCompiler<'gpu> {
             None
         };
         finish_timer.stamp("native_object");
-        // All lowering retry points have passed. Export once into the store
-        // captured when this job selected its workspace and recorded work.
+        // All lowering retry points have passed. A native job's export
+        // committed or rolled back on the GPU; another store exports once
+        // into the store captured when this job selected its workspace.
         if let Some((store, snapshot)) = retention {
             let export_error =
                 |err: anyhow::Error| CompileError::GpuFrontend(format!("program retention export: {err:#}"));
-            let submitted = match export_submitted {
-                Some(submitted) => submitted,
-                None => store.submit_export_job(snapshot),
-            }
-            .map_err(export_error)?;
-            // A retained native build: the export scratch still maps this
-            // job's call rows to their retained uses. The rewrite is
-            // submitted behind the export and read with it.
-            let mut calls = self.retained_native_calls.lock().unwrap();
-            match (&mut native_object, calls.as_mut()) {
-                (Some((object, call_hirs)), Some(tables)) => {
-                    let export = Some(submitted);
-                    match object {
-                        CompiledSourcePackObject::X86_64(object) => store.provisionalize_x86_calls(snapshot,tables,object,call_hirs,export),
-                        CompiledSourcePackObject::Wasm(object) => store.provisionalize_wasm_calls(snapshot,tables,object,call_hirs,export),
-                        CompiledSourcePackObject::X86_64File(object) => store.provisionalize_x86_file_calls(snapshot,tables,object,call_hirs,export),
-                    }
-                        .map_err(|err| CompileError::GpuFrontend(format!("program retention export and original call symbols: {err:#}")))?;
+            if store.native_projection() {
+                let committed = match export_words.take() {
+                    Some(bytes) => store.accept_export(
+                        snapshot,
+                        bytes
+                            .iter()
+                            .map(|bytes| bytes.chunks_exact(4).map(|w| u32::from_le_bytes(w.try_into().unwrap())).collect())
+                            .collect(),
+                    ),
+                    None => store.finish_export_now(snapshot),
                 }
-                _ => {
-                    store.finish_export_job(snapshot.tables(), submitted).map_err(export_error)?;
+                .map_err(export_error)?;
+                if !committed {
+                    return Ok(DeferredParserFinish::RetryWithGrownRetention);
                 }
+            } else {
+                let submitted = match export_submitted {
+                    Some(submitted) => submitted,
+                    None => store.submit_export_job(snapshot),
+                }
+                .map_err(export_error)?;
+                store.finish_export_job(snapshot.tables(), submitted).map_err(export_error)?;
             }
-            drop(calls);
             finish_timer.stamp("program_retention");
         }
         let (native_object, native_call_hirs) = match native_object {
@@ -1734,7 +1776,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     self.note_parser_retry(ParserRetry::LexerBoundary);
                     require_lexer_boundary = true;
                 }
-                DeferredParserFinish::RetryWithSynchronousTypeCheck => {}
+                DeferredParserFinish::RetryWithSynchronousTypeCheck | DeferredParserFinish::RetryWithGrownRetention => {}
                 DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
                     self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
                 }
@@ -2038,8 +2080,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         },
                         |device, queue, bufs, parser, mut recorded| {
                             let frontend = crate::gpu::passes_core::last_submission();
-                            submit_retention_export_early(&recorded);
-                            prepare_retention_export(&recorded);
+                            self.submit_retention_export_tail(&recorded, object_request)?;
                             self.finish_semantic_interface_early(device, queue, &mut recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
@@ -2109,7 +2150,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         self.note_parser_retry(ParserRetry::LexerBoundary);
                         require_lexer_boundary = true;
                     }
-                    DeferredParserFinish::RetryWithSynchronousTypeCheck => {}
+                    DeferredParserFinish::RetryWithSynchronousTypeCheck | DeferredParserFinish::RetryWithGrownRetention => {}
                     DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
                         self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
                     }
@@ -2182,7 +2223,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 DeferredParserFinish::RetryAfterLexerBoundary => {
                     unreachable!("source-pack path does not yet record speculative lexer metadata")
                 }
-                DeferredParserFinish::RetryWithSynchronousTypeCheck => {}
+                DeferredParserFinish::RetryWithSynchronousTypeCheck | DeferredParserFinish::RetryWithGrownRetention => {}
                 DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
                     self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
                 }
@@ -2802,6 +2843,47 @@ impl GpuCompiler<'_> {
     /// decode is host work no later GPU stage waits on. The job's finish
     /// takes the result in its usual place, after the parser and type
     /// check statuses.
+    /// Submits the work behind a native job's export, once the job's
+    /// lowering is recorded: the original object's call rewrite and the
+    /// export follower ([`ProgramRetention::submit_export_tail`]).
+    fn submit_retention_export_tail(
+        &self,
+        recorded: &RecordedTypeCheckWithDiagnosticBuffers,
+        object_request: Option<LoweringObjectRequest>,
+    ) -> Result<(), CompileError> {
+        let (Some(store), Some(snapshot)) = (&recorded.type_check.program_retention, &recorded.retention_snapshot) else {
+            return Ok(());
+        };
+        if !store.native_projection() {
+            return Ok(());
+        }
+        let pipeline = object_request.and_then(|request| self.lowering_pipeline(request.target()).ok());
+        let mut calls = self.retained_native_calls.lock().unwrap();
+        let rows = match (pipeline.as_ref().and_then(|pipeline| pipeline.object_call_rows()), calls.as_mut()) {
+            (Some((mode, rows, call_hirs, count, lanes)), Some(tables)) => {
+                let slot = pipeline.as_ref().and_then(|pipeline| pipeline.parked_x86_slot());
+                let park_identities = slot.map(|slot| {
+                    Box::new(move |encoder: &mut wgpu::CommandEncoder, identity: &wgpu::Buffer| {
+                        slot.record_identities(encoder, identity)
+                    }) as Box<dyn FnOnce(&mut wgpu::CommandEncoder, &wgpu::Buffer)>
+                });
+                let rows = crate::type_checker::program_retention::ObjectCallRows {
+                    mode,
+                    rows,
+                    call_hirs,
+                    count,
+                    lanes,
+                    park_identities,
+                };
+                Some((rows, tables))
+            }
+            _ => None,
+        };
+        store
+            .submit_export_tail(snapshot, rows)
+            .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))
+    }
+
     fn finish_semantic_interface_early(
         &self,
         device: &wgpu::Device,
@@ -2811,38 +2893,6 @@ impl GpuCompiler<'_> {
         if let Some(identity) = &recorded.semantic_interface {
             recorded.early_semantic_interface =
                 Some(self.type_checker.finish_semantic_interface(device, queue, identity));
-        }
-    }
-}
-
-/// Submits a retained native job's export up to its commit behind the
-/// job's frontend, so the GPU exports while the host checks the job's
-/// statuses. The job's finish submits the commit with the provisional
-/// call rewrite; a job it does not reach rolls the export back when its
-/// snapshot drops.
-fn submit_retention_export_early(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
-    if let (Some(store), Some(snapshot)) =
-        (&recorded.type_check.program_retention, &recorded.retention_snapshot)
-        && store.native_projection()
-        && let Err(error) = store.submit_export_early(snapshot)
-    {
-        // The finish records the export again and reports the error.
-        log::debug!("program retention export was not submitted early: {error:#}");
-    }
-}
-
-fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
-    if let (Some(store), Some(snapshot)) =
-        (&recorded.type_check.program_retention, &recorded.retention_snapshot)
-    {
-        if let Err(error) = store.prepare_export_job(snapshot) {
-            // The submission records the export again and reports the error.
-            log::debug!("program retention export was not prepared: {error:#}");
-        }
-        // The work that follows the export, for example the trait catalog's
-        // count pass; its consumer records it itself when it did not run.
-        if let Err(error) = store.prepare_export_follower() {
-            log::debug!("program retention export follower was not prepared: {error:#}");
         }
     }
 }

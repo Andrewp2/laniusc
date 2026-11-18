@@ -1500,6 +1500,68 @@ impl GpuLoweringPipeline {
         stage.finish_object(device, queue, library_id, unit_id, &status.metadata, keep)
     }
 
+    /// [`Self::finish_x86_object_then`] without a callback, reading `extra`
+    /// in the object's own readback; their bytes come third.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finish_x86_object_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        status: X86ObjectStatus,
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+        extra: &[crate::gpu::readback::ReadbackRegion<'_>],
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>, Vec<Vec<u8>>)> {
+        let TargetStage::X86_64(stage) = &self.target else {
+            anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
+        };
+        self.check_x86_object(&status)?;
+        stage.finish_with_reads(device, queue, library_id, unit_id, &status.metadata, keep, extra)
+    }
+
+    /// [`Self::finish_wasm_object`], reading `extra` in the object's own
+    /// readback; their bytes come third.
+    pub(crate) fn finish_wasm_object_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        extra: &[crate::gpu::readback::ReadbackRegion<'_>],
+    ) -> Result<(super::wasm::GpuWasmRelocatableObject, Vec<u32>, Vec<Vec<u8>>)> {
+        self.ensure_success(device)?;
+        match &self.target {
+            TargetStage::Wasm(stage) => stage.finish_with_reads(device, queue, library_id, unit_id, extra),
+            TargetStage::X86_64(_) => {
+                anyhow::bail!("the selected lowering pipeline does not produce a Wasm object")
+            }
+        }
+    }
+
+    /// The rows of the recorded object that a retained build's call
+    /// rewrite updates in place before the object is read: mode 0 (x86) or
+    /// 1 (Wasm), the rows, the x86 call HIRs, the word that counts the rows
+    /// and the rows the buffers hold.
+    pub(crate) fn object_call_rows(&self) -> Option<(
+        u32,
+        crate::type_checker::program_retention::JobTable,
+        Option<crate::type_checker::program_retention::JobTable>,
+        (wgpu::Buffer, u64),
+        u32,
+    )> {
+        Some(match &self.target {
+            TargetStage::X86_64(stage) => {
+                let (rows, call_hirs, count, lanes) = stage.call_rows()?;
+                (0, rows, Some(call_hirs), count, lanes)
+            }
+            TargetStage::Wasm(stage) => {
+                let (rows, count, lanes) = stage.call_rows()?;
+                (1, rows, None, count, lanes)
+            }
+        })
+    }
+
     /// The slot the recorded x86 object parked in for the resident link,
     /// before its readback.
     pub(crate) fn parked_x86_slot(&self) -> Option<super::x86::ParkedSlot> {

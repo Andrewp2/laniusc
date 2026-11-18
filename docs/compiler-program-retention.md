@@ -464,6 +464,53 @@ No partial or duplicated record of a failed job stays reachable. Then:
 4. `store_rehash` republishes every live record. Tombstones are skipped.
 5. The host runs the export again over the same job tables.
 
+### Native builds: no export readback
+
+A retained native build (`ProgramRetention::new_native`) reads nothing
+back for its export when the export fits:
+
+1. **Capacity from the source.** `submit_export_now` sizes the store
+   before the export from the source bytes of the build's jobs so far
+   (`source_capacity`, `RECORDS_PER_SOURCE_KIB`): about twice the records
+   per KiB the settings program exports, never below the current
+   capacity. Growth copies the arenas and runs `store_rehash` on the GPU.
+   No counter read back sizes the store.
+2. **Export behind the type check.** The whole export, steps 00 to 18, is
+   submitted right after the job's type check, before the host records
+   the semantic interface and lowering. The GPU exports while the host
+   records them.
+3. **Tail behind the lowering.** `submit_export_tail` submits, in one
+   submission behind the job's lowering, the original-call rewrite on the
+   object's own rows (see "Native compilation" in
+   `compiler-retained-projection.md`) and the export follower (the trait
+   catalog's count passes). Both bind buffers sized from capacities and
+   read the job's commit word on the GPU.
+4. **Words with the object.** `export_reads` names `rt_counts`,
+   `rt_x_counts`, the rewrite's status and the follower's state. The host
+   reads them in the job's object readback (`x86 object payload readback`
+   or `Wasm object payload readback`), not in a readback of its own.
+   `accept_export` keeps a committed job's report and the follower's
+   words. It does not compute anything on them.
+5. **Overflow.** A job that overflowed rolled back on the GPU (steps 16
+   and 18). The host grows the store from the recorded demand
+   (`grown_capacity`) and the job runs again
+   (`DeferredParserFinish::RetryWithGrownRetention`). Test:
+   `retained_native_export_overflow_reruns_with_grown_store`.
+6. **Uncommit.** The export commits before the host has read the job's
+   statuses. If the host does not accept the job (the frontend or the
+   lowering asks for a retry, or the build fails), the job's snapshot is
+   dropped and submits step 19 (`19_uncommit.slang`). Step 19 clears the
+   hash slots and the published definitions at or past the job's
+   watermark, and restores the counters and the build totals that step 00
+   saved (`RT_C_SAVED_*`). It runs whether the job committed or rolled
+   back.
+
+A job with no object to read the words with (`finish_export_now`) reads
+them in `program_retention.readback`. Retained native builds always have
+an object. The synchronous export of other stores (`submit_export_job`,
+`finish_export_job`), used by tests and the interface API, still reads
+its counters in that readback and grows in place.
+
 Invariant failures do not roll a job back. The current job reports
 `RT_C_INVARIANTS`, `RT_C_FIRST_INVARIANT` and `RT_C_INCOMPLETE`.
 Commit accumulates the invariant and incomplete-entry totals across the

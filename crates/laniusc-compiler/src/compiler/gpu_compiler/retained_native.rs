@@ -150,6 +150,19 @@ impl RetainedNativeBuild {
         Ok(())
     }
 
+    /// Test hook: replaces the program retention store with one on the
+    /// process-global GPU of `capacity` that is not sized from the source
+    /// bytes, so a build's export overflows, rolls back on the GPU and runs
+    /// its job again in a grown store.
+    #[doc(hidden)]
+    pub fn reset_store_for_test(&mut self, capacity: ProgramRetentionCapacity) -> anyhow::Result<()> {
+        let store = ProgramRetention::new_native(crate::gpu::device::global(), capacity)?;
+        store.set_source_sizing_for_test(false);
+        self.calls = Some(NativeCallTables::new(store.capacity().0.arenas[8]));
+        self.store = store;
+        Ok(())
+    }
+
     /// Test hook: fails the gate of the instance lowering the projection
     /// records before its check readback, so it lowers the batch again.
     #[doc(hidden)]

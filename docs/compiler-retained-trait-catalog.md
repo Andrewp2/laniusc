@@ -41,10 +41,11 @@ replays sources, and this path does not remove that replay. The list under
 
    In a retained native build the count passes follow each export
    (`record_count_follower`, installed with
-   `ProgramRetention::set_export_follower` for the originals). The host
-   records them while it waits on the frontend's metadata read; the
-   native call rewrite submits them with its own command buffer in one
-   submit and reads the producer state with its readback. `publish` takes
+   `ProgramRetention::set_export_follower` for the originals). They are
+   recorded and submitted with the original-call rewrite behind the job's
+   export, before the frontend's metadata read, and the producer state
+   comes back in the job's object readback
+   (`ProgramRetention::export_reads`). `publish` takes
    the words of the build's last committed export
    (`take_followed_words`) and continues in the follower's workspace
    lease, without its own count submit or state readback. The lease comes

@@ -3,19 +3,17 @@
 //!
 //! A retained build's original objects define no generic function. Each
 //! call to a generic template is an undefined symbol whose identity the
-//! original lowering wrote. Right after a job's export, while the export
+//! original lowering wrote. Right behind a job's export, while the export
 //! scratch still maps the job's HIR rows to retained uses, one GPU kernel
 //! (`shaders/type_checker/retention/native/00_provisional.slang`) gives each
-//! such symbol the provisional identity `(RESERVED, NS_USE, global use)`,
-//! recomputes its identity hash, and records the caller's ABI facts of the
-//! use (accepted result and argument terms) in [`NativeCallTables`]. The
-//! host uploads and reads back the object's opaque symbol columns; it never
-//! decides which symbol is provisional or reads a use.
-
+//! such symbol the provisional identity `(RESERVED, NS_USE, global use)` in
+//! the object's own rows, before the object is read, and records the
+//! caller's ABI facts of the use (accepted result and argument terms) in
+//! [`NativeCallTables`]. The host only binds the buffers and sizes the
+//! tables from capacities.
 
 use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
-use crate::codegen::x86::{GpuX86RelocatableObject, finalize::X86SymbolColumns};
 
 const KERNEL: &str = "type_checker/retention/native/00_provisional";
 
@@ -28,8 +26,10 @@ pub struct NativeCallTables {
     pub(crate) abi: wgpu::Buffer,
     pub(crate) args: wgpu::Buffer,
     uses: u64,
-    arguments: u32,
+    /// Generation of the build whose rows the tables hold.
     generation: u32,
+    /// The most argument rows this build's rewrites can append.
+    argument_bound: u64,
 }
 
 impl NativeCallTables {
@@ -44,8 +44,8 @@ impl NativeCallTables {
             abi: storage(device, "nc_use_abi", uses * 32, false),
             args: storage(device, "nc_use_args", 64 * 8, false),
             uses,
-            arguments: 0,
             generation: 0,
+            argument_bound: 0,
         }
     }
 
@@ -56,6 +56,18 @@ impl NativeCallTables {
 
     pub fn buffers(&self) -> [(&'static str, &wgpu::Buffer); 2] {
         [("nc_use_abi", &self.abi), ("nc_use_args", &self.args)]
+    }
+
+    /// Grows the argument pool to `rows` rows, keeping the rows recorded so
+    /// far.
+    fn ensure_arguments(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, rows: u64) {
+        let bytes = rows.max(64).next_power_of_two() * 8;
+        if bytes <= self.args.size() {
+            return;
+        }
+        let args = storage(device, "nc_use_args", bytes, false);
+        encoder.copy_buffer_counted(&self.args, 0, &args, 0, self.args.size());
+        self.args = args;
     }
 
     /// Grows to `uses` rows, keeping the rows recorded so far.
@@ -72,91 +84,19 @@ impl NativeCallTables {
 }
 
 impl ProgramRetention {
-    /// Rewrites the generic-call symbols of the object the job behind
-    /// `snapshot` just exported (see the module documentation).
-    /// `call_hirs[k]` is the call HIR of the object's k-th undefined symbol.
-    /// With `export`, the job's export was submitted and not yet read: the
-    /// rewrite is submitted behind it and both are read in one round trip.
-    pub(crate) fn provisionalize_x86_calls(
+    /// Records the call rewrite of the object behind `rows` into `encoder`
+    /// (see the module documentation) and returns its status buffer
+    /// (`NC_STATUS_WORDS` words). The argument pool is sized from the job's
+    /// call-argument rows and the object's row capacity, never from words
+    /// read back.
+    pub(super) fn record_call_rewrite(
         &self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &Store,
         snapshot: &JobSnapshot,
         tables: &mut NativeCallTables,
-        object: &mut GpuX86RelocatableObject,
-        call_hirs: &[u32],
-        export: Option<ExportSubmitted>,
-    ) -> Result<()> {
-        let columns = X86SymbolColumns::of_object(object);
-        let unit = Some((object.library_id, object.unit_id));
-        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, export)?.apply_to_object(object)
-    }
-
-    /// [`Self::provisionalize_x86_calls`] for an object whose sections stay
-    /// in the GPU link store.
-    pub(crate) fn provisionalize_x86_file_calls(
-        &self,
-        snapshot: &JobSnapshot,
-        tables: &mut NativeCallTables,
-        object: &mut crate::codegen::x86::GpuX86FileObject,
-        call_hirs: &[u32],
-        export: Option<ExportSubmitted>,
-    ) -> Result<()> {
-        let columns = X86SymbolColumns::of_file_object(object);
-        let unit = Some((object.layout.library_id, object.layout.unit_id));
-        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, export)?.apply_to_file_object(object)
-    }
-
-    pub(crate) fn provisionalize_wasm_calls(
-        &self, snapshot:&JobSnapshot, tables:&mut NativeCallTables,
-        object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],
-        export: Option<ExportSubmitted>,
-    ) -> Result<()> {
-        let columns=X86SymbolColumns::of_wasm_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs,None,export)?.apply_to_wasm_object(object)
-    }
-
-    /// `unit` names an x86 object whose rewritten identities the resident
-    /// native link keeps (`codegen/x86/link/resident.rs`).
-    fn provisionalize_calls(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
-        mut columns:X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>,
-        mut export:Option<ExportSubmitted>) -> Result<X86SymbolColumns> {
-        if call_hirs.is_empty() {
-            if let Some(submitted) = export {
-                self.finish_export_job(snapshot.tables(), submitted)?;
-            }
-            return Ok(columns);
-        }
-        match self.provisionalize_calls_now(snapshot, tables, &mut columns, call_hirs, unit, &mut export) {
-            Ok(true) => Ok(columns),
-            Ok(false) => {
-                // The export's first attempt did not commit and the rewrite
-                // did nothing. Grow and export again, then rewrite.
-                let submitted = export.take().expect("an export that did not commit is pending");
-                self.finish_export_job(snapshot.tables(), submitted)?;
-                self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, None)
-            }
-            Err(error) => {
-                if export.is_some() {
-                    self.abandon_export();
-                }
-                Err(error)
-            }
-        }
-    }
-
-    /// Records, submits and reads the rewrite, and the export with it while
-    /// `export` is pending. `false` when that export did not commit.
-    fn provisionalize_calls_now(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
-        columns:&mut X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>,
-        export:&mut Option<ExportSubmitted>) -> Result<bool> {
-        let symbol_words = columns.symbol_rows.len() / 4;
-        if symbol_words == 0 || columns.identity_bytes.len() % 4 != 0 {
-            bail!("retained original object has malformed symbol columns");
-        }
-        let symbols = (symbol_words / 8) as u32;
-        let undefined = call_hirs.len() as u32;
-        if undefined > symbols {
-            bail!("retained original object names {undefined} calls but has {symbols} symbols");
-        }
+        rows: ObjectCallRows<'_>,
+    ) -> Result<wgpu::Buffer> {
         let device = &self.device;
         let pass = if let Some(pass) = self.native_call_pass.get() {
             pass
@@ -164,16 +104,6 @@ impl ProgramRetention {
             let pass = passes_core::make_pass_data_from_shader_key(device, KERNEL, "main", KERNEL)?;
             self.native_call_pass.get_or_init(|| pass)
         };
-        let mut store = self.store.lock().unwrap();
-        if tables.generation != store.generation {
-            tables.generation = store.generation;
-            tables.arguments = 0;
-        }
-        let mut encoder = device.create_command_encoder(&Default::default());
-        tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
-        // An early export's commit steps run first in the same submission.
-        let commit = export.as_mut().and_then(ExportSubmitted::take_commit);
-        self.queue.submit(commit.into_iter().chain(Some(encoder.finish())));
         let mut kept = self.native_call_scratch.lock().unwrap();
         let mut keep = |label: &'static str, bytes: u64| {
             let bytes = bytes.max(16).next_power_of_two();
@@ -186,50 +116,63 @@ impl ProgramRetention {
                 .or_insert_with(|| storage(device, label, bytes, false))
                 .clone()
         };
-        let config = keep("nc_config", 16);
-        let mut upload = |label: &'static str, bytes: &[u8]| {
-            let buffer = keep(label, bytes.len() as u64);
-            self.queue.write_buffer_counted(&buffer, 0, bytes);
-            buffer
-        };
-        let hirs = upload("nc_call_hirs", &words_bytes(call_hirs));
-        let rows = upload("nc_symbols", &columns.symbol_rows);
-        let identity = upload("nc_identity", &columns.identity_bytes);
-        let status = keep("nc_status", 16);
+        let config = keep("nc_config", 32);
+        let status = keep("nc_status", (NC_STATUS_WORDS * 4) as u64);
+        let identity = keep("nc_identity", u64::from(rows.lanes).max(1) * 12);
         drop(kept);
-        let names = reflected_names(pass);
-        loop {
+        // The argument cursor (status word 1) runs over the build; each job
+        // clears only the error word.
+        if tables.generation != store.generation {
+            tables.generation = store.generation;
+            tables.argument_bound = 0;
+            self.queue.write_buffer_counted(&status, 0, &words_bytes(&[0; NC_STATUS_WORDS]));
+        } else {
+            self.queue.write_buffer_counted(&status, 0, &words_bytes(&[0]));
+        }
+        tables.ensure(device, encoder, u64::from(store.capacity.arenas[A_USES]));
+        // Each rewritten call appends its arguments, plus a receiver for a
+        // method call: at most the job's call-argument rows and one row per
+        // object row.
+        let call_args = snapshot.tables().get("compact_call_args").map_or(0, |table| table.size / 16);
+        tables.argument_bound += call_args + u64::from(rows.lanes);
+        tables.ensure_arguments(device, encoder, tables.argument_bound);
+        let argument_rows = u32::try_from(tables.args.size() / 8).unwrap_or(u32::MAX);
         self.queue.write_buffer_counted(&config, 0, &words_bytes(&[
-            symbols, undefined, store.generation, (tables.args.size() / 8) as u32,
+            rows.mode, rows.lanes, store.generation, argument_rows, 0, 0, 0, 0,
         ]));
-        self.queue.write_buffer_counted(&status, 0, &words_bytes(&[0, tables.arguments, 0, 0]));
-        let mut encoder = device.create_command_encoder(&Default::default());
-        let own: [(&str, &wgpu::Buffer); 7] = [
-            ("nc_config", &config),
-            ("nc_call_hirs", &hirs),
-            ("nc_symbols", &rows),
-            ("nc_identity", &identity),
-            ("nc_status", &status),
-            ("nc_use_abi", &tables.abi),
-            ("nc_use_args", &tables.args),
-        ];
+        encoder.copy_buffer_counted(&rows.count.0, rows.count.1, &config, 16, 4);
+        fn row_binding(table: &JobTable) -> wgpu::BindingResource<'_> {
+            wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &table.buffer,
+                offset: table.offset,
+                size: std::num::NonZeroU64::new(table.size),
+            })
+        }
+        let names = reflected_names(pass);
         let mut entries = Vec::with_capacity(names.len());
         for name in &names {
             let n = name.as_str();
-            let resource = if let Some((_, buffer)) = own.iter().find(|(k, _)| *k == n) {
-                buffer.as_entire_binding()
-            } else if let Some(buffer) = store.buffers.get(n) {
-                buffer.as_entire_binding()
-            } else if let Some(buffer) = store.scratch.get(n) {
-                buffer.as_entire_binding()
-            } else if let Some(table) = snapshot.tables().get(n) {
-                wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &table.buffer,
-                    offset: table.offset,
-                    size: std::num::NonZeroU64::new(table.size),
-                })
-            } else {
-                bail!("{KERNEL} binds unknown buffer {n}");
+            let resource = match n {
+                "nc_config" => config.as_entire_binding(),
+                "nc_status" => status.as_entire_binding(),
+                "nc_identity" => identity.as_entire_binding(),
+                "nc_use_abi" => tables.abi.as_entire_binding(),
+                "nc_use_args" => tables.args.as_entire_binding(),
+                "nc_rows" => row_binding(&rows.rows),
+                // A Wasm row carries its call; the binding is unused.
+                "nc_call_hirs" => match &rows.call_hirs {
+                    Some(table) => row_binding(table),
+                    None => config.as_entire_binding(),
+                },
+                _ => if let Some(buffer) = store.buffers.get(n) {
+                    buffer.as_entire_binding()
+                } else if let Some(buffer) = store.scratch.get(n) {
+                    buffer.as_entire_binding()
+                } else if let Some(table) = snapshot.tables().get(n) {
+                    row_binding(table)
+                } else {
+                    bail!("{KERNEL} binds unknown buffer {n}");
+                },
             };
             entries.push((n, resource));
         }
@@ -240,104 +183,17 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        let groups = undefined.div_ceil(256).max(1);
+        let groups = rows.lanes.div_ceil(256).max(1);
         super::substitution::record_timed(
-            &mut encoder,
+            encoder,
             "program_retention.native_calls",
             &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
         );
-        // Work recorded before the export's counters existed runs behind
-        // the rewrite, in the same submit, and is read with it.
-        let follower = export.is_some().then(|| self.take_follower(&store)).flatten();
-        let mut follower_state = None;
-        let follower = match follower {
-            Some(follower) => {
-                self.queue.submit([encoder.finish(), follower.commands]);
-                follower_state = Some(follower.state);
-                Some(follower.reads)
-            }
-            None => {
-                self.queue.submit(Some(encoder.finish()));
-                None
-            }
-        };
-        // The status and the rewritten prefix of both symbol columns in one
-        // readback, with the export's counters while it is pending; the
-        // columns are used only when the status is clean. Only the first
-        // `undefined` rows and their identity words can change.
-        let identity_words = columns.symbol_rows[..undefined as usize * 32]
-            .chunks_exact(32)
-            .map(|row| {
-                let word = |at: usize| u32::from_le_bytes(row[at..at + 4].try_into().unwrap()) as usize;
-                (word(8) + word(12)).div_ceil(4)
-            })
-            .max()
-            .unwrap_or(0)
-            .min(columns.identity_bytes.len() / 4);
-        let mut parts = vec![
-            (&status, 2),
-            (&rows, undefined as usize * 8),
-            (&identity, identity_words),
-        ];
-        if export.is_some() {
-            parts.push((&store.buffers["rt_counts"], counts::WORDS));
-            parts.push((&store.scratch["rt_x_counts"], X_WORDS));
+        if let Some(park) = rows.park_identities {
+            park(encoder, &identity);
         }
-        let follows = parts.len();
-        for (buffer, words) in follower.iter().flatten() {
-            parts.push((buffer, *words));
-        }
-        let mut read = self.read_parts(&parts)?;
-        let followed = read.split_off(follows);
-        if export.is_some() {
-            let x = read.pop().unwrap_or_default();
-            let words = read.pop().unwrap_or_default();
-            match committed_export(1, words, &x) {
-                Some(report) => {
-                    store.reports.push(report);
-                    *export = None;
-                    if let Some(state) = follower_state {
-                        *self.followed.lock().unwrap() = Some(FollowedWords {
-                            generation: store.generation,
-                            jobs: store.reports.len(),
-                            words: followed,
-                            state,
-                        });
-                    }
-                }
-                None => return Ok(false),
-            }
-        }
-        let result = read[0].clone();
-        if result[0] & !4 != 0 {
-            bail!("retained original call symbols failed on the GPU (status {:#x})", result[0]);
-        }
-        if result[0] & 4 != 0 {
-            let bytes = (u64::from(result[1]) * 8).next_power_of_two();
-            if bytes <= tables.args.size() || bytes > u64::from(device.limits().max_storage_buffer_binding_size) {
-                bail!("original-call argument pool demand {bytes} exceeds the device limit");
-            }
-            let args = storage(device, "nc_use_args", bytes, false);
-            let mut copy = device.create_command_encoder(&Default::default());
-            copy.copy_buffer_counted(&tables.args, 0, &args, 0, u64::from(tables.arguments) * 8);
-            self.queue.submit(Some(copy.finish()));
-            tables.args = args;
-            continue;
-        }
-        tables.arguments = result[1];
-        if let Some((library_id, unit_id)) = unit {
-            crate::codegen::x86::park_resident_identities(device, &self.queue, library_id, unit_id, &identity, undefined);
-        }
-        let identity_prefix = words_to_bytes(&read.pop().unwrap_or_default());
-        let rows_prefix = words_to_bytes(&read.pop().unwrap_or_default());
-        drop(store);
-        columns.symbol_rows[..rows_prefix.len()].copy_from_slice(&rows_prefix);
-        columns.identity_bytes[..identity_prefix.len()].copy_from_slice(&identity_prefix);
-        return Ok(true);
-        }
+        Ok(status)
     }
 }
 
-fn words_to_bytes(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|w| w.to_le_bytes()).collect()
-}
+

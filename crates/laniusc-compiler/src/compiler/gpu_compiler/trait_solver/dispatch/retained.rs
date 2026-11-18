@@ -542,8 +542,9 @@ pub(in crate::compiler::gpu_compiler) fn publish(
 
 /// Records the producer's count passes for the export the store is about to
 /// commit, sized from the store's capacities: the native call rewrite
-/// submits them behind itself and reads the producer state with its own
-/// readback, and [`publish`] continues from that state (default options).
+/// submits them behind itself, the producer state comes back in the job's
+/// object readback, and [`publish`] continues from that state (default
+/// options).
 pub(in crate::compiler::gpu_compiler) fn record_count_follower(
     workspace: &WorkspaceLease,
     store: &ProgramRetention,
