@@ -128,7 +128,7 @@ const COMPILE_PATH: &[Entry] = &[
     remove(
         "program_retention.readback",
         "R10",
-        "retention counts and rows the host plans the instance build from",
+        "export status of a build with no object, such as check; settings no longer reaches it",
     ),
     remove(
         "retained_substitution.readback",

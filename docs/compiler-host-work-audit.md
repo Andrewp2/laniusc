@@ -60,7 +60,7 @@ Removal methods:
 - **merge**: the read joins another permanent read.
 - **delete**: the path is not used by any mode and is removed.
 
-### The settings build, in order (19 round trips)
+### The settings build, in order (19 round trips at the audit, 18 since `cad995188` removed R10)
 
 "Per build" counts round trips on one settings job. Bytes are the mapped range.
 
@@ -75,7 +75,7 @@ Removal methods:
 | R7 | `type_check.status` | `type_checker/resident.rs:2843`, `:2861` | 1 | 16 B: type check status | checks for a type error | status | gate (T1) |
 | R8 | `lowering status readback` | `codegen/lowering_pipeline.rs:1520` | 1 | 128 B: lowering status and x86 object metadata | sizes the R9 read | size | resident (T4) |
 | R9 | `x86 object payload readback` | `codegen/x86_object_artifact.rs:873` | 1 | 455,400 B: object sections, relocations and call rows | parses the object for retention and the link | data | resident (T4) |
-| R10 | `program_retention.readback` | `type_checker/program_retention.rs:1318` | 1 | 147,464 B: retention tables | plans the instance build | data | kernel (T5) |
+| R10 | `program_retention.readback` | `type_checker/program_retention.rs:1470` | 0 since `cad995188` | export status of a build with no x86 or WASM object, such as `check` (`finish_export_now`) | checks the export commit | status | gate (T7). The settings build reads the commit status words with R9. |
 | R11 | `retained_substitution.readback` | `type_checker/program_retention/substitution.rs:1013` | 1 | 5,132 B: substitution status and counts | sizes discovery | size | bound (T5) |
 | R12 | `discovery.status` | `type_checker/program_retention/discovery.rs:1690` | 1 | 5,524 B: discovery status and counts | sizes the projection | size | bound (T5) |
 | R13 | `retained_projection.readback`, first | `type_checker/program_retention/projection.rs:1226` | 1 | 256 B: projection counts | sizes the R14 read | size | bound (T5) |
@@ -248,7 +248,7 @@ Times are from the settings job under `LANIUS_REPORT=host-timing`. "Orchestratio
 | H8 `finish.semantic_interface` | `compiler/gpu_compiler/typecheck.rs:1062` | 0.040 ms | keeps the R2 bytes on the host for dependents | compiler work | Dependents could read the interface on the GPU. |
 | H9 `finish.target_artifact` | `compiler/gpu_compiler/typecheck.rs:1093` | 0.012 ms | takes the target artifact handle | orchestration | |
 | H10 `finish.native_object` | `compiler/gpu_compiler/typecheck.rs:1155`, `codegen/x86_object_artifact.rs:742`, `:812` | 0.485 ms | parses the object metadata and payload from R8 and R9 | compiler work | The host decodes sections, relocations and call rows that the link and retention use on the GPU. |
-| H11 `finish.program_retention` | `compiler/gpu_compiler/typecheck.rs:1185` | 2.073 ms | exports retention and rewrites the object's call symbols (`provisionalize_x86_calls`) from R10 | compiler work | It rewrites compiler data on the host. |
+| H11 `finish.program_retention` | `compiler/gpu_compiler/typecheck.rs:1185` | 0.015–0.029 ms since `cad995188`, 2.073 ms before | checks the commit status words read with R9. The export and the call rewrite run in kernels. | orchestration | Removed as compiler work. The store is sized from the source byte count, and an overflow rolls back on the GPU (`export/19_uncommit`) and reruns. |
 | H12 `finish.unit_facts` | `compiler/gpu_compiler/typecheck.rs:1211`, `type_checker/generic_calls.rs:2019` | 0.015 ms, elided on settings | decodes checked unit facts (U17 to U28) | compiler work | Other builds decode type and call facts on the host. |
 | H13 retention planning between submits | `compiler/gpu_compiler/retained_native.rs:692` | 2.938 ms (`tail.after_projection`) | reads R11 to R14 and builds each next stage's inputs | compiler work | It plans instances from counts and rows on the host. |
 | H14 `tail.instance.finish_object` | `compiler/gpu_compiler/retained_projection.rs:125` | 0.218 ms | parses the instance object from R15 and R16 | compiler work | Same as H10. |
@@ -262,7 +262,7 @@ Times are from the settings job under `LANIUS_REPORT=host-timing`. "Orchestratio
 | H22 WASM object and link | `codegen/wasm_object_artifact.rs:476`, `codegen/wasm/link/symbol_resolution.rs:550` | WASM only | parses the WASM object and resolves symbols from R30 to R32 | compiler work | Same pattern as H10 and H21. |
 | H23 check mode codegen | `cli/compile/entry.rs:68` | CLI only | `check` lowers, retains, finalizes and links an executable it discards | compiler work | A check needs only the frontend status. |
 
-Host step counts: 9 orchestration rows and 14 compiler-work rows.
+Host step counts at the audit: 9 orchestration rows and 14 compiler-work rows. H11 has since moved to orchestration.
 
 ## Proposed order of removal
 
