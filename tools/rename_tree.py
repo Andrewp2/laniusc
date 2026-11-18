@@ -199,7 +199,7 @@ def rewrite_slang(shader_map: dict[str, str]) -> dict[str, str]:
     return out
 
 
-SIBLING_RE = re.compile(r"(?<![\w/.\-])([A-Za-z_]\w*)\.slang\b")
+SIBLING_RE = re.compile(r"(?<![\w/.\-])(\w+)\.slang\b")
 
 
 def sibling_mention(m: re.Match, old_file: str, new_dir: str, shader_map: dict[str, str]) -> str:

@@ -877,7 +877,7 @@ python3 -I formal/tools/frontend_difftest.py target/claude-work/frontend/dt --co
 It generates programs with `oracle_difftest.py`'s generator and prints them
 as Lanius, 25 to a file, with uint literals of 2^31 and above built from
 16-bit pieces. laniusc parses each file under `heavy`. The tree is captured
-after `parser/tree/parent_parallel` and the lexer's tokens are dumped. Under
+after `parser/tree/find_tree_parents` and the lexer's tokens are dumped. Under
 `#eval`, the front end must give exactly the program the text was printed
 from, and the Lean lexer's tokens must equal laniusc's. The test also mutates
 the trees and the sources and expects every mutant to be rejected: a

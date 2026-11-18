@@ -173,14 +173,8 @@ pub(crate) fn record_raw_expression_spans(
 pub mod brackets;
 /// HIR classification, topology, and typed record passes.
 pub mod hir;
-/// Active adjacent-pair parse table pass.
-pub mod llp_pairs;
 /// Variable-length parse stream packing passes.
 pub mod pack;
-/// Source-file token boundary pass.
-pub mod source_file_token_end;
-/// Parser acceptance status passes.
-pub mod status;
 pub(in crate::parser) mod tokens;
 /// Parser tree recovery passes.
 pub mod tree;
@@ -190,36 +184,38 @@ pub struct ParserPasses {
     pub(in crate::parser) token_frontend: tokens::TokenFrontendPasses,
     pub(in crate::parser) active_pair_dispatch_args: PassData,
     pub(in crate::parser) tree_feature_dispatch_args: PassData,
-    pub llp_pairs: llp_pairs::LLPPairsPass,
-    pub pack_offsets: pack::offsets::PackOffsetsScanPass,
-    pub pack_offsets_status: pack::offsets::status::PackOffsetsStatusPass,
-    pub pack_totals_blocks: pack::totals::blocks::PackTotalsBlocksPass,
-    pub pack_totals_reduce: pack::totals::reduce::PackTotalsReducePass,
-    pub pack_totals_status: pack::totals::status::PackTotalsStatusPass,
-    pub pack_varlen: pack::varlen::PackVarlenPass,
-    pub status_from_brackets: status::ParserStatusFromBracketsPass,
-    pub source_file_token_end: source_file_token_end::SourceFileTokenEndPass,
+    pub llp_pairs: pack::find_token_pair_actions::LLPPairsPass,
+    pub pack_offsets: pack::scan_pack_offsets::PackOffsetsScanPass,
+    pub pack_offsets_status: pack::publish_pack_offset_status::PackOffsetsStatusPass,
+    pub pack_totals_blocks: pack::sum_pack_lengths_in_blocks::PackTotalsBlocksPass,
+    pub pack_totals_reduce: pack::reduce_pack_length_sums::PackTotalsReducePass,
+    pub pack_totals_status: pack::publish_pack_total_status::PackTotalsStatusPass,
+    pub pack_varlen: pack::pack_stack_changes_and_productions::PackVarlenPass,
+    pub status_from_brackets:
+        brackets::combine_pack_and_bracket_status::ParserStatusFromBracketsPass,
+    pub source_file_token_end: tree::find_source_file_token_ends::SourceFileTokenEndPass,
 
     // Bracket matching passes
-    pub b01: brackets::scan_inblock::BracketsScanInblockPass,
-    pub b02: brackets::scan_block_prefix::BracketsScanBlockPrefixPass,
-    pub b03: brackets::apply_prefix::BracketsApplyPrefixPass,
-    pub b_clear_matches: brackets::clear_matches::BracketsClearMatchesPass,
-    pub b_min_tree: brackets::min_tree::BracketsMinTreePass,
-    pub pse04: brackets::pse_pair::BracketsPsePairPass, // Replaces b07
+    pub b01: brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass,
+    pub b02: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass,
+    pub b03: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass,
+    pub b_clear_matches: brackets::clear_bracket_matches::BracketsClearMatchesPass,
+    pub b_min_tree: brackets::build_bracket_min_tree::BracketsMinTreePass,
+    pub pse04: brackets::pair_brackets_by_layer::BracketsPsePairPass, // Replaces b07
 
     // Tree building pass
-    pub tree_prefix_01: tree::prefix::local::TreePrefixLocalPass,
-    pub tree_prefix_02: tree::prefix::scan_blocks::TreePrefixScanBlocksPass,
-    pub tree_prefix_03: tree::prefix::apply::TreePrefixApplyPass,
-    pub tree_prefix_04: tree::prefix::build_max_tree::TreePrefixMaxBuildPass,
-    pub tree_active_dispatch_args: tree::active_dispatch_args::TreeActiveDispatchArgsPass,
-    pub tree_parent: tree::parent::TreeParentPass,
-    pub tree_spans: tree::spans::TreeSpansPass,
-    pub tree_depth_block_max: tree::depth::block_max::TreeDepthBlockMaxPass,
-    pub tree_depth_schedule: tree::depth::schedule::TreeDepthSchedulePass,
-    pub tree_prev_sibling_clear: tree::prev::sibling::clear::TreePrevSiblingClearPass,
-    pub tree_prev_sibling_scatter: tree::prev::sibling::scatter::TreePrevSiblingScatterPass,
+    pub tree_prefix_01: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass,
+    pub tree_prefix_02: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass,
+    pub tree_prefix_03: tree::apply_arity_deficit_prefix::TreePrefixApplyPass,
+    pub tree_prefix_04: tree::build_deficit_max_tree::TreePrefixMaxBuildPass,
+    pub tree_active_dispatch_args:
+        tree::write_active_node_dispatch_args::TreeActiveDispatchArgsPass,
+    pub tree_parent: tree::find_tree_parents::TreeParentPass,
+    pub tree_spans: tree::find_tree_spans::TreeSpansPass,
+    pub tree_depth_block_max: tree::find_tree_depth_block_maxima::TreeDepthBlockMaxPass,
+    pub tree_depth_schedule: tree::schedule_tree_depth_jumps::TreeDepthSchedulePass,
+    pub tree_prev_sibling_clear: tree::clear_previous_siblings::TreePrevSiblingClearPass,
+    pub tree_prev_sibling_scatter: tree::scatter_previous_siblings::TreePrevSiblingScatterPass,
 
     // HIR-facing classification
     pub hir_nodes: hir::nodes::HirNodesPass,
@@ -402,45 +398,45 @@ impl ParserPasses {
             active_pair_dispatch_args: crate::gpu::passes_core::make_main_pass!(
                 device,
                 "parser_active_pair_dispatch_args",
-                shader: "parser/active_pair_dispatch_args"
+                shader: "parser/pack/write_token_pair_dispatch_args"
             )?,
             tree_feature_dispatch_args: crate::gpu::passes_core::make_main_pass!(
                 device,
                 "parser_tree_feature_dispatch_args",
-                shader: "parser/tree/feature_dispatch_args"
+                shader: "parser/tree/write_feature_dispatch_args"
             )?,
-            llp_pairs: llp_pairs::LLPPairsPass::new(device)?,
-            pack_offsets: pack::offsets::PackOffsetsScanPass::new(device)?,
-            pack_offsets_status: pack::offsets::status::PackOffsetsStatusPass::new(device)?,
-            pack_totals_blocks: pack::totals::blocks::PackTotalsBlocksPass::new(device)?,
-            pack_totals_reduce: pack::totals::reduce::PackTotalsReducePass::new(device)?,
-            pack_totals_status: pack::totals::status::PackTotalsStatusPass::new(device)?,
-            pack_varlen: pack::varlen::PackVarlenPass::new(device)?,
-            status_from_brackets: status::ParserStatusFromBracketsPass::new(device)?,
-            source_file_token_end: source_file_token_end::SourceFileTokenEndPass::new(device)?,
+            llp_pairs: pack::find_token_pair_actions::LLPPairsPass::new(device)?,
+            pack_offsets: pack::scan_pack_offsets::PackOffsetsScanPass::new(device)?,
+            pack_offsets_status: pack::publish_pack_offset_status::PackOffsetsStatusPass::new(device)?,
+            pack_totals_blocks: pack::sum_pack_lengths_in_blocks::PackTotalsBlocksPass::new(device)?,
+            pack_totals_reduce: pack::reduce_pack_length_sums::PackTotalsReducePass::new(device)?,
+            pack_totals_status: pack::publish_pack_total_status::PackTotalsStatusPass::new(device)?,
+            pack_varlen: pack::pack_stack_changes_and_productions::PackVarlenPass::new(device)?,
+            status_from_brackets: brackets::combine_pack_and_bracket_status::ParserStatusFromBracketsPass::new(device)?,
+            source_file_token_end: tree::find_source_file_token_ends::SourceFileTokenEndPass::new(device)?,
 
-            b01: brackets::scan_inblock::BracketsScanInblockPass::new(device)?,
-            b02: brackets::scan_block_prefix::BracketsScanBlockPrefixPass::new(device)?,
-            b03: brackets::apply_prefix::BracketsApplyPrefixPass::new(device)?,
-            b_clear_matches: brackets::clear_matches::BracketsClearMatchesPass::new(device)?,
-            b_min_tree: brackets::min_tree::BracketsMinTreePass::new(device)?,
-            pse04: brackets::pse_pair::BracketsPsePairPass::new(device)?,
+            b01: brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass::new(device)?,
+            b02: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass::new(device)?,
+            b03: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass::new(device)?,
+            b_clear_matches: brackets::clear_bracket_matches::BracketsClearMatchesPass::new(device)?,
+            b_min_tree: brackets::build_bracket_min_tree::BracketsMinTreePass::new(device)?,
+            pse04: brackets::pair_brackets_by_layer::BracketsPsePairPass::new(device)?,
 
-            tree_parent: tree::parent::TreeParentPass::new(device)?,
-            tree_prefix_01: tree::prefix::local::TreePrefixLocalPass::new(device)?,
-            tree_prefix_02: tree::prefix::scan_blocks::TreePrefixScanBlocksPass::new(device)?,
-            tree_prefix_03: tree::prefix::apply::TreePrefixApplyPass::new(device)?,
-            tree_prefix_04: tree::prefix::build_max_tree::TreePrefixMaxBuildPass::new(device)?,
+            tree_parent: tree::find_tree_parents::TreeParentPass::new(device)?,
+            tree_prefix_01: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass::new(device)?,
+            tree_prefix_02: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass::new(device)?,
+            tree_prefix_03: tree::apply_arity_deficit_prefix::TreePrefixApplyPass::new(device)?,
+            tree_prefix_04: tree::build_deficit_max_tree::TreePrefixMaxBuildPass::new(device)?,
             tree_active_dispatch_args:
-                tree::active_dispatch_args::TreeActiveDispatchArgsPass::new(device)?,
-            tree_spans: tree::spans::TreeSpansPass::new(device)?,
-            tree_depth_block_max: tree::depth::block_max::TreeDepthBlockMaxPass::new(device)?,
-            tree_depth_schedule: tree::depth::schedule::TreeDepthSchedulePass::new(device)?,
-            tree_prev_sibling_clear: tree::prev::sibling::clear::TreePrevSiblingClearPass::new(
+                tree::write_active_node_dispatch_args::TreeActiveDispatchArgsPass::new(device)?,
+            tree_spans: tree::find_tree_spans::TreeSpansPass::new(device)?,
+            tree_depth_block_max: tree::find_tree_depth_block_maxima::TreeDepthBlockMaxPass::new(device)?,
+            tree_depth_schedule: tree::schedule_tree_depth_jumps::TreeDepthSchedulePass::new(device)?,
+            tree_prev_sibling_clear: tree::clear_previous_siblings::TreePrevSiblingClearPass::new(
                 device,
             )?,
             tree_prev_sibling_scatter:
-                tree::prev::sibling::scatter::TreePrevSiblingScatterPass::new(device)?,
+                tree::scatter_previous_siblings::TreePrevSiblingScatterPass::new(device)?,
             hir_nodes: hir::nodes::HirNodesPass::new(device)?,
             hir_semantic_prefix_local:
                 hir::semantic::prefix::local::HirSemanticPrefixLocalPass::new(device)?,

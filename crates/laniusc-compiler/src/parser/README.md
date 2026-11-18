@@ -39,7 +39,7 @@ From generated pair headers the resident path packs two streams (see
 
 These are produced by:
 
-* `llp_pairs.slang`  → headers per adjacent token pair
+* `find_token_pair_actions.slang`  → headers per adjacent token pair
 * `pack_varlen.slang` → densely packs `out_sc` and `out_emit`
 
 The block-local LL(1) replay path is no longer part of production dispatch.

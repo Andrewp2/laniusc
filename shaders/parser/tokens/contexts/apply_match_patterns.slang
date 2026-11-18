@@ -1,6 +1,6 @@
 // Apply prefix-scanned match-pattern context rows.
 //
-// 01_local.slang stored each token's own match-pattern event in
+// summarize_match_patterns.slang stored each token's own match-pattern event in
 // token_match_pattern_context_event. This pass replaces it, at the same row,
 // with the latest event before the token.
 

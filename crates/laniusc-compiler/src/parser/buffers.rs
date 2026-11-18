@@ -117,12 +117,12 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.pack_totals_blocks_params,
-            &super::passes::pack::totals::blocks::Params { n_pairs },
+            &super::passes::pack::sum_pack_lengths_in_blocks::Params { n_pairs },
         );
         write_uniform(
             queue,
             &self.pack_totals_status_params,
-            &super::passes::pack::totals::status::Params {
+            &super::passes::pack::publish_pack_total_status::Params {
                 n_pairs,
                 emit_capacity: self.tree_capacity,
                 read_from_a: u32::from(pack_total_reduce_step_count(n_pairs) % 2 == 0),
@@ -134,7 +134,7 @@ impl ParserBuffers {
             write_uniform(
                 queue,
                 &step.params,
-                &super::passes::pack::totals::reduce::Params {
+                &super::passes::pack::reduce_pack_length_sums::Params {
                     item_count: total_items,
                 },
             );
@@ -143,7 +143,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.params_llp,
-            &super::passes::llp_pairs::LLPParams {
+            &super::passes::pack::find_token_pair_actions::LLPParams {
                 n_tokens,
                 n_kinds: self.n_kinds,
             },
@@ -185,7 +185,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.source_file_token_end_params,
-            &super::passes::source_file_token_end::Params { token_capacity },
+            &super::passes::tree::find_source_file_token_ends::Params { token_capacity },
         );
         // Bracket scratch is allocated to the resident maximum, but the
         // current packed stream may be smaller. Keep the per-pass logical
@@ -195,7 +195,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.b01_params,
-            &super::passes::brackets::scan_inblock::Params {
+            &super::passes::brackets::scan_bracket_depths_in_blocks::Params {
                 n_sc: self.total_sc,
                 wg_size: 256,
             },
@@ -203,7 +203,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.b03_params,
-            &super::passes::brackets::apply_prefix::Params {
+            &super::passes::brackets::apply_bracket_block_prefix::Params {
                 n_sc: self.total_sc,
                 wg_size: 256,
             },
@@ -211,7 +211,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.b07_params,
-            &super::passes::brackets::pse_pair::Params {
+            &super::passes::brackets::pair_brackets_by_layer::Params {
                 n_sc: self.total_sc,
                 n_blocks: self.b_n_blocks,
                 leaf_base: self.b_min_tree_base,
@@ -222,7 +222,7 @@ impl ParserBuffers {
         write_uniform(
             queue,
             &self.b_clear_matches_params,
-            &super::passes::brackets::clear_matches::Params {
+            &super::passes::brackets::clear_bracket_matches::Params {
                 n_sc: self.total_sc,
             },
         );
@@ -748,7 +748,7 @@ impl ParserBuffers {
         let params_llp = uniform_from_val(
             device,
             "parser.params_llp",
-            &super::passes::llp_pairs::LLPParams { n_tokens, n_kinds },
+            &super::passes::pack::find_token_pair_actions::LLPParams { n_tokens, n_kinds },
         );
 
         let action_table = if action_table_bytes.is_empty() {
@@ -796,7 +796,7 @@ impl ParserBuffers {
         let params_pack = uniform_from_val(
             device,
             "pack.params",
-            &super::passes::pack::varlen::PackParams {
+            &super::passes::pack::pack_stack_changes_and_productions::PackParams {
                 n_tokens,
                 n_kinds,
                 total_sc,
@@ -814,7 +814,7 @@ impl ParserBuffers {
         let pack_offsets_status_params = uniform_from_val(
             device,
             "pack.offset_status.params",
-            &super::passes::pack::offsets::status::Params {
+            &super::passes::pack::publish_pack_offset_status::Params {
                 n_pairs: n_tokens.saturating_sub(1),
                 emit_capacity,
             },
@@ -830,7 +830,7 @@ impl ParserBuffers {
         let pack_totals_blocks_params = uniform_from_val(
             device,
             "pack.totals_blocks.params",
-            &super::passes::pack::totals::blocks::Params {
+            &super::passes::pack::sum_pack_lengths_in_blocks::Params {
                 n_pairs: n_tokens.saturating_sub(1),
             },
         );
@@ -839,7 +839,7 @@ impl ParserBuffers {
         let pack_totals_status_params = uniform_from_val(
             device,
             "pack.totals_status.params",
-            &super::passes::pack::totals::status::Params {
+            &super::passes::pack::publish_pack_total_status::Params {
                 n_pairs: n_tokens.saturating_sub(1),
                 emit_capacity,
                 read_from_a: u32::from(
@@ -868,7 +868,7 @@ impl ParserBuffers {
         let b01_params = uniform_from_val(
             device,
             "brackets.b01.params",
-            &super::passes::brackets::scan_inblock::Params {
+            &super::passes::brackets::scan_bracket_depths_in_blocks::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
@@ -876,7 +876,7 @@ impl ParserBuffers {
         let b02_params = uniform_from_val(
             device,
             "brackets.b02.params",
-            &super::passes::brackets::scan_block_prefix::Params {
+            &super::passes::brackets::scan_bracket_blocks::Params {
                 n_blocks,
                 scan_step: 0,
             },
@@ -885,7 +885,7 @@ impl ParserBuffers {
         let b03_params = uniform_from_val(
             device,
             "brackets.b03.params",
-            &super::passes::brackets::apply_prefix::Params {
+            &super::passes::brackets::apply_bracket_block_prefix::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
@@ -894,7 +894,7 @@ impl ParserBuffers {
         let b07_params = uniform_from_val(
             device,
             "brackets.b07.params",
-            &super::passes::brackets::pse_pair::Params {
+            &super::passes::brackets::pair_brackets_by_layer::Params {
                 n_sc: total_sc,
                 n_blocks,
                 leaf_base: next_power_of_two_u32(n_blocks).max(1),
@@ -905,7 +905,7 @@ impl ParserBuffers {
         let b_clear_matches_params = uniform_from_val(
             device,
             "brackets.clear_matches.params",
-            &super::passes::brackets::clear_matches::Params { n_sc: total_sc },
+            &super::passes::brackets::clear_bracket_matches::Params { n_sc: total_sc },
         );
         let b_min_tree_base = next_power_of_two_u32(n_blocks).max(1);
         let b_min_tree = graph_buffer!(i32, "bracket_min_tree");
@@ -941,7 +941,7 @@ impl ParserBuffers {
         // ---------- Tree parent recovery ----------
         let _tree_reset_rows =
             ResettableRowDomainGuard::enter(RESET_TREE_ROWS, tree_capacity as usize);
-        let tree_prefix_params_base = super::passes::tree::prefix::local::Params {
+        let tree_prefix_params_base = super::passes::tree::sum_arity_deficits_in_blocks::Params {
             n: tree_capacity,
             uses_status_count: u32::from(tree_count_uses_status),
             n_node_blocks: tree_n_node_blocks,
@@ -1021,7 +1021,7 @@ impl ParserBuffers {
         let tree_params = uniform_from_val(
             device,
             "parser.tree_parent.params",
-            &super::passes::tree::parent::Params {
+            &super::passes::tree::find_tree_parents::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 n_prefix_blocks: tree_n_prefix_blocks,
@@ -1031,7 +1031,7 @@ impl ParserBuffers {
         let tree_span_params = uniform_from_val(
             device,
             "parser.tree_spans.params",
-            &super::passes::tree::spans::Params {
+            &super::passes::tree::find_tree_spans::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 n_prefix_blocks: tree_n_prefix_blocks,
@@ -1041,7 +1041,7 @@ impl ParserBuffers {
         let tree_prev_sibling_params = uniform_from_val(
             device,
             "parser.tree_prev_sibling.params",
-            &super::passes::tree::prev::sibling::clear::Params {
+            &super::passes::tree::clear_previous_siblings::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
@@ -1563,7 +1563,7 @@ impl ParserBuffers {
         let source_file_token_end_params = uniform_from_val(
             device,
             "parser.source_file_token_end.params",
-            &super::passes::source_file_token_end::Params {
+            &super::passes::tree::find_source_file_token_ends::Params {
                 token_capacity: token_input_capacity,
             },
         );

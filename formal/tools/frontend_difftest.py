@@ -11,7 +11,7 @@ indexing, division, literals and match inside expressions), printed as
 Lanius, C programs to a file. laniusc
 parses each file on the GPU, under target/claude-work/bin/heavy; its parse
 tree (the node_kind and parent arrays) is captured right after the kernel
-that builds it (LANIUS_CAPTURE=parser/tree/parent_parallel), and
+that builds it (LANIUS_CAPTURE=parser/tree/find_tree_parents), and
 its lexer tokens are dumped (LANIUS_DUMP=token_words).
 
 Then, under `lake env lean`, `sourceProgram` (the Lean lexer, then the
@@ -985,7 +985,7 @@ def capture_env(cap, dump):
     """laniusc's environment for capturing the parse tree into cap and dumping
     the tokens into dump."""
     return dict(os.environ,
-                LANIUS_CAPTURE=f'parser/tree/parent_parallel,dir={cap},per-job',
+                LANIUS_CAPTURE=f'parser/tree/find_tree_parents,dir={cap},per-job',
                 LANIUS_DUMP=f'token_words,token_count,words=4000000,dir={dump}')
 
 

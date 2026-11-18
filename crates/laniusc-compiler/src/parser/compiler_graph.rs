@@ -825,11 +825,11 @@ impl ParserCompilerGraph {
         &self,
         device: &wgpu::Device,
         passes: &ParserPasses,
-        params_llp: &crate::gpu::buffers::LaniusBuffer<crate::parser::passes::llp_pairs::LLPParams>,
+        params_llp: &crate::gpu::buffers::LaniusBuffer<crate::parser::passes::pack::find_token_pair_actions::LLPParams>,
         token_count: &crate::gpu::buffers::LaniusBuffer<u32>,
         active_pair_thread_dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         tree_prefix_params: &crate::gpu::buffers::LaniusBuffer<
-            crate::parser::passes::tree::prefix::local::Params,
+            crate::parser::passes::tree::sum_arity_deficits_in_blocks::Params,
         >,
         ll1_status: &crate::gpu::buffers::LaniusBuffer<u32>,
         token_feature_flags: &crate::gpu::buffers::LaniusBuffer<u32>,
@@ -3731,7 +3731,7 @@ mod tests {
         assert!(
             graph
                 .pass_id(
-                    crate::parser::passes::tree::prev::sibling::clear::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
+                    crate::parser::passes::tree::clear_previous_siblings::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
                 )
                 .unwrap()
                 .index()
@@ -3893,7 +3893,7 @@ mod tests {
             "hir_struct_rank_compact_scatter",
             crate::parser::passes::hir::structs::field::rank_step::A_TO_B,
             crate::parser::passes::hir::structs::field::rank_step::B_TO_A,
-            crate::parser::passes::tree::prev::sibling::clear::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
+            crate::parser::passes::tree::clear_previous_siblings::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
             "hir_struct_field_scatter",
             "hir_canonical_field_mark",
             "hir_canonical_field_local",

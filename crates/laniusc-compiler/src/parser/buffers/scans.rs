@@ -36,7 +36,7 @@ pub(super) fn make_pack_offset_scan_plan(
     let params = uniform_from_val(
         device,
         "pack.offset_scan.params",
-        &super::super::passes::pack::offsets::Params { n_pairs, n_blocks },
+        &crate::parser::passes::pack::scan_pack_offsets::Params { n_pairs, n_blocks },
     );
     let hierarchy_step =
         |direction: &str,
@@ -47,7 +47,7 @@ pub(super) fn make_pack_offset_scan_plan(
                 params: uniform_from_val(
                     device,
                     &format!("pack.offset_scan.{direction}.{index}.params"),
-                    &super::super::passes::pack::offsets::HierarchyParams {
+                    &crate::parser::passes::pack::scan_pack_offsets::HierarchyParams {
                         n_items: n_pairs,
                         n_blocks,
                         level_divisor: level.divisor,
@@ -87,7 +87,7 @@ pub(super) fn make_pack_total_reduce_steps(
             params: uniform_from_val(
                 device,
                 label,
-                &super::super::passes::pack::totals::reduce::Params { item_count },
+                &crate::parser::passes::pack::reduce_pack_length_sums::Params { item_count },
             ),
             item_count,
             read_from_a,
@@ -190,7 +190,7 @@ pub(super) fn make_tree_prefix_max_build_steps(
                 } else {
                     "parser.tree_prefix_max.params.combine"
                 },
-                &super::super::passes::tree::prefix::build_max_tree::Params {
+                &crate::parser::passes::tree::build_deficit_max_tree::Params {
                     n_blocks,
                     leaf_base,
                     start_node,

@@ -554,7 +554,7 @@ pub struct ParserBuffers {
     pub(in crate::parser) job_storage_reset_buffers: Vec<usize>,
 
     // pair-to-header
-    pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,
+    pub params_llp: LaniusBuffer<crate::parser::passes::pack::find_token_pair_actions::LLPParams>,
     pub semantic_token_kinds: LaniusBuffer<u32>,
     pub token_delimiter_params: LaniusBuffer<TokenDelimiterParams>,
     pub token_block_scan: TokenBlockScan,
@@ -611,7 +611,7 @@ pub struct ParserBuffers {
     pub token_count: LaniusBuffer<u32>,
     pub default_token_file_id: LaniusBuffer<u32>,
     pub source_file_token_end_params:
-        LaniusBuffer<super::super::passes::source_file_token_end::Params>,
+        LaniusBuffer<crate::parser::passes::tree::find_source_file_token_ends::Params>,
     pub source_file_token_end: LaniusBuffer<u32>,
     pub active_pair_thread_dispatch_args: LaniusBuffer<u32>,
     pub active_stack_thread_dispatch_args: LaniusBuffer<u32>,
@@ -619,9 +619,9 @@ pub struct ParserBuffers {
     pub out_headers: LaniusBuffer<ActionHeader>,
 
     // pack varlen
-    pub params_pack: LaniusBuffer<super::super::passes::pack::varlen::PackParams>,
+    pub params_pack: LaniusBuffer<crate::parser::passes::pack::pack_stack_changes_and_productions::PackParams>,
     pub(crate) pack_offsets_status_params:
-        LaniusBuffer<super::super::passes::pack::offsets::status::Params>,
+        LaniusBuffer<crate::parser::passes::pack::publish_pack_offset_status::Params>,
     pub sc_offsets: LaniusBuffer<u32>,
     pub emit_offsets: LaniusBuffer<u32>,
     pub pack_sc_prefix_a: LaniusBuffer<u32>,
@@ -630,10 +630,10 @@ pub struct ParserBuffers {
     pub pack_emit_prefix_b: LaniusBuffer<u32>,
     pub pack_offset_scan_plan: PackOffsetScanPlan,
     pub(crate) pack_totals_blocks_params:
-        LaniusBuffer<super::super::passes::pack::totals::blocks::Params>,
+        LaniusBuffer<crate::parser::passes::pack::sum_pack_lengths_in_blocks::Params>,
     pub pack_total_reduce_steps: Vec<PackTotalReduceStep>,
     pub(crate) pack_totals_status_params:
-        LaniusBuffer<super::super::passes::pack::totals::status::Params>,
+        LaniusBuffer<crate::parser::passes::pack::publish_pack_total_status::Params>,
     pub partial_parse_status: LaniusBuffer<u32>,
     pub tables_blob: LaniusBuffer<u32>,
     pub out_sc: LaniusBuffer<u32>,
@@ -641,12 +641,12 @@ pub struct ParserBuffers {
     pub out_emit_pos: LaniusBuffer<u32>,
 
     // -------- Brackets (parallel) --------
-    pub b01_params: LaniusBuffer<super::super::passes::brackets::scan_inblock::Params>,
-    pub b02_params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,
+    pub b01_params: LaniusBuffer<crate::parser::passes::brackets::scan_bracket_depths_in_blocks::Params>,
+    pub b02_params: LaniusBuffer<crate::parser::passes::brackets::scan_bracket_blocks::Params>,
     pub b02_scan_plan: TokenBlockScanPlan,
-    pub b03_params: LaniusBuffer<super::super::passes::brackets::apply_prefix::Params>,
-    pub b07_params: LaniusBuffer<super::super::passes::brackets::pse_pair::Params>, // PSE-style pair-by-layer
-    pub b_clear_matches_params: LaniusBuffer<super::super::passes::brackets::clear_matches::Params>,
+    pub b03_params: LaniusBuffer<crate::parser::passes::brackets::apply_bracket_block_prefix::Params>,
+    pub b07_params: LaniusBuffer<crate::parser::passes::brackets::pair_brackets_by_layer::Params>, // PSE-style pair-by-layer
+    pub b_clear_matches_params: LaniusBuffer<crate::parser::passes::brackets::clear_bracket_matches::Params>,
     pub emit_stack_matches: bool,
     pub b_min_tree_base: u32,
     pub b_min_tree: LaniusBuffer<i32>,
@@ -673,7 +673,7 @@ pub struct ParserBuffers {
     pub b_n_blocks: u32,
 
     // -------- Tree parent recovery --------
-    pub tree_prefix_params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
+    pub tree_prefix_params: LaniusBuffer<crate::parser::passes::tree::sum_arity_deficits_in_blocks::Params>,
     pub tree_n_node_blocks: u32,
     pub tree_active_dispatch_args: LaniusBuffer<u32>,
     pub tree_enum_dispatch_args: LaniusBuffer<u32>,
@@ -703,10 +703,10 @@ pub struct ParserBuffers {
     /// Local maximum heap of every 256-row prefix block (blocked_search_tree.slang).
     pub tree_prefix_local_max: LaniusBuffer<i32>,
     pub tree_prefix_max_build_steps: Vec<TreePrefixMaxBuildStep>,
-    pub tree_params: LaniusBuffer<super::super::passes::tree::parent::Params>,
-    pub tree_span_params: LaniusBuffer<super::super::passes::tree::spans::Params>,
+    pub tree_params: LaniusBuffer<crate::parser::passes::tree::find_tree_parents::Params>,
+    pub tree_span_params: LaniusBuffer<crate::parser::passes::tree::find_tree_spans::Params>,
     pub tree_prev_sibling_params:
-        LaniusBuffer<super::super::passes::tree::prev::sibling::clear::Params>,
+        LaniusBuffer<crate::parser::passes::tree::clear_previous_siblings::Params>,
     pub prod_arity: LaniusBuffer<u32>,
     pub node_kind: LaniusBuffer<u32>,
     pub parent: LaniusBuffer<u32>,

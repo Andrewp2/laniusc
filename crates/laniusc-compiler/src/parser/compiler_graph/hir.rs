@@ -3019,7 +3019,7 @@ fn register_struct_fields(
         ],
     )?;
     let clear_name =
-        crate::parser::passes::tree::prev::sibling::clear::STRUCT_LITERAL_FIELD_NEXT_CLEAR;
+        crate::parser::passes::tree::clear_previous_siblings::STRUCT_LITERAL_FIELD_NEXT_CLEAR;
     reflected(
         graph,
         clear_name,
