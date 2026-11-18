@@ -859,7 +859,7 @@ fn cli_diagnostics_registry_prints_combined_registry_json_without_compiling_sour
                     && feature["boundary"] == "x86 backend"
                     && feature["next_step"]
                         .as_str()
-                        .is_some_and(|next_step| next_step.contains("--emit=wasm"))
+                        .is_some_and(|next_step| next_step.contains("native output requires support for this construct in x86 lowering"))
             }),
         "registry command should expose unsupported boundary metadata\nstdout:\n{}",
         String::from_utf8_lossy(&output.stdout)
@@ -3309,7 +3309,7 @@ fn cli_diagnostics_explain_prints_single_code_json_without_compiling_source() {
         explanation["unsupported_feature"]["next_step"]
             .as_str()
             .expect("unsupported next_step should be a string")
-            .contains("--emit=wasm")
+            .contains("native output requires support for this construct in x86 lowering")
     );
     assert_eq!(
         explanation["codegen_boundary"]["diagnostic_code"],
@@ -8645,10 +8645,12 @@ fn cli_check_unknown_token_can_render_json_diagnostic_at_token_span() {
     let diagnostic: serde_json::Value =
         serde_json::from_str(&stderr).expect("stderr should be one JSON diagnostic object");
     let at = source.find('@').expect("source should contain @");
+    // The GPU lexer's DFA stops at `@` before the parser runs
+    // (helpers.rs source_lexical_failure_for_source).
     assert_eq!(diagnostic["severity"], "error");
-    assert_eq!(diagnostic["code"], "LNC0016");
-    assert_eq!(diagnostic["title"], "syntax error");
-    assert_eq!(diagnostic["message"], "unknown start of token: `@`");
+    assert_eq!(diagnostic["code"], "LNC0046");
+    assert_eq!(diagnostic["title"], "source tokenization failed");
+    assert_eq!(diagnostic["message"], "source tokenization failed");
     assert_eq!(
         diagnostic["primary_label"]["path"],
         artifact.path().display().to_string()
@@ -8663,7 +8665,7 @@ fn cli_check_unknown_token_can_render_json_diagnostic_at_token_span() {
     );
     assert_eq!(
         diagnostic["primary_label"]["message"],
-        "unknown start of token: `@`"
+        "tokenization fails at this byte"
     );
 }
 
