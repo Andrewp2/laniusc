@@ -189,6 +189,23 @@ public static const uint RT_C_READY = 77u; // exported records complete so far; 
 // the process. A GPU consumer of a derived publication compares it with the
 // generation the publication recorded.
 public static const uint RT_C_GENERATION = 78u;
+// The current job's smallest fault key, (row << 8) | reason: the row of a
+// failure that makes an entry incomplete or breaks an invariant.
+public static const uint RT_C_FAULT_KEY = 79u;
+// The build's first fault, written when a committed job clears READY:
+// RT_C_FAULT is the reason (RT_INV_* code, or RT_FAULT_STAT + RT_STAT_*)
+// with RT_FAULT_LOCATED when the job, file, byte and length words name the
+// row's first token. The trait catalog copies these words to its count
+// readback, so an unready store reports where it failed.
+public static const uint RT_C_FAULT = 89u;
+public static const uint RT_C_FAULT_JOB = 90u;
+public static const uint RT_C_FAULT_FILE = 91u;
+public static const uint RT_C_FAULT_BYTE = 92u;
+public static const uint RT_C_FAULT_LEN = 93u;
+public static const uint RT_FAULT_STAT = 16u;
+public static const uint RT_FAULT_UNKNOWN = 0xffu;
+public static const uint RT_FAULT_LOCATED = 0x100u;
+public static const uint RT_FAULT_NO_ROW = 0xffffffu;
 public static const uint RT_C_JOB_SPARE = 80u; // + arena (decls..term args): spares at the job's start
 // Build totals at the job's start, which an uncommit restores
 // (export/19_uncommit.slang).
@@ -264,6 +281,13 @@ public void rt_invariant(uint code)
 {
     InterlockedAdd(rt_counts[RT_C_INVARIANTS], 1u);
     InterlockedMin(rt_counts[RT_C_FIRST_INVARIANT], code);
+    rt_fault(RT_FAULT_NO_ROW, code);
+}
+
+// Records a fault of `row` (a HIR row of the job); the smallest row wins.
+public void rt_fault(uint row, uint reason)
+{
+    InterlockedMin(rt_counts[RT_C_FAULT_KEY], (min(row, RT_FAULT_NO_ROW) << 8u) | (reason & 0xffu));
 }
 
 public uint rt_mix(uint h, uint v)

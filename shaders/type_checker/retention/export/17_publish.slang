@@ -24,6 +24,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Publication conflicts happen after step 16's reduction.
         InterlockedAdd(rt_counts[RT_C_INVARIANT_TOTAL], 1u);
         InterlockedAnd(rt_counts[RT_C_READY], 0u);
+        uint unset;
+        InterlockedCompareExchange(rt_counts[RT_C_FAULT], 0u, RT_INV_DUPLICATE_DECL, unset);
         uint previous_flags;
         InterlockedOr(rt_dir[entry * RT_DIR_WORDS + 3u].w, RT_DIR_INCOMPLETE, previous_flags);
         if ((previous_flags & RT_DIR_INCOMPLETE) == 0u)

@@ -120,9 +120,9 @@ void export_slot(uint k, uint index)
     uint at = s0.w + RT_SIDE_WORDS * (offset + local);
     rt_seg_side[at] = record;
     rt_seg_side[at + 1u] = extra;
-    stat_add(function, RT_STAT_FOREIGN, f);
-    stat_add(function, RT_STAT_UNTRANSLATED, untranslated);
-    stat_add(function, RT_STAT_OWNERSHIP, unowned);
+    stat_add_at(function, side_key(k, index), RT_STAT_FOREIGN, f);
+    stat_add_at(function, side_key(k, index), RT_STAT_UNTRANSLATED, untranslated);
+    stat_add_at(function, side_key(k, index), RT_STAT_OWNERSHIP, unowned);
     if (unowned != 0u) rt_invariant(RT_INV_OWNERSHIP);
 }
 

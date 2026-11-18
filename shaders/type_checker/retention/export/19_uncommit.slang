@@ -30,6 +30,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     rt_counts[RT_C_INVARIANT_TOTAL] = rt_counts[RT_C_SAVED_INVARIANT_TOTAL];
     rt_counts[RT_C_INCOMPLETE_TOTAL] = rt_counts[RT_C_SAVED_INCOMPLETE_TOTAL];
     rt_counts[RT_C_READY] = rt_counts[RT_C_SAVED_READY];
+    // A store that was ready before the job had no fault; the job's fault goes with it.
+    if (rt_counts[RT_C_SAVED_READY] != 0u) rt_counts[RT_C_FAULT] = 0u;
     rt_counts[RT_C_CONFLICTS] = rt_counts[RT_C_SAVED_CONFLICTS];
     rt_counts[RT_C_JOB_STATE] = RT_JOB_ROLLED_BACK;
 }

@@ -147,6 +147,15 @@ pub mod counts {
     pub const READY: usize = 77;
     /// Build generation (retention_store.slang RT_C_GENERATION).
     pub const GENERATION: usize = 78;
+    /// The build's first fault (retention_store.slang RT_C_FAULT*): reason,
+    /// job, file, byte and length of the faulting row's first token.
+    pub const FAULT: usize = 89;
+    pub const FAULT_JOB: usize = 90;
+    pub const FAULT_FILE: usize = 91;
+    pub const FAULT_BYTE: usize = 92;
+    pub const FAULT_LEN: usize = 93;
+    pub const FAULT_STAT: u32 = 16;
+    pub const FAULT_LOCATED: u32 = 0x100;
     pub const WORDS: usize = 96;
     pub const JOB_COMMITTED: u32 = 2;
     pub const JOB_ROLLED_BACK: u32 = 3;

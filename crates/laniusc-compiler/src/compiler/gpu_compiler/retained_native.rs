@@ -245,6 +245,31 @@ where
     }
 }
 
+/// The reason a retention export left the store not ready
+/// (retention_store.slang RT_C_FAULT: an RT_INV_* code or
+/// RT_FAULT_STAT + RT_STAT_*).
+fn store_fault_reason(reason: u32) -> &'static str {
+    match reason {
+        1 => "a generic parameter's owner has no declaration identity",
+        2 => "a checked type did not translate into the store",
+        3 => "a checked type is deeper than the store's translated heights",
+        4 => "a body's rows or side tables are not contiguous",
+        5 => "a checked type names a type parameter outside this declaration's scope",
+        6 => "two declarations of the program define the same item",
+        7 => "the generic parameter map is full",
+        8 => "a call's type environment belongs to a different callee",
+        9 => "a method receiver's type is not the matched receiver or a reference to it",
+        10 => "a trait predicate, impl head or impl method has no accepted checker fact",
+        11 => "a declaration's trait facts are not in source order",
+        12 => "trait, required member or native target identities disagree",
+        16 => "an expression has no checked type",
+        17 => "a reference points outside its body",
+        18 => "a checked type names a type parameter outside this declaration's scope",
+        19 => "a checked type did not translate into the store",
+        _ => "the export did not record which row failed",
+    }
+}
+
 fn retained_error(context: &str, error: impl std::fmt::Display) -> CompileError {
     CompileError::GpuCodegen(format!("retained native build: {context}: {error}"))
 }
@@ -269,6 +294,48 @@ impl RetainedNativeBuild {
         let source = unit.texts.get(file as usize)?;
         let path = unit.paths.get(file as usize).and_then(Option::as_deref).unwrap_or(Path::new("<source>"));
         Some(typecheck::type_check_diagnostic_at_span(path,source,byte as usize,len as usize,code,detail))
+    }
+
+    /// A link error; a link with no object defining `main` is the
+    /// missing-main diagnostic at the entry unit's first source.
+    fn x86_link_error(&self, context: &str, error: String) -> CompileError {
+        if error != x86::X86_LINK_NO_ENTRY_OBJECT {
+            return retained_error(context, error);
+        }
+        // The label goes on the program's own source: the last unit's first
+        // file that is not an embedded `core` file (a build with no `core`
+        // directory compiles those into the same unit, ahead of the program).
+        let first = self.sources.last().and_then(|unit| {
+            let embedded = |path: &Option<PathBuf>| {
+                path.as_deref().is_some_and(|path| path.starts_with(crate::compiler::EMBEDDED_CORE_ROOT))
+            };
+            let file = (0..unit.texts.len())
+                .find(|&file| !unit.paths.get(file).is_some_and(embedded))
+                .unwrap_or(0);
+            let text = unit.texts.get(file)?;
+            Some((text.as_str(), unit.paths.get(file).and_then(Option::as_deref)))
+        });
+        super::x86_codegen::x86_link_input_error(error, first)
+    }
+
+    /// The export's first fault of a store that is not ready, located at the
+    /// faulting row's first token when the GPU recorded one.
+    fn store_fault_error(&self, fault: [u32; 5]) -> CompileError {
+        use crate::type_checker::program_retention::counts;
+        let [reason, job, file, byte, len] = fault;
+        let what = store_fault_reason(reason & 0xff);
+        let mut diagnostic = Diagnostic::error("LNC0017", "program trait evidence checking failed")
+            .with_note(format!("the GPU program store is not ready: {what}"))
+;
+        if reason & counts::FAULT_LOCATED != 0
+            && let Some(unit) = self.sources.get(job as usize)
+            && let Some(source) = unit.texts.get(file as usize)
+        {
+            let path = unit.paths.get(file as usize).and_then(Option::as_deref).unwrap_or(Path::new("<source>"));
+            diagnostic = diagnostic.with_primary_label(crate::compiler::diagnostics::diagnostic_label_from_source_span(
+                path, source, byte as usize, len as usize, what));
+        }
+        CompileError::Diagnostic(diagnostic)
     }
 
     fn projection_error(&self, e: crate::type_checker::program_retention::projection::ProjectionError) -> CompileError {
@@ -557,6 +624,9 @@ impl GpuCompiler<'_> {
                 return Err(CompileError::Diagnostic(Diagnostic::error("LNC0017", "program trait evidence checking failed")
                     .with_note(format!("program catalog GPU admission/coherence failed: {status:?}"))));
             }
+            if let Some(fault) = catalog.store_fault {
+                return Err(build.store_fault_error(fault));
+            }
             return Err(CompileError::Diagnostic(Diagnostic::error("LNC0017", "program trait evidence checking failed").with_note(format!(
                 "stage {:?}, producer {:?}, admission {:?}, publication {:?}",
                 catalog.stage, catalog.first_failure, catalog.catalog_status,
@@ -761,7 +831,7 @@ impl GpuCompiler<'_> {
                 _ => unreachable!("resident native object"),
             }).collect::<Vec<_>>();
             return self.link_x86_objects(&objects).map(ResidentLinkedOutput::Bytes)
-                .map_err(|e| retained_error("link", format!("{e:#}")));
+                .map_err(|e| build.x86_link_error("link", format!("{e:#}")));
         }
         let objects = originals.into_iter().map(|object| match object {
             CompiledSourcePackObject::X86_64File(object) => object,
@@ -838,7 +908,7 @@ impl GpuCompiler<'_> {
             };
         }
         let input = x86::GpuX86LinkInput::for_executable_spilled(&objects)
-            .map_err(|e| retained_error("link inputs", e))?;
+            .map_err(|e| build.x86_link_error("link inputs", e))?;
         match output {
             Some(path) => super::bounded_path_codegen::write_output_file_atomically(
                 path, SourcePackArtifactTarget::X86_64,

@@ -1,6 +1,7 @@
 // Pending reducer: compare a bound Option result with conditional assignment
 // through both copies of the same imported generic Filter cursor type.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -21,7 +22,7 @@ pub impl core::iter::Iterator<i64> for Probe {
 }
 struct Predicate { counter: &Counter }
 impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
-pub impl core::iter::Mapper<i64, bool> for Predicate {
+pub impl core::function::Mapper<i64, bool> for Predicate {
     pub fn apply(&self, value: i64) -> bool {
         let counter: &Counter = self.counter; counter.calls += 1;
         return true;
