@@ -1096,8 +1096,7 @@ it; a heap of minimum depths finds the bracket around a binder (`roles`);
 its form; `captures` finds the first use of each typed local of the
 enclosing function in a body. `pieces` counts the pieces of each token and
 writes them: the struct literal at the site, owned by the closure's first
-token, whose tokens are dropped; `import core::function;` after the module
-line of a file with a closure; and the struct and its impls of each of the
+token, whose tokens are dropped; and the struct and its impls of each of the
 file's closures, owned by the token after the file's last token. A piece
 names the file of its anchor, so the appendix stays in its file. A
 rejected closure stops the round before its splice, and the host reads the

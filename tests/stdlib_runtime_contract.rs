@@ -105,17 +105,19 @@ fn runtime_service_values() -> Vec<(&'static str, u32)> {
         .collect()
 }
 
-/// Import discovery runs before the closure rewrite, so a file with a `|`
-/// (here the `||` operator) also loads `core::function` and its import
-/// `core::mem`. Returns how many files that adds.
-fn assert_closure_trait_files(
+/// A build with a stdlib root always loads the language-item module
+/// `core::function`, the closure traits, and its import `core::mem`, after
+/// the entry's imports. The manifest lists what the build loads, so every
+/// manifest count in this file includes those two files (one when the entry
+/// already imports `core::mem`). Returns how many files that adds.
+fn assert_language_item_files(
     manifest: &laniusc_compiler::compiler::ExplicitSourcePackPathManifest,
     stdlib_root: &std::path::Path,
 ) -> usize {
     for module in ["core/function.lani", "core/mem.lani"] {
         assert!(
             manifest.files.iter().any(|file| file.path == stdlib_root.join(module)),
-            "path manifest should include the closure trait module's {module}"
+            "path manifest should include the language-item module's {module}"
         );
     }
     2
@@ -3383,7 +3385,7 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 5);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root alloc::allocator runtime contract",
@@ -3636,7 +3638,7 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/io.lani"))
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::io public API runtime gates",
@@ -3720,7 +3722,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/io.lani")),
         "path manifest should include std::io from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::io operation-result contract",
@@ -3985,7 +3987,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/time.lani")),
         "path manifest should include std::time from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::time API runtime gates",
@@ -4032,7 +4034,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/time.lani")),
         "path manifest should include std::time from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::time public clock calls",
@@ -4131,7 +4133,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/time.lani")),
         "path manifest should include std::time from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::time result contract",
@@ -4263,7 +4265,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs public API runtime gates",
@@ -4347,7 +4349,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs path-mutation API runtime gates",
@@ -4394,7 +4396,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs path-mutation public calls",
@@ -4494,7 +4496,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs file-I/O API runtime gates",
@@ -4590,7 +4592,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs operation-result contract",
@@ -4650,7 +4652,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/fs.lani")),
         "path manifest should include std::fs from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::fs file-handle contract",
@@ -4860,7 +4862,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/net.lani")),
         "path manifest should include std::net from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::net socket API runtime gates",
@@ -4911,7 +4913,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/net.lani")),
         "path manifest should include std::net from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::net listener and receive calls",
@@ -5004,7 +5006,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/net.lani")),
         "path manifest should include std::net from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::net operation-result contract",
@@ -5111,7 +5113,7 @@ fn main() {
     );
     assert_eq!(
         manifest.files.len(),
-        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+        3 + assert_language_item_files(&manifest, &stdlib_root)
     );
 
     common::block_on_gpu_with_timeout(
@@ -5571,7 +5573,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/process.lani")),
         "path manifest should include std::process from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::process public API runtime gates",
@@ -5657,7 +5659,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/process.lani")),
         "path manifest should include std::process from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::process argument-result contract",
@@ -5728,7 +5730,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/process.lani")),
         "path manifest should include std::process from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::process exit-code contract",
@@ -5876,7 +5878,7 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
     );
-    assert_eq!(manifest.files.len(), 4);
+    assert_eq!(manifest.files.len(), 6);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env runtime contract",
@@ -5924,7 +5926,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/env.lani")),
         "path manifest should include std::env from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 5);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env public read calls",
@@ -6005,7 +6007,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/env.lani")),
         "path manifest should include std::env from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 5);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::env read-result contract",
@@ -6132,7 +6134,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(manifest.files.len(), 5);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::random secure RNG contract",
@@ -6216,7 +6218,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/random.lani")),
         "path manifest should include std::random from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::random operation-result contract",
@@ -6366,7 +6368,7 @@ fn main() {
     );
     assert_eq!(
         manifest.files.len(),
-        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+        3 + assert_language_item_files(&manifest, &stdlib_root)
     );
 
     common::block_on_gpu_with_timeout(
@@ -6455,7 +6457,7 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/gpu.lani")),
         "path manifest should include std::gpu from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::gpu operation-result contract",
@@ -6571,7 +6573,7 @@ fn main() {
     );
     assert_eq!(
         manifest.files.len(),
-        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+        3 + assert_language_item_files(&manifest, &stdlib_root)
     );
 
     common::block_on_gpu_with_timeout(
@@ -6629,7 +6631,7 @@ fn main() {
     );
     assert_eq!(
         manifest.files.len(),
-        2 + assert_closure_trait_files(&manifest, &stdlib_root)
+        2 + assert_language_item_files(&manifest, &stdlib_root)
     );
 
     common::block_on_gpu_with_timeout(
@@ -6704,7 +6706,7 @@ fn main() {
         }),
         "path manifest should include test::harness from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
     for helper_name in [
         "test::harness::test_status_passed",
         "test::harness::test_status_failed",
@@ -6757,7 +6759,7 @@ fn main() {
         }),
         "path manifest should include test::assert from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(manifest.files.len(), 4);
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root test::assert public helpers",
@@ -6891,7 +6893,7 @@ fn main() {
         "path manifest should include core::result from the stdlib root"
     );
     // The entry, core::result, core::cmp, core::function and core::panic.
-    assert_eq!(manifest.files.len(), 5);
+    assert_eq!(manifest.files.len(), 6);
     assert!(
         runtime_bound_api_diagnostic_info("core::result::or").is_none(),
         "core::result::or is a source-level helper and must not claim a runtime binding"
@@ -7011,7 +7013,7 @@ fn main() {
     );
     // The entry, core::option, core::result, core::cmp, core::function and
     // core::panic.
-    assert_eq!(manifest.files.len(), 6);
+    assert_eq!(manifest.files.len(), 7);
     for helper_name in [
         "core::option::contains",
         "core::result::contains",
@@ -7072,7 +7074,7 @@ fn main() {
         "path manifest should include core::result from the stdlib root"
     );
     // The entry, core::result, core::cmp, core::function and core::panic.
-    assert_eq!(manifest.files.len(), 5);
+    assert_eq!(manifest.files.len(), 6);
     for helper_name in ["core::result::and"] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),

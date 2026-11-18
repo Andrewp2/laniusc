@@ -16,6 +16,8 @@ mod bounded_entry_compilation;
 mod call_inference_convergence;
 #[path = "../cast_expression.rs"]
 mod cast_expression;
+#[path = "../closures_execution.rs"]
+mod closures_execution;
 #[path = "../cli_daemon.rs"]
 mod cli_daemon;
 #[path = "../cli_diagnostics.rs"]

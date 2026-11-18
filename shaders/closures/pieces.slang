@@ -1,8 +1,6 @@
 // The pieces of the closure round (desugar_common.slang). Every token emits
 // its pieces in stream order:
 //
-//   the first token of a file with a closure: `import core::function;`,
-//     owned by the token after the module line, or by the first token;
 //   the `|` that starts a closure: its site, a struct literal, owned by the
 //     closure's first token, and every token of the closure is dropped;
 //   the last token of a file with a closure: the appendix of each of the
@@ -93,11 +91,6 @@ FileSpan file_span(uint file)
     return span;
 }
 
-bool first_in_file(uint t, uint file)
-{
-    return t == 0u || token_file_id[t - 1u] != file;
-}
-
 bool last_in_file(uint t, uint file)
 {
     return t + 1u == gPieces.token_count || token_file_id[t + 1u] != file;
@@ -128,20 +121,6 @@ uint4 nothing(uint anchor)
     return uint4(0u, PIECE_RANGE, 0u, anchor);
 }
 
-// The token the import goes before: the one after the module line, or the
-// first token of a file without one.
-uint import_owner(uint first, uint file)
-{
-    if (tokens_out[first].kind != TK_MODULE)
-        return first;
-    for (uint q = first + 1u; q < gPieces.token_count && q < first + 256u && token_file_id[q] == file; q += 1u)
-    {
-        if (tk_semicolon(tokens_out[q].kind))
-            return q + 1u;
-    }
-    return first;
-}
-
 void count_token(uint t)
 {
     uint file = token_file_id[t];
@@ -166,18 +145,11 @@ void count_token(uint t)
         records[k * REC_WORDS + REC_CAP_COUNT] = count;
         n += SITE_PIECES + SITE_PER_CAPTURE * count;
     }
-    bool first_token = first_in_file(t, file);
-    bool last_token = last_in_file(t, file);
-    if (first_token || last_token)
+    if (last_in_file(t, file))
     {
         FileSpan span = file_span(file);
         if (span.closures > 0u)
-        {
-            if (first_token)
-                n += 1u;
-            if (last_token)
-                n += APPENDIX_FIXED * span.closures + APPENDIX_PER_CAPTURE * span.captures;
-        }
+            n += APPENDIX_FIXED * span.closures + APPENDIX_PER_CAPTURE * span.captures;
     }
     counts[t] = uint4(n, 0u, 0u, 0u);
 
@@ -373,20 +345,6 @@ void write_piece(uint q)
     uint r = q - (count_scan[t].x - counts[t].x);
     uint file = token_file_id[t];
 
-    if (first_in_file(t, file))
-    {
-        FileSpan span = file_span(file);
-        if (span.closures > 0u)
-        {
-            if (r == 0u)
-            {
-                pieces[q] = constant(C_IMPORT, rec(closures_before(span.first), REC_START));
-                piece_owner[q] = import_owner(span.first, file);
-                return;
-            }
-            r -= 1u;
-        }
-    }
     if (starts_closure(t))
     {
         uint k = depth_scan[t].y - 1u;
