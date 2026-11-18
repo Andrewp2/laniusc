@@ -47,31 +47,31 @@ pub enum ListRankInvocation {
 impl ListRankInvocation {
     pub const fn local_label(self) -> &'static str {
         match self {
-            Self::TypeArguments => "hir_type_arg_rank_prefix_00_local",
-            Self::Parameters => "hir_param_rank_prefix_00_local",
-            Self::CallArguments => "hir_call_arg_rank_prefix_00_local",
-            Self::ArrayElements => "hir_array_element_rank_prefix_00_local",
+            Self::TypeArguments => "hir_type_arg_rank.mark_rows",
+            Self::Parameters => "hir_param_rank.mark_rows",
+            Self::CallArguments => "hir_call_arg_rank.mark_rows",
+            Self::ArrayElements => "hir_array_element_rank.mark_rows",
             Self::StringRecords => "hir_string_compact_local",
             Self::StringOffsets => "hir_string_offset_local",
-            Self::PathSegments => "hir_path_segment_rank_prefix_00_local",
-            Self::TypeRoots => "hir_type_root_rank_prefix_00_local",
-            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank_prefix_00_local",
-            Self::BinarySpans => "hir_binary_span_rank_prefix_00_local",
+            Self::PathSegments => "hir_path_segment_rank.mark_rows",
+            Self::TypeRoots => "hir_type_root_rank.mark_rows",
+            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank.mark_rows",
+            Self::BinarySpans => "hir_binary_span_rank.mark_rows",
         }
     }
 
     pub const fn scan_label(self) -> &'static str {
         match self {
-            Self::TypeArguments => "hir_type_arg_rank_prefix_01_blocks",
-            Self::Parameters => "hir_param_rank_prefix_01_blocks",
-            Self::CallArguments => "hir_call_arg_rank_prefix_01_blocks",
-            Self::ArrayElements => "hir_array_element_rank_prefix_01_blocks",
-            Self::StringRecords => "hir_string_compact_prefix_01_blocks",
-            Self::StringOffsets => "hir_string_offset_prefix_01_blocks",
-            Self::PathSegments => "hir_path_segment_rank_prefix_01_blocks",
-            Self::TypeRoots => "hir_type_root_rank_prefix_01_blocks",
-            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank_prefix_01_blocks",
-            Self::BinarySpans => "hir_binary_span_rank_prefix_01_blocks",
+            Self::TypeArguments => "hir_type_arg_rank.scan_blocks",
+            Self::Parameters => "hir_param_rank.scan_blocks",
+            Self::CallArguments => "hir_call_arg_rank.scan_blocks",
+            Self::ArrayElements => "hir_array_element_rank.scan_blocks",
+            Self::StringRecords => "hir_string_compact.scan_blocks",
+            Self::StringOffsets => "hir_string_offset.scan_blocks",
+            Self::PathSegments => "hir_path_segment_rank.scan_blocks",
+            Self::TypeRoots => "hir_type_root_rank.scan_blocks",
+            Self::VariantPayloadOwners => "hir_variant_payload_owner_rank.scan_blocks",
+            Self::BinarySpans => "hir_binary_span_rank.scan_blocks",
         }
     }
 

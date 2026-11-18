@@ -58,19 +58,19 @@ impl CanonicalConstruct {
 
     pub(in crate::parser) const fn scan_label(self) -> &'static str {
         match self {
-            Self::CallArgument => "hir_canonical_call_arg_prefix_01_blocks",
-            Self::Parameter => "hir_canonical_param_prefix_01_blocks",
-            Self::TypeArgument => "hir_canonical_type_arg_prefix_01_blocks",
-            Self::GenericParameter => "hir_canonical_generic_param_prefix_01_blocks",
-            Self::Path => "hir_canonical_path_prefix_01_blocks",
-            Self::Field => "hir_canonical_field_prefix_01_blocks",
-            Self::Variant => "hir_canonical_variant_prefix_01_blocks",
-            Self::VariantPayload => "hir_canonical_variant_payload_prefix_01_blocks",
-            Self::MatchArm => "hir_canonical_match_arm_prefix_01_blocks",
-            Self::MatchPayload => "hir_canonical_match_payload_prefix_01_blocks",
-            Self::ArrayElement => "hir_canonical_array_element_prefix_01_blocks",
-            Self::Method => "hir_canonical_method_prefix_01_blocks",
-            Self::Predicate => "hir_canonical_predicate_prefix_01_blocks",
+            Self::CallArgument => "hir_canonical_call_arg.scan_blocks",
+            Self::Parameter => "hir_canonical_param.scan_blocks",
+            Self::TypeArgument => "hir_canonical_type_arg.scan_blocks",
+            Self::GenericParameter => "hir_canonical_generic_param.scan_blocks",
+            Self::Path => "hir_canonical_path.scan_blocks",
+            Self::Field => "hir_canonical_field.scan_blocks",
+            Self::Variant => "hir_canonical_variant.scan_blocks",
+            Self::VariantPayload => "hir_canonical_variant_payload.scan_blocks",
+            Self::MatchArm => "hir_canonical_match_arm.scan_blocks",
+            Self::MatchPayload => "hir_canonical_match_payload.scan_blocks",
+            Self::ArrayElement => "hir_canonical_array_element.scan_blocks",
+            Self::Method => "hir_canonical_method.scan_blocks",
+            Self::Predicate => "hir_canonical_predicate.scan_blocks",
         }
     }
 
@@ -196,18 +196,19 @@ pub struct ParserPasses {
     pub source_file_token_end: tree::find_source_file_token_ends::SourceFileTokenEndPass,
 
     // Bracket matching passes
-    pub b01: brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass,
-    pub b02: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass,
-    pub b03: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass,
+    pub scan_bracket_depths_in_blocks:
+        brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass,
+    pub scan_bracket_blocks: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass,
+    pub apply_bracket_block_prefix: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass,
     pub b_clear_matches: brackets::clear_bracket_matches::BracketsClearMatchesPass,
     pub b_min_tree: brackets::build_bracket_min_tree::BracketsMinTreePass,
-    pub pse04: brackets::pair_brackets_by_layer::BracketsPsePairPass, // Replaces b07
+    pub pair_brackets_by_layer: brackets::pair_brackets_by_layer::BracketsPsePairPass,
 
     // Tree building pass
-    pub tree_prefix_01: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass,
-    pub tree_prefix_02: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass,
-    pub tree_prefix_03: tree::apply_arity_deficit_prefix::TreePrefixApplyPass,
-    pub tree_prefix_04: tree::build_deficit_max_tree::TreePrefixMaxBuildPass,
+    pub sum_arity_deficits_in_blocks: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass,
+    pub scan_arity_deficit_blocks: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass,
+    pub apply_arity_deficit_prefix: tree::apply_arity_deficit_prefix::TreePrefixApplyPass,
+    pub build_deficit_max_tree: tree::build_deficit_max_tree::TreePrefixMaxBuildPass,
     pub tree_active_dispatch_args:
         tree::write_active_node_dispatch_args::TreeActiveDispatchArgsPass,
     pub tree_parent: tree::find_tree_parents::TreeParentPass,
@@ -431,18 +432,18 @@ impl ParserPasses {
             status_from_brackets: brackets::combine_pack_and_bracket_status::ParserStatusFromBracketsPass::new(device)?,
             source_file_token_end: tree::find_source_file_token_ends::SourceFileTokenEndPass::new(device)?,
 
-            b01: brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass::new(device)?,
-            b02: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass::new(device)?,
-            b03: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass::new(device)?,
+            scan_bracket_depths_in_blocks: brackets::scan_bracket_depths_in_blocks::BracketsScanInblockPass::new(device)?,
+            scan_bracket_blocks: brackets::scan_bracket_blocks::BracketsScanBlockPrefixPass::new(device)?,
+            apply_bracket_block_prefix: brackets::apply_bracket_block_prefix::BracketsApplyPrefixPass::new(device)?,
             b_clear_matches: brackets::clear_bracket_matches::BracketsClearMatchesPass::new(device)?,
             b_min_tree: brackets::build_bracket_min_tree::BracketsMinTreePass::new(device)?,
-            pse04: brackets::pair_brackets_by_layer::BracketsPsePairPass::new(device)?,
+            pair_brackets_by_layer: brackets::pair_brackets_by_layer::BracketsPsePairPass::new(device)?,
 
             tree_parent: tree::find_tree_parents::TreeParentPass::new(device)?,
-            tree_prefix_01: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass::new(device)?,
-            tree_prefix_02: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass::new(device)?,
-            tree_prefix_03: tree::apply_arity_deficit_prefix::TreePrefixApplyPass::new(device)?,
-            tree_prefix_04: tree::build_deficit_max_tree::TreePrefixMaxBuildPass::new(device)?,
+            sum_arity_deficits_in_blocks: tree::sum_arity_deficits_in_blocks::TreePrefixLocalPass::new(device)?,
+            scan_arity_deficit_blocks: tree::scan_arity_deficit_blocks::TreePrefixScanBlocksPass::new(device)?,
+            apply_arity_deficit_prefix: tree::apply_arity_deficit_prefix::TreePrefixApplyPass::new(device)?,
+            build_deficit_max_tree: tree::build_deficit_max_tree::TreePrefixMaxBuildPass::new(device)?,
             tree_active_dispatch_args:
                 tree::write_active_node_dispatch_args::TreeActiveDispatchArgsPass::new(device)?,
             tree_spans: tree::find_tree_spans::TreeSpansPass::new(device)?,
@@ -1114,10 +1115,10 @@ pub fn record_stack_effect_validation(
         ctx.encoder,
     )?;
 
-    p.b01
+    p.scan_bracket_depths_in_blocks
         .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram");
-    p.b02.record_scan(
+    p.scan_bracket_blocks.record_scan(
         ctx.device,
         ctx.encoder,
         ctx.buffers,
@@ -1126,7 +1127,7 @@ pub fn record_stack_effect_validation(
             .expect("parser stack validation requires a bind-group cache"),
     )?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.histogram_scan");
-    p.b03
+    p.apply_bracket_block_prefix
         .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.offsets");
     p.b_min_tree.record_build(
@@ -1142,7 +1143,7 @@ pub fn record_stack_effect_validation(
         p.b_clear_matches
             .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     }
-    p.pse04
+    p.pair_brackets_by_layer
         .record_pass_indirect(ctx, &ctx.buffers.active_stack_thread_dispatch_args)?;
     stamp_parser_timer(timer_ref, ctx.encoder, "parser.stack_effect.pair_pse");
     p.status_from_brackets.record_pass(ctx, E1D(1))?;

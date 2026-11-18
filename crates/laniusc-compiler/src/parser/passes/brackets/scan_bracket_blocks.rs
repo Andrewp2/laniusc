@@ -5,7 +5,10 @@ use encase::ShaderType;
 
 use crate::{
     gpu::passes_core::{BindGroupCache, DispatchDim, InputElements, PassData, plan_workgroups},
-    parser::buffers::ParserBuffers,
+    parser::{
+        buffers::ParserBuffers,
+        compiler_graph::{BRACKET_SCAN_DOWN, BRACKET_SCAN_FINALIZE, BRACKET_SCAN_UP},
+    },
 };
 
 #[repr(C)]
@@ -28,17 +31,17 @@ impl BracketsScanBlockPrefixPass {
         Ok(Self {
             up: crate::gpu::passes_core::make_main_pass!(
                 device,
-                "brackets_02_scan_block_prefix_up",
+                BRACKET_SCAN_UP,
                 shader: "parser/brackets/sum_bracket_blocks_up"
             )?,
             down: crate::gpu::passes_core::make_main_pass!(
                 device,
-                "brackets_02_scan_block_prefix_down",
+                BRACKET_SCAN_DOWN,
                 shader: "parser/brackets/carry_bracket_blocks_down"
             )?,
             finalize: crate::gpu::passes_core::make_main_pass!(
                 device,
-                "brackets_02_scan_block_prefix",
+                BRACKET_SCAN_FINALIZE,
                 shader: "parser/brackets/finish_bracket_block_prefix"
             )?,
         })
@@ -56,7 +59,7 @@ impl BracketsScanBlockPrefixPass {
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        for (index, step) in buffers.b02_scan_plan.up.iter().enumerate() {
+        for (index, step) in buffers.bracket_scan_plan.up.iter().enumerate() {
             let resources = HashMap::from([
                 ("gBracketScan".into(), step.params.as_entire_binding()),
                 ("block_sum".into(), buffers.b_block_sum.as_entire_binding()),
@@ -87,14 +90,14 @@ impl BracketsScanBlockPrefixPass {
                 cache,
                 buffers,
                 &self.up,
-                &format!("brackets_02_scan_block_prefix_up.{index}"),
-                crate::parser::compiler_graph::BRACKET_SCAN_UP,
+                &format!("{BRACKET_SCAN_UP}.{index}"),
+                BRACKET_SCAN_UP,
                 &resources,
                 step.work_items,
             )?;
         }
 
-        for (index, step) in buffers.b02_scan_plan.down.iter().enumerate() {
+        for (index, step) in buffers.bracket_scan_plan.down.iter().enumerate() {
             let resources = HashMap::from([
                 ("gBracketScan".into(), step.params.as_entire_binding()),
                 (
@@ -120,15 +123,18 @@ impl BracketsScanBlockPrefixPass {
                 cache,
                 buffers,
                 &self.down,
-                &format!("brackets_02_scan_block_prefix_down.{index}"),
-                crate::parser::compiler_graph::BRACKET_SCAN_DOWN,
+                &format!("{BRACKET_SCAN_DOWN}.{index}"),
+                BRACKET_SCAN_DOWN,
                 &resources,
                 step.work_items,
             )?;
         }
 
         let resources = HashMap::from([
-            ("gParams".into(), buffers.b02_params.as_entire_binding()),
+            (
+                "gParams".into(),
+                buffers.bracket_scan_params.as_entire_binding(),
+            ),
             ("block_sum".into(), buffers.b_block_sum.as_entire_binding()),
             (
                 "block_maxdepth".into(),
@@ -155,8 +161,8 @@ impl BracketsScanBlockPrefixPass {
             cache,
             buffers,
             &self.finalize,
-            "brackets_02_scan_block_prefix.finalize",
-            crate::parser::compiler_graph::BRACKET_SCAN_FINALIZE,
+            BRACKET_SCAN_FINALIZE,
+            BRACKET_SCAN_FINALIZE,
             &resources,
             buffers.b_n_blocks,
         )

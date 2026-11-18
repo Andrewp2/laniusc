@@ -1,7 +1,7 @@
 // Retags raw lexer tokens into the parser's semantic token alphabet.
 //
 // Every structural question is a table read: delimiter ownership comes from
-// token_enclosing_open (tokens_delimiter_match_03_enclosing_opens) and each raw
+// token_enclosing_open (find_enclosing_delimiters) and each raw
 // `<`'s own role from token_direct_lt_kind (tokens_to_angle_kinds). A token
 // whose role depends on an opener (closers, separators, signs, a call after a
 // generic list) re-derives that opener's kind from the same tables.

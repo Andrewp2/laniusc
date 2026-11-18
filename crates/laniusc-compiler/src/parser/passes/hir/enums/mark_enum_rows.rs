@@ -12,12 +12,12 @@ pub struct HirEnumRankPrefixLocalPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirEnumRankPrefixLocalPass,
-    label: "hir_enum_rank_prefix_00_local",
+    label: "hir_mark_enum_rows",
     shader: "parser/hir/enums/mark_enum_rows"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumRankPrefixLocalPass {
-    const NAME: &'static str = "hir_enum_rank_prefix_00_local";
+    const NAME: &'static str = "hir_mark_enum_rows";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

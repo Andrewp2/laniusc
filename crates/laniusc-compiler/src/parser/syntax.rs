@@ -860,19 +860,20 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         &buffers.default_token_file_id
     };
 
-    let delimiter_local_pass = syntax_delimiters_01_pass(device)?;
-    let delimiter_scan_pass = syntax_delimiters_02_pass(device)?;
-    let statement_context_local_pass = syntax_statement_context_01_pass(device)?;
-    let statement_context_scan_pass = syntax_statement_context_02_pass(device)?;
-    let statement_context_apply_pass = syntax_statement_context_03_pass(device)?;
-    let impl_context_local_pass = syntax_impl_context_01_pass(device)?;
-    let impl_context_scan_pass = syntax_impl_context_02_pass(device)?;
-    let impl_context_apply_pass = syntax_impl_context_03_pass(device)?;
-    let trait_context_local_pass = syntax_trait_context_01_pass(device)?;
-    let trait_context_scan_pass = syntax_trait_context_02_pass(device)?;
-    let trait_context_apply_pass = syntax_trait_context_03_pass(device)?;
-    let paren_match_pass = syntax_paren_match_01_pass(device)?;
-    let angle_match_pass = syntax_angle_match_01_pass(device)?;
+    let delimiter_local_pass = syntax_scan_syntax_delimiters_in_blocks_pass(device)?;
+    let delimiter_scan_pass = syntax_scan_syntax_delimiter_blocks_pass(device)?;
+    let statement_context_local_pass = syntax_summarize_statement_phases_pass(device)?;
+    let statement_context_scan_pass =
+        syntax_statement_context_scan_syntax_context_blocks_pass(device)?;
+    let statement_context_apply_pass = syntax_apply_statement_phases_pass(device)?;
+    let impl_context_local_pass = syntax_summarize_impl_headers_pass(device)?;
+    let impl_context_scan_pass = syntax_impl_context_scan_syntax_context_blocks_pass(device)?;
+    let impl_context_apply_pass = syntax_apply_impl_headers_pass(device)?;
+    let trait_context_local_pass = syntax_summarize_trait_bodies_pass(device)?;
+    let trait_context_scan_pass = syntax_trait_context_scan_syntax_context_blocks_pass(device)?;
+    let trait_context_apply_pass = syntax_apply_trait_bodies_pass(device)?;
+    let paren_match_pass = syntax_build_paren_match_depths_pass(device)?;
+    let angle_match_pass = syntax_build_angle_match_depths_pass(device)?;
     let min_tree_pass = syntax_match_min_tree_pass(device)?;
     let pass = syntax_tokens_pass(device)?;
 
@@ -1005,7 +1006,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let delimiter_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_delimiters_01_local"),
+            Some("parser_syntax_scan_syntax_delimiters_in_blocks"),
             &delimiter_local_pass.bind_group_layouts[0],
             &delimiter_local_pass.reflection,
             0,
@@ -1130,7 +1131,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let scan_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_delimiters_02_scan_blocks"),
+            Some("parser_syntax_scan_syntax_delimiter_blocks"),
             &delimiter_scan_pass.bind_group_layouts[0],
             &delimiter_scan_pass.reflection,
             0,
@@ -1183,7 +1184,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let local_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_statement_context_01_local"),
+            Some("parser_syntax_summarize_statement_phases"),
             &statement_context_local_pass.bind_group_layouts[0],
             &statement_context_local_pass.reflection,
             0,
@@ -1231,7 +1232,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             ]);
             let scan_bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("parser_syntax_statement_context_02_scan"),
+                Some("parser_syntax_statement_context.scan_syntax_context_blocks"),
                 &statement_context_scan_pass.bind_group_layouts[0],
                 &statement_context_scan_pass.reflection,
                 0,
@@ -1289,7 +1290,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let apply_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_statement_context_03_apply"),
+            Some("parser_syntax_apply_statement_phases"),
             &statement_context_apply_pass.bind_group_layouts[0],
             &statement_context_apply_pass.reflection,
             0,
@@ -1329,7 +1330,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let local_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_impl_context_01_local"),
+            Some("parser_syntax_summarize_impl_headers"),
             &impl_context_local_pass.bind_group_layouts[0],
             &impl_context_local_pass.reflection,
             0,
@@ -1375,7 +1376,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             ]);
             let scan_bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("parser_syntax_impl_context_02_scan"),
+                Some("parser_syntax_impl_context.scan_syntax_context_blocks"),
                 &impl_context_scan_pass.bind_group_layouts[0],
                 &impl_context_scan_pass.reflection,
                 0,
@@ -1427,7 +1428,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let apply_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_impl_context_03_apply"),
+            Some("parser_syntax_apply_impl_headers"),
             &impl_context_apply_pass.bind_group_layouts[0],
             &impl_context_apply_pass.reflection,
             0,
@@ -1456,7 +1457,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let local_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_trait_context_01_local"),
+            Some("parser_syntax_summarize_trait_bodies"),
             &trait_context_local_pass.bind_group_layouts[0],
             &trait_context_local_pass.reflection,
             0,
@@ -1502,7 +1503,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             ]);
             let scan_bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("parser_syntax_trait_context_02_scan"),
+                Some("parser_syntax_trait_context.scan_syntax_context_blocks"),
                 &trait_context_scan_pass.bind_group_layouts[0],
                 &trait_context_scan_pass.reflection,
                 0,
@@ -1535,7 +1536,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let apply_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_trait_context_03_apply"),
+            Some("parser_syntax_apply_trait_bodies"),
             &trait_context_apply_pass.bind_group_layouts[0],
             &trait_context_apply_pass.reflection,
             0,
@@ -1576,7 +1577,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let paren_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_paren_match_01_depth_blocks"),
+            Some("parser_syntax_build_paren_match_depths"),
             &paren_match_pass.bind_group_layouts[0],
             &paren_match_pass.reflection,
             0,
@@ -1604,7 +1605,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             ]);
             let tree_bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("parser_syntax_paren_match_02_build_min_tree"),
+                Some("parser_syntax_paren_match.build_one_delimiter_min_tree"),
                 &min_tree_pass.bind_group_layouts[0],
                 &min_tree_pass.reflection,
                 0,
@@ -1646,7 +1647,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         ]);
         let angle_bind_group = bind_group::create_bind_group_from_reflection(
             device,
-            Some("parser_syntax_angle_match_01_depth_blocks"),
+            Some("parser_syntax_build_angle_match_depths"),
             &angle_match_pass.bind_group_layouts[0],
             &angle_match_pass.reflection,
             0,
@@ -1674,7 +1675,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             ]);
             let tree_bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("parser_syntax_angle_match_02_build_min_tree"),
+                Some("parser_syntax_angle_match.build_one_delimiter_min_tree"),
                 &min_tree_pass.bind_group_layouts[0],
                 &min_tree_pass.reflection,
                 0,
@@ -1780,12 +1781,14 @@ fn syntax_tokens_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_delimiters_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_scan_syntax_delimiters_in_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_delimiters_01_local",
+            "parser_syntax_scan_syntax_delimiters_in_blocks",
             shader: "parser/syntax/scan_syntax_delimiters_in_blocks"
         )
         .map_err(|err| err.to_string())
@@ -1794,12 +1797,12 @@ fn syntax_delimiters_01_pass(device: &wgpu::Device) -> Result<&'static PassData>
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_delimiters_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_scan_syntax_delimiter_blocks_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_delimiters_02_scan_blocks",
+            "parser_syntax_scan_syntax_delimiter_blocks",
             shader: "parser/syntax/scan_syntax_delimiter_blocks"
         )
         .map_err(|err| err.to_string())
@@ -1808,12 +1811,12 @@ fn syntax_delimiters_02_pass(device: &wgpu::Device) -> Result<&'static PassData>
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_statement_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_summarize_statement_phases_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_statement_context_01_local",
+            "parser_syntax_summarize_statement_phases",
             shader: "parser/tokens/contexts/summarize_statement_phases"
         )
         .map_err(|err| err.to_string())
@@ -1822,12 +1825,14 @@ fn syntax_statement_context_01_pass(device: &wgpu::Device) -> Result<&'static Pa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_statement_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_statement_context_scan_syntax_context_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_statement_context_02_scan",
+            "parser_syntax_statement_context.scan_syntax_context_blocks",
             shader: "parser/tokens/contexts/scan_syntax_context_blocks"
         )
         .map_err(|err| err.to_string())
@@ -1836,12 +1841,12 @@ fn syntax_statement_context_02_pass(device: &wgpu::Device) -> Result<&'static Pa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_statement_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_apply_statement_phases_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_statement_context_03_apply",
+            "parser_syntax_apply_statement_phases",
             shader: "parser/tokens/contexts/apply_statement_phases"
         )
         .map_err(|err| err.to_string())
@@ -1850,12 +1855,12 @@ fn syntax_statement_context_03_pass(device: &wgpu::Device) -> Result<&'static Pa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_impl_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_summarize_impl_headers_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_impl_context_01_local",
+            "parser_syntax_summarize_impl_headers",
             shader: "parser/tokens/contexts/summarize_impl_headers"
         )
         .map_err(|err| err.to_string())
@@ -1864,12 +1869,14 @@ fn syntax_impl_context_01_pass(device: &wgpu::Device) -> Result<&'static PassDat
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_impl_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_impl_context_scan_syntax_context_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_impl_context_02_scan",
+            "parser_syntax_impl_context.scan_syntax_context_blocks",
             shader: "parser/tokens/contexts/scan_syntax_context_blocks"
         )
         .map_err(|err| err.to_string())
@@ -1878,12 +1885,12 @@ fn syntax_impl_context_02_pass(device: &wgpu::Device) -> Result<&'static PassDat
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_impl_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_apply_impl_headers_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_impl_context_03_apply",
+            "parser_syntax_apply_impl_headers",
             shader: "parser/tokens/contexts/apply_impl_headers"
         )
         .map_err(|err| err.to_string())
@@ -1892,12 +1899,12 @@ fn syntax_impl_context_03_pass(device: &wgpu::Device) -> Result<&'static PassDat
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_trait_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_summarize_trait_bodies_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_trait_context_01_local",
+            "parser_syntax_summarize_trait_bodies",
             shader: "parser/tokens/contexts/summarize_trait_bodies"
         )
         .map_err(|err| err.to_string())
@@ -1906,12 +1913,14 @@ fn syntax_trait_context_01_pass(device: &wgpu::Device) -> Result<&'static PassDa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_trait_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_trait_context_scan_syntax_context_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_trait_context_02_scan",
+            "parser_syntax_trait_context.scan_syntax_context_blocks",
             shader: "parser/tokens/contexts/scan_syntax_context_blocks"
         )
         .map_err(|err| err.to_string())
@@ -1920,12 +1929,12 @@ fn syntax_trait_context_02_pass(device: &wgpu::Device) -> Result<&'static PassDa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_trait_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_apply_trait_bodies_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_trait_context_03_apply",
+            "parser_syntax_apply_trait_bodies",
             shader: "parser/tokens/contexts/apply_trait_bodies"
         )
         .map_err(|err| err.to_string())
@@ -1934,12 +1943,12 @@ fn syntax_trait_context_03_pass(device: &wgpu::Device) -> Result<&'static PassDa
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_paren_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_build_paren_match_depths_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_paren_match_01_depth_blocks",
+            "parser_syntax_build_paren_match_depths",
             shader: "parser/tokens/delimiters/build_paren_match_depths"
         )
         .map_err(|err| err.to_string())
@@ -1948,12 +1957,12 @@ fn syntax_paren_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData
     .map_err(|err| anyhow!("{err}"))
 }
 
-fn syntax_angle_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+fn syntax_build_angle_match_depths_pass(device: &wgpu::Device) -> Result<&'static PassData> {
     static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_angle_match_01_depth_blocks",
+            "parser_syntax_build_angle_match_depths",
             shader: "parser/tokens/delimiters/build_angle_match_depths"
         )
         .map_err(|err| err.to_string())
@@ -1967,7 +1976,7 @@ fn syntax_match_min_tree_pass(device: &wgpu::Device) -> Result<&'static PassData
     PASS.get_or_init(|| {
         crate::gpu::passes_core::make_main_pass!(
             device,
-            "parser_syntax_paren_match_02_build_min_tree",
+            "parser_syntax_build_one_delimiter_min_tree",
             shader: "parser/tokens/delimiters/build_one_delimiter_min_tree"
         )
         .map_err(|err| err.to_string())

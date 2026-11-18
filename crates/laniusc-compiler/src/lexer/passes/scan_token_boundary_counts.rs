@@ -12,19 +12,19 @@ use crate::{
 };
 
 /// Second pair pass: prefix-scans per-block boundary totals.
-pub struct Pair02ScanBlockTotalsPass {
+pub struct ScanTokenBoundaryCountsPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Pair02ScanBlockTotalsPass,
-    label: "pair_02_scan_block_totals",
-    entry: "pair_02_scan_block_totals",
+    ScanTokenBoundaryCountsPass,
+    label: "scan_token_boundary_counts",
+    entry: "scan_token_boundary_counts",
     shader: "lexer/scan_token_boundary_counts"
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockTotalsPass {
-    const NAME: &'static str = "pair_02_scan_block_totals";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanTokenBoundaryCountsPass {
+    const NAME: &'static str = "scan_token_boundary_counts";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -43,8 +43,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 "gParams".into(),
                 wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
             ),
-            ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
-            ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
+            ("block_pair_ping".into(), b.dfa_ping.as_entire_binding()),
+            ("block_pair_pong".into(), b.dfa_pong.as_entire_binding()),
         ])
     }
 
@@ -73,7 +73,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             dbg.gpu.pair_scan_rounds.clear();
         }
 
-        // One block has its prefix already: pair_01 seeded it in ping.
+        // One block has its prefix already: count_token_boundaries_in_blocks seeded it in ping.
         if super::token_boundary_scan_steps::block_total_scan_steps(n).is_empty() {
             if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
                 return Err(anyhow::anyhow!(
@@ -155,23 +155,23 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         dbg.gpu.block_pair_ping.set_from_copy(
             device,
             encoder,
-            &b.dfa_02_ping,
+            &b.dfa_ping,
             "dbg.block_pair_ping",
-            b.dfa_02_ping.byte_size,
+            b.dfa_ping.byte_size,
         );
         dbg.gpu.block_pair_pong.set_from_copy(
             device,
             encoder,
-            &b.dfa_02_pong,
+            &b.dfa_pong,
             "dbg.block_pair_pong",
-            b.dfa_02_pong.byte_size,
+            b.dfa_pong.byte_size,
         );
 
         let last =
             if super::token_boundary_scan_steps::block_total_scan_last_writer_is_ping(b.nb_sum) {
-                &b.dfa_02_ping
+                &b.dfa_ping
             } else {
-                &b.dfa_02_pong
+                &b.dfa_pong
             };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

@@ -22,12 +22,12 @@ pub struct BracketsScanInblockPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     BracketsScanInblockPass,
-    label: "brackets_01_scan_inblock",
+    label: "brackets_scan_bracket_depths_in_blocks",
     shader: "parser/brackets/scan_bracket_depths_in_blocks"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScanInblockPass {
-    const NAME: &'static str = "brackets_01_scan_inblock";
+    const NAME: &'static str = "brackets_scan_bracket_depths_in_blocks";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -42,7 +42,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsScanInbl
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
-            ("gParams".into(), b.b01_params.as_entire_binding()),
+            ("gParams".into(), b.bracket_depth_params.as_entire_binding()),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
             (
                 "partial_parse_status".into(),

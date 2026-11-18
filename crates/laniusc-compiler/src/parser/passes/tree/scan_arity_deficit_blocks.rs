@@ -14,7 +14,7 @@ pub struct TreePrefixScanBlocksPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     TreePrefixScanBlocksPass,
-    label: "tree_prefix_02_scan_blocks",
+    label: "tree_scan_arity_deficit_blocks",
     shader: "parser/tree/scan_arity_deficit_blocks"
 );
 
@@ -55,7 +55,7 @@ impl TreePrefixScanBlocksPass {
 }
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreePrefixScanBlocksPass {
-    const NAME: &'static str = "tree_prefix_02_scan_blocks";
+    const NAME: &'static str = "tree_scan_arity_deficit_blocks";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

@@ -532,8 +532,8 @@ class TimelineClassificationTests(unittest.TestCase):
     def test_classifies_compiler_phase_from_operation_name(self):
         cases = {
             "lex.source-pack.count_boundary": "lexing",
-            "dfa_01_scan_inblock": "lexing",
-            "pair_02_scan_block_totals": "lexing",
+            "summarize_dfa_blocks": "lexing",
+            "scan_token_boundary_counts": "lexing",
             "compact_boundaries[KEPT]": "lexing",
             "tokens_build": "lexing",
             "parser.tokens.delimiter_match.done": "parsing",

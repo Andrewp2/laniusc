@@ -49,9 +49,9 @@ bool is_file_start(uint i_abs)
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
-                         uint3 /*gid*/: SV_DispatchThreadID,
-                         uint3 ggrp: SV_GroupID)
+void summarize_dfa_blocks(uint3 tid: SV_GroupThreadID,
+                          uint3 /*gid*/: SV_DispatchThreadID,
+                          uint3 ggrp: SV_GroupID)
 {
     const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
     const uint groupsX = min(nb, 65535u);

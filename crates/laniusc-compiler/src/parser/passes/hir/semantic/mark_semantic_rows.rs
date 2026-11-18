@@ -12,12 +12,12 @@ pub struct HirSemanticPrefixLocalPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirSemanticPrefixLocalPass,
-    label: "hir_semantic_prefix_00_local",
+    label: "hir_mark_semantic_rows",
     shader: "parser/hir/semantic/mark_semantic_rows"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticPrefixLocalPass {
-    const NAME: &'static str = "hir_semantic_prefix_00_local";
+    const NAME: &'static str = "hir_mark_semantic_rows";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

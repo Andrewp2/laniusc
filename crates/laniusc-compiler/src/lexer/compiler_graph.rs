@@ -455,12 +455,12 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::summarize_dfa_blocks::Dfa01ScanInblockPass as Pass<
+        <super::passes::summarize_dfa_blocks::SummarizeDfaBlocksPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
         ResourceDomain::SourceBytes,
-        passes.dfa_01.data(),
+        passes.summarize_dfa_blocks.data(),
         &[
             ("in_bytes", resources.in_bytes, None),
             (
@@ -482,7 +482,7 @@ fn build_graph(
         ],
     )?;
     graph.add_pass(PassDesc {
-        name: <super::passes::scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass as Pass<
+        name: <super::passes::scan_dfa_block_summaries::ScanDfaBlockSummariesPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -495,12 +495,12 @@ fn build_graph(
     })?;
     reflected_pass(
         &mut graph,
-        <super::passes::mark_token_boundaries::Dfa03ApplyBlockPrefixPass as Pass<
+        <super::passes::mark_token_boundaries::MarkTokenBoundariesPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
         ResourceDomain::SourceBytes,
-        passes.dfa_03.data(),
+        passes.mark_token_boundaries.data(),
         &[
             ("in_bytes", resources.in_bytes, None),
             (
@@ -533,12 +533,12 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::count_token_boundaries_in_blocks::Pair01SumInblockPass as Pass<
+        <super::passes::count_token_boundaries_in_blocks::CountTokenBoundariesInBlocksPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
         ResourceDomain::Tokens,
-        passes.pair_01.data(),
+        passes.count_token_boundaries_in_blocks.data(),
         &[
             ("flags_packed", resources.flags_packed, None),
             (
@@ -549,7 +549,7 @@ fn build_graph(
         ],
     )?;
     graph.add_pass(PassDesc {
-        name: <super::passes::scan_token_boundary_counts::Pair02ScanBlockTotalsPass as Pass<
+        name: <super::passes::scan_token_boundary_counts::ScanTokenBoundaryCountsPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -562,12 +562,12 @@ fn build_graph(
     })?;
     reflected_pass(
         &mut graph,
-        <super::passes::rank_token_boundaries::Pair03ApplyBlockPrefixPass as Pass<
+        <super::passes::rank_token_boundaries::RankTokenBoundariesPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
         ResourceDomain::Tokens,
-        passes.pair_03.data(),
+        passes.rank_token_boundaries.data(),
         &[
             ("flags_packed", resources.flags_packed, None),
             ("block_prefix_pair_ping", resources.dfa_ping, None),

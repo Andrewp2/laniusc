@@ -186,7 +186,7 @@ impl GpuLexer {
             let desired_cap = extent.max(aligned_len).max(1);
             let cap_n = bufs.in_bytes.count as u32;
             let cap_bytes = bufs.in_bytes.byte_size as u32;
-            let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
+            let cap_nb_dfa = (bufs.dfa_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
             let needs_resize = desired_cap > cap_bytes || nb_dfa > cap_nb_dfa || extent > cap_n;
             if needs_resize {
@@ -284,7 +284,7 @@ impl GpuLexer {
             let cap_n = bufs.in_bytes.count as u32;
             let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_files = bufs.source_file_start.count as u32;
-            let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
+            let cap_nb_dfa = (bufs.dfa_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
             let needs_resize = desired_cap > cap_bytes
                 || nb_dfa > cap_nb_dfa

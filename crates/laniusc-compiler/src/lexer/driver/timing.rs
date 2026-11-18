@@ -92,7 +92,9 @@ mod tests {
         assert!(is_submission_begin(
             "compile.source_pack.parser.submission.begin"
         ));
-        assert!(!is_submission_begin("parser.tokens.impl_header.local.done"));
+        assert!(!is_submission_begin(
+            "parser.tokens.summarize_impl_headers.done"
+        ));
     }
 }
 

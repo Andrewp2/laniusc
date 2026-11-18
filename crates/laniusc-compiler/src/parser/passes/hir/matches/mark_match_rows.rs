@@ -12,12 +12,12 @@ pub struct HirMatchRankPrefixLocalPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirMatchRankPrefixLocalPass,
-    label: "hir_match_rank_prefix_00_local",
+    label: "hir_mark_match_rows",
     shader: "parser/hir/matches/mark_match_rows"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchRankPrefixLocalPass {
-    const NAME: &'static str = "hir_match_rank_prefix_00_local";
+    const NAME: &'static str = "hir_mark_match_rows";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

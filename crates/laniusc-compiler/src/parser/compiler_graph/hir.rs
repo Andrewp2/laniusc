@@ -1276,7 +1276,7 @@ fn register_enum_ranking(
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
     graph.mark_pass_bindings_initialize(
-        "hir_enum_rank_prefix_00_local",
+        "hir_mark_enum_rows",
         &[
             "hir_enum_rank_flag",
             "hir_enum_rank_block_sum",
@@ -2508,7 +2508,7 @@ fn register_matches(
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
     graph.mark_pass_bindings_initialize(
-        "hir_match_rank_prefix_00_local",
+        "hir_mark_match_rows",
         &[
             "hir_match_rank_flag",
             "hir_match_rank_block_sum",

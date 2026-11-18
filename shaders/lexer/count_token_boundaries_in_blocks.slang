@@ -25,9 +25,9 @@ static const uint MAX_GROUPS_X = 65535u;
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void pair_01_sum_inblock(uint3 tid: SV_GroupThreadID,
-                         uint3 gid: SV_DispatchThreadID,
-                         uint3 ggrp: SV_GroupID)
+void count_token_boundaries_in_blocks(uint3 tid: SV_GroupThreadID,
+                                      uint3 gid: SV_DispatchThreadID,
+                                      uint3 ggrp: SV_GroupID)
 {
     const uint block = ggrp.y * MAX_GROUPS_X + ggrp.x;
     const uint base = block * WORKGROUP_SIZE;

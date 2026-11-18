@@ -22,12 +22,12 @@ pub struct BracketsApplyPrefixPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     BracketsApplyPrefixPass,
-    label: "brackets_03_apply_prefix",
+    label: "brackets_apply_bracket_block_prefix",
     shader: "parser/brackets/apply_bracket_block_prefix"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsApplyPrefixPass {
-    const NAME: &'static str = "brackets_03_apply_prefix";
+    const NAME: &'static str = "brackets_apply_bracket_block_prefix";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -42,7 +42,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsApplyPre
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
-            ("gParams".into(), b.b03_params.as_entire_binding()),
+            (
+                "gParams".into(),
+                b.bracket_prefix_params.as_entire_binding(),
+            ),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
             (
                 "partial_parse_status".into(),

@@ -49,56 +49,18 @@ The resident compiler builds tree/HIR from the adjacent-pair production stream.
 
 # Part A — Brackets (parallel)
 
-We compute global depths, bucket events by depth **layer**, and pair by `(layer, rank)`. This yields the same pairing as a predecessor-on-depth (PSE) approach for properly nested streams, with fewer buffers and passes.
+The bracket passes compute the global depth of each stack-change event and use
+a minimum tree to find the matching opener for each close.
 
-### Pipeline overview
-
-```
-out_sc
-  │
-  ├─ 01  scan in-block      → exscan_inblock, block_sum, block_minpref
-  ├─ 02  scan block prefix  → block_prefix, [final_depth, min_depth], valid
-  ├─ 03  apply prefix       → depth_exscan, layer[i] (push → d+1, pop → d)
-  ├─ 04  histogram layers   → hist_push[l], hist_pop[l]
-  ├─ 05  scan histograms    → off_push[l], off_pop[l], (AND) valid
-  ├─ (seed) copy offsets    → cur_push := off_push, cur_pop := off_pop
-  ├─ 06  scatter by layer   → pushes_by_layer[], pops_by_layer[]
-  └─ PSE pair+validate      → match_for_index[], (AND) valid
-```
-
-### Passes (files)
-
-* **01** `brackets_01_scan_inblock.slang`
-  Per-workgroup exclusive scan of `+1 / -1` (push/pop), producing `exscan_inblock` and block summaries (`block_sum`, `block_minpref`). 256-thread groups; mirrors the lexer’s scan shape.
-
-* **02** `brackets_02_scan_block_prefix.slang`
-  Prefix the block sums to get `block_prefix`, and compute `[final_depth, min_depth]` and an initial `valid` flag (`final==0 && min>=0`).
-
-* **03** `brackets_03_apply_prefix.slang`
-  Adds `block_prefix` to get the **global exclusive depth** at each event. Writes `layer[i]`:
-
-  * push at depth `d` is on **layer `d+1`**
-  * pop at depth `d` is on **layer `d`**
-    We offset by `-min_depth` so layers are non-negative even for pathological inputs.
-
-* **04** `brackets_04_histogram_layers.slang`
-  Counting histograms by layer for pushes and pops.
-
-* **05** `brackets_05_scan_histograms.slang`
-  Scans histograms to get per-layer **offsets** (`off_push`, `off_pop`) and **ANDs** the `valid` flag if counts differ for a layer.
-
-* **seed** (driver)
-  `cur_* := off_*` via `copy_buffer_to_buffer` (keeps bindings low).
-
-* **06** `brackets_06_scatter_by_layer.slang`
-  Scatters indices of pushes and pops into `pushes_by_layer` / `pops_by_layer` using atomics and the seeded `cur_*` cursors.
-
-* **PSE pair** `brackets_pse_04_pair_by_layer.slang`
-  Pair by the predecessor-on-equal-depth relation and write
-  `match_for_index` bi-directionally. If `typed_check != 1`, type IDs are
-  ignored; otherwise, a mismatched open/close type **ANDs** `valid` to 0.
-
-> **Equivalence to PSE:** For properly nested sequences, the `r`-th pop at depth `d` pairs with the `r`-th push at layer `d` (rank-by-layer). This is precisely the predecessor-on-equal-depth selection PSE would find, but without building a min-tree. If we ever need the explicit predecessor structure (e.g., for incremental edits), we can add a min-tree build as an alternative path.
+* `scan_bracket_depths_in_blocks.slang` scans the push/pop deltas in each block.
+* `sum_bracket_blocks_up.slang` and `carry_bracket_blocks_down.slang` scan the
+  block summaries. `finish_bracket_block_prefix.slang` publishes the resulting
+  block prefixes, final depth, minimum depth, and validity.
+* `apply_bracket_block_prefix.slang` computes the global event depths and layers.
+* `build_bracket_min_tree.slang` builds the search tree over block minima.
+* `clear_bracket_matches.slang` initializes the optional match output.
+* `pair_brackets_by_layer.slang` finds the opener at the corresponding depth
+  and checks delimiter types when requested.
 
 ### Complexity & buffers
 
@@ -464,15 +426,8 @@ Recommended unit cases:
 
 ## File index (key shaders)
 
-Brackets:
+Bracket shaders are listed under [Part A](#part-a--brackets-parallel).
 
-* `brackets_01_scan_inblock.slang`
-* `brackets_02_scan_block_prefix.slang`
-* `brackets_03_apply_prefix.slang`
-* `brackets_04_histogram_layers.slang`
-* `brackets_05_scan_histograms.slang`
-* `brackets_06_scatter_by_layer.slang`
-* `brackets_pse_04_pair_by_layer.slang`
 Tree:
 
 * Active pair stream: adjacent token-pair extraction, prefix packing, and

@@ -14,20 +14,20 @@ use crate::{
 };
 
 /// Second DFA pass: prefix-scans block summary functions.
-pub struct Dfa02ScanBlockSummariesPass {
+pub struct ScanDfaBlockSummariesPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Dfa02ScanBlockSummariesPass,
-    label: "dfa_02_scan_block_summaries",
-    entry: "dfa_02_scan_block_summaries",
+    ScanDfaBlockSummariesPass,
+    label: "scan_dfa_block_summaries",
+    entry: "scan_dfa_block_summaries",
     shader: "lexer/scan_dfa_block_summaries",
     dynamic_uniforms: ["gScan"]
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSummariesPass {
-    const NAME: &'static str = "dfa_02_scan_block_summaries";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanDfaBlockSummariesPass {
+    const NAME: &'static str = "scan_dfa_block_summaries";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -103,8 +103,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
             ),
             ("gScan".into(), scan_params.binding()),
-            ("block_ping".into(), b.dfa_02_ping.as_entire_binding()),
-            ("block_pong".into(), b.dfa_02_pong.as_entire_binding()),
+            ("block_ping".into(), b.dfa_ping.as_entire_binding()),
+            ("block_pong".into(), b.dfa_pong.as_entire_binding()),
         ]);
         let bg = if let Some(cache) = ctx.bg_cache.as_deref_mut() {
             cache
@@ -185,9 +185,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                     // TODO: block_ping and block_pong are both N_STATES * (nb_dfa as usize) as their count, with that times 4 being byte count.
                     // for some reason we're copying n * N_STATES * 4 bytes, which is more than the size of the buffer.
                     let last_writer = if use_ping_as_src != 0 {
-                        &b.dfa_02_pong
+                        &b.dfa_pong
                     } else {
-                        &b.dfa_02_ping
+                        &b.dfa_ping
                     };
                     let staging = make_staging(device, "dbg.func_scan_round", per_round_bytes);
                     encoder.copy_buffer_to_buffer(
@@ -230,24 +230,24 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         dbg.gpu.block_ping.set_from_copy(
             device,
             encoder,
-            &b.dfa_02_ping,
+            &b.dfa_ping,
             "dbg.block_ping",
-            b.dfa_02_ping.byte_size,
+            b.dfa_ping.byte_size,
         );
         dbg.gpu.block_pong.set_from_copy(
             device,
             encoder,
-            &b.dfa_02_pong,
+            &b.dfa_pong,
             "dbg.block_pong",
-            b.dfa_02_pong.byte_size,
+            b.dfa_pong.byte_size,
         );
 
         let rounds = compute_rounds(b.nb_dfa);
 
         let last = if (rounds % 2) == 1 {
-            &b.dfa_02_pong
+            &b.dfa_pong
         } else {
-            &b.dfa_02_ping
+            &b.dfa_ping
         };
         dbg.gpu.block_prefix.set_from_copy(
             device,

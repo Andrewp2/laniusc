@@ -112,14 +112,18 @@ impl GpuParser {
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_active_dispatch_args");
             self.record_tree_feature_dispatch_args(ctx.encoder, bufs)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_feature_dispatch_args");
-            self.passes.tree_prefix_01.record_pass(
+            self.passes.sum_arity_deficits_in_blocks.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
                     bufs.tree_n_node_blocks.saturating_mul(256),
                 ),
             )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_01");
-            self.passes.tree_prefix_02.record_scan(
+            stamp_timer(
+                timer_ref,
+                ctx.encoder,
+                "parser.tree_sum_arity_deficits_in_blocks",
+            );
+            self.passes.scan_arity_deficit_blocks.record_scan(
                 ctx.device,
                 ctx.encoder,
                 ctx.buffers,
@@ -127,15 +131,23 @@ impl GpuParser {
                     .as_deref_mut()
                     .expect("resident parser requires a bind-group cache"),
             )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_02");
-            self.passes.tree_prefix_03.record_pass(
+            stamp_timer(
+                timer_ref,
+                ctx.encoder,
+                "parser.tree_scan_arity_deficit_blocks",
+            );
+            self.passes.apply_arity_deficit_prefix.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
                     bufs.tree_capacity.saturating_add(1),
                 ),
             )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_03");
-            self.passes.tree_prefix_04.record_build(
+            stamp_timer(
+                timer_ref,
+                ctx.encoder,
+                "parser.tree_apply_arity_deficit_prefix",
+            );
+            self.passes.build_deficit_max_tree.record_build(
                 ctx.device,
                 ctx.encoder,
                 ctx.buffers,
@@ -143,7 +155,7 @@ impl GpuParser {
                     .as_deref_mut()
                     .expect("resident parser requires a bind-group cache"),
             )?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_04");
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_build_deficit_max_tree");
             if parser_dependency_batching_enabled(timer_ref) {
                 let bg_cache = ctx
                     .bg_cache

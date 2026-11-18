@@ -1,9 +1,9 @@
 // Inclusive scan over per-block uint2 totals (ALL, KEPT), in one workgroup.
-// pair_01 seeds the totals in ping. The scan writes the prefix where the
+// count_token_boundaries_in_blocks seeds the totals in ping. The scan writes the prefix where the
 // earlier ping/pong doubling rounds left it: in ping after an even number of
-// rounds, in pong after an odd number (pair_03's block_prefix_is_ping).
+// rounds, in pong after an odd number (rank_token_boundaries's block_prefix_is_ping).
 
-static const uint PAIR_BLOCK_WIDTH = 256u; // must match pair_01
+static const uint PAIR_BLOCK_WIDTH = 256u; // must match count_token_boundaries_in_blocks
 static const uint WG_SIZE = 256u;
 static const uint ROWS_PER_LANE = 8u;
 static const uint CHUNK_ROWS = WG_SIZE * ROWS_PER_LANE;
@@ -50,7 +50,7 @@ uint2 workgroup_exclusive(uint lane, uint2 value, out uint2 total)
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void pair_02_scan_block_totals(uint3 group_id: SV_GroupID, uint3 local_id: SV_GroupThreadID)
+void scan_token_boundary_counts(uint3 group_id: SV_GroupID, uint3 local_id: SV_GroupThreadID)
 {
     if (group_id.x != 0u || group_id.y != 0u)
         return;

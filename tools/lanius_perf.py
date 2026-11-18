@@ -28,7 +28,7 @@ from perf_model import (
     validate_document,
     write_document,
 )
-from summarize_nsight_gpu_trace import build_nsight_profile
+from summarize_nsight_gpu_trace import LEXER_PASS_NAMES, build_nsight_profile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -182,7 +182,8 @@ def timeline_compiler_phase(name: str) -> str:
     label = name.lower().replace("-", "_")
 
     if (
-        label.startswith(
+        label in LEXER_PASS_NAMES
+        or label.startswith(
             (
                 "lex.",
                 "lexer.",

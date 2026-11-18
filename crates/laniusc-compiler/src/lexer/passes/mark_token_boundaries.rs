@@ -6,19 +6,19 @@ use crate::{
 };
 
 /// Third DFA pass: applies block prefixes and emits token boundary flags.
-pub struct Dfa03ApplyBlockPrefixPass {
+pub struct MarkTokenBoundariesPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Dfa03ApplyBlockPrefixPass,
-    label: "dfa_03_apply_block_prefix",
-    entry: "dfa_03_apply_block_prefix",
+    MarkTokenBoundariesPass,
+    label: "mark_token_boundaries",
+    entry: "mark_token_boundaries",
     shader: "lexer/mark_token_boundaries"
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockPrefixPass {
-    const NAME: &'static str = "dfa_03_apply_block_prefix";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for MarkTokenBoundariesPass {
+    const NAME: &'static str = "mark_token_boundaries";
     const DIM: DispatchDim = DispatchDim::D2; // shader uses 2D tiling over blocks
 
     fn from_data(data: PassData) -> Self {
@@ -49,14 +49,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
                 "source_file_end_flags".into(),
                 b.source_file_end_flags.as_entire_binding(),
             ),
-            (
-                "block_prefix_ping".into(),
-                b.dfa_02_ping.as_entire_binding(),
-            ),
-            (
-                "block_prefix_pong".into(),
-                b.dfa_02_pong.as_entire_binding(),
-            ),
+            ("block_prefix_ping".into(), b.dfa_ping.as_entire_binding()),
+            ("block_prefix_pong".into(), b.dfa_pong.as_entire_binding()),
             (
                 "chunk_summaries".into(),
                 b.dfa_chunk_summaries.as_entire_binding(),
@@ -82,9 +76,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
         // Keep a useful tap: show which block-prefix (inclusive scan of block delta) was applied.
         let rounds = compute_rounds(b.nb_dfa);
         let last = if (rounds % 2) == 1 {
-            &b.dfa_02_pong
+            &b.dfa_pong
         } else {
-            &b.dfa_02_ping
+            &b.dfa_ping
         };
         dbg.gpu.block_prefix.set_from_copy(
             device,

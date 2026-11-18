@@ -45,20 +45,21 @@ pub(super) struct ScanParams {
 /// All GPU passes that make up one lexer pipeline.
 pub struct LexerPasses {
     /// Scans DFA state transitions inside each byte block.
-    pub dfa_01: summarize_dfa_blocks::Dfa01ScanInblockPass,
+    pub summarize_dfa_blocks: summarize_dfa_blocks::SummarizeDfaBlocksPass,
     /// Prefix-scans DFA block summaries.
-    pub dfa_02: scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass,
+    pub scan_dfa_block_summaries: scan_dfa_block_summaries::ScanDfaBlockSummariesPass,
     /// Applies DFA block prefixes and emits boundary flags.
-    pub dfa_03: mark_token_boundaries::Dfa03ApplyBlockPrefixPass,
+    pub mark_token_boundaries: mark_token_boundaries::MarkTokenBoundariesPass,
     /// Marks source-pack file start/end byte offsets.
     pub source_file_boundaries: mark_source_file_boundaries::SourceFileBoundariesPass,
 
     /// Counts all/kept token boundaries inside each block.
-    pub pair_01: count_token_boundaries_in_blocks::Pair01SumInblockPass,
+    pub count_token_boundaries_in_blocks:
+        count_token_boundaries_in_blocks::CountTokenBoundariesInBlocksPass,
     /// Prefix-scans per-block token-boundary totals.
-    pub pair_02: scan_token_boundary_counts::Pair02ScanBlockTotalsPass,
+    pub scan_token_boundary_counts: scan_token_boundary_counts::ScanTokenBoundaryCountsPass,
     /// Applies pair prefixes to produce compacted token ranks.
-    pub pair_03: rank_token_boundaries::Pair03ApplyBlockPrefixPass,
+    pub rank_token_boundaries: rank_token_boundaries::RankTokenBoundariesPass,
 
     /// Compacts all token boundaries, including skipped tokens.
     pub compact_all: compact_all_token_boundaries::CompactBoundariesAllPass,
@@ -74,13 +75,19 @@ impl LexerPasses {
     /// Creates every lexer shader pass for a device.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
         Ok(Self {
-            dfa_01: summarize_dfa_blocks::Dfa01ScanInblockPass::new(&device)?,
-            dfa_02: scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
-            dfa_03: mark_token_boundaries::Dfa03ApplyBlockPrefixPass::new(&device)?,
-            source_file_boundaries: mark_source_file_boundaries::SourceFileBoundariesPass::new(&device)?,
-            pair_01: count_token_boundaries_in_blocks::Pair01SumInblockPass::new(&device)?,
-            pair_02: scan_token_boundary_counts::Pair02ScanBlockTotalsPass::new(&device)?,
-            pair_03: rank_token_boundaries::Pair03ApplyBlockPrefixPass::new(&device)?,
+            summarize_dfa_blocks: summarize_dfa_blocks::SummarizeDfaBlocksPass::new(&device)?,
+            scan_dfa_block_summaries: scan_dfa_block_summaries::ScanDfaBlockSummariesPass::new(
+                &device,
+            )?,
+            mark_token_boundaries: mark_token_boundaries::MarkTokenBoundariesPass::new(&device)?,
+            source_file_boundaries: mark_source_file_boundaries::SourceFileBoundariesPass::new(
+                &device,
+            )?,
+            count_token_boundaries_in_blocks:
+                count_token_boundaries_in_blocks::CountTokenBoundariesInBlocksPass::new(&device)?,
+            scan_token_boundary_counts:
+                scan_token_boundary_counts::ScanTokenBoundaryCountsPass::new(&device)?,
+            rank_token_boundaries: rank_token_boundaries::RankTokenBoundariesPass::new(&device)?,
             compact_all: compact_all_token_boundaries::CompactBoundariesAllPass::new(&device)?,
             compact_kept: compact_kept_token_boundaries::CompactBoundariesKeptPass::new(&device)?,
             tokens_build: build_tokens::TokensBuildPass::new(&device)?,
@@ -152,26 +159,50 @@ pub fn record_lexer_passes(
                 &p.source_file_boundaries,
                 E1(source_file_capacity),
             )?;
-            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_01, E1(n))?;
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.summarize_dfa_blocks,
+                E1(n),
+            )?;
         }
-        p.dfa_02.record_pass(ctx, E1(nb_dfa))?;
+        p.scan_dfa_block_summaries.record_pass(ctx, E1(nb_dfa))?;
         {
             let bg_cache = ctx
                 .bg_cache
                 .as_deref_mut()
                 .expect("batching requires bind-group cache");
             let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.dfa-pair-local.batch");
-            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_03, E1(n))?;
-            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_01, E1(n))?;
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.mark_token_boundaries,
+                E1(n),
+            )?;
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.count_token_boundaries_in_blocks,
+                E1(n),
+            )?;
         }
-        p.pair_02.record_pass(ctx, E1(nb_sum))?;
+        p.scan_token_boundary_counts.record_pass(ctx, E1(nb_sum))?;
         {
             let bg_cache = ctx
                 .bg_cache
                 .as_deref_mut()
                 .expect("batching requires bind-group cache");
             let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.emit.batch");
-            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_03, E1(n))?;
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.rank_token_boundaries,
+                E1(n),
+            )?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_kept, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
@@ -182,12 +213,12 @@ pub fn record_lexer_passes(
 
     p.source_file_boundaries
         .record_pass(ctx, E1(source_file_capacity))?;
-    p.dfa_01.record_pass(ctx, E1(n))?;
-    p.dfa_02.record_pass(ctx, E1(nb_dfa))?;
-    p.dfa_03.record_pass(ctx, E1(n))?;
-    p.pair_01.record_pass(ctx, E1(n))?;
-    p.pair_02.record_pass(ctx, E1(nb_sum))?;
-    p.pair_03.record_pass(ctx, E1(n))?;
+    p.summarize_dfa_blocks.record_pass(ctx, E1(n))?;
+    p.scan_dfa_block_summaries.record_pass(ctx, E1(nb_dfa))?;
+    p.mark_token_boundaries.record_pass(ctx, E1(n))?;
+    p.count_token_boundaries_in_blocks.record_pass(ctx, E1(n))?;
+    p.scan_token_boundary_counts.record_pass(ctx, E1(nb_sum))?;
+    p.rank_token_boundaries.record_pass(ctx, E1(n))?;
     // Run KEPT compaction before ALL to enable buffer reuse
     p.compact_kept.record_pass(ctx, E1(n))?;
     p.compact_all.record_pass(ctx, E1(n))?;

@@ -194,7 +194,7 @@ impl ParserBuffers {
         // part of the stable workspace contract.
         write_uniform(
             queue,
-            &self.b01_params,
+            &self.bracket_depth_params,
             &super::passes::brackets::scan_bracket_depths_in_blocks::Params {
                 n_sc: self.total_sc,
                 wg_size: 256,
@@ -202,7 +202,7 @@ impl ParserBuffers {
         );
         write_uniform(
             queue,
-            &self.b03_params,
+            &self.bracket_prefix_params,
             &super::passes::brackets::apply_bracket_block_prefix::Params {
                 n_sc: self.total_sc,
                 wg_size: 256,
@@ -210,7 +210,7 @@ impl ParserBuffers {
         );
         write_uniform(
             queue,
-            &self.b07_params,
+            &self.bracket_pair_params,
             &super::passes::brackets::pair_brackets_by_layer::Params {
                 n_sc: self.total_sc,
                 n_blocks: self.b_n_blocks,
@@ -865,35 +865,36 @@ impl ParserBuffers {
 
         // ---------- Brackets (parallel) ----------
         //
-        let b01_params = uniform_from_val(
+        let bracket_depth_params = uniform_from_val(
             device,
-            "brackets.b01.params",
+            "brackets.scan_bracket_depths_in_blocks.params",
             &super::passes::brackets::scan_bracket_depths_in_blocks::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
         );
-        let b02_params = uniform_from_val(
+        let bracket_scan_params = uniform_from_val(
             device,
-            "brackets.b02.params",
+            "brackets.finish_bracket_block_prefix.params",
             &super::passes::brackets::scan_bracket_blocks::Params {
                 n_blocks,
                 scan_step: 0,
             },
         );
-        let b02_scan_plan = make_token_block_scan_plan(device, "brackets.b02.scan", n_blocks);
-        let b03_params = uniform_from_val(
+        let bracket_scan_plan =
+            make_token_block_scan_plan(device, "brackets.scan_bracket_blocks", n_blocks);
+        let bracket_prefix_params = uniform_from_val(
             device,
-            "brackets.b03.params",
+            "brackets.apply_bracket_block_prefix.params",
             &super::passes::brackets::apply_bracket_block_prefix::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
         );
 
-        let b07_params = uniform_from_val(
+        let bracket_pair_params = uniform_from_val(
             device,
-            "brackets.b07.params",
+            "brackets.pair_brackets_by_layer.params",
             &super::passes::brackets::pair_brackets_by_layer::Params {
                 n_sc: total_sc,
                 n_blocks,
@@ -2011,11 +2012,11 @@ impl ParserBuffers {
             out_emit,
             out_emit_pos,
 
-            b01_params,
-            b02_params,
-            b02_scan_plan,
-            b03_params,
-            b07_params,
+            bracket_depth_params,
+            bracket_scan_params,
+            bracket_scan_plan,
+            bracket_prefix_params,
+            bracket_pair_params,
             b_clear_matches_params,
             emit_stack_matches,
             b_min_tree_base,

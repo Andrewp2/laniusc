@@ -6,19 +6,19 @@ use crate::{
 };
 
 /// First pair pass: counts all and kept token boundaries inside each block.
-pub struct Pair01SumInblockPass {
+pub struct CountTokenBoundariesInBlocksPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Pair01SumInblockPass,
-    label: "pair_01_sum_inblock",
-    entry: "pair_01_sum_inblock",
+    CountTokenBoundariesInBlocksPass,
+    label: "count_token_boundaries_in_blocks",
+    entry: "count_token_boundaries_in_blocks",
     shader: "lexer/count_token_boundaries_in_blocks"
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblockPass {
-    const NAME: &'static str = "pair_01_sum_inblock";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CountTokenBoundariesInBlocksPass {
+    const NAME: &'static str = "count_token_boundaries_in_blocks";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -42,7 +42,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblock
             (
                 "block_totals_pair".into(),
                 // Reuse DFA block ping as pair ping
-                b.dfa_02_ping.as_entire_binding(),
+                b.dfa_ping.as_entire_binding(),
             ),
         ])
     }

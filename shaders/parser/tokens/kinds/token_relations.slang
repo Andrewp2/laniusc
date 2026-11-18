@@ -2,7 +2,7 @@
 // own the buffer views and gParams.token_capacity.
 //
 // Delimiter ownership is read from token_enclosing_open, published once per
-// token by tokens_delimiter_match_03_enclosing_opens. Each helper here applies
+// token by find_enclosing_delimiters. Each helper here applies
 // the opener-kind and depth checks that turn that raw previous-smaller row
 // into "the delimiter enclosing this token", so classification is a few
 // reads per relation instead of a hierarchy search.
