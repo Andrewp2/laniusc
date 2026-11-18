@@ -301,6 +301,9 @@ const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/18_rollback",
 ];
 const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
+const UNCOMMIT_KERNEL: &str = "type_checker/retention/export/19_uncommit";
+/// Words of the call rewrite's status (native_calls.rs).
+const NC_STATUS_WORDS: usize = 4;
 const SNAPSHOT_ROWS_KERNEL: &str = "type_checker/retention/snapshot_rows";
 
 /// Job tables the snapshot copies by their counted rows
@@ -477,6 +480,12 @@ struct Store {
     builds: u32,
     /// Build generation of the current build (`counts::GENERATION`).
     generation: u32,
+    /// Source bytes and exports of the build's jobs so far, which size the
+    /// store ([`source_capacity`]).
+    source_bytes: u64,
+    exports: u32,
+    /// False only in tests that start from a fixed capacity.
+    source_sizing: bool,
     /// Changes whenever `buffers` or `scratch` are replaced, so a prepared
     /// export knows whether the buffers it bound are still the store's.
     epoch: u64,
@@ -543,6 +552,8 @@ pub struct ProgramRetention {
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     rehash: PassData,
+    /// Restores the store to a job's watermark (export/19_uncommit.slang).
+    uncommit: PassData,
     /// Copies the counted rows of the snapshot's row tables.
     snapshot_rows: PassData,
     resolve: Mutex<Option<PassData>>,
@@ -563,9 +574,10 @@ pub struct ProgramRetention {
 }
 
 /// GPU work that a later stage records before a job's export has produced
-/// the store's counters, sized from the store's capacities: the native
-/// call rewrite submits it right behind itself and reads `reads` with its
-/// own readback, so the work runs without the GPU waiting on the host.
+/// the store's counters, sized from the store's capacities: the export's
+/// tail submits it behind the call rewrite, and the host reads `reads` with
+/// the job's object ([`ProgramRetention::export_reads`]), so the work runs
+/// without the GPU waiting on the host.
 pub(crate) struct ExportFollower {
     pub(crate) commands: wgpu::CommandBuffer,
     /// Buffers whose first `words` words are read with the rewrite.
@@ -607,55 +619,86 @@ pub(crate) struct JobSnapshot {
     tables: BTreeMap<&'static str, JobTable>,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
-    /// The export's first attempt, recorded while the host waits for the
-    /// job's GPU work ([`ProgramRetention::prepare_export_job`]).
-    prepared: Mutex<Option<PreparedExport>>,
-    /// The export's first steps, submitted behind the job's frontend
-    /// ([`ProgramRetention::submit_export_early`]).
+    /// The export of a native job, submitted right behind the job's type
+    /// check ([`ProgramRetention::submit_export_now`]).
     early: Mutex<Option<EarlyExport>>,
 }
 
-/// An export whose steps up to the commit were submitted behind the job's
-/// frontend, before the host checked the job's statuses.
+/// A native job's export, submitted before the host has read any of the
+/// job's statuses. The steps run to the commit or the rollback on the GPU;
+/// the tail ([`ProgramRetention::submit_export_tail`]) follows it, and the
+/// host reads the words of both with the job's object
+/// ([`ProgramRetention::export_reads`]). Dropped before the host accepted
+/// the job, it uncommits the job on the GPU.
 struct EarlyExport {
-    commit: PendingCommit,
-    shape: ScratchShape,
     epoch: u64,
     generation: u32,
+    tail: Option<ExportTail>,
+    uncommit: Uncommit,
 }
 
-/// The commit steps (16-18) of an export whose earlier steps were
-/// submitted. Dropped without being submitted, it rolls the job back: the
-/// overflow word makes step 16 restore the watermarks and step 18 clear
-/// the job's hash slots, so a job the host rejected leaves nothing behind.
-pub(crate) struct PendingCommit {
-    commands: Option<wgpu::CommandBuffer>,
+/// What the tail submitted: the call rewrite's status words and the
+/// follower's reads and state.
+struct ExportTail {
+    rewrite_status: Option<wgpu::Buffer>,
+    follower: Option<(Vec<(wgpu::Buffer, usize)>, Box<dyn std::any::Any + Send + Sync>)>,
+}
+
+/// Restores the store to a job's watermark (export/19_uncommit.slang) when
+/// dropped armed: the frontend or the lowering asked for a retry after the
+/// job's export was submitted, or the build failed.
+struct Uncommit {
+    armed: bool,
+    device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
-    counts: wgpu::Buffer,
+    pass: PassData,
+    buffers: Vec<(&'static str, wgpu::Buffer)>,
+    lanes: u64,
 }
 
-impl PendingCommit {
-    fn into_commands(mut self) -> wgpu::CommandBuffer {
-        self.commands.take().expect("a pending commit holds its commands")
-    }
-}
-
-impl Drop for PendingCommit {
+impl Drop for Uncommit {
     fn drop(&mut self) {
-        if let Some(commands) = self.commands.take() {
-            self.queue.write_buffer_counted(&self.counts, (counts::OVERFLOW * 4) as u64, &1u32.to_le_bytes());
-            self.queue.submit(Some(commands));
+        if !self.armed {
+            return;
         }
+        let entries = self.buffers.iter().map(|(name, buffer)| (*name, buffer.as_entire_binding())).collect::<Vec<_>>();
+        let Ok(bind) = passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&self.pass.shader_id),
+            &self.pass,
+            0,
+            &entries,
+        ) else {
+            return;
+        };
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("program_retention.uncommit"),
+        });
+        let g = self.lanes.div_ceil(256).max(1);
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.uncommit",
+            &[(&self.pass, &bind, substitution::Launch::Groups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1))],
+        );
+        self.queue.submit(Some(encoder.finish()));
     }
 }
 
-/// An export attempt recorded but not submitted, and the store state it
-/// bound.
-struct PreparedExport {
-    commands: wgpu::CommandBuffer,
-    shape: ScratchShape,
-    epoch: u64,
-    generation: u32,
+/// The original object's rows the call rewrite updates in place, before the
+/// object is read (shaders/type_checker/retention/native/00_provisional.slang).
+pub(crate) struct ObjectCallRows<'a> {
+    /// 0: x86 undefined-symbol rows (four words per symbol) with
+    /// `call_hirs`; 1: Wasm relocation rows (eight words per row).
+    pub mode: u32,
+    pub rows: JobTable,
+    pub call_hirs: Option<JobTable>,
+    /// The word that counts the rows: (buffer, byte offset).
+    pub count: (wgpu::Buffer, u64),
+    /// Rows the buffers hold.
+    pub lanes: u32,
+    /// Records the copy of the rewritten identity words (three per symbol)
+    /// into the resident link's parked object.
+    pub park_identities: Option<Box<dyn FnOnce(&mut wgpu::CommandEncoder, &wgpu::Buffer) + 'a>>,
 }
 
 impl JobSnapshot {
@@ -695,6 +738,7 @@ impl ProgramRetention {
             .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
             .collect::<Result<Vec<_>>>()?;
         let rehash = make_pass_data_from_shader_key(&device, REHASH_KERNEL, "main", REHASH_KERNEL)?;
+        let uncommit = make_pass_data_from_shader_key(&device, UNCOMMIT_KERNEL, "main", UNCOMMIT_KERNEL)?;
         let snapshot_rows =
             make_pass_data_from_shader_key(&device, SNAPSHOT_ROWS_KERNEL, "main", SNAPSHOT_ROWS_KERNEL)?;
         let mut store = Store {
@@ -708,6 +752,9 @@ impl ProgramRetention {
             growths: 0,
             builds: 0,
             generation: 0,
+            source_bytes: 0,
+            exports: 0,
+            source_sizing: true,
             epoch: 0,
         };
         store.buffers = allocate_store(&device, &capacity, None);
@@ -726,6 +773,7 @@ impl ProgramRetention {
             queue,
             passes,
             rehash,
+            uncommit,
             snapshot_rows,
             resolve: Mutex::new(None),
             trait_probe: Mutex::new(None),
@@ -769,6 +817,8 @@ impl ProgramRetention {
         *self.followed.lock().unwrap() = None;
         store.builds += 1;
         store.generation = generation;
+        store.source_bytes = 0;
+        store.exports = 0;
         Ok(())
     }
 
@@ -878,7 +928,7 @@ impl ProgramRetention {
         }
         // Work recorded after the snapshot may rewrite its sources.
         passes_core::flush_deferred_compute(encoder);
-        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None), early: Mutex::new(None) })
+        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), early: Mutex::new(None) })
     }
 
     /// Records and submits the job's first export attempt without waiting
@@ -893,11 +943,6 @@ impl ProgramRetention {
         result
     }
 
-    /// Records the job's first export attempt without submitting it, so the
-    /// host can record it while it waits for the job's GPU work.
-    /// [`Self::submit_export_job`] submits it if the store still has the
-    /// buffers it bound, and records the attempt again otherwise. A job that
-    /// is retried or fails drops it with its snapshot.
     /// Sets the recorder of the work that follows each export.
     pub(crate) fn set_export_follower(&self, recorder: Option<ExportFollowerRecorder>) {
         *self.follower_recorder.lock().unwrap() = recorder;
@@ -945,50 +990,203 @@ impl ProgramRetention {
         (followed.generation == store.generation && followed.jobs == store.reports.len()).then_some(followed)
     }
 
-    pub(crate) fn prepare_export_job(&self, snapshot: &JobSnapshot) -> Result<()> {
-        if self.export_fault.lock().unwrap().is_some()
-            || snapshot.prepared.lock().unwrap().is_some()
-            || snapshot.early.lock().unwrap().is_some()
-        {
+    /// Submits a native job's whole export right behind the job's type
+    /// check, before the host records the job's semantic interface and
+    /// lowering, so the GPU exports while the host records them. The store
+    /// is first sized from the source bytes of the build's jobs
+    /// ([`source_capacity`]), not from counters read back. The steps commit
+    /// the job or roll it back on the GPU; the host reads which with the
+    /// job's object ([`Self::export_reads`], [`Self::accept_export`]). A
+    /// snapshot dropped before the host accepted its job uncommits it.
+    pub(crate) fn submit_export_now(&self, snapshot: &JobSnapshot, source_bytes: u64) -> Result<()> {
+        if snapshot.early.lock().unwrap().is_some() {
             return Ok(());
         }
         let job = &snapshot.tables;
+        self.apply_export_fault(job)?;
         let shape = export_shape(job)?;
         let mut store = self.store.lock().unwrap();
+        store.source_bytes += source_bytes;
+        store.exports += 1;
+        let target = source_capacity(&store.capacity, store.source_bytes, store.exports);
+        if store.source_sizing && target != store.capacity {
+            self.grow(&mut store, target)?;
+        }
         self.ensure_scratch(&mut store, shape);
-        let (commands, _) = self.record_export(&store, job, shape, false)?;
-        *snapshot.prepared.lock().unwrap() =
-            Some(PreparedExport { commands, shape, epoch: store.epoch, generation: store.generation });
+        self.queue.submit(Some(self.record_export(&store, job, shape)?));
+        let names = reflected_names(&self.uncommit);
+        let buffers = names
+            .iter()
+            .map(|name| {
+                let (&key, buffer) = store
+                    .buffers
+                    .get_key_value(name.as_str())
+                    .ok_or_else(|| anyhow!("{UNCOMMIT_KERNEL} binds unknown buffer {name}"))?;
+                Ok((key, buffer.clone()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let lanes = u64::from(store.capacity.arenas[A_DECLS].max(store.capacity.slots.into_iter().max().unwrap_or(0)));
+        *snapshot.early.lock().unwrap() = Some(EarlyExport {
+            epoch: store.epoch,
+            generation: store.generation,
+            tail: None,
+            uncommit: Uncommit {
+                armed: true,
+                device: self.device.clone(),
+                queue: self.queue.clone(),
+                pass: self.uncommit.clone(),
+                buffers,
+                lanes,
+            },
+        });
         Ok(())
     }
 
-    /// Submits the job's export up to its commit behind the job's frontend,
-    /// before the host has read the job's statuses, so the GPU exports
-    /// while the host checks them. The steps write only past the arenas'
-    /// watermarks and into hash slots the rollback clears.
-    /// [`Self::submit_export_job`] then returns the commit steps for the
-    /// caller to submit with its next work; a job that does not reach it
-    /// drops them with its snapshot, which rolls the job back.
-    pub(crate) fn submit_export_early(&self, snapshot: &JobSnapshot) -> Result<()> {
-        if self.export_fault.lock().unwrap().is_some() || snapshot.early.lock().unwrap().is_some() {
+    /// Submits the work that follows a native job's export, in one
+    /// submission behind it: the rewrite of the original object's calls to
+    /// generic templates (`rows`, native_calls.rs) and the export follower
+    /// (the trait catalog's count passes). Both bind only buffers sized from
+    /// capacities and are gated on the GPU by the job's commit word. Runs
+    /// once per export.
+    pub(crate) fn submit_export_tail(
+        &self,
+        snapshot: &JobSnapshot,
+        rows: Option<(ObjectCallRows<'_>, &mut NativeCallTables)>,
+    ) -> Result<()> {
+        if snapshot.early.lock().unwrap().as_ref().is_none_or(|early| early.tail.is_some()) {
             return Ok(());
         }
-        let job = &snapshot.tables;
-        let shape = export_shape(job)?;
-        let mut store = self.store.lock().unwrap();
-        self.ensure_scratch(&mut store, shape);
-        let (commands, commit) = self.record_export(&store, job, shape, true)?;
-        self.queue.submit(Some(commands));
-        *snapshot.early.lock().unwrap() = Some(EarlyExport {
-            commit: PendingCommit {
-                commands: commit,
-                queue: self.queue.clone(),
-                counts: store.buffers["rt_counts"].clone(),
-            },
-            shape,
-            epoch: store.epoch,
-            generation: store.generation,
+        // The recorder takes the store lock itself.
+        self.prepare_export_follower()?;
+        let store = self.store.lock().unwrap();
+        let mut guard = snapshot.early.lock().unwrap();
+        let early = guard.as_mut().expect("checked above");
+        if early.epoch != store.epoch || early.generation != store.generation {
+            bail!("program retention store changed under a submitted export");
+        }
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("program_retention.export.tail"),
         });
+        let rewrite_status = match rows {
+            Some((rows, tables)) => Some(self.record_call_rewrite(&mut encoder, &store, snapshot, tables, rows)?),
+            None => None,
+        };
+        let follower = self.take_follower(&store);
+        let mut commands = vec![encoder.finish()];
+        let follower = follower.map(|follower| {
+            commands.push(follower.commands);
+            (follower.reads, follower.state)
+        });
+        self.queue.submit(commands);
+        early.tail = Some(ExportTail { rewrite_status, follower });
+        Ok(())
+    }
+
+    /// The buffers and leading words the host reads, with the job's object,
+    /// to learn what a native job's export and its tail did: the store's
+    /// counters, the export scratch counters, the call rewrite's status and
+    /// the follower's reads. Empty when the job has no early export.
+    pub(crate) fn export_reads(&self, snapshot: &JobSnapshot) -> Vec<(wgpu::Buffer, usize)> {
+        let guard = snapshot.early.lock().unwrap();
+        let Some(early) = guard.as_ref() else {
+            return Vec::new();
+        };
+        let store = self.store.lock().unwrap();
+        let mut reads = vec![
+            (store.buffers["rt_counts"].clone(), counts::WORDS),
+            (store.scratch["rt_x_counts"].clone(), X_WORDS),
+        ];
+        if let Some(tail) = &early.tail {
+            reads.extend(tail.rewrite_status.iter().map(|status| (status.clone(), NC_STATUS_WORDS)));
+            reads.extend(tail.follower.iter().flat_map(|(follower, _)| follower.iter().cloned()));
+        }
+        reads
+    }
+
+    /// Takes the words of [`Self::export_reads`]. `Ok(true)`: the job
+    /// committed and the store keeps it. `Ok(false)`: the export overflowed
+    /// and rolled back on the GPU; the store has grown from the demand the
+    /// GPU recorded and the caller runs the job again.
+    pub(crate) fn accept_export(&self, snapshot: &JobSnapshot, mut words: Vec<Vec<u32>>) -> Result<bool> {
+        let Some(mut early) = snapshot.early.lock().unwrap().take() else {
+            bail!("program retention export was not submitted");
+        };
+        early.uncommit.armed = false;
+        let tail = early.tail.take();
+        let rewrite = tail.as_ref().is_some_and(|tail| tail.rewrite_status.is_some());
+        if words.len() < 2 + usize::from(rewrite) {
+            bail!("program retention export words are missing");
+        }
+        let followed = words.split_off(2 + usize::from(rewrite));
+        let status = rewrite.then(|| words.pop().unwrap_or_default());
+        let x = words.pop().unwrap_or_default();
+        let counts_words = words.pop().unwrap_or_default();
+        if counts_words.len() < counts::WORDS || x.len() < X_WORDS {
+            bail!("program retention export words are short");
+        }
+        let mut store = self.store.lock().unwrap();
+        if early.epoch != store.epoch || early.generation != store.generation {
+            bail!("program retention store changed under a submitted export");
+        }
+        let Some(report) = committed_export(1, counts_words.clone(), &x) else {
+            if counts_words[counts::JOB_STATE] != counts::JOB_ROLLED_BACK {
+                bail!(
+                    "program retention export left job state {} (status {:?})",
+                    counts_words[counts::JOB_STATE],
+                    &counts_words[..80],
+                );
+            }
+            let grown = grown_capacity(&store.capacity, &counts_words);
+            self.grow(&mut store, grown)?;
+            return Ok(false);
+        };
+        if let Some(status) = status {
+            let bits = status.first().copied().unwrap_or(u32::MAX);
+            if bits != 0 {
+                bail!("retained original call symbols failed on the GPU (status {bits:#x})");
+            }
+        }
+        store.reports.push(report);
+        if let Some((_, state)) = tail.and_then(|tail| tail.follower) {
+            *self.followed.lock().unwrap() = Some(FollowedWords {
+                generation: store.generation,
+                jobs: store.reports.len(),
+                words: followed,
+                state,
+            });
+        }
+        Ok(true)
+    }
+
+    /// Reads and accepts a native job's export words in their own readback,
+    /// for a job with no object to read them with.
+    pub(crate) fn finish_export_now(&self, snapshot: &JobSnapshot) -> Result<bool> {
+        self.submit_export_tail(snapshot, None)?;
+        let reads = self.export_reads(snapshot);
+        let parts = reads.iter().map(|(buffer, words)| (buffer, *words)).collect::<Vec<_>>();
+        let words = self.read_parts(&parts)?;
+        self.accept_export(snapshot, words)
+    }
+
+    /// Applies the test fault to a snapshot's tables before its export.
+    fn apply_export_fault(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<()> {
+        let Some(fault) = *self.export_fault.lock().unwrap() else {
+            return Ok(());
+        };
+        match fault {
+            ExportFault::Fill(name, word) => {
+                let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
+                self.queue.write_buffer_counted(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
+            }
+            ExportFault::MissingCallResults => {
+                let table = &job["semantic_calls_by_hir"];
+                let stride = std::mem::size_of::<super::GpuCheckedCallArtifact>();
+                let field = std::mem::offset_of!(super::GpuCheckedCallArtifact, return_ref_tag) as u64;
+                for row in (0..table.size).step_by(stride) {
+                    self.queue.write_buffer_counted(&table.buffer, table.offset + row + field, &[0; 8]);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1005,11 +1203,8 @@ impl ProgramRetention {
     pub(crate) fn finish_export_job(
         &self,
         job: &BTreeMap<&'static str, JobTable>,
-        mut submitted: ExportSubmitted,
+        submitted: ExportSubmitted,
     ) -> Result<JobReport> {
-        if let Some(commit) = submitted.commit.take() {
-            self.queue.submit(Some(commit.into_commands()));
-        }
         let result = self.export_job_attempts(job, submitted.shape);
         if result.is_err() {
             self.abandon_export();
@@ -1028,44 +1223,12 @@ impl ProgramRetention {
 
     fn submit_export_attempt(&self, snapshot: &JobSnapshot) -> Result<ExportSubmitted> {
         let job = &snapshot.tables;
-        if let Some(early) = snapshot.early.lock().unwrap().take() {
-            let store = self.store.lock().unwrap();
-            if store.epoch == early.epoch && store.generation == early.generation {
-                return Ok(ExportSubmitted { shape: early.shape, commit: Some(early.commit) });
-            }
-            // The store changed under the early export: roll it back and
-            // export again.
-            drop(store);
-            drop(early);
-        }
-        if let Some(prepared) = snapshot.prepared.lock().unwrap().take() {
-            let store = self.store.lock().unwrap();
-            if store.epoch == prepared.epoch && store.generation == prepared.generation {
-                self.queue.submit(Some(prepared.commands));
-                return Ok(ExportSubmitted { shape: prepared.shape, commit: None });
-            }
-        }
         let shape = export_shape(job)?;
-        if let Some(fault) = *self.export_fault.lock().unwrap() {
-            match fault {
-                ExportFault::Fill(name, word) => {
-                    let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
-                    self.queue.write_buffer_counted(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
-                }
-                ExportFault::MissingCallResults => {
-                    let table = &job["semantic_calls_by_hir"];
-                    let stride = std::mem::size_of::<super::GpuCheckedCallArtifact>();
-                    let field = std::mem::offset_of!(super::GpuCheckedCallArtifact, return_ref_tag) as u64;
-                    for row in (0..table.size).step_by(stride) {
-                        self.queue.write_buffer_counted(&table.buffer, table.offset + row + field, &[0; 8]);
-                    }
-                }
-            }
-        }
+        self.apply_export_fault(job)?;
         let mut store = self.store.lock().unwrap();
         self.ensure_scratch(&mut store, shape);
-        self.queue.submit(Some(self.record_export(&store, job, shape, false)?.0));
-        Ok(ExportSubmitted { shape, commit: None })
+        self.queue.submit(Some(self.record_export(&store, job, shape)?));
+        Ok(ExportSubmitted { shape })
     }
 
     fn export_job_attempts(
@@ -1076,7 +1239,7 @@ impl ProgramRetention {
         let mut store = self.store.lock().unwrap();
         for attempt in 1..=8u32 {
             if attempt > 1 {
-                self.queue.submit(Some(self.record_export(&store, job, shape, false)?.0));
+                self.queue.submit(Some(self.record_export(&store, job, shape)?));
             }
             let mut read = self.read_parts(&[
                 (&store.buffers["rt_counts"], counts::WORDS),
@@ -1107,8 +1270,7 @@ impl ProgramRetention {
         store: &Store,
         job: &BTreeMap<&'static str, JobTable>,
         shape: ScratchShape,
-        split_commit: bool,
-    ) -> Result<(wgpu::CommandBuffer, Option<wgpu::CommandBuffer>)> {
+    ) -> Result<wgpu::CommandBuffer> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("program_retention.export"),
         });
@@ -1188,19 +1350,9 @@ impl ProgramRetention {
             run(25, one);
             run(26, Indirect(D_COMMIT_DIR));
             run(27, Indirect(D_ROLLBACK));
-            // The commit steps: 16_commit, 17_publish and 18_rollback.
-            let commit_at = steps.len() - 3;
-            if split_commit {
-                substitution::record_timed(&mut encoder, "program_retention.export", &steps[..commit_at]);
-                let mut commit = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("program_retention.export.commit"),
-                });
-                substitution::record_timed(&mut commit, "program_retention.export.commit", &steps[commit_at..]);
-                return Ok((encoder.finish(), Some(commit.finish())));
-            }
             substitution::record_timed(&mut encoder, "program_retention.export", &steps);
         }
-        Ok((encoder.finish(), None))
+        Ok(encoder.finish())
     }
 
     /// Binds `pass` by reflected name; `aliases` binds a name to another
@@ -1379,6 +1531,13 @@ impl ProgramRetention {
             .ok_or_else(|| anyhow!("no store buffer {name}"))
     }
 
+    /// Test hook: whether exports size the store from the build's source
+    /// bytes ([`source_capacity`]).
+    #[doc(hidden)]
+    pub fn set_source_sizing_for_test(&self, enabled: bool) {
+        self.store.lock().unwrap().source_sizing = enabled;
+    }
+
     /// Test fault: fills job table `name` of every later export's snapshot
     /// with `word` (the frontend's own tables are untouched), or clears it.
     #[doc(hidden)]
@@ -1552,16 +1711,6 @@ impl ProgramRetention {
 #[must_use]
 pub(crate) struct ExportSubmitted {
     shape: ScratchShape,
-    /// The commit steps of an early export, which the caller submits with
-    /// its next work (dropped, they roll the job back).
-    commit: Option<PendingCommit>,
-}
-
-impl ExportSubmitted {
-    /// The commit steps still to be submitted, if the export was early.
-    pub(crate) fn take_commit(&mut self) -> Option<wgpu::CommandBuffer> {
-        self.commit.take().map(PendingCommit::into_commands)
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -1677,6 +1826,30 @@ fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'st
     .into_iter()
     .map(|(name, bytes, indirect)| (name, storage(device, name, bytes, indirect)))
     .collect()
+}
+
+/// Records per KiB of source that the store holds for a build, per arena:
+/// about twice what the settings program's jobs export (1.75 MiB of source,
+/// 2026-11-17), so a build of similar density fits without growing. A
+/// denser build overflows, rolls back on the GPU and runs its job again in a
+/// store grown from the recorded demand ([`grown_capacity`]).
+const RECORDS_PER_SOURCE_KIB: [u32; ARENAS] = [8, 2, 24, 20, 8, 2, 16, 5, 24, 1, 32, 10, 64, 72, 1, 0];
+
+/// The store's capacity for a build whose jobs lexed `source_bytes` bytes
+/// in `exports` exports so far: never below `current`.
+fn source_capacity(current: &ProgramRetentionCapacity, source_bytes: u64, exports: u32) -> ProgramRetentionCapacity {
+    let mut next = *current;
+    let kib = source_bytes.div_ceil(1024);
+    for arena in 0..ARENAS {
+        let records = (kib * u64::from(RECORDS_PER_SOURCE_KIB[arena])).min(u64::from(u32::MAX / 4)) as u32;
+        next.arenas[arena] = next.arenas[arena].max(records);
+    }
+    next.arenas[A_JOBS] = next.arenas[A_JOBS].max(exports.saturating_mul(2));
+    for (table, arena) in [A_DECLS, A_PARAMS, A_TERMS].into_iter().enumerate() {
+        let need = (u64::from(next.arenas[arena]) * 2).next_power_of_two().min(1 << 30) as u32;
+        next.slots[table] = next.slots[table].max(need);
+    }
+    next
 }
 
 /// Capacity covering a rolled-back job's recorded demand, with headroom.

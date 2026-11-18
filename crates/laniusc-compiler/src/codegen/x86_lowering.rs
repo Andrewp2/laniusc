@@ -1026,6 +1026,34 @@ impl GpuX86LirStage {
     pub(crate) fn parked_slot(&self) -> Option<super::x86::ParkedSlot> {
         self.object.as_ref()?.parked_slot()
     }
+
+    /// [`Self::finish_object`], reading `extra` in the object's readback.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finish_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        metadata: &[u32],
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+        extra: &[crate::gpu::readback::ReadbackRegion<'_>],
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>, Vec<Vec<u8>>)> {
+        self.object
+            .as_ref()
+            .context("x86 object projection was not allocated for this lowering job")?
+            .finish_with_reads(device, queue, library_id, unit_id, metadata, keep, extra)
+    }
+
+    /// The object's undefined-symbol rows for the retained call rewrite.
+    pub(crate) fn call_rows(&self) -> Option<(
+        crate::type_checker::program_retention::JobTable,
+        crate::type_checker::program_retention::JobTable,
+        (wgpu::Buffer, u64),
+        u32,
+    )> {
+        Some(self.object.as_ref()?.call_rows())
+    }
 }
 
 fn stamp(timer: &mut Option<&mut GpuTimer>, encoder: &mut wgpu::CommandEncoder, label: &str) {

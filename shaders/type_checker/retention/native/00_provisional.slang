@@ -1,25 +1,36 @@
 // Provisional call symbols of a retained build's original object
-// (docs/compiler-retained-projection.md, "Native compilation"). Runs after
-// the job's export commits, while the export scratch still maps the job's HIR rows
-// to their retained uses. One lane per undefined symbol of the object: the
-// k-th undefined symbol is the call at nc_call_hirs[k]
-// (x86_object_artifact.rs). A call whose retained use is DIRECT and whose
-// callee has a retained body (a generic template the original object does
-// not define) gets the provisional identity (RESERVED_LIB, NS_USE, global
-// use index) and its identity hash; every other symbol is copied unchanged.
-// The lane also records the caller's ABI facts of that use for the
-// certification (projection/10_certify.slang): the accepted result term and
-// the translated term of every argument, as the caller's job checked them.
+// (docs/compiler-retained-projection.md, "Native compilation"). Runs on the
+// GPU right behind the job's export, before the object is read: it rewrites
+// the object's own undefined-symbol rows in place, while the export scratch
+// still maps the job's HIR rows to their retained uses.
+//
+// Mode 0 (x86): one lane per undefined symbol k < nc_config[4]; nc_rows holds
+// four words per symbol (library, unit, local, 0) and nc_call_hirs[k] is the
+// call HIR of symbol k (x86_object_artifact.rs). nc_identity receives the
+// symbol's final identity words, three per symbol, which the resident link
+// parks for the object (link/resident.rs, region 6).
+// Mode 1 (Wasm): one lane per relocation row r < nc_config[4]; nc_rows holds
+// eight words per row, and a symbol row (word 1 is 2) carries the identity in
+// words 4 to 6 and the call HIR in word 7 (wasm_object_artifact.rs).
+//
+// A call whose retained use is DIRECT and whose callee has a retained body
+// (a generic template the original object does not define) gets the
+// provisional identity (RESERVED_LIB, NS_USE, global use index); every other
+// symbol keeps its identity. The host hashes the identity words when it reads
+// the object. The lane also records the caller's ABI facts of that use for
+// the certification (projection/10_certify.slang): the accepted result term
+// and the translated term of every argument, as the caller's job checked
+// them.
 import hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import codegen.x86.finalize.symbol_identity;
 
-// (symbol count, undefined count, generation, argument capacity)
+// (mode, lanes, generation, argument capacity, row count). The row count
+// is copied from the object's own total.
 StructuredBuffer<uint> nc_config;
 StructuredBuffer<uint> nc_call_hirs;
-// GPU_X86_SYMBOL_ROW_BYTES / 4 words per symbol, as the object stores them.
-RWStructuredBuffer<uint> nc_symbols;
+RWStructuredBuffer<uint> nc_rows;
 RWStructuredBuffer<uint> nc_identity;
 // Two rows per global use: (accepted result, count, flags, generation),
 // then (argument base, 0, 0, 0).
@@ -35,53 +46,43 @@ StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 
 static const uint NC_FLAG_ARG_UNTRANSLATED = 2u;
-// nc_status[0] bits: 1 use table too small, 2 malformed symbol, 4 argument
-// pool too small, 8 the job's export did not commit.
+// nc_status[0] bits: 1 use table too small, 4 argument pool too small, 8
+// the job's export did not commit. nc_status[1] is the build's argument
+// cursor.
 static const uint NC_STATUS_EXPORT_PENDING = 8u;
 static const uint DIR_FREE_FN = 1u;
 static const uint USE_DIRECT = 1u;
 static const uint HIR_CALL = 19u;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// The provisional identity of `call`, or none; records the use's ABI facts.
+bool provisional_use(uint call, out uint use)
 {
-    uint k = finalize_lane(dtid);
-    if (k >= nc_config[1]) return;
-    // The host submits this kernel right behind the job's export and reads
-    // both at once; an export that did not commit maps no call yet.
-    if (rt_counts[RT_C_JOB_STATE] != RT_JOB_COMMITTED)
-    {
-        if (k == 0u) InterlockedOr(nc_status[0], NC_STATUS_EXPORT_PENDING);
-        return;
-    }
-    uint row = k * SYMBOL_WORDS;
-    uint call = nc_call_hirs[k];
-    if (call >= hir_count() || compact_hir_core[call].kind != HIR_CALL || rt_x_flags[call].y == 0u) return;
+    use = 0u;
+    if (call >= hir_count() || compact_hir_core[call].kind != HIR_CALL || rt_x_flags[call].y == 0u) return false;
     uint use_base = rt_x_counts[RT_X_BASE + RT_A_USES];
-    if (use_base == RT_INVALID) return;
-    uint use = use_base + rt_x_scan[call].y;
+    if (use_base == RT_INVALID) return false;
+    use = use_base + rt_x_scan[call].y;
     uint uses; uint stride;
     nc_use_abi.GetDimensions(uses, stride);
     if (use >= uses / 2u)
     {
         InterlockedOr(nc_status[0], 1u);
-        return;
+        return false;
     }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     bool method = (u0.z & 0xffu) == 2u;
-    if ((u0.z & 0xffu) != USE_DIRECT && !method) return;
+    if ((u0.z & 0xffu) != USE_DIRECT && !method) return false;
     uint callee = u0.w;
     uint n; uint s;
     rt_decl_def.GetDimensions(n, s);
-    if (callee == 0u || callee >= n || rt_decl_def[callee] == 0u) return;
+    if (callee == 0u || callee >= n || rt_decl_def[callee] == 0u) return false;
     uint entry = rt_decl_def[callee] - 1u;
     uint4 d0 = rt_dir[entry * RT_DIR_WORDS];
     uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
     // Only a generic template is withheld from the original objects; a
     // nongeneric callee keeps its ordinary native symbol.
-    if ((d0.y != DIR_FREE_FN && d0.y != 2u) || d2.x == RT_INVALID) return;
+    if ((d0.y != DIR_FREE_FN && d0.y != 2u) || d2.x == RT_INVALID) return false;
 
     HirPayload p = compact_hir_payload[call];
     uint count = p.c + (method ? 1u : 0u);
@@ -90,25 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (arg_base > nc_config[3] || count > nc_config[3] - arg_base)
     {
         InterlockedOr(nc_status[0], 4u);
-        return;
+        return false;
     }
-
-    // The identity words of this undefined symbol: three aligned words.
-    uint start = nc_symbols[row + 2u];
-    if (nc_symbols[row + 3u] != PROVISIONAL_IDENTITY_BYTES || (start & 3u) != 0u ||
-        nc_symbols[row + 4u] != SECTION_UNDEFINED)
-    {
-        InterlockedOr(nc_status[0], 2u);
-        return;
-    }
-    uint3 identity = uint3(RESERVED_LIB, NS_USE, use);
-    uint w = start >> 2u;
-    nc_identity[w] = identity.x;
-    nc_identity[w + 1u] = identity.y;
-    nc_identity[w + 2u] = identity.z;
-    uint2 hash = identity_hash(identity);
-    nc_symbols[row] = hash.x;
-    nc_symbols[row + 1u] = hash.y;
 
     // Caller ABI facts.
     uint flags = 0u;
@@ -133,4 +117,36 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     nc_use_abi[use * 2u] = uint4(u1.y, count, flags, nc_config[2]);
     nc_use_abi[use * 2u + 1u] = uint4(arg_base,0u,0u,0u);
+    return true;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint lane = finalize_lane(dtid);
+    if (lane >= nc_config[1] || lane >= nc_config[4]) return;
+    // An export that did not commit maps no call; the host reruns the job.
+    if (rt_counts[RT_C_JOB_STATE] != RT_JOB_COMMITTED)
+    {
+        if (lane == 0u) InterlockedOr(nc_status[0], NC_STATUS_EXPORT_PENDING);
+        return;
+    }
+    bool wasm = nc_config[0] == 1u;
+    uint at = wasm ? lane * 8u + 4u : lane * 4u;
+    if (wasm && nc_rows[lane * 8u + 1u] != 2u) return;
+    uint call = wasm ? nc_rows[lane * 8u + 7u] : nc_call_hirs[lane];
+    uint use;
+    if (provisional_use(call, use))
+    {
+        nc_rows[at] = RESERVED_LIB;
+        nc_rows[at + 1u] = NS_USE;
+        nc_rows[at + 2u] = use;
+    }
+    if (!wasm)
+    {
+        nc_identity[lane * 3u] = nc_rows[at];
+        nc_identity[lane * 3u + 1u] = nc_rows[at + 1u];
+        nc_identity[lane * 3u + 2u] = nc_rows[at + 2u];
+    }
 }

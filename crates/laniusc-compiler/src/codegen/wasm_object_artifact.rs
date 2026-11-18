@@ -472,6 +472,32 @@ impl GpuWasmObjectStage {
         library_id: u32,
         unit_id: u32,
     ) -> Result<(GpuWasmRelocatableObject, Vec<u32>)> {
+        self.finish_with_reads(device, queue, library_id, unit_id, &[])
+            .map(|(object, call_hirs, _)| (object, call_hirs))
+    }
+
+    /// The object's relocation rows (eight words each; a symbol row carries
+    /// its identity and call HIR), the word that counts them and the rows
+    /// the buffer holds, for the retained build's call rewrite, which
+    /// updates the rows before [`Self::finish`] reads them.
+    pub(crate) fn call_rows(&self) -> (crate::type_checker::program_retention::JobTable, (wgpu::Buffer, u64), u32) {
+        (
+            crate::type_checker::program_retention::JobTable::from_lanius(&self.relocations),
+            (self._relocation_total.buffer.clone(), self._relocation_total.byte_offset),
+            u32::try_from(self.relocations.byte_size / 32).unwrap_or(u32::MAX),
+        )
+    }
+
+    /// [`Self::finish`], reading `extra` in the same readback as the
+    /// payload; their bytes follow the object.
+    pub(crate) fn finish_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        extra: &[ReadbackRegion<'_>],
+    ) -> Result<(GpuWasmRelocatableObject, Vec<u32>, Vec<Vec<u8>>)> {
         let metadata_slice = self.metadata_readback.slice(..);
         map_readback_blocking(device, &metadata_slice, crate::readback_label!("Wasm object metadata readback"))?;
         let metadata = metadata_slice.get_mapped_range();
@@ -514,6 +540,44 @@ impl GpuWasmObjectStage {
             );
         }
 
+        let mut regions = vec![
+            ReadbackRegion::from_buffer(
+                &self.functions,
+                0,
+                function_count * 24,
+                "Wasm object functions",
+            )?,
+            ReadbackRegion::from_buffer(
+                &self.relocations,
+                0,
+                relocation_count * 32,
+                "Wasm object relocations",
+            )?,
+            ReadbackRegion::from_buffer(
+                &self.definitions,
+                0,
+                definition_count * 32,
+                "Wasm object definitions",
+            )?,
+            ReadbackRegion::from_buffer(
+                &self.type_words,
+                0,
+                type_len,
+                "Wasm object types",
+            )?,
+            ReadbackRegion::from_buffer(
+                &self.body_words,
+                0,
+                body_len,
+                "Wasm object bodies",
+            )?,
+            ReadbackRegion::from_buffer(&self.data_words, 0, data_len, "Wasm object data")?,
+        ];
+        regions.extend_from_slice(extra);
+        let mut read = self
+            .payload_readback
+            .read_regions(device, queue, &regions, crate::readback_label!("Wasm object payload readback"))?;
+        let extra_bytes = read.split_off(6.min(read.len()));
         let [
             function_bytes,
             relocation_bytes,
@@ -521,46 +585,7 @@ impl GpuWasmObjectStage {
             type_bytes,
             body_bytes,
             data_bytes,
-        ]: [Vec<u8>; 6] = self
-            .payload_readback
-            .read_regions(
-                device,
-                queue,
-                &[
-                    ReadbackRegion::from_buffer(
-                        &self.functions,
-                        0,
-                        function_count * 24,
-                        "Wasm object functions",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.relocations,
-                        0,
-                        relocation_count * 32,
-                        "Wasm object relocations",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.definitions,
-                        0,
-                        definition_count * 32,
-                        "Wasm object definitions",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.type_words,
-                        0,
-                        type_len,
-                        "Wasm object types",
-                    )?,
-                    ReadbackRegion::from_buffer(
-                        &self.body_words,
-                        0,
-                        body_len,
-                        "Wasm object bodies",
-                    )?,
-                    ReadbackRegion::from_buffer(&self.data_words, 0, data_len, "Wasm object data")?,
-                ],
-                crate::readback_label!("Wasm object payload readback"),
-            )?
+        ]: [Vec<u8>; 6] = read
             .try_into()
             .map_err(|_| anyhow::anyhow!("Wasm object payload readback shape changed"))?;
         let function_words = decode_words(&function_bytes);
@@ -656,7 +681,7 @@ impl GpuWasmObjectStage {
             identity_bytes,
         };
         object.validate().map_err(anyhow::Error::msg)?;
-        Ok((object, call_hirs))
+        Ok((object, call_hirs, extra_bytes))
     }
 }
 
