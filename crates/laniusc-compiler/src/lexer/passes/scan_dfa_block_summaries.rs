@@ -1,0 +1,260 @@
+use std::collections::HashMap;
+
+#[cfg(feature = "gpu-debug")]
+use crate::lexer::tables::dfa::N_STATES;
+use crate::{
+    gpu::passes_core::{
+        DispatchDim,
+        InputElements,
+        PassData,
+        record_compiler_operation,
+        validation_scopes_enabled,
+    },
+    lexer::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
+};
+
+/// Second DFA pass: prefix-scans block summary functions.
+pub struct Dfa02ScanBlockSummariesPass {
+    data: PassData,
+}
+
+crate::gpu::passes_core::impl_static_shader_pass!(
+    Dfa02ScanBlockSummariesPass,
+    label: "dfa_02_scan_block_summaries",
+    entry: "dfa_02_scan_block_summaries",
+    shader: "lexer/scan_dfa_block_summaries",
+    dynamic_uniforms: ["gScan"]
+);
+
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSummariesPass {
+    const NAME: &'static str = "dfa_02_scan_block_summaries";
+    const DIM: DispatchDim = DispatchDim::D1;
+
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+
+    fn data(&self) -> &PassData {
+        &self.data
+    }
+
+    fn create_resource_map<'a>(
+        &self,
+        _b: &'a GpuBuffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        panic!("DFA scan resources are selected per prefix-scan round");
+    }
+
+    fn record_pass<'a>(
+        &self,
+        ctx: &mut crate::gpu::passes_core::PassContext<'a, GpuBuffers, DebugOutput>,
+        input: crate::gpu::passes_core::InputElements,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        let device = ctx.device;
+        let encoder = &mut ctx.encoder;
+        let b = ctx.buffers;
+        let maybe_dbg = &mut ctx.maybe_dbg;
+
+        let use_scopes = validation_scopes_enabled();
+
+        let validation_scope = crate::gpu::passes_core::validation_scope(device, use_scopes);
+
+        let n = match input {
+            InputElements::Elements1D(n) => n,
+            _ => unreachable!(),
+        };
+
+        let rounds = compute_rounds(n);
+
+        let pd = self.data();
+
+        let layout0 = &pd.bind_group_layouts[0];
+        let pipeline = &pd.pipeline;
+        let reflection = &pd.reflection;
+
+        if let Some(dbg) = maybe_dbg.as_deref_mut() {
+            dbg.gpu.func_scan_rounds.clear();
+        }
+
+        let can_batch = maybe_dbg.is_none()
+            && !crate::gpu::timer::operation_capture_requires_split_passes()
+            && !use_scopes;
+        if rounds == 0 {
+            if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
+                return Err(anyhow::anyhow!(
+                    "validation in pass {}: {:?}",
+                    Self::NAME,
+                    err
+                ));
+            }
+            if let Some(d) = maybe_dbg.as_deref_mut() {
+                (&self).record_debug(device, encoder, b, d);
+            }
+            return Ok(());
+        }
+        record_compiler_operation(Self::NAME);
+        let scan_params = b
+            .dfa_scan_params
+            .as_ref()
+            .expect("DFA scan parameters must cover every dispatched round");
+        let res = HashMap::from([
+            (
+                "gParams".into(),
+                wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
+            ),
+            ("gScan".into(), scan_params.binding()),
+            ("block_ping".into(), b.dfa_02_ping.as_entire_binding()),
+            ("block_pong".into(), b.dfa_02_pong.as_entire_binding()),
+        ]);
+        let bg = if let Some(cache) = ctx.bg_cache.as_deref_mut() {
+            cache
+                .reflected_for_graph_pass_data(device, Self::NAME, pd, b, &res, None)?
+                .into_iter()
+                .next()
+                .expect("DFA scan pass must have one reflected bind group")
+        } else {
+            crate::gpu::passes_core::CompilerGraphBuffers::validate_compiler_pass(
+                b,
+                Self::NAME,
+                &res,
+                None,
+            )?;
+            std::sync::Arc::new(
+                crate::gpu::passes_core::bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some(Self::NAME),
+                    layout0,
+                    reflection,
+                    0,
+                    &res,
+                )
+                .expect("DFA scan graph binding reflection"),
+            )
+        };
+        let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
+            crate::gpu::passes_core::DispatchDim::D1,
+            crate::gpu::passes_core::InputElements::Elements1D(n),
+            [1, 1, 1],
+        )?;
+
+        if can_batch {
+            let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some(Self::NAME),
+                    timestamp_writes: None,
+                },
+            );
+            for r in 0..rounds {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
+                crate::gpu::passes_core::record_compute_dispatch();
+                if !crate::gpu::passes_core::debug_operation_skipped() {
+                    pass.dispatch_workgroups(gx, gy, gz);
+                }
+                crate::gpu::timer::stamp_active_operation_in_pass(&mut pass, Self::NAME);
+            }
+        } else {
+            for r in 0..rounds {
+                #[cfg(feature = "gpu-debug")]
+                let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
+
+                // One 256-thread workgroup per block; only the first N_STATES lanes carry
+                // DFA state vectors, matching the shader guard.
+                // Tell the planner each "element" already maps 1:1 to a group.
+                let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
+                    encoder,
+                    &wgpu::ComputePassDescriptor {
+                        label: Some(Self::NAME),
+                        timestamp_writes: None,
+                    },
+                );
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bg.as_ref(), &[scan_params.dynamic_offset(r as usize)]);
+                crate::gpu::passes_core::record_compute_dispatch();
+                if !crate::gpu::passes_core::debug_operation_skipped() {
+                    pass.dispatch_workgroups(gx, gy, gz);
+                }
+                drop(pass);
+                crate::gpu::timer::stamp_active_operation(encoder, Self::NAME.to_owned());
+
+                #[cfg(feature = "gpu-debug")]
+                if let Some(dbg) = maybe_dbg.as_deref_mut() {
+                    let per_round_bytes = (n as usize) * N_STATES * std::mem::size_of::<u32>();
+                    use crate::lexer::debug::make_staging;
+                    // TODO: block_ping and block_pong are both N_STATES * (nb_dfa as usize) as their count, with that times 4 being byte count.
+                    // for some reason we're copying n * N_STATES * 4 bytes, which is more than the size of the buffer.
+                    let last_writer = if use_ping_as_src != 0 {
+                        &b.dfa_02_pong
+                    } else {
+                        &b.dfa_02_ping
+                    };
+                    let staging = make_staging(device, "dbg.func_scan_round", per_round_bytes);
+                    encoder.copy_buffer_to_buffer(
+                        last_writer,
+                        0,
+                        &staging,
+                        0,
+                        per_round_bytes as u64,
+                    );
+                    dbg.gpu.func_scan_rounds.push(crate::lexer::DebugBuffer {
+                        label: "dbg.func_scan_round",
+                        buffer: Some(staging),
+                        byte_len: per_round_bytes,
+                    });
+                }
+            }
+        }
+
+        if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
+            return Err(anyhow::anyhow!(
+                "validation in pass {}: {:?}",
+                Self::NAME,
+                err
+            ));
+        }
+
+        if let Some(d) = maybe_dbg.as_deref_mut() {
+            (&self).record_debug(device, encoder, b, d);
+        }
+        Ok(())
+    }
+
+    fn record_debug(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        b: &GpuBuffers,
+        dbg: &mut DebugOutput,
+    ) {
+        dbg.gpu.block_ping.set_from_copy(
+            device,
+            encoder,
+            &b.dfa_02_ping,
+            "dbg.block_ping",
+            b.dfa_02_ping.byte_size,
+        );
+        dbg.gpu.block_pong.set_from_copy(
+            device,
+            encoder,
+            &b.dfa_02_pong,
+            "dbg.block_pong",
+            b.dfa_02_pong.byte_size,
+        );
+
+        let rounds = compute_rounds(b.nb_dfa);
+
+        let last = if (rounds % 2) == 1 {
+            &b.dfa_02_pong
+        } else {
+            &b.dfa_02_ping
+        };
+        dbg.gpu.block_prefix.set_from_copy(
+            device,
+            encoder,
+            last,
+            "dbg.block_prefix",
+            last.byte_size,
+        );
+    }
+}

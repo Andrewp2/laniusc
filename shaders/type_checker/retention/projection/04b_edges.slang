@@ -1,6 +1,6 @@
 // Projection step 4b: one lane per global row. Publishes the expression
 // parent of each operand the row owns, by the rules of the frontend's
-// expression forest (parser/hir/canonical/expr_forest/edges.slang): unary
+// expression forest (parser/hir/canonical/build_expr_forest_edges.slang): unary
 // and binary operands, a member's or try's base, an assignment's
 // destination, a for statement's iterable, a call's callee and arguments
 // and a struct literal's field values. An operand owned twice is an error.

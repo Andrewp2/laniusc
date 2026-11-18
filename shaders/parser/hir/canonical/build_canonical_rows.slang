@@ -1,0 +1,576 @@
+import hir_records;
+import generated_parse_production_ids;
+import blocked_search_tree;
+import parser.hir.semantic.semantic_end_heaps;
+
+struct Params {
+    uint raw_capacity;
+    uint canonical_capacity;
+    uint uses_status_count;
+    uint local_ancestor_span;
+    uint records_use_token_rows;
+};
+
+ConstantBuffer<Params> gCanonical;
+StructuredBuffer<uint> canonical_count;
+StructuredBuffer<uint> canonical_prefix_before_raw;
+StructuredBuffer<uint> canonical_dense_to_raw;
+StructuredBuffer<uint> canonical_raw_to_dense;
+StructuredBuffer<uint> canonical_alias_to_dense;
+StructuredBuffer<uint> hir_canonical_end_local_max;
+StructuredBuffer<uint> hir_canonical_end_blocks;
+StructuredBuffer<uint> hir_canonical_end_top;
+StructuredBuffer<uint> subtree_end;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> token_file_id;
+StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_item_namespace;
+StructuredBuffer<uint> hir_item_visibility;
+StructuredBuffer<uint> hir_item_import_target_kind;
+StructuredBuffer<uint> hir_method_name_token;
+StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_value_node;
+StructuredBuffer<uint> hir_type_len_token;
+StructuredBuffer<uint> hir_type_len_operand;
+StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> hir_type_root_owner;
+StructuredBuffer<uint> hir_method_impl_receiver_type;
+StructuredBuffer<uint> hir_type_alias_target_node;
+StructuredBuffer<uint> hir_type_path_leaf_node;
+StructuredBuffer<uint> hir_method_impl_receiver_type_node;
+StructuredBuffer<uint4> hir_param_record;
+StructuredBuffer<uint> hir_param_type_node;
+StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_stmt_scope_end;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint2> hir_expr_int_value;
+StructuredBuffer<uint4> hir_expr_float_bits;
+StructuredBuffer<uint> hir_expr_name_role;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_struct_lit_head_node;
+StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_arg_count;
+StructuredBuffer<HirRange> hir_call_arg_ranges;
+StructuredBuffer<HirRange> hir_match_arm_ranges;
+StructuredBuffer<HirRange> hir_field_ranges;
+StructuredBuffer<uint> hir_member_receiver_node;
+StructuredBuffer<uint> hir_member_receiver_token;
+StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> hir_match_scrutinee_node;
+StructuredBuffer<uint> hir_canonical_context_stmt;
+RWStructuredBuffer<HirCore> hir_core;
+RWStructuredBuffer<HirLinks> hir_links;
+RWStructuredBuffer<HirPayload> hir_payload;
+RWStructuredBuffer<HirSemanticFacts> hir_canonical_semantic_facts;
+RWStructuredBuffer<uint> hir_canonical_scope_end;
+RWStructuredBuffer<uint> hir_canonical_fn_return_type;
+RWStructuredBuffer<uint> hir_canonical_type_root_owner;
+RWStructuredBuffer<uint> hir_canonical_type_alias_target;
+RWStructuredBuffer<uint> hir_canonical_const_type;
+RWStructuredBuffer<uint> hir_canonical_const_value;
+
+static const uint INVALID = 0xffffffffu;
+static const uint MAX_GROUPS_X = 65535u;
+static const uint STMT_LET = 1u;
+static const uint STMT_RETURN = 2u;
+static const uint STMT_IF = 3u;
+static const uint STMT_CONST = 4u;
+static const uint STMT_ASSIGN = 5u;
+static const uint STMT_WHILE = 6u;
+static const uint STMT_FOR = 7u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
+static const uint HIR_MODULE_ITEM = 31u;
+static const uint HIR_IMPORT_ITEM = 32u;
+static const uint HIR_FILE = 1u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_IMPL = 35u;
+static const uint HIR_CORE_TYPE = 5u;
+static const uint HIR_CORE_PATH_EXPR = 33u;
+static const uint HIR_IMPL_INHERENT = 1u;
+static const uint HIR_IMPL_TRAIT = 2u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_CHAR = 29u;
+static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
+
+uint semantic_kind(uint production)
+{
+    if (production == PROD_TYPE_IDENT || production == PROD_TYPE_ARRAY_LEN_NAME ||
+        production == PROD_CAST_TYPE_NAME)
+        return HIR_SEMANTIC_TYPE_PATH;
+    if (production == PROD_BOUND_TYPE_IDENT) return HIR_SEMANTIC_BOUND_PATH;
+    if (production == PROD_BOUND_TYPE_REF) return HIR_SEMANTIC_BOUND_REFERENCE;
+    if (production == PROD_BOUND_TYPE_ARGS_SOME) return HIR_SEMANTIC_BOUND_ARGUMENT_LIST;
+    if (production == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE)
+        return HIR_SEMANTIC_BOUND_ARGUMENT_TAIL;
+    if (production == PROD_IMPL_TRAIT) return HIR_SEMANTIC_IMPL_TRAIT;
+    if (production == PROD_IMPL_INHERENT) return HIR_SEMANTIC_IMPL_INHERENT;
+    if (production == PROD_IMPL_FN) return HIR_SEMANTIC_IMPL_FUNCTION;
+    if (production == PROD_TRAIT_METHOD) return HIR_SEMANTIC_TRAIT_METHOD;
+    if (production == PROD_TRAIT_METHOD_PUB) return HIR_SEMANTIC_PUBLIC_TRAIT_METHOD;
+    if (production == PROD_PUB_IMPL) return HIR_SEMANTIC_PUBLIC_IMPL;
+    if (production == PROD_TYPE_PARAM_BOUND_LIST)
+        return HIR_SEMANTIC_TYPE_PARAM_BOUND_LIST;
+    return HIR_SEMANTIC_NONE;
+}
+uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
+bool valid_raw(uint raw) { return raw != INVALID && raw < gCanonical.raw_capacity; }
+
+uint dense_id(uint raw)
+{
+    return valid_raw(raw) ? canonical_raw_to_dense[raw] : INVALID;
+}
+uint semantic_id(uint raw)
+{
+    return valid_raw(raw) ? canonical_alias_to_dense[raw] : INVALID;
+}
+
+uint dense_boundary(uint raw)
+{
+    return raw >= gCanonical.raw_capacity ? canonical_count[0u] : canonical_prefix_before_raw[raw];
+}
+
+uint active_canonical_count()
+{
+    return min(canonical_count[0u], gCanonical.canonical_capacity);
+}
+
+// Canonical rows are sparse in the raw grammar tree, and the raw parent chain
+// from a canonical row to the nearest canonical ancestor runs through long
+// forwarding and list spines. Rows are in preorder, so the canonical rows
+// whose canonical subtrees contain row r are its canonical ancestors, and the
+// nearest is the last row s < r whose canonical subtree end lies past r.
+// canonical/parent/end_{rows,blocks,top} build maximum heaps over those ends
+// in the semantic-end layout (semantic_end_heaps.slang).
+public struct CanonicalEndTree : IBlockedSearchTree<uint>
+{
+    public static uint row_count()
+    {
+        return active_canonical_count();
+    }
+
+    // The end core publishes in HirLinks.subtree_end.
+    public static uint row_value(uint row)
+    {
+        uint raw = canonical_dense_to_raw[row];
+        return dense_boundary(valid_raw(raw) ? subtree_end[raw] : gCanonical.raw_capacity);
+    }
+
+    public static uint local_node(uint block, uint node)
+    {
+        return hir_canonical_end_local_max[block * SEMANTIC_END_FANOUT + node];
+    }
+
+    public static uint block_leaf_base()
+    {
+        return semantic_end_leaf_base(gCanonical.canonical_capacity);
+    }
+
+    // Node `node` of the heap over the blocks: a block's maximum from the
+    // leaf base on, a node of a group's heap down to the group roots, and a
+    // top heap node above them.
+    public static uint block_node(uint node)
+    {
+        uint leaf_base = block_leaf_base();
+        if (node >= leaf_base)
+        {
+            uint block = node - leaf_base;
+            uint active_blocks =
+                (row_count() + SEMANTIC_END_FANOUT - 1u) / SEMANTIC_END_FANOUT;
+            return block < active_blocks
+                ? hir_canonical_end_local_max[block * SEMANTIC_END_FANOUT]
+                : 0u;
+        }
+        uint groups = leaf_base / SEMANTIC_END_FANOUT;
+        if (node < groups)
+            return hir_canonical_end_top[node];
+        uint depth = uint(firstbithigh(node)) - uint(firstbithigh(groups));
+        uint group = (node >> depth) - groups;
+        uint local = (1u << depth) | (node & ((1u << depth) - 1u));
+        return hir_canonical_end_blocks[group * SEMANTIC_END_FANOUT + local];
+    }
+}
+
+uint canonical_parent(uint row)
+{
+    return blocked_search_last_before<uint, uint, CanonicalEndTree, SemanticEndPast>(row, row);
+}
+uint expression_id(uint raw)
+{
+    if (!valid_raw(raw)) return INVALID;
+    uint root = hir_expr_result_root_node[raw];
+    uint mapped = dense_id(root);
+    if (mapped == INVALID)
+        mapped = semantic_id(root);
+    if (mapped == INVALID)
+        mapped = dense_id(raw);
+    return mapped != INVALID ? mapped : semantic_id(raw);
+}
+
+// The repeat tail of the array literal `raw`, or INVALID. A repeat tail
+// ends its element list, and the literal's subtree (an exclusive preorder
+// end) ends with it: the tail node, then its count node, which has no
+// nonterminal children. A literal that ends in a nested literal ends with its
+// own list's end node instead.
+uint array_repeat_tail(uint raw)
+{
+    uint end = valid_raw(raw) ? subtree_end[raw] : INVALID;
+    if (end == INVALID || end > gCanonical.raw_capacity || end < raw + 3u) return INVALID;
+    uint tail = end - 2u;
+    return node_kind[tail] == PROD_ARRAY_REPEAT &&
+        node_kind[end - 1u] == PROD_ARRAY_REPEAT_COUNT ? tail : INVALID;
+}
+
+// True when the repeat tail `tail` of literal `raw` follows its first
+// element, as in `[value; count]`, rather than a later one (`[a, b; n]`).
+bool array_repeat_follows_first_element(uint raw, uint tail)
+{
+    uint some = first_child[raw];
+    if (!valid_raw(some) || node_kind[some] != PROD_ARRAY_SOME) return false;
+    uint value = first_child[some];
+    return valid_raw(value) && next_sibling[value] == tail;
+}
+
+// True when the value of the repeat literal `raw` (its first element) is an
+// integer or char literal 0 or `false`. Called once the repeat tail follows
+// the first element, so that element exists.
+bool array_repeat_value_is_zero(uint raw)
+{
+    uint value = first_child[first_child[raw]];
+    uint root = valid_raw(value) ? hir_expr_result_root_node[value] : INVALID;
+    if (!valid_raw(root)) root = value;
+    if (!valid_raw(root) || hir_kind[root] != HIR_LITERAL_EXPR) return false;
+    uint dense = dense_id(root);
+    if (dense >= gCanonical.canonical_capacity) return false;
+    uint form = hir_expr_record[dense * 4u];
+    if (form == HIR_EXPR_FALSE) return true;
+    if (form != HIR_EXPR_INT && form != HIR_EXPR_CHAR) return false;
+    uint literal_row = gCanonical.records_use_token_rows != 0u ? hir_token_pos[root] : root;
+    uint2 magnitude = hir_expr_int_value[literal_row];
+    return magnitude.x == 0u && magnitude.y == 0u;
+}
+
+uint context_id(uint encoded)
+{
+    uint context = encoded & HIR_CALL_CONTEXT_ID_MASK;
+    return context == HIR_CALL_CONTEXT_ID_MASK ? INVALID : context;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint row = tid(dtid);
+    uint count = min(canonical_count[0u], gCanonical.canonical_capacity);
+    if (row >= count) return;
+    uint raw = canonical_dense_to_raw[row];
+    uint item_kind = gCanonical.records_use_token_rows != 0u
+        ? hir_item_kind[row]
+        : hir_item_kind[raw];
+    uint item_anchor = hir_token_pos[raw];
+
+    HirCore core;
+    uint production = node_kind[raw];
+    core.kind = hir_kind[raw];
+    if (production == PROD_IMPL_INHERENT || production == PROD_IMPL_TRAIT)
+        core.kind = HIR_IMPL;
+    else if (item_kind == 1u)
+        core.kind = 31u;
+    else if (item_kind == 2u)
+        core.kind = 32u;
+    else if (item_kind == 3u)
+        core.kind = 25u;
+    else if (item_kind == 4u || item_kind == 5u)
+        core.kind = 3u;
+    else if (item_kind == 6u)
+        core.kind = 27u;
+    else if (item_kind == 7u)
+        core.kind = 26u;
+    else if (item_kind == 8u)
+        core.kind = 29u;
+    else if (item_kind == 9u || item_kind == 10u)
+        core.kind = 2u;
+    core.parent = canonical_parent(row);
+    core.token_start = hir_token_pos[raw];
+    core.token_end = hir_token_end[raw];
+
+    HirLinks links;
+    links.first_child = INVALID;
+    links.next_sibling = INVALID;
+    links.subtree_end = dense_boundary(subtree_end[raw]);
+    uint anchor = hir_token_pos[raw];
+    links.file_id = anchor < gCanonical.canonical_capacity ? token_file_id[anchor] : INVALID;
+
+    HirPayload payload;
+    payload.a = INVALID;
+    payload.b = INVALID;
+    payload.c = INVALID;
+    payload.d = INVALID;
+
+    // Type arrays are defined on type rows only.
+    uint raw_kind = hir_kind[raw];
+    uint type_form = raw_kind == HIR_CORE_TYPE ? hir_type_form[raw] : 0u;
+    uint parameter_anchor = hir_token_pos[raw];
+    uint4 parameter = parameter_anchor < gCanonical.canonical_capacity
+        ? hir_param_record[parameter_anchor]
+        : uint4(INVALID, INVALID, INVALID, INVALID);
+    if (parameter.w != raw)
+        parameter = uint4(INVALID, INVALID, INVALID, INVALID);
+    uint stmt_base = row * 4u;
+    uint expr_base = row * 4u;
+    uint stmt_kind = hir_stmt_record[stmt_base];
+    uint expr_form = hir_expr_record[expr_base];
+    if (core.kind == HIR_IMPL)
+    {
+        // Trait predicate compaction fills payload.b/c with the dense trait
+        // bound and target type.  Keeping the impl flavour here makes the
+        // compact HIR self-describing even for inherent impls, which have no
+        // predicate-family row.
+        payload.a = production == PROD_IMPL_TRAIT
+            ? HIR_IMPL_TRAIT
+            : HIR_IMPL_INHERENT;
+        payload.c = semantic_id(hir_method_impl_receiver_type[raw]);
+        payload.d = hir_item_visibility[hir_token_pos[raw]];
+    }
+    else if (item_kind != 0u)
+    {
+        payload.a = item_kind;
+        payload.b = hir_item_name_token[item_anchor];
+        payload.c = hir_item_namespace[item_anchor];
+        payload.d = item_kind == 2u
+            ? hir_item_import_target_kind[hir_token_pos[raw]]
+            : hir_item_visibility[item_anchor];
+    }
+    else if (core.kind == 3u)
+    {
+        // Impl and trait methods are semantic function nodes even though they
+        // do not enter the ordinary item namespace. Every compact function
+        // still carries its declaration-name token in the same payload slot.
+        payload.b = hir_method_name_token[raw];
+    }
+    else if (parameter.x != INVALID)
+    {
+        payload.a = semantic_id(parameter.x);
+        payload.b = parameter.y;
+        payload.c = parameter.z;
+        payload.d = semantic_id(hir_param_type_node[parameter_anchor]);
+    }
+    else if (type_form != 0u)
+    {
+        payload.a = type_form;
+        payload.b = semantic_id(hir_type_value_node[raw]);
+        payload.c = hir_type_len_token[raw];
+        payload.d = dense_id(hir_type_len_operand[raw]);
+    }
+    else if (stmt_kind != 0u)
+    {
+        payload.a = stmt_kind;
+        uint x = hir_stmt_record[stmt_base + 1u];
+        uint y = hir_stmt_record[stmt_base + 2u];
+        uint z = hir_stmt_record[stmt_base + 3u];
+        if (stmt_kind == STMT_LET || stmt_kind == STMT_CONST)
+        {
+            payload.b = x;
+            payload.c = expression_id(y);
+            payload.d = dense_id(z);
+        }
+        else if (stmt_kind == STMT_RETURN)
+        {
+            payload.b = expression_id(x);
+            payload.c = INVALID;
+            payload.d = z;
+        }
+        else if (stmt_kind == STMT_ASSIGN)
+        {
+            payload.b = expression_id(x);
+            payload.c = expression_id(y);
+            payload.d = z;
+        }
+        else if (stmt_kind == STMT_FOR)
+        {
+            payload.b = x;
+            payload.c = expression_id(y);
+            payload.d = dense_id(z);
+        }
+        else if (stmt_kind == STMT_IF || stmt_kind == STMT_WHILE)
+        {
+            payload.b = expression_id(x);
+            payload.c = dense_id(y);
+            payload.d = dense_id(z);
+        }
+    }
+    else if (core.kind == HIR_CALL_EXPR)
+    {
+        HirRange call_args = hir_call_arg_ranges[row];
+        // A callee is an operand identity, not the result root of the
+        // expression containing the call. Following its result-root link can
+        // incorrectly turn `f()` inside `f() + g()` into the outer binary
+        // node and causes backends to suppress the binary as callee syntax.
+        uint call_record_row = gCanonical.records_use_token_rows != 0u ? row : raw;
+        payload.a = dense_id(hir_call_callee_node[call_record_row]);
+        payload.b = call_args.start;
+        payload.c = call_args.count;
+        payload.d = hir_canonical_context_stmt[row];
+    }
+    else if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_TRY_EXPR)
+    {
+        // The index base is an immediate operand identity. A postfix call,
+        // member, or earlier index may publish the enclosing expression as
+        // its result root, so following that root would make `values()[1]`
+        // refer to the index row itself instead of the call result.
+        uint raw_base = hir_expr_record[expr_base + 1u];
+        uint base_kind = valid_raw(raw_base) ? hir_kind[raw_base] : 0u;
+        bool direct_base = base_kind == HIR_CALL_EXPR ||
+            base_kind == HIR_INDEX_EXPR || base_kind == HIR_MEMBER_EXPR ||
+            base_kind == HIR_ARRAY_EXPR ||
+            base_kind == HIR_STRUCT_LITERAL_EXPR ||
+            base_kind == HIR_MATCH_EXPR || base_kind == HIR_TRY_EXPR;
+        payload.a = expr_form;
+        uint projected_base = direct_base ? dense_id(raw_base) : expression_id(raw_base);
+        payload.b = projected_base != INVALID ? projected_base : semantic_id(raw_base);
+        // Unlike the postfix base, the bracket contents denote a complete
+        // expression value. Preserve its canonical result (for example the
+        // ADD row in `values[1 + 2]`) rather than the first anchored leaf.
+        payload.c = expression_id(hir_expr_record[expr_base + 2u]);
+        payload.d = hir_expr_record[expr_base + 3u];
+    }
+    else if (core.kind == HIR_MEMBER_EXPR)
+    {
+        // Member access keeps its receiver and selected name entirely in the
+        // compact expression domain. Backends may project the dense receiver
+        // to their own executable row without retaining parser member columns.
+        uint raw_receiver = hir_member_receiver_node[raw];
+        payload.a = expr_form;
+        payload.b = valid_raw(raw_receiver) &&
+                (hir_kind[raw_receiver] == HIR_MEMBER_EXPR || hir_kind[raw_receiver] == HIR_TRY_EXPR)
+            ? dense_id(raw_receiver)
+            : expression_id(raw_receiver);
+        payload.c = hir_member_name_token[raw];
+        payload.d = hir_member_receiver_token[raw];
+    }
+    else if (core.kind == HIR_ARRAY_EXPR)
+    {
+        uint tail = array_repeat_tail(raw);
+        if (tail != INVALID)
+        {
+            uint count = tail + 1u;
+            bool first = array_repeat_follows_first_element(raw, tail);
+            payload.a = !first ? HIR_ARRAY_REPEAT_AFTER_LIST
+                : array_repeat_value_is_zero(raw) ? HIR_ARRAY_REPEAT_ZERO : HIR_ARRAY_REPEAT;
+            payload.b = dense_id(count);
+            // The `;` of a misplaced repeat, else the count literal.
+            payload.c = hir_token_pos[first ? count : tail];
+        }
+        payload.d = context_id(hir_canonical_context_stmt[row]);
+    }
+    else if (core.kind == HIR_STRUCT_LITERAL_EXPR)
+    {
+        // Struct-literal fields are a compact source-ordered family. The
+        // field scatter fills b/c with its start/count, while d keeps the
+        // dense statement context needed by backends.
+        payload.a = expr_form;
+        HirRange fields = hir_field_ranges[row];
+        payload.b = fields.start;
+        payload.c = fields.count;
+        payload.d = context_id(hir_canonical_context_stmt[row]);
+    }
+    else if (core.kind == HIR_MATCH_EXPR)
+    {
+        HirRange match_arms = hir_match_arm_ranges[row];
+        payload.a = expression_id(hir_match_scrutinee_node[raw]);
+        // Compact match arms are a source-ordered family. Their scatter pass
+        // fills this node-local start/count range without retaining raw arm
+        // production rows.
+        payload.b = match_arms.start;
+        payload.c = match_arms.count;
+    }
+    else if (expr_form != 0u)
+    {
+        uint literal_row = gCanonical.records_use_token_rows != 0u
+            ? hir_token_pos[raw]
+            : raw;
+        payload.a = expr_form;
+        payload.b = expression_id(hir_expr_record[expr_base + 1u]);
+        payload.c = expression_id(hir_expr_record[expr_base + 2u]);
+        payload.d = hir_expr_record[expr_base + 3u];
+        // Literal values are semantic payload, not parser scratch. Keeping
+        // the decoded scalar beside the compact literal node lets typecheck
+        // and codegen release the raw-node-keyed literal columns.
+        if (expr_form == HIR_EXPR_INT || expr_form == HIR_EXPR_CHAR)
+        {
+            uint2 magnitude = hir_expr_int_value[literal_row];
+            payload.b = magnitude.x;
+            payload.c = magnitude.y;
+        }
+        else if (expr_form == HIR_EXPR_FLOAT)
+        {
+            uint4 floating = hir_expr_float_bits[literal_row];
+            payload.b = floating.x;
+            payload.c = floating.y;
+            payload.d = floating.z;
+        }
+        else if (core.kind == HIR_NAME_EXPR)
+            payload.b = hir_expr_name_role[literal_row];
+    }
+
+    hir_core[row] = core;
+    hir_links[row] = links;
+    hir_payload[row] = payload;
+    HirSemanticFacts semantic_facts;
+    semantic_facts.semantic_kind = semantic_kind(production);
+    // The path leaf is defined on type rows and path expressions only.
+    semantic_facts.type_path_leaf =
+        raw_kind == HIR_CORE_TYPE || raw_kind == HIR_CORE_PATH_EXPR
+            ? semantic_id(hir_type_path_leaf_node[raw])
+            : INVALID;
+    // Method storage is an absent-family sentinel when the unit contains no
+    // trait or impl declarations. Only impl nodes own this relation.
+    semantic_facts.method_impl_receiver_type = core.kind == HIR_IMPL
+        ? semantic_id(hir_method_impl_receiver_type_node[raw])
+        : INVALID;
+    semantic_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
+    // The literal head is defined on struct literal rows only.
+    semantic_facts.struct_lit_head = production == PROD_STRUCT_LIT
+        ? semantic_id(hir_struct_lit_head_node[raw])
+        : INVALID;
+    semantic_facts.predicate_owner = INVALID;
+    semantic_facts.predicate_subject = INVALID;
+    semantic_facts.literal_status = expr_form == HIR_EXPR_FLOAT
+        ? hir_expr_float_bits[gCanonical.records_use_token_rows != 0u ? hir_token_pos[raw] : raw].w
+        : 0u;
+    hir_canonical_semantic_facts[row] = semantic_facts;
+    uint owner_record_row = gCanonical.records_use_token_rows != 0u ? row : raw;
+    hir_canonical_scope_end[row] = hir_stmt_scope_end[owner_record_row];
+    hir_canonical_fn_return_type[row] =
+        semantic_id(hir_fn_return_type_node[owner_record_row]);
+    // The type-root owner is defined on type rows only.
+    hir_canonical_type_root_owner[row] = semantic_id(
+        raw_kind == HIR_CORE_TYPE ? hir_type_root_owner[raw] : INVALID);
+    hir_canonical_type_alias_target[row] =
+        semantic_id(hir_type_alias_target_node[owner_record_row]);
+    hir_canonical_const_type[row] = item_kind == 3u
+        ? dense_id(hir_stmt_record[stmt_base + 3u])
+        : INVALID;
+    hir_canonical_const_value[row] = item_kind == 3u
+        ? expression_id(hir_stmt_record[stmt_base + 2u])
+        : INVALID;
+}

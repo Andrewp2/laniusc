@@ -489,7 +489,7 @@ of type arguments exactly when, from the `<` on, the matching `>` (angles
 counted outside brackets, a `>>` closing two) comes before any bracket
 closes or a `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`,
 `::` or `{` follows it; otherwise `<` is a comparison. This is laniusc's rule
-(`shaders/parser/tokens/to/angle_kinds.slang`) without its limit of 64
+(`shaders/parser/tokens/kinds/classify_angle_openers.slang`) without its limit of 64
 argument tokens; the verified compiler's validator checks it (`picks`).
 A method's `<` (`x.f<T>(..)`, ambiguous in the same way: `x.f < a > (b)`)
 opens type arguments by the same rule, from the `<` on (decided 10-31, F11b;

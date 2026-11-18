@@ -82,10 +82,10 @@ out = [
     '| kernel | local bytes | job 1 ms | job 2 ms |',
     '|---|---:|---:|---:|',
     '| type_checker/calls/03k1_project_literal_contexts (3 dispatches) | 3328 | 3.8 | 1042 |',
-    '| parser/tokens/delimiter_match/03_enclosing_opens, old | 3840 | 2.5 | 46.7 |',
-    '| parser/tokens/delimiter_match/03_enclosing_opens, rewritten (no local arrays) | 0 | 0.19 | 0.11 |',
-    '| parser/tree/spans, old | 1536 | 1.33 | 26.9 |',
-    '| parser/tree/spans, rewritten (no local arrays) | 0 | 0.29 | 0.33 |',
+    '| parser/tokens/delimiters/find_enclosing_delimiters, old | 3840 | 2.5 | 46.7 |',
+    '| parser/tokens/delimiters/find_enclosing_delimiters, rewritten (no local arrays) | 0 | 0.19 | 0.11 |',
+    '| parser/tree/find_tree_spans, old | 1536 | 1.33 | 26.9 |',
+    '| parser/tree/find_tree_spans, rewritten (no local arrays) | 0 | 0.29 | 0.33 |',
     '',
     f'The target is at most {TARGET} bytes per kernel, and none for new or rewritten kernels. The build '
     'enforces it as a ratchet: a kernel without a line in `crates/laniusc-shaders/local_array_budget.txt` '

@@ -6,7 +6,7 @@ use crate::{
         compiler_graph::{AccessMode, CompilerGraphBuilder, CompilerPhase, ResourceDomain},
         passes_core::PassData,
     },
-    parser::{compiler_graph::ParserGraphCapacity, passes::token_frontend::TokenFrontendPasses},
+    parser::{compiler_graph::ParserGraphCapacity, passes::tokens::TokenFrontendPasses},
 };
 
 pub(in crate::parser) const DELIMITER_DEPTH_SCAN: &str = "parser.tokens.delimiters.depth_scan";
