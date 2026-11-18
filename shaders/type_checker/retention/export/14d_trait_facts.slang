@@ -17,9 +17,8 @@
 // columns (trait_common.slang). A fact the producers did not accept, an
 // identity that disagrees between two producers, or an owner block that is
 // not contiguous raises an invariant and marks the owner's entry
-// incomplete through its statistics (step 15). Work per lane is O(1) apart
-// from a predicate's argument loop (at most 32) and the argument
-// translation each probe of the trait term's interning repeats.
+// incomplete through its statistics (step 15). Trait terms come from the
+// keys claimed in 14b.
 import hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
@@ -36,35 +35,6 @@ void fail(uint row, uint code)
 }
 
 uint trait_base() { return rt_x_counts[RT_X_BASE + RT_A_TRAITS]; }
-
-// NAMED (trait, constant-operand mask) over the ordered checked argument
-// roots of trait reference row `node` (a bound or an impl header's trait
-// type): `arity` rows of compact_type_args owned by `node`, in ordinal
-// order. RT_UNKNOWN when the rows are not exactly that.
-uint trait_term(uint node, uint arity, uint trait_decl)
-{
-    if (trait_decl == RT_INVALID || arity > MAX_TRAIT_ARGUMENTS) return RT_UNKNOWN;
-    HirRange range = compact_type_arg_ranges[node];
-    uint total = min(compact_type_arg_count[0u], hir_count());
-    // Even zero arguments must agree with the canonical range. Otherwise
-    // a missing producer count would silently erase the application.
-    if (range.count != arity ||
-        (arity != 0u && (range.start > total || arity > total - range.start)))
-        return RT_UNKNOWN;
-    uint mask = 0u;
-    for (uint i = 0u; i < arity; i++)
-    {
-        HirTypeArg argument = compact_type_args[range.start + i];
-        if (argument.owner != node || argument.ordinal != i) return RT_UNKNOWN;
-        if (constant_operand(type_row_term(argument.value))) mask |= 1u << i;
-    }
-    RtTermKey key = rt_key_begin(RT_KIND_NAMED, arity, arity - countbits(mask), uint3(trait_decl, mask, 0u));
-    BoundArgs args;
-    args.start = range.start;
-    for (uint i = 0u; i < arity; i++) rt_key_fold(key, args.arg(i));
-    uint term = rt_intern_term(key, args);
-    return rt_is_stored_term(term) ? term : RT_UNKNOWN;
-}
 
 void write_record(uint record, uint4 t0, uint4 t1)
 {
@@ -93,26 +63,21 @@ void directory_lane(uint row)
     // 00b copies payload.b and direct_type_expr_child reads that copy.
     // Comparing those copies is not an independent identity check.
     HirPayload payload = compact_hir_payload[row];
-    uint method_status = predicate_fact(F_METHOD_STATUS, row);
-    if (predicate_fact(F_STATUS, row) != PREDICATE_STATUS_OK ||
-        compact_hir_semantic_facts[row].semantic_kind != HIR_SEMANTIC_IMPL_TRAIT ||
-        compact_hir_semantic_facts[payload.b].semantic_kind != HIR_SEMANTIC_TYPE_PATH ||
-        compact_hir_core[payload.b].parent != row ||
-        (method_status != PREDICATE_STATUS_OK && method_status != 0xffffffffu))
+    if (!accepted_trait_impl(row, payload.b))
     {
         fail(row, RT_INV_TRAIT_FACT);
         return;
     }
     // The impl head's trait term (its signature's second word).
     uint reference = predicate_fact(F_REFERENCE, row);
-    uint trait_decl = trait_reference_decl(reference);
+    uint trait_decl = exported_trait_decl(payload.b);
     uint sig = rt_dir[entry * RT_DIR_WORDS + 1u].z;
     if (trait_decl == RT_INVALID || sig == RT_INVALID)
     {
         fail(row, RT_INV_TRAIT_IDENTITY);
         return;
     }
-    uint term = trait_term(payload.b, predicate_fact(F_ARG_COUNT, row), trait_decl);
+    uint term = exported_trait_term(payload.b);
     rt_sigs[sig + 1u] = term;
     if (term == RT_UNKNOWN)
     {
@@ -154,8 +119,7 @@ void predicate_lane(uint index)
 
     bool accepted = predicate_fact(F_STATUS, bound) == PREDICATE_STATUS_OK &&
         predicate_fact(F_OWNER, bound) == owner;
-    uint reference = predicate_fact(F_REFERENCE, bound);
-    uint trait_decl = accepted ? trait_reference_decl(reference) : RT_INVALID;
+    uint trait_decl = accepted ? exported_trait_decl(bound) : RT_INVALID;
 
     // Subject: a type parameter by its declaration token (exact, so a
     // shadowing method parameter is not its impl's), or a scalar's code.
@@ -172,7 +136,7 @@ void predicate_lane(uint index)
         if (param != RT_INVALID && rt_param_key[param].y == RT_DOMAIN_TYPE) subject = rt_param_leaf(param);
     }
 
-    uint applied = accepted ? trait_term(bound, predicate_fact(F_ARG_COUNT, bound), trait_decl) : RT_UNKNOWN;
+    uint applied = accepted ? exported_trait_term(bound) : RT_UNKNOWN;
     bool subject_ok = rt_is_term(subject) || rt_is_param_leaf(subject);
     bool complete = accepted && subject_ok && applied != RT_UNKNOWN;
     if (!complete) fail(owner, RT_INV_TRAIT_FACT);

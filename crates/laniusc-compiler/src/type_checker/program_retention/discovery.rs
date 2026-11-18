@@ -696,9 +696,11 @@ impl RetainedDiscovery {
             report.roots = status[9];
             if crate::options::get().report.resources.is_some() {
                 eprintln!(
-                    "[program_retention] discovery term_rows={} spare_term_rows={}",
+                    "[program_retention] discovery term_rows={} spare_term_rows={} instance_rows={} live_instances={}",
                     status[STATUS_WORDS + super::A_TERMS],
                     status[STATUS_WORDS + counts::SPARE + super::A_TERMS],
+                    status[0],
+                    status[1],
                 );
             }
             // Rank by full structure, height by height. Hashes never decide
@@ -1508,7 +1510,7 @@ impl RetainedDiscovery {
             ("dg_proof_identity", 32),
             ("dg_no_proofs", 48 * 4),
             ("dg_instances", i * 32),
-            ("dg_slots", i * 8),
+            ("dg_slots", i * 16),
             ("dg_scan_a", i * 4),
             ("dg_scan_b", i * 4),
             ("dg_scan_blocks", i.div_ceil(256) * 4),

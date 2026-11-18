@@ -32,6 +32,28 @@ public StructuredBuffer<uint> struct_init_field_ordinal_by_row;
 public StructuredBuffer<uint> compact_variant_payload_row_count;
 public StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 
+public static const uint RECEIVER_SELF = 1u;
+public static const uint RECEIVER_REF_SELF = 2u;
+// The side pass claims the trait row for any required &self signature.
+// The schema pass reads the resulting term after that dispatch.
+public RWStructuredBuffer<uint2> rt_x_ref_self;
+
+public uint required_receiver(uint function, uint ordinal, out uint trait_row, out uint self_leaf)
+{
+    trait_row = container_of(function);
+    self_leaf = RT_UNKNOWN;
+    if (ordinal != 0u || !is_trait_row(trait_row)) return 0u;
+    uint method = method_row(function);
+    if (method == 0xffffffffu) return 0u;
+    uint mode = compact_method_signatures[method].receiver_mode;
+    if (mode != RECEIVER_SELF && mode != RECEIVER_REF_SELF) return 0u;
+    uint token = hir_generic_owner_token(compact_hir_core[trait_row], compact_hir_payload[trait_row], token_capacity());
+    uint param = token == 0xffffffffu ? RT_INVALID : param_map_find(token);
+    if (param == RT_INVALID) return 0u;
+    self_leaf = rt_param_leaf(param);
+    return mode;
+}
+
 public uint variant_rows()
 {
     uint rows; uint stride;

@@ -57,12 +57,36 @@ public globallycoherent RWStructuredBuffer<uint4> sb_results;
 public globallycoherent RWStructuredBuffer<uint4> sb_task_key;
 public globallycoherent RWStructuredBuffer<uint4> sb_task_res;
 public globallycoherent RWStructuredBuffer<uint2> sb_task_fail;
-// Edges: one uint2 per child of a task, (value, status) or (task, SB_EDGE_TASK).
+// Immutable candidate headers and slots (task + 1, published term).
+public globallycoherent RWStructuredBuffer<uint4> sb_term_keys;
+public globallycoherent RWStructuredBuffer<uint2> sb_term_slots;
+// Edges: one uint2 per child of a task, (value, status) or (memo slot, SB_EDGE_TASK).
 public globallycoherent RWStructuredBuffer<uint2> sb_edges;
-// Memo: open-addressing slots holding task + 1.
-public globallycoherent RWStructuredBuffer<uint> sb_memo;
+// Zero in a key column means unclaimed. The environment is stored plus one.
+public struct SbMemoEntry
+{
+    public uint environment;
+    public uint term;
+    public uint task;
+}
+public globallycoherent RWStructuredBuffer<SbMemoEntry> sb_memo;
 // Live tasks ordered by level.
 public globallycoherent RWStructuredBuffer<uint> sb_order;
+
+public uint4 sb_task_result(uint task, out uint2 fault)
+{
+    uint4 result = sb_task_res[task];
+    fault = sb_task_fail[task];
+    if (result.y != SB_TERM_SLOT) return result;
+    uint term = sb_term_slots[result.x].y;
+    if (!rt_is_term(term)) return uint4(RT_UNKNOWN, SB_CAPACITY, result.zw);
+    if (!rt_term_closed(term))
+    {
+        fault = uint2(term, SB_ENV_NONE);
+        return uint4(RT_UNKNOWN, SB_INVARIANT, result.zw);
+    }
+    return uint4(term, SB_OK, RT_NONE, 0u);
+}
 
 // Lane numbering of 2D dispatches (set_dispatch).
 public uint sb_lane(uint3 dtid) { return dtid.x + dtid.y * 16776960u; }
@@ -382,24 +406,30 @@ uint sb_hash(uint env, uint term)
     return rt_mix(rt_mix(0x2545f491u, env), term) & sb_config[SB_CFG_HASH_MASK];
 }
 
-// The task of key (env, term), created when absent; RT_INVALID after an
-// overflow. A lane that loses the slot to an equal key kills its record.
-public uint sb_task_find_or_create(uint env, uint term)
+// Claim the exact key in two steps. The environment is immutable once
+// claimed, so a lane can claim the term even if another lane set the
+// environment. Only the term's winner allocates a task and its edges.
+// Consumers resolve the slot to a task in a later dispatch.
+uint sb_task_slot(uint env, uint term)
 {
-    uint level = sb_level(env, term);
-    uint arity = rt_term_arity(term);
     uint slots; uint stride; sb_memo.GetDimensions(slots, stride);
     uint slot = sb_hash(env, term) & (slots - 1u);
-    uint task = RT_INVALID;
     for (uint probe = 0u; probe < slots; probe++)
     {
-        uint value = sb_memo[slot];
-        if (value == 0u)
+        uint saved_env = sb_memo[slot].environment;
+        if (saved_env == 0u)
+            InterlockedCompareExchange(sb_memo[slot].environment, 0u, env + 1u, saved_env);
+        if (saved_env == 0u || saved_env == env + 1u)
         {
-            if (task == RT_INVALID)
+            uint saved_term = sb_memo[slot].term;
+            if (saved_term == 0u)
+                InterlockedCompareExchange(sb_memo[slot].term, 0u, term, saved_term);
+            if (saved_term == 0u)
             {
-                task = sb_alloc(SB_C_TASKS, SB_C_DEMAND_TASKS, sb_task_capacity(), 1u, SB_OVERFLOW_TASKS);
+                uint task = sb_alloc(SB_C_TASKS, SB_C_DEMAND_TASKS, sb_task_capacity(), 1u, SB_OVERFLOW_TASKS);
                 if (task == RT_INVALID) return RT_INVALID;
+                uint arity = rt_term_arity(term);
+                uint level = sb_level(env, term);
                 uint edge = sb_alloc(SB_C_EDGES, SB_C_DEMAND_EDGES, sb_edge_capacity(), arity, SB_OVERFLOW_EDGES);
                 InterlockedAdd(sb_counts[SB_C_LEVEL_COUNT + level], 1u);
                 if (edge == RT_INVALID) { sb_task_key[task] = uint4(env, term, level, 0u); sb_kill(task, level); return RT_INVALID; }
@@ -408,33 +438,27 @@ public uint sb_task_find_or_create(uint env, uint term)
                 sb_task_fail[task] = uint2(RT_NONE, SB_ENV_NONE);
                 InterlockedMax(sb_counts[SB_C_NEXT_ARITY], arity);
                 InterlockedMax(sb_counts[SB_C_MAX_LEVEL], level);
+                sb_memo[slot].task = task;
+                return slot;
             }
-            DeviceMemoryBarrier();
-            InterlockedCompareExchange(sb_memo[slot], 0u, task + 1u, value);
-            if (value == 0u) return task;
-        }
-        DeviceMemoryBarrier();
-        uint4 other = sb_task_key[value - 1u];
-        if (other.x == env && other.y == term)
-        {
-            if (task != RT_INVALID) sb_kill(task, level);
-            return value - 1u;
+            if (saved_term == term) return slot;
         }
         slot = (slot + 1u) & (slots - 1u);
     }
     sb_overflow(SB_OVERFLOW_MEMO);
-    if (task != RT_INVALID) sb_kill(task, level);
     return RT_INVALID;
 }
 
-// The edge word of a resolved child: an immediate, or the child's task.
+public uint sb_edge_task(uint slot) { return sb_memo[slot].task; }
+
+// The edge word of a resolved child: an immediate, or the child's memo slot.
 public uint2 sb_edge(SbChild c)
 {
     if (!c.task) return uint2(c.a, c.b);
     if (sb_level(c.a, c.b) >= SB_LEVELS) return uint2(c.b, SB_DEPTH);
-    uint task = sb_task_find_or_create(c.a, c.b);
-    if (task == RT_INVALID) return uint2(c.b, SB_CAPACITY);
-    return uint2(task, SB_EDGE_TASK);
+    uint slot = sb_task_slot(c.a, c.b);
+    if (slot == RT_INVALID) return uint2(c.b, SB_CAPACITY);
+    return uint2(slot, SB_EDGE_TASK);
 }
 
 // ---------------------------------------------------------------------------

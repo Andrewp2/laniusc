@@ -58,8 +58,20 @@ uint call_token(uint call)
     return token < token_capacity() ? token : compact_hir_core[callee].token_start;
 }
 
-// The value environment re-keyed so its owner is the callee.
-uint callee_env(uint env, uint callee)
+uint intern_callee_env(uint4 head, uint env, uint callee)
+{
+    uint arity = (head.x >> 8u) & 0xffu;
+    RtTermKey key = rt_key_begin(RT_KIND_ENV, arity, head.x >> 16u, uint3(callee, head.z, head.w));
+    RtStoredArgs args;
+    args.base = rt_term_meta[env].x;
+    for (uint i = 0u; i < arity; i++) rt_key_fold(key, args.arg(i));
+    return rt_intern_term(key, args);
+}
+
+// Only the lane that claims (callee, env) interns the re-keyed term.
+// Until 14b replaces it, the source environment supplies the same
+// parameter owners for the scope check below.
+uint stage_callee_env(uint env, uint callee, uint row)
 {
     if (!rt_is_stored_term(env) || rt_term_kind(env) != RT_KIND_ENV) return env;
     uint4 head = rt_term_head[env];
@@ -69,12 +81,31 @@ uint callee_env(uint env, uint callee)
         rt_invariant(RT_INV_ENV_OWNER);
         return RT_UNKNOWN;
     }
-    uint arity = (head.x >> 8u) & 0xffu;
-    RtTermKey key = rt_key_begin(RT_KIND_ENV, arity, head.x >> 16u, uint3(callee, head.z, head.w));
-    RtStoredArgs args;
-    args.base = rt_term_meta[env].x;
-    for (uint i = 0u; i < arity; i++) rt_key_fold(key, args.arg(i));
-    return rt_intern_term(key, args);
+    uint slots; uint stride;
+    rt_x_use_envs.GetDimensions(slots, stride);
+    uint mask = slots - 1u;
+    uint slot = rt_probe_start(rt_mix(callee, env), slots);
+    for (uint probe = 0u; probe < slots; probe++)
+    {
+        uint prior_callee = rt_x_use_envs[slot].callee;
+        if (prior_callee == 0u)
+            InterlockedCompareExchange(rt_x_use_envs[slot].callee, 0u, callee, prior_callee);
+        if (prior_callee == 0u || prior_callee == callee)
+        {
+            uint prior_env = rt_x_use_envs[slot].env;
+            if (prior_env == 0u)
+                InterlockedCompareExchange(rt_x_use_envs[slot].env, 0u, env, prior_env);
+            if (prior_env == 0u) rt_x_use_envs[slot].term = intern_callee_env(head, env, callee);
+            if (prior_env == 0u || prior_env == env)
+            {
+                rt_x_use_env_slot[row] = slot + 1u;
+                return env;
+            }
+        }
+        slot = (slot + 1u) & mask;
+    }
+    rt_invariant(RT_INV_TERM);
+    return RT_UNKNOWN;
 }
 
 [shader("compute")]
@@ -175,7 +206,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint env_count; uint env_stride;
     call_env_ct.GetDimensions(env_count, env_stride);
     uint env = token < env_count && form != RT_USE_FN_REF ? translate_ref(call_env_ct[token].x) : RT_NONE;
-    if (callee != 0u) env = callee_env(env, callee);
+    if (callee != 0u) env = stage_callee_env(env, callee, row);
     bool call_row = kind == HIR_CALL_EXPR;
     // A call whose artifact publishes no result (a unit method statement,
     // `assert`) may take the row's unit or never type. Value-returning

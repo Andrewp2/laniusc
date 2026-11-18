@@ -20,6 +20,36 @@ import type_checker.retention.export.body_common;
 StructuredBuffer<uint> semantic_param_ref_tag_by_row;
 StructuredBuffer<uint> semantic_param_ref_payload_by_row;
 
+struct ReceiverArg : IRtArgs
+{
+    uint leaf;
+    uint arg(uint index) { return leaf; }
+}
+
+void prepare_ref_self(uint index)
+{
+    if (index >= side_rows(RT_SIDE_PARAMS)) return;
+    uint function = compact_params[index].owner;
+    if (!valid_row(function) || compact_hir_core[function].kind != HIR_FN) return;
+    uint entry = rt_x_row[function].y;
+    if (entry == RT_INVALID) return;
+    uint ordinal = index - side_lower_bound(RT_SIDE_PARAMS, function);
+    uint2 sig = rt_dir[entry * RT_DIR_WORDS + 1u].zw;
+    if (ordinal != 0u || sig.x == RT_INVALID || sig.y == 0u) return;
+    uint trait_row, leaf;
+    if (required_receiver(function, ordinal, trait_row, leaf) != RECEIVER_REF_SELF) return;
+    uint term = translate_checked(semantic_param_ref_tag_by_row[index], semantic_param_ref_payload_by_row[index]);
+    if (term != RT_NONE && term != RT_UNKNOWN) return;
+    uint claimed;
+    InterlockedCompareExchange(rt_x_ref_self[trait_row].x, 0u, 1u, claimed);
+    if (claimed != 0u) return;
+    RtTermKey key = rt_key_begin(RT_KIND_REF, 1u, 0u, uint3(0u, 0u, 0u));
+    rt_key_fold(key, leaf);
+    ReceiverArg args;
+    args.leaf = leaf;
+    rt_x_ref_self[trait_row].y = rt_intern_term(key, args);
+}
+
 uint string_byte(uint offset)
 {
     uint words; uint stride;
@@ -131,5 +161,6 @@ void export_slot(uint k, uint index)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = export_lane(dtid);
+    prepare_ref_self(lane);
     for (uint k = 0u; k < RT_SIDE_TABLES; k++) export_slot(k, lane);
 }

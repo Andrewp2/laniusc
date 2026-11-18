@@ -14,8 +14,10 @@ public RWStructuredBuffer<uint4> mr_selected; // target, binding first, count, r
 public globallycoherent RWStructuredBuffer<uint> mr_reach;
 public globallycoherent RWStructuredBuffer<uint> mr_values_a;
 public globallycoherent RWStructuredBuffer<uint> mr_values_b;
-public RWStructuredBuffer<uint> mr_args; // 64 terms per request
-public RWStructuredBuffer<uint4> mr_out; // target, ENV, receiver mode, status (0 skip, 1 ready, >=2 failure)
+public globallycoherent RWStructuredBuffer<uint> mr_args; // 64 terms per request
+public globallycoherent RWStructuredBuffer<uint> mr_env_slots; // key owner request plus one
+// Target, ENV (or RT_PARAM_BIT | winning request), receiver mode, and status.
+public RWStructuredBuffer<uint4> mr_out;
 public uint mr_lane(uint3 id) { return id.x+id.y*16776960u; }
 public uint mr_h(uint h) { return mr_routes[h]; }
 public uint mr_entry(uint d)
