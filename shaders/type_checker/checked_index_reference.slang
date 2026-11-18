@@ -216,7 +216,7 @@ public bool checked_named_index_reference(uint node, uint hir_count, uint token_
 }
 
 // The same projections with the type rows read through a graph adapter, for
-// kernels that bind the rows writable (calls/03a1).
+// kernels that bind the rows writable (emit_generic_claims).
 public bool checked_member_index_reference<Graph : ITypeStructureGraph>(uint node, uint hir_count,
     uint token_capacity, StructuredBuffer<HirCore> cores, StructuredBuffer<HirPayload> payloads,
     StructuredBuffer<uint> member_tags, StructuredBuffer<uint> member_payloads, uint type_capacity,

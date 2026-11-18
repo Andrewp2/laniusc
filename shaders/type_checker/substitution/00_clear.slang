@@ -1,6 +1,6 @@
 // Reset substitution state for one type-check job: the memo, the counters,
 // the row of each ID, the call environments and the field closure's marks.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.call_env;

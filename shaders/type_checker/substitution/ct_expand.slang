@@ -12,7 +12,7 @@
 // from argument contexts and report only capacity and limit failures, and
 // FIELDS_ONLY entries were deferred because their imported declaration was
 // not on the resident dependency page; their arguments were already queued.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 
 public RWStructuredBuffer<uint> ct_expand_mark;
 public RWStructuredBuffer<uint2> ct_expand_queue;

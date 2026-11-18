@@ -444,7 +444,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     }
     put("type_instance_arg_row_count_out", vec![0]);
     // 03a8 validates explicit applications by canonical ID (1f3ee486). The
-    // tables start as canonical/00_clear leaves them: no records past the
+    // tables start as clear_canonical_interning_state leaves them: no records past the
     // preseeded scalars, every candidate pending. Candidates are the type
     // rows above, the 128 atoms and the 32 projections.
     const RECORDS: usize = 1024;
@@ -638,12 +638,12 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
     const MIRROR: usize = 5;
     const PROBE: usize = 6;
     let keys = [
-        "type_checker/calls/03a3_build_claim_lookup",
-        "type_checker/calls/03a0b_validate_explicit_constants",
-        "type_checker/calls/03a3b_publish_call_environment",
-        "type_checker/calls/03a4c_admit_context_constants",
-        "type_checker/calls/03a5_validate_const_claims",
-        "type_checker/calls/03a8_validate_explicit_applications",
+        "type_checker/calls/claims/build_claim_lookup",
+        "type_checker/calls/claims/validate_explicit_constants",
+        "type_checker/calls/claims/publish_call_environment",
+        "type_checker/calls/claims/admit_context_constants",
+        "type_checker/calls/claims/validate_const_claims",
+        "type_checker/calls/claims/validate_explicit_applications",
         "tests/constant_claim_publication",
     ];
     let passes: Vec<_> = keys

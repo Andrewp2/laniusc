@@ -19,7 +19,7 @@
 //   with a declared slot; concrete comparison compares other tags by payload.
 // - parameter slots come from the kernel's ICtSlots adapter (CheckedSlots
 //   or SourceSlots), so this module binds no graph table.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_spare;
 
 static const uint CHECKED_IDENTITY_INVALID = 0xffffffffu;

@@ -46,16 +46,16 @@ mod call_environment;
 mod call_generic_claim_validation;
 mod calls;
 mod conditions;
+mod control_flow;
 mod dependencies;
 mod generic_parameter_index;
 mod late_semantics;
 mod methods;
 mod module_paths;
-mod names;
-mod returns;
 mod struct_field_index;
-mod type_instances;
-mod visible;
+mod symbols;
+mod types;
+mod visibility;
 mod visible_decls;
 
 pub(super) use call_argument_matching::*;
@@ -64,16 +64,16 @@ pub(super) use call_environment::*;
 pub(super) use call_generic_claim_validation::*;
 pub(super) use calls::*;
 pub(super) use conditions::*;
+pub(super) use control_flow::*;
 pub(super) use dependencies::*;
 pub(super) use generic_parameter_index::*;
 pub(super) use late_semantics::*;
 pub(super) use methods::*;
 pub(super) use module_paths::*;
-pub(super) use names::*;
-pub(super) use returns::*;
 pub(super) use struct_field_index::*;
-pub(super) use type_instances::*;
-pub(super) use visible::*;
+pub(super) use symbols::*;
+pub(super) use types::*;
+pub(super) use visibility::*;
 pub(super) use visible_decls::*;
 
 use super::*;
@@ -185,7 +185,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_COLLECT_PASS,
-                &passes.kernel("type_checker/semantic/features/00_collect"),
+                &passes.kernel("type_checker/semantics/collect_semantic_features"),
                 hir_dispatch_args,
             )?,
             dispatch: ComputeOperation::direct(
@@ -193,7 +193,7 @@ impl SemanticFeaturesOperation {
                 graph,
                 resources,
                 compiler_graph::FEATURES_DISPATCH_PASS,
-                &passes.kernel("type_checker/semantic/features/01_dispatch_args"),
+                &passes.kernel("type_checker/semantics/write_semantic_feature_dispatch_args"),
                 1,
             )?,
         })

@@ -18,6 +18,7 @@ The tool runs `git mv` for every entry, then rewrites:
   * Slang `import` and `#include` paths, resolved the way the shader build
     resolves them, and `module` names of moved files;
   * `X.slang` mentions in shaders that shared the moved file's old folder;
+  * bare numbered shader names and path tails in source line comments;
   * Rust module paths in `use` trees and in code, and Rust file path strings;
   * `mod` declarations: dangling ones are removed, new children are declared,
     and declaration-only `mod.rs` files of emptied folders are deleted.
@@ -187,10 +188,21 @@ def rewrite_slang(shader_map: dict[str, str]) -> dict[str, str]:
                 if m.group(2) == os.path.basename(old_file):
                     lines[i] = m.group(1) + os.path.basename(new_file) + m.group(3)
                     changed = True
-            elif os.path.dirname(old_file) in moved_dirs and ".slang" in line:
-                new_line = SIBLING_RE.sub(
-                    lambda s: sibling_mention(s, old_file, new_dir, shader_map), line
-                )
+            else:
+                new_line = line
+                if os.path.dirname(old_file) in moved_dirs and ".slang" in line:
+                    new_line = SIBLING_RE.sub(
+                        lambda s: sibling_mention(s, old_file, new_dir, shader_map), line
+                    )
+                if new_line.lstrip().startswith("//"):
+                    new_line = NUMBERED_SIBLING_RE.sub(
+                        lambda m: numbered_sibling(m, old_file, shader_map),
+                        new_line,
+                    )
+                    new_line = DOTTED_IMPORT_RE.sub(
+                        lambda m: comment_import(m, old_file, old_keys, shader_map),
+                        new_line,
+                    )
                 if new_line != line:
                     lines[i] = new_line
                     changed = True
@@ -200,6 +212,27 @@ def rewrite_slang(shader_map: dict[str, str]) -> dict[str, str]:
 
 
 SIBLING_RE = re.compile(r"(?<![\w/.\-])(\w+)\.slang\b")
+NUMBERED_SIBLING_RE = re.compile(
+    r"(?<![\w/.\-])[0-9][0-9a-z]*_[a-z]\w*(?![\w/]|\.slang\b)"
+)
+DOTTED_IMPORT_RE = re.compile(r"(?<![\w/.\-])(?:[a-z_]\w*\.)+[a-z_]\w*\b")
+LINE_COMMENT_RE = re.compile(r"(?m)^[ \t]*//[^\n]*")
+
+
+def numbered_sibling(m: re.Match, old_file: str, shader_map: dict[str, str]) -> str:
+    name = m.group(0)
+    sibling = os.path.join(os.path.dirname(old_file), name)
+    return os.path.basename(shader_map.get(sibling, name))
+
+
+def comment_import(
+    m: re.Match, old_file: str, keys: set[str], shader_map: dict[str, str]
+) -> str:
+    name = m.group(0)
+    found = resolve(keys, old_file, name.replace(".", "/"))
+    if found and found[0] in shader_map:
+        return shader_map[found[0]].replace("/", ".")
+    return name
 
 
 def sibling_mention(m: re.Match, old_file: str, new_dir: str, shader_map: dict[str, str]) -> str:
@@ -251,6 +284,20 @@ class RustRewriter:
             "::".join(module_of(old)): "::".join(module_of(new)) for old, new in rust_map.items()
         }
         self.rust_map = rust_map
+        self.parent_globs: dict[tuple[str, ...], set[tuple[str, ...]]] = {}
+        if rust_map:
+            for f in self.files:
+                text = (CRATE_SRC / f).read_text()
+                if "super::" not in text:
+                    continue
+                base = module_of(f)
+                spans = self.inline_modules(text)
+                for m in USE_RE.finditer(text):
+                    scope = tuple(self.module_at(base, spans, m.start()))
+                    for segs, _ in parse_use_tree(m.group(2)) or []:
+                        levels = len(segs) - 1
+                        if 0 < levels < len(scope) and segs == ["super"] * levels + ["*"]:
+                            self.parent_globs.setdefault(scope, set()).add(scope[:-levels])
 
     def map_path(self, segs: list[str]) -> list[str]:
         for n in range(len(segs), 1, -1):
@@ -277,6 +324,19 @@ class RustRewriter:
             return module + segs, "relative"
         if head in bindings:
             return bindings[head] + segs[1:], "binding"
+        # A parent glob can expose the parent's module names, including
+        # names the parent itself imported through another parent glob.
+        pending = list(self.parent_globs.get(tuple(module), ()))
+        candidates = set()
+        while pending:
+            parent = pending.pop()
+            if "::".join((*parent, head)) in self.old_modules:
+                candidates.add(parent)
+            else:
+                pending.extend(self.parent_globs.get(parent, ()))
+        if len(candidates) == 1:
+            (parent,) = candidates
+            return [*parent, *segs], "glob"
         return None
 
     def emit(self, new: list[str], style: str, new_module: list[str]) -> str:
@@ -364,6 +424,11 @@ class RustRewriter:
             module = self.module_at(old_mod, spans, m.start())
             found = self.absolute(segs, module, bindings)
             if not found:
+                line_start = text.rfind("\n", 0, m.start()) + 1
+                if text[line_start:m.start()].lstrip().startswith("//"):
+                    # Documentation can refer to a module by its crate-relative
+                    # path without the explicit `crate::` used in code.
+                    return "::".join(self.map_path(["crate", *segs])[1:])
                 return m.group(0)
             abs_segs, style = found
             new_segs = self.map_path(abs_segs)
@@ -680,6 +745,11 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
     if tails:
         names = sorted(tails, key=len, reverse=True)
         tail_re = re.compile(r"(?<![\w/.\-])(" + "|".join(map(re.escape, names)) + r")\.slang\b")
+    comment_names = {
+        **{old: new for old, new in basenames.items() if old[0].isdigit()},
+        **tails,
+    }
+    comment_re = reference_pattern(comment_names, r"(?!\.[a-zA-Z])")
     count = 0
     for path in scanned_files():
         text = text_of(path)
@@ -694,6 +764,11 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
             new = tail_re.sub(lambda m: tails[m.group(1)] + ".slang", new)
         if name_re:
             new = name_re.sub(lambda m: basenames[m.group(1)] + ".slang", new)
+        if comment_re and path.suffix in {".rs", ".slang"}:
+            new = LINE_COMMENT_RE.sub(
+                lambda line: comment_re.sub(lambda m: comment_names[m.group(1)], line.group(0)),
+                new,
+            )
         if new != text:
             write(path, new)
             count += 1

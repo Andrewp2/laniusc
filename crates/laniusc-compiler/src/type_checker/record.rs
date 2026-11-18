@@ -6,18 +6,18 @@ mod control_flow;
 mod dependency_page;
 mod methods;
 mod module_paths;
-mod names;
-mod type_instances;
-mod visible;
+mod symbols;
+mod types;
+mod visibility;
 
 pub(in crate::type_checker) use calls::*;
 pub(in crate::type_checker) use compute::*;
 pub(in crate::type_checker) use control_flow::*;
 pub(in crate::type_checker) use dependency_page::*;
 pub(in crate::type_checker) use module_paths::*;
-pub(in crate::type_checker) use names::*;
-pub(in crate::type_checker) use type_instances::*;
-pub(in crate::type_checker) use visible::*;
+pub(in crate::type_checker) use symbols::*;
+pub(in crate::type_checker) use types::*;
+pub(in crate::type_checker) use visibility::*;
 
 /// Timer labels used for one type-instance collection sweep.
 pub(super) struct TypeInstanceCollectionTimerLabels {

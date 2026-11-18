@@ -1,0 +1,22 @@
+// The expected type of each struct-literal field in caller scope, as a
+// canonical ID. A field's declaration-side reference and the literal's
+// application (struct_init_field_expected_ref_* and
+// struct_init_field_expected_context_instance, written by
+// project_struct_init_fields) are substituted once by substitute_struct_literal_field_expectations, which
+// also gives the result a checked row (ct_row_of), so readers need neither a
+// scoped hash walk nor a substitution of their own.
+//
+// struct_init_field_expected_ct[field token] is the ID while the field has a
+// context instance, CT_NONE while it has none (its reference is already in
+// caller scope) and CT_UNKNOWN when the substitution failed. Readers bind the
+// column read-only; only substitute_struct_literal_field_expectations declares it writable.
+import type_checker.canonicalization.canonical_api;
+
+public StructuredBuffer<uint> struct_init_field_expected_ct;
+
+public uint ct_field_expected(uint token)
+{
+    uint count; uint stride;
+    struct_init_field_expected_ct.GetDimensions(count, stride);
+    return token < count ? struct_init_field_expected_ct[token] : CT_UNKNOWN;
+}

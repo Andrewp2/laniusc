@@ -35,7 +35,7 @@ pub(crate) struct GpuDependencyInterfaceState {
     /// slot's capacities, so growing it leaves the workspace in place.
     pub(crate) page_store: Option<LaniusBuffer<u32>>,
     /// The packing kernels' inputs, grown on demand (`dependency_pack`).
-    pub(crate) pack_buffers: super::dependency_pack::DependencyPackBuffers,
+    pub(crate) pack_buffers: super::dependency_packing::DependencyPackBuffers,
 }
 
 /// One fixed GPU dependency slot plus the GPU-packed pages that are streamed
@@ -311,7 +311,7 @@ impl GpuDependencyPageLayout {
         header[IMPLEMENTATION_COUNT] = implementations;
         header[IMPLEMENTATION_ARGUMENT_COUNT] = implementation_arguments;
         header[IMPLEMENTATION_METHOD_BINDING_COUNT] = bindings;
-        // Tables in page order (shaders/type_checker/dependency_pack/rows.slang).
+        // Tables in page order (shaders/type_checker/dependencies/packing/pack_dependency_page_rows.slang).
         let words = |rows: u32, width: u64| u64::from(rows) * width;
         let tables = [
             (MODULE_LIBRARY_OFFSET, words(modules, 1)),
@@ -475,7 +475,7 @@ impl GpuDependencyInterfacePages {
             }
             let store = resident.page_store.as_ref().expect("page store allocated");
             let page_words = page_store_offsets.iter().map(|offset| offset / 4).collect::<Vec<_>>();
-            super::dependency_pack::record_pack(
+            super::dependency_packing::record_pack(
                 device,
                 queue,
                 &mut encoder,
@@ -493,7 +493,7 @@ impl GpuDependencyInterfacePages {
                 pages[0].word_count as u64 * 4,
             );
         } else {
-            super::dependency_pack::record_pack(
+            super::dependency_packing::record_pack(
                 device,
                 queue,
                 &mut encoder,

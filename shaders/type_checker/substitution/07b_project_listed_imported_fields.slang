@@ -1,7 +1,7 @@
 // 07_project_imported_fields over the listed live rows
 // (live_type_row_list.slang), for the inference rounds.
 #include "imported_fields.slang"
-#include "../type/instances/live_type_row_list.slang"
+#include "../types/instances/live_type_row_list.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

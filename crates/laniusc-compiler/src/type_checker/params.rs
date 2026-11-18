@@ -278,7 +278,7 @@ pub(in crate::type_checker) struct NameHashParams {
     pub(in crate::type_checker) reserved: u32,
 }
 
-/// Selects the rows `02c_index_closed_applications` visits: `listed` 1 for
+/// Selects the rows `index_closed_applications` visits: `listed` 1 for
 /// the inference rounds' listed live rows, 0 for every live row.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -290,7 +290,7 @@ pub(in crate::type_checker) struct TypeRowListParams {
 }
 
 /// Selects the rows a body reference specialization pass visits
-/// (00g_specialize_checked_references.slang): `mode` 0 visits every row with
+/// (specialize_checked_references.slang): `mode` 0 visits every row with
 /// one lane per row; another mode visits the rows below its allocation
 /// count, strided over `lanes` lanes.
 #[repr(C)]
@@ -757,6 +757,20 @@ mod tests {
         PARSER_FEATURE_TYPE_ALIASES,
         PARSER_FEATURE_TYPE_ARGS,
     };
+
+    #[test]
+    fn shader_language_symbol_count_matches_rust() {
+        let source = include_str!(
+            "../../../../shaders/type_checker/symbols/language_symbol_count.slang"
+        );
+        let count = source
+            .lines()
+            .find_map(|line| line.strip_prefix("public static const uint LANGUAGE_SYMBOL_COUNT = "))
+            .and_then(|value| value.strip_suffix("u;"))
+            .and_then(|value| value.parse::<u32>().ok())
+            .expect("the shader must declare LANGUAGE_SYMBOL_COUNT as a uint literal");
+        assert_eq!(count, super::LANGUAGE_SYMBOL_COUNT);
+    }
 
     #[test]
     fn declaration_radix_layout_groups_only_by_module() {

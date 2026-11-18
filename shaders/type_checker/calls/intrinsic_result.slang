@@ -1,6 +1,6 @@
 // Language intrinsic calls (stdlib/core/mem.lani lists them) and their
-// result types. 02c_intrinsics tags the calls and publishes the legacy result
-// code; 03e_materialize_return_types publishes scalar results as accepted
+// result types. bind_intrinsic_declarations tags the calls and publishes the legacy result
+// code; materialize_return_types publishes scalar results as accepted
 // call results, so an intrinsic call is a complete argument value.
 
 public static const uint INTRINSIC_NONE = 0u;

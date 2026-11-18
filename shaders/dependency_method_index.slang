@@ -1,6 +1,6 @@
 // The method index of the resident dependency page: two open-address tables
 // in one buffer, built on the GPU when the page is loaded
-// (type_checker/dependencies/00b and 00c). The first half holds every public
+// (clear_dependency_method_lookup and 00c). The first half holds every public
 // implementation method and trait requirement by (library, unit, symbol); the
 // second half holds every public implementation method by name hash. A call
 // probes its own slot run and not every member of the page.

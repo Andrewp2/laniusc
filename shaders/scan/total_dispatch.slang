@@ -1,5 +1,5 @@
 // Indirect dispatch arguments for a scan total, written by workgroup 0 of a
-// scan apply. Same arithmetic as type_checker/count/dispatch_args: the
+// scan apply. Same arithmetic as type_checker/conditions/write_count_dispatch_args: the
 // total, clamped to the capacity and multiplied, in 256-lane workgroups,
 // split over y beyond 65535 groups.
 

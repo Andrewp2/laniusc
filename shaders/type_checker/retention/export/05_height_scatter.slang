@@ -1,6 +1,6 @@
 // Export step 5: one lane per canonical record. Places it in its height's
 // block of rt_x_order. Afterwards a bucket's base word is its end.
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

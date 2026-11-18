@@ -19,8 +19,8 @@
 // a lost or duplicated memo entry costs work, never correctness.
 //
 // Graph-free: this module reads no checked-graph table.
-import type_checker.canonical.canonical_api;
-import type_checker.canonical.canonical_constants;
+import type_checker.canonicalization.canonical_api;
+import type_checker.canonicalization.canonical_constants;
 __exported import type_checker.substitution.ct_spare;
 
 // Memo slots: x = env, y = term, z = result (0 until written), w = the

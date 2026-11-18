@@ -4,7 +4,7 @@
 // publishes the indirect arguments of the row-, parameter- and record-
 // parallel steps from the job's live counts.
 import hir_records;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

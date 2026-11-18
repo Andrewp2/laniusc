@@ -1,5 +1,5 @@
 // The result-type edge shared by symbolic operator projection and instance
-// realization. This is the left-operand chain already used by 00_init.
+// realization. This is the left-operand chain already used by resolve_scalar_expression_types.
 import hir_records;
 import hir_expr_semantics;
 

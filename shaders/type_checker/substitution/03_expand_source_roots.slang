@@ -4,7 +4,7 @@
 // parameter leaf keeps its declaration identity, as in the application
 // index.
 import status;
-import type_checker.canonical.canonical_api;
+import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.substitution.ct_expand;
 

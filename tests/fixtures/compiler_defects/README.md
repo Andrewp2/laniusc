@@ -35,7 +35,7 @@ one should become a passing regression test once its defect is fixed.
 | `lnc0005_nested_variant_pattern.lani` | a variant named inside another pattern, `Ok(V5(p))` or `Some(None)`, then the same variant bare in a later pattern or expression | exit 0 | **fixed 2026-10-31**: was LNC0005 "unresolved identifier" (the nested variant was declared as a match binder); found by `formal/tools/fuzz_oracle.py`; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `lnc0017_payload_after_nested_variant.lani` | a payload binder after a nested local variant, `V6(V3(p), q) -> (q as usize)` | exit 0 | **fixed 2026-10-31**: was LNC0017 "first unsupported target LIR opcode: 8" (the nested pattern's slot had no type, so q had no word offset); found by `formal/tools/fuzz_oracle.py`; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` (was LNC0005) is generics matrix p83 |
-| `b19_bare_imported_generic_path.lani` | self methods of imported generic types through the bare type's path: `Option::is_some(o)`, `Option::unwrap_or(n, 9)`, `Result::unwrap(r)` | exit 0 | **fixed 2026-11-01**: was LNC0005 "unresolved identifier" at `Option`. dependencies/14 gives the bare qualifier its declaration's own application (an external canonical type), methods/06, 07, 08 and candidate.slang accept it as a receiver key, and calls/03d binds no parameter from it |
+| `b19_bare_imported_generic_path.lani` | self methods of imported generic types through the bare type's path: `Option::is_some(o)`, `Option::unwrap_or(n, 9)`, `Result::unwrap(r)` | exit 0 | **fixed 2026-11-01**: was LNC0005 "unresolved identifier" at `Option`. dependencies/14 gives the bare qualifier its declaration's own application (an external canonical type), methods/06, 07, 08 and method_candidate.slang accept it as a receiver key, and calls/03d binds no parameter from it |
 | `generic_impl_path_inference.lani` | a bare generic type's path infers the impl's parameters: `W::wrap(5)`, `W::get(w)`, `W::peek(u.borrow())` on `impl<T> W<T>` | exit 0 | **fixed 2026-10-31**: was LNC0006 "type mismatch" (the bare `W` bound T to the declaration's own parameter) |
 | `ptr_zero_local.lani` | `let value: ptr = 0; return value;` after an earlier call | exit 1 | **fixed 2026-11-01**: exit 2, the pointer was non-null; see [immediate stack stores](#immediate-stack-stores) |
 | `ptr_zero_socket_args.lani` | std::socket's shape: `[word(5), address(null()), address(null())]` | exit 11 | **fixed 2026-11-01**: was exit 22. In `std::socket` every `receive`/`receive_until` failed with EFAULT |
@@ -82,7 +82,7 @@ lang and now exits 0.
 
 `laniusc check` runs only the frontend. Its trait solver indexes concrete
 impls only (`impl_row_has_supported_exact_key` in
-[`02_obligations.slang`](../../../shaders/type_checker/predicates/02_obligations.slang)).
+[`predicate_obligation_checks.slang`](../../../shaders/type_checker/predicates/predicate_obligation_checks.slang)).
 A generic impl head such as `impl<T> Cmp for N<T>` is selected by the
 whole-program admission that only a build runs. So check rejected every call
 whose bound only a generic impl meets. The rejection was LNC0008 "no matching
@@ -161,7 +161,7 @@ match apart from 6 timing lines.
 
 ## Cast-target literals
 
-The [literal-context projection](../../../shaders/type_checker/calls/03k1_project_literal_contexts.slang)
+The [literal-context projection](../../../shaders/type_checker/calls/results/project_literal_contexts.slang)
 gives an integer literal that is the direct operand of `as T` (through
 parentheses and unary minus) the type `T` when `T` is a 32- or 64-bit integer.
 Every non-negative `i32` value is unchanged in those types, so programs that
@@ -192,7 +192,7 @@ differ because stdlib literals such as `0 as u64` are now typed `u64`.
 
 A method called through a bound on a trait from another library (every
 stdlib trait, seen from a program) is typed by the trait's required member.
-[`calls/03e_materialize_return_types.slang`](../../../shaders/type_checker/calls/03e_materialize_return_types.slang)
+[`materialize_return_types.slang`](../../../shaders/type_checker/calls/results/materialize_return_types.slang)
 only produced a call's result when the receiver was already a concrete
 instance, and the receiver of such a call is still the bounded parameter. The
 call then had no type: a typed `let` checked fine, but an untyped `let` or a
@@ -205,7 +205,7 @@ without the receiver's environment.
 A result that names the trait's parameters, such as `Iterator<T>::next`
 returning `Option<T>`, was fixed the same day. The bound's trait arguments
 (`Iterator<i32>`) are already the call's context arguments: the dependency
-bound-member offer (`dependencies/15b_offer_bound_members.slang`) publishes
+bound-member offer (`offer_dependency_bound_members.slang`) publishes
 them. The materializer now substitutes such a result in that environment
 whenever the call has one. This change grew the kernel from 18,657 to 18,695
 instructions. The before and after builds compiled 84 programs: the 78 above,

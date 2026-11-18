@@ -49,67 +49,67 @@ const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
 ];
 
 pub(in crate::type_checker) const CALLS_CLEAR: ReflectedComputeSpec =
-    call_pass!("clear", Calls, "type_checker/calls/01_resolve").initializer();
+    call_pass!("clear", Calls, "type_checker/calls/signatures/clear_call_resolution_state").initializer();
 pub(in crate::type_checker) const CALLS_ENTRYPOINT_CLEAR: ReflectedComputeSpec = call_pass!(
     "entrypoints.clear",
     Tokens,
-    "type_checker/calls/01a_clear_entrypoints"
+    "type_checker/calls/signatures/clear_function_entrypoints"
 )
 .initializer();
 pub(in crate::type_checker) const CALLS_RETURN_REFS: ReflectedComputeSpec = call_pass!(
     "return_refs",
     HirNodes,
-    "type_checker/calls/02a_return_refs_from_hir"
+    "type_checker/calls/signatures/project_hir_return_references"
 )
 .with_modes(RETURN_OUTPUTS)
 .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_ENTRYPOINT_PROJECT: ReflectedComputeSpec = call_pass!(
     "entrypoints.project",
     HirNodes,
-    "type_checker/calls/02b_entrypoints"
+    "type_checker/calls/signatures/mark_function_entrypoints"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_FUNCTIONS: ReflectedComputeSpec =
-    call_pass!("functions", HirNodes, "type_checker/calls/02_functions")
+    call_pass!("functions", HirNodes, "type_checker/calls/signatures/project_hir_functions")
         .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_PARAM_TYPES: ReflectedComputeSpec = call_pass!(
     "param_types",
     Declarations,
-    "type_checker/calls/02f_params_from_hir"
+    "type_checker/calls/signatures/project_hir_function_parameters"
 )
 .with_modes(PARAM_TYPE_OUTPUTS);
 pub(in crate::type_checker) const CALLS_PARAM_SCATTER: ReflectedComputeSpec = call_pass!(
     "params.scatter",
     Declarations,
-    "type_checker/calls/02i_scatter_compact_hir_params"
+    "type_checker/calls/signatures/scatter_compact_hir_params"
 )
 .with_modes(PARAM_SCATTER_OUTPUTS);
 pub(in crate::type_checker) const CALLS_INTRINSICS: ReflectedComputeSpec =
-    call_pass!("intrinsics", HirNodes, "type_checker/calls/02c_intrinsics")
+    call_pass!("intrinsics", HirNodes, "type_checker/calls/signatures/bind_intrinsic_declarations")
         .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_ARGUMENT_CLEAR: ReflectedComputeSpec = call_pass!(
     "arguments.clear",
     CallArguments,
-    "type_checker/calls/02d_clear_hir_call_args"
+    "type_checker/calls/arguments/clear_hir_call_args"
 )
 .initializer();
 pub(in crate::type_checker) const CALLS_ARGUMENT_PACK: ReflectedComputeSpec = call_pass!(
     "arguments.pack",
     CallArguments,
-    "type_checker/calls/02e_pack_hir_call_args"
+    "type_checker/calls/arguments/pack_hir_call_args"
 )
 .initializer();
 const CALLS_ARGUMENT_MARK: ReflectedComputeSpec = call_pass!(
     "arg_rows.mark",
     HirNodes,
-    "type_checker/calls/02g_mark_compact_hir_call_args"
+    "type_checker/calls/arguments/mark_compact_hir_call_args"
 )
 .initializer()
 .with_indirect_dispatch("hir_active_dispatch_args");
 const CALLS_ARGUMENT_SCATTER: ReflectedComputeSpec = call_pass!(
     "arg_rows.scatter",
     HirNodes,
-    "type_checker/calls/02h_scatter_compact_hir_call_args"
+    "type_checker/calls/arguments/scatter_compact_hir_call_args"
 )
 .initializer()
 .with_indirect_dispatch("hir_active_dispatch_args");
@@ -119,20 +119,20 @@ pub(in crate::type_checker) const CALL_ARGUMENT_COMPACTION: CompactionSpec = Com
     scatter: CALLS_ARGUMENT_SCATTER,
 };
 pub(in crate::type_checker) const CALLS_RESOLVE: ReflectedComputeSpec =
-    call_pass!("resolve", HirNodes, "type_checker/calls/03_resolve")
+    call_pass!("resolve", HirNodes, "type_checker/calls/resolve_direct_calls")
         .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_INITIALIZE: ReflectedComputeSpec =
     call_pass!(
         "arg_match.init",
         CallArguments,
-        "type_checker/calls/03a0_match_arg_params_init"
+        "type_checker/calls/arguments/match_call_arguments_to_parameters"
     )
     .initializer()
     .with_name("type_check.calls.arg_match.direct.init");
 pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_CONSUME: ReflectedComputeSpec = call_pass!(
     "arg_match.consume",
     CallArguments,
-    "type_checker/calls/03a_collect_row_args"
+    "type_checker/calls/inference/collect_call_argument_constraints"
 )
 .with_modes(ARGUMENT_MATCH_OUTPUTS)
 .with_aliases(&[
@@ -142,7 +142,7 @@ pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_CONSUME: ReflectedCompute
 pub(in crate::type_checker) const CALLS_APPLY_ARGUMENTS: ReflectedComputeSpec = call_pass!(
     "arguments.apply",
     HirNodes,
-    "type_checker/calls/03a_apply_row_args"
+    "type_checker/calls/inference/apply_call_argument_inference"
 )
 .with_name("type_check.calls.arguments.apply.direct")
 .with_indirect_dispatch("hir_active_dispatch_args");
@@ -179,26 +179,26 @@ pub(in crate::type_checker) const CALLS_APPLY_FINAL_ARGUMENTS: ReflectedComputeS
 pub(in crate::type_checker) const CALLS_RESULT_INSTANCE_PROJECT: ReflectedComputeSpec = call_pass!(
     "result_instances.project",
     HirNodes,
-    "type_checker/calls/03e_project_result_instances"
+    "type_checker/calls/results/project_result_instances"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_ARRAY_STATE_PUBLISH: ReflectedComputeSpec = call_pass!(
     "array_state.publish",
     CallArguments,
-    "type_checker/calls/03d_mark_array_args"
+    "type_checker/calls/arguments/mark_call_array_arguments"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_CLEAR: ReflectedComputeSpec = call_pass!(
     "generic_claims.aggregate_clear",
     HirNodes,
-    "type_checker/calls/03a4a_clear_generic_claim_type_args"
+    "type_checker/calls/claims/clear_generic_claim_type_args"
 )
 .initializer()
 .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_EMIT: ReflectedComputeSpec = call_pass!(
     "generic_claims.emit",
     CallArguments,
-    "type_checker/calls/03a1_emit_generic_claims"
+    "type_checker/calls/claims/emit_generic_claims"
 )
 .with_modes(GENERIC_CLAIM_OUTPUTS)
 .with_aliases(&[
@@ -209,7 +209,7 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComp
     call_pass!(
         "generic_claims.index.build",
         CallArguments,
-        "type_checker/calls/03a3_build_claim_lookup"
+        "type_checker/calls/claims/build_claim_lookup"
     )
     .with_aliases(&[
         typecheck_resource!("claim_count_in" => "call_generic_claim_count_out", Read),
@@ -223,14 +223,14 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComp
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_VALIDATE: ReflectedComputeSpec = call_pass!(
     "generic_claims.validate",
     CallArguments,
-    "type_checker/calls/03a4_validate_generic_claims"
+    "type_checker/calls/claims/validate_generic_claims"
 )
 .with_indirect_dispatch("call_generic_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULT_REQUESTS: ReflectedComputeSpec =
     call_pass!(
         "contextual_result_requests",
         HirNodes,
-        "type_checker/calls/03a4b_contextual_result_requests"
+        "type_checker/calls/claims/request_contextual_call_result_comparisons"
     )
     .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULTS_FINAL: ReflectedComputeSpec =
@@ -240,7 +240,7 @@ pub(in crate::type_checker) const CALLS_CONTEXTUAL_RESULTS_FINAL: ReflectedCompu
 pub(in crate::type_checker) const CALLS_REQUIRED_GENERIC_MARK: ReflectedComputeSpec = call_pass!(
     "required_generics.mark",
     HirNodes,
-    "type_checker/calls/03a6_mark_required_generics"
+    "type_checker/calls/claims/mark_required_generics"
 )
 .initializer()
 .with_indirect_dispatch("hir_active_dispatch_args");
@@ -248,19 +248,19 @@ pub(in crate::type_checker) const CALLS_REQUIRED_GENERIC_VALIDATE: ReflectedComp
     call_pass!(
         "required_generics.validate",
         CallArguments,
-        "type_checker/calls/03a7_validate_required_generics"
+        "type_checker/calls/claims/validate_required_generics"
     )
     .with_indirect_dispatch("call_required_generic_dispatch_args");
 pub(in crate::type_checker) const CALLS_CONST_CLAIM_VALIDATE: ReflectedComputeSpec = call_pass!(
     "const_claims.validate",
     CallArguments,
-    "type_checker/calls/03a5_validate_const_claims"
+    "type_checker/calls/claims/validate_const_claims"
 )
 .with_indirect_dispatch("call_const_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComputeSpec = call_pass!(
     "const_claims.index.build",
     CallArguments,
-    "type_checker/calls/03a3_build_claim_lookup"
+    "type_checker/calls/claims/build_claim_lookup"
 )
 .with_aliases(&[
     typecheck_resource!("claim_count_in" => "call_const_claim_count_out", Read),
@@ -274,40 +274,40 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComput
 pub(in crate::type_checker) const CALLS_ARRAY_STATE_CONSUME: ReflectedComputeSpec = call_pass!(
     "array_state.consume",
     HirNodes,
-    "type_checker/calls/03c_validate_array_results"
+    "type_checker/calls/results/validate_array_results"
 );
 
 pub(in crate::type_checker) const CALLS_GENERIC_PARAMS_ERASE: ReflectedComputeSpec = call_pass!(
     "erase_generic_params",
     Tokens,
-    "type_checker/calls/04_erase_generic_params"
+    "type_checker/calls/signatures/erase_generic_params"
 );
 
 // Own-header bindings precede call inference; the final boundary validates
 // their agreement with accepted values and receiving contexts.
 pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND: ReflectedComputeSpec =
     call_pass!("explicit_applications.bind", HirNodes,
-        "type_checker/calls/03a0_bind_explicit_applications")
+        "type_checker/calls/claims/bind_explicit_applications")
         // Rows are write-only here. The initialized descriptor publishes the
         // valid subset; unpublished arena cells are never read by consumers.
         .with_modes(&[
             ("call_explicit_binding_tag", AccessMode::Write),
             ("call_explicit_binding_payload", AccessMode::Write),
-            // 03a0b reads the entries below the listed count only.
+            // validate_explicit_constants reads entries below the listed count.
             ("call_explicit_application_list", AccessMode::Write),
         ])
         .with_indirect_dispatch("explicit_application_dispatch_args");
 pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: ReflectedComputeSpec =
     call_pass!("explicit_applications.validate", HirNodes,
-        "type_checker/calls/03a8_validate_explicit_applications")
+        "type_checker/calls/claims/validate_explicit_applications")
         .with_indirect_dispatch("explicit_application_dispatch_args");
 
-// Bound-directed generic call inference (calls/03l*), recorded in each
+// Bound-directed generic call inference, recorded in each
 // inference round after the dependency result passes.
 pub(in crate::type_checker) const CALLS_BOUND_DEPENDENCY_COLLECT: ReflectedComputeSpec = call_pass!(
     "bound_inference.collect_dependency",
     Calls,
-    "type_checker/calls/03l1_collect_dependency_bounds"
+    "type_checker/calls/inference/collect_dependency_bounds"
 )
 .with_aliases(&[
     typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
@@ -315,13 +315,13 @@ pub(in crate::type_checker) const CALLS_BOUND_DEPENDENCY_COLLECT: ReflectedCompu
 pub(in crate::type_checker) const CALLS_BOUND_LOCAL_COLLECT: ReflectedComputeSpec = call_pass!(
     "bound_inference.collect_local",
     HirNodes,
-    "type_checker/calls/03l2_collect_local_implementations"
+    "type_checker/calls/inference/collect_local_implementations"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_BOUND_INFER: ReflectedComputeSpec = call_pass!(
     "bound_inference.infer",
     HirNodes,
-    "type_checker/calls/03l3_infer_bound_generics"
+    "type_checker/calls/inference/infer_bound_generics"
 )
 .with_modes(&[
     ("type_native_word_count", AccessMode::Write),

@@ -8,7 +8,7 @@ import constant_value;
 import type_checker.argument_context;
 import type_checker.float_literal_selection;
 import type_checker.constant_publication;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 
 StructuredBuffer<uint> explicit_operand_hir_count;
 StructuredBuffer<HirCore> explicit_operand_hir_core;
@@ -89,7 +89,7 @@ public uint explicit_operand_name_id(uint token)
 #define generic_param_name_id explicit_operand_parameter_name
 #define generic_param_kind explicit_operand_parameter_kind
 #define generic_param_lookup_state explicit_operand_parameter_lookup
-#include "../type/instances/lexical_parameter_lookup.slang"
+#include "../types/parameters/lexical_parameter_lookup.slang"
 #undef LEXICAL_HIR_CAPACITY
 #undef LEXICAL_TOKEN_CAPACITY
 #undef compact_hir_count

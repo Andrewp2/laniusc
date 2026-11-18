@@ -281,7 +281,7 @@ static PRUNED_AT_RELEASED_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 /// resident as long as the kernel's cache: one-shot parses (parse_fuzz) and
 /// growing resident workspaces kept every earlier allocation.
 /// Shader variables that view the buffer of another binding without
-/// coherence (shaders/type_checker/canonical/canonical_api.slang), as
+/// coherence (shaders/type_checker/canonicalization/canonical_api.slang), as
 /// (cached view, coherent binding). A kernel binds both, writable, in one
 /// dispatch: Vulkan allows it, and the shader reads through the cached view
 /// only words an earlier dispatch wrote.
@@ -981,7 +981,7 @@ mod compute_pass_counting_tests {
                 13,
             ),
             ("parser/syntax.rs", 4),
-            ("type_checker/bind_support/control.rs", 2),
+            ("type_checker/bind_support/control_flow.rs", 2),
             // The page swap of the graph's paged dependency slot: the page
             // store is no graph resource, and the copy stands where a host
             // upload of the page stood.

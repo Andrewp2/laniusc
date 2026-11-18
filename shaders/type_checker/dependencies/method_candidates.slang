@@ -7,7 +7,7 @@ import gpu_index;
 import type_checker.instance_arguments;
 import type_checker.scoped_type_equality;
 import type_checker.dependencies.canonical_field_types;
-import type_checker.methods.candidate;
+import type_checker.methods.method_candidate;
 
 struct Params
 {
@@ -69,7 +69,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-#include "../methods/receiver_graph.slang"
+#include "../methods/method_receiver_graph.slang"
 
 uint active_hir_count()
 { return min(gParams.hir_capacity, compact_hir_count[0u]); }

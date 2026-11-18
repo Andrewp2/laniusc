@@ -1,7 +1,7 @@
 // An array type's integer literal extent that u32 cannot represent. That
 // literal owns the range diagnostic (LNC0069), as in any other u32 context:
-// the array length checks (conditions/compact_types and
-// semantic/artifact/01b) report it there instead of an invalid or
+// the array length checks (validate_resolved_type_references and
+// project_checked_array_index_references) report it there instead of an invalid or
 // unsupported array.
 import primitive_types;
 import hir_records;

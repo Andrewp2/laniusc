@@ -36,8 +36,8 @@ pub(super) fn zeroed_type_check_params_buffer(
         dependency_interfaces_present: 0,
         retain_callable_owners: 0,
         trait_obligation_mode: 0,
-        canonical_library_id: canonical_passes::CANONICAL_NO_LIBRARY,
-        canonical_unit_id: canonical_passes::CANONICAL_NO_LIBRARY,
+        canonical_library_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
+        canonical_unit_id: crate::type_checker::canonicalization::CANONICAL_NO_LIBRARY,
         workspace_token_rows: 0,
     });
     let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

@@ -5,7 +5,7 @@ pub(in crate::type_checker) const STRUCT_FIELD_LOOKUP_CLEAR: ReflectedComputeSpe
     typecheck_pass!(
         "type_check.struct_fields.lookup.clear",
         Declarations,
-        "type_checker/type/instances/02a_clear_struct_field_lookup"
+        "type_checker/types/aggregates/clear_struct_field_lookup"
     )
     .initializer();
 
@@ -13,7 +13,7 @@ pub(in crate::type_checker) const STRUCT_FIELD_LOOKUP_BUILD: ReflectedComputeSpe
     typecheck_pass!(
         "type_check.struct_fields.lookup.build",
         Declarations,
-        "type_checker/type/instances/02b_build_struct_field_lookup"
+        "type_checker/types/aggregates/build_struct_field_lookup"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
