@@ -168,6 +168,10 @@ mod tests {
                 [invalid, invalid, 1, invalid, 0, invalid],
             ),
             ("hir_match_payload_rank_a", [0; 6]),
+            // The match rank compaction lists every row here: all six are
+            // match-family rows. Word 0 of the count is read.
+            ("hir_match_rank_node", [0, 1, 2, 3, 4, 5]),
+            ("hir_match_rank_count", [6, 0, 0, 0, 0, 0]),
         ]
         .map(|(name, values)| (name, storage_ro_from_u32s(&gpu.device, name, &values)));
         let outputs = [
