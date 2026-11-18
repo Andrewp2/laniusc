@@ -2,7 +2,5 @@
 pub mod field;
 /// Uniform parameters for the struct field passes.
 pub mod fields;
-/// Struct literal span pass.
-pub mod lit_spans;
 /// Struct field rank scan passes.
 pub mod rank;

@@ -1,7 +1,7 @@
 import hir_records;
 import generated_parse_production_ids;
 import blocked_search_tree;
-import parser.hir.semantic.parent.end_tree;
+import parser.hir.semantic.semantic_end_heaps;
 
 struct Params {
     uint raw_capacity;
@@ -160,7 +160,7 @@ uint active_canonical_count()
 // whose canonical subtrees contain row r are its canonical ancestors, and the
 // nearest is the last row s < r whose canonical subtree end lies past r.
 // canonical/parent/end_{rows,blocks,top} build maximum heaps over those ends
-// in the semantic-end layout (semantic/parent/end_tree.slang).
+// in the semantic-end layout (semantic_end_heaps.slang).
 public struct CanonicalEndTree : IBlockedSearchTree<uint>
 {
     public static uint row_count()

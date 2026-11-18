@@ -20,14 +20,14 @@ pub fn block_count(canonical_capacity: u32) -> u32 {
 
 /// Leaves of the heap over the canonical-end blocks.
 pub fn leaf_base(canonical_capacity: u32) -> u32 {
-    crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(block_count(
+    crate::parser::passes::hir::semantic::build_semantic_end_heaps::leaf_base(block_count(
         canonical_capacity,
     ))
 }
 
 /// Entries of the top heap over the block groups.
 pub fn group_count(canonical_capacity: u32) -> u32 {
-    crate::parser::passes::hir::semantic::parent::end_tree::group_count(block_count(
+    crate::parser::passes::hir::semantic::build_semantic_end_heaps::group_count(block_count(
         canonical_capacity,
     ))
 }

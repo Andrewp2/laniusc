@@ -1680,7 +1680,7 @@ fn register_expression_and_statement_fields(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    use crate::parser::passes::hir::expr::result_root_step::{
+    use crate::parser::passes::hir::records::walk_expr_result_roots::{
         A_TO_B as RESULT_A_TO_B,
         A_TO_B_FINAL as RESULT_A_TO_B_FINAL,
         B_TO_A as RESULT_B_TO_A,
@@ -1731,7 +1731,7 @@ fn register_expression_and_statement_fields(
         "hir_binary_span_link_a",
         "hir_binary_span_link_a",
     )?;
-    use crate::parser::passes::hir::binary::span::step::{
+    use crate::parser::passes::hir::spans::walk_binary_spans::{
         A_TO_B as BINARY_A_TO_B,
         B_TO_A as BINARY_B_TO_A,
         binary_span_step_capacity,
@@ -2008,7 +2008,7 @@ fn register_canonical_variants(
 ) -> Result<(), String> {
     use crate::parser::passes::{
         CanonicalConstruct,
-        hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER,
+        hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER,
     };
 
     clear(
@@ -2501,7 +2501,7 @@ fn register_matches(
         CanonicalConstruct,
         hir::{
             matches::arm::rank_step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
-            semantic::parent::step::{MATCH_ARM_OWNER, family_relation_steps},
+            semantic::walk_semantic_parents::{MATCH_ARM_OWNER, family_relation_steps},
         },
     };
 
@@ -3154,7 +3154,7 @@ fn register_context_relations(
     )?;
 
     if capacity.tree_capacity
-        <= crate::parser::passes::hir::context::relations::step_small::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
+        <= crate::parser::passes::hir::context::walk_small_context_relations::HIR_CONTEXT_RELATIONS_SMALL_CAPACITY
     {
         static_pass(
             graph,
@@ -3181,12 +3181,7 @@ fn register_context_relations(
             ],
         )?;
     } else {
-        use crate::parser::passes::hir::context::relations::step::{
-            A_TO_B,
-            A_TO_B_FINAL,
-            B_TO_A,
-            FINALIZE,
-        };
+        use crate::parser::passes::hir::context::walk_context_relations::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE};
         register_ping_pong_walk(
             graph,
             passes.hir_context_relations_step.graph_pass(),

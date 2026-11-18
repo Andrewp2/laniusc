@@ -716,16 +716,16 @@ pub struct ParserBuffers {
     pub subtree_end: LaniusBuffer<u32>,
 
     // -------- HIR-facing classification --------
-    pub hir_params: LaniusBuffer<super::super::passes::hir::nodes::Params>,
-    pub hir_span_params: LaniusBuffer<super::super::passes::hir::spans::Params>,
-    pub hir_type_fields_params: LaniusBuffer<super::super::passes::hir::types::fields::Params>,
+    pub hir_params: LaniusBuffer<crate::parser::passes::hir::records::classify_hir_nodes::Params>,
+    pub hir_span_params: LaniusBuffer<crate::parser::passes::hir::spans::compute_hir_spans::Params>,
+    pub hir_type_fields_params: LaniusBuffer<crate::parser::passes::hir::records::extract_type_records::Params>,
     pub hir_item_fields_params: LaniusBuffer<super::super::passes::hir::item::fields::Params>,
     pub hir_param_fields_params: LaniusBuffer<super::super::passes::hir::param::fields::Params>,
     pub hir_method_fields_params: LaniusBuffer<super::super::passes::hir::method::fields::Params>,
-    pub hir_expr_fields_params: LaniusBuffer<super::super::passes::hir::expr::fields::Params>,
-    pub hir_member_fields_params: LaniusBuffer<super::super::passes::hir::postfix_fields::Params>,
-    pub hir_stmt_fields_params: LaniusBuffer<super::super::passes::hir::stmt_fields::Params>,
-    pub hir_call_fields_params: LaniusBuffer<super::super::passes::hir::call::fields::Params>,
+    pub hir_expr_fields_params: LaniusBuffer<crate::parser::passes::hir::records::extract_expr_records::Params>,
+    pub hir_member_fields_params: LaniusBuffer<crate::parser::passes::hir::records::extract_postfix_records::Params>,
+    pub hir_stmt_fields_params: LaniusBuffer<crate::parser::passes::hir::records::extract_stmt_records::Params>,
+    pub hir_call_fields_params: LaniusBuffer<crate::parser::passes::hir::records::extract_call_records::Params>,
     pub hir_array_fields_params: LaniusBuffer<super::super::passes::hir::array::Params>,
     pub hir_enum_match_fields_params: LaniusBuffer<super::super::passes::hir::enums::Params>,
     pub hir_struct_fields_params: LaniusBuffer<super::super::passes::hir::structs::fields::Params>,
@@ -1054,7 +1054,7 @@ pub struct ParserBuffers {
     pub hir_expr_string_start: LaniusBuffer<u32>,
     pub hir_expr_string_len: LaniusBuffer<u32>,
     pub(crate) hir_literal_values_params:
-        LaniusBuffer<super::super::passes::hir::literal_values::Params>,
+        LaniusBuffer<crate::parser::passes::hir::records::extract_literal_values::Params>,
     pub(crate) hir_string_decode_params:
         LaniusBuffer<super::super::passes::hir::string::decode::Params>,
     pub hir_string_data_offset: LaniusBuffer<u32>,

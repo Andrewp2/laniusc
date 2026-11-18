@@ -303,10 +303,11 @@ class RustRewriter:
     def module_at(self, base: list[str], spans, offset: int) -> list[str]:
         return base + [name for start, end, name in spans if start <= offset < end]
 
-    def rewrite(self, old_file: str, text: str) -> str:
+    def rewrite(self, old_file: str, text: str, external: bool = False) -> str:
+        """Rewrite module paths; `external` files (tests) see the crate by name only."""
         new_file = self.rust_map.get(old_file, old_file)
-        old_mod = module_of(old_file)
-        new_mod = module_of(new_file)
+        old_mod = ["<external>"] if external else module_of(old_file)
+        new_mod = ["<external>"] if external else module_of(new_file)
         spans = self.inline_modules(text)
         bindings: dict[str, list[str]] = {}
         renamed_bindings: dict[str, str] = {}
@@ -456,7 +457,7 @@ def format_use_tree(leaves: list[tuple[str, str | None]], indent: str) -> str:
 
 def use_order(item):
     name = item[0]
-    return (name != "self", name[:1].isupper(), name)
+    return (name != "self", name)
 
 
 # ---------------------------------------------------------------- mod declarations
@@ -644,13 +645,41 @@ def unique_basenames(shader_map: dict[str, str]) -> dict[str, str]:
     }
 
 
-def replace_references(shader_map, rust_map, basenames: dict[str, str]) -> int:
+def partial_paths(shader_map: dict[str, str]) -> dict[str, str]:
+    """Old -> new name for mentions like `semantic_end_heaps.slang` that end a moved key.
+
+    A tail is used only when one shader key in the tree ends with it. It is
+    replaced by the new file name, or by the new key when that name is shared.
+    """
+    keys = slang_files()
+    owners: dict[str, list[str]] = {}
+    for key in keys:
+        parts = key.split("/")
+        for n in range(2, len(parts)):
+            owners.setdefault("/".join(parts[-n:]), []).append(key)
+    new_names: dict[str, int] = {}
+    for key in keys:
+        name = os.path.basename(shader_map.get(key, key))
+        new_names[name] = new_names.get(name, 0) + 1
+    out = {}
+    for tail, found in owners.items():
+        if len(found) == 1 and found[0] in shader_map:
+            new = shader_map[found[0]]
+            out[tail] = os.path.basename(new) if new_names[os.path.basename(new)] == 1 else new
+    return out
+
+
+def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: dict[str, str]) -> int:
     shader_re = reference_pattern(shader_map, r"(?!\.(?!slang\b))")
     rust_re = reference_pattern(rust_map, "")
     name_re = None
     if basenames:
         names = sorted(basenames, key=len, reverse=True)
         name_re = re.compile(r"(?<![\w/.\-])(" + "|".join(map(re.escape, names)) + r")\.slang\b")
+    tail_re = None
+    if tails:
+        names = sorted(tails, key=len, reverse=True)
+        tail_re = re.compile(r"(?<![\w/.\-])(" + "|".join(map(re.escape, names)) + r")\.slang\b")
     count = 0
     for path in scanned_files():
         text = text_of(path)
@@ -661,6 +690,8 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str]) -> int:
             new = shader_re.sub(lambda m: shader_map[m.group(1)], new)
         if rust_re:
             new = rust_re.sub(lambda m: rust_map[m.group(1)], new)
+        if tail_re:
+            new = tail_re.sub(lambda m: tails[m.group(1)] + ".slang", new)
         if name_re:
             new = name_re.sub(lambda m: basenames[m.group(1)] + ".slang", new)
         if new != text:
@@ -669,9 +700,18 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str]) -> int:
     return count
 
 
+def module_exists(path: str) -> bool:
+    rel = CRATE_SRC / "/".join(path.split("::")[1:])
+    return rel.with_suffix(".rs").is_file() or (rel / "mod.rs").is_file()
+
+
 def leftovers(shader_map, rust_map, module_map) -> list[str]:
     needles = [re.compile(r"(?<![\w.\-/])" + re.escape(k) + r"(?![\w/\-])") for k in shader_map]
-    needles += [re.compile(re.escape(k[len("crate::") :]) + r"\b") for k in module_map]
+    needles += [
+        re.compile(re.escape(k[len("crate::") :]) + r"\b")
+        for k in module_map
+        if not module_exists(k)
+    ]
     needles += [re.compile(re.escape(k)) for k in rust_map]
     remaining = {os.path.basename(k) for k in slang_files()}
     gone = {os.path.basename(k) for k in shader_map} - remaining
@@ -718,6 +758,7 @@ def main() -> None:
         return
 
     basenames = unique_basenames(shader_map)
+    tails = partial_paths(shader_map)
     slang_text = rewrite_slang(shader_map)
     rewriter = RustRewriter(rust_map)
     rust_text = {}
@@ -726,6 +767,16 @@ def main() -> None:
         new = rewriter.rewrite(f, text)
         if new != text or f in rust_map:
             rust_text[rust_map.get(f, f)] = new
+    outside = {}
+    for rel in git("ls-files", "*.rs").split():
+        path = REPO / rel
+        if rel.startswith(("crates/laniusc-compiler/src/", *SKIPPED_PREFIXES)) or not path.is_file():
+            continue
+        text = path.read_text()
+        if f"{CRATE_NAME}::" in text:
+            new = rewriter.rewrite(rel, text, external=True)
+            if new != text:
+                outside[path] = new
     old_decls = declarations()
     edited = {f for f in rewriter.files if rust_map.get(f, f) in rust_text}
     for f in [*rust_map, *rust_map.values()]:
@@ -746,8 +797,11 @@ def main() -> None:
         write(SHADERS / f"{key}.slang", text)
     for f, text in rust_text.items():
         write(CRATE_SRC / f, text)
+    outside_tidy = rustfmt_clean(list(outside))
+    for path, text in outside.items():
+        write(path, text)
 
-    files = replace_references(shader_map, rust_map, basenames)
+    files = replace_references(shader_map, rust_map, basenames, tails)
     reverse = {v: k for k, v in rewriter.module_map.items()}
     fix_declarations(old_decls, reverse, docs, rust_map, existed)
     remove_empty_dirs(SHADERS)
@@ -760,6 +814,8 @@ def main() -> None:
         f = rel[len(prefix):]
         if f in tidy and (REPO / rel).is_file():
             subprocess.run([*RUSTFMT, str(REPO / rel)], check=True)
+    for path in outside_tidy:
+        subprocess.run([*RUSTFMT, str(path)], check=True)
     print(f"moved {len(shader_map)} shaders and {len(rust_map)} Rust files; "
           f"{len(slang_text)} shader dependency edits, {len(rust_text)} Rust module edits, "
           f"{files} files with path references")

@@ -1401,12 +1401,12 @@ fn build_graph(
     let bracket_leaf_base = capacity.bracket_blocks.max(1).next_power_of_two();
     let prefix_leaf_base = capacity.tree_prefix_blocks.max(1).next_power_of_two();
     let semantic_end_leaf_base = u64::from(
-        crate::parser::passes::hir::semantic::parent::end_tree::leaf_base(
+        crate::parser::passes::hir::semantic::build_semantic_end_heaps::leaf_base(
             capacity.tree_node_blocks,
         ),
     );
     let semantic_end_groups = u64::from(
-        crate::parser::passes::hir::semantic::parent::end_tree::group_count(
+        crate::parser::passes::hir::semantic::build_semantic_end_heaps::group_count(
             capacity.tree_node_blocks,
         ),
     );
@@ -1971,7 +1971,7 @@ fn build_graph(
         workspace_indirect(&mut graph, name, 12)?;
     }
     let raw_relation_dispatch_rows =
-        crate::parser::passes::hir::semantic::parent::step::canonical_relation_step_capacity(
+        crate::parser::passes::hir::semantic::walk_semantic_parents::canonical_relation_step_capacity(
             capacity.tree_capacity,
         )
         .max(1);
@@ -1986,9 +1986,9 @@ fn build_graph(
         u64::from(raw_relation_dispatch_rows) * 12,
     )?;
     let local_relation_dispatch_rows =
-        crate::parser::passes::hir::semantic::parent::step::bounded_walk_steps_after_local_span(
+        crate::parser::passes::hir::semantic::walk_semantic_parents::bounded_walk_steps_after_local_span(
             capacity.tree_capacity,
-            crate::parser::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            crate::parser::passes::hir::records::classify_hir_nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
         )
         .max(1);
     workspace_indirect(
@@ -3828,14 +3828,14 @@ mod tests {
             "hir_param_id_base",
             "hir_param_id_apply",
             "hir_param_fields",
-            crate::parser::passes::hir::expr::result_root_step::A_TO_B,
-            crate::parser::passes::hir::expr::result_root_step::B_TO_A,
+            crate::parser::passes::hir::records::walk_expr_result_roots::A_TO_B,
+            crate::parser::passes::hir::records::walk_expr_result_roots::B_TO_A,
             "hir_binary_spans",
             "hir_binary_span_rank_prefix_00_local",
             "hir_binary_span_rank_prefix_01_blocks",
             "hir_binary_span_rank_compact_scatter",
-            crate::parser::passes::hir::binary::span::step::A_TO_B,
-            crate::parser::passes::hir::binary::span::step::B_TO_A,
+            crate::parser::passes::hir::spans::walk_binary_spans::A_TO_B,
+            crate::parser::passes::hir::spans::walk_binary_spans::B_TO_A,
             "hir_binary_span_apply",
             "hir_postfix_fields",
             "hir_member_spans",
@@ -3860,9 +3860,9 @@ mod tests {
             "hir_canonical_variant_payload_owner_init",
             "hir_variant_payload_owner_rank_prefix_01_blocks",
             "hir_variant_payload_owner_rank_compact_scatter",
-            crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER
+            crate::parser::passes::hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .a_to_b,
-            crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER
+            crate::parser::passes::hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .b_to_a,
             "hir_canonical_variant_payload_local",
             "hir_canonical_variant_payload_prefix_01_blocks",
@@ -3900,8 +3900,8 @@ mod tests {
             "hir_canonical_field_prefix_01_blocks",
             "hir_canonical_field_scatter",
             "hir_context_relations_init",
-            crate::parser::passes::hir::context::relations::step::A_TO_B,
-            crate::parser::passes::hir::context::relations::step::B_TO_A,
+            crate::parser::passes::hir::context::walk_context_relations::A_TO_B,
+            crate::parser::passes::hir::context::walk_context_relations::B_TO_A,
             "hir_context_relations_scatter",
             "hir_stmt_scope",
             "hir_canonical_param_mark",
@@ -4002,8 +4002,8 @@ mod tests {
         let match_graph = build_graph(match_capacity, &passes).unwrap();
         for name in [
             "hir_match_arm_owner_init",
-            crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.a_to_b,
-            crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.b_to_a,
+            crate::parser::passes::hir::semantic::walk_semantic_parents::MATCH_ARM_OWNER.a_to_b,
+            crate::parser::passes::hir::semantic::walk_semantic_parents::MATCH_ARM_OWNER.b_to_a,
             "hir_match_arm_links",
             "hir_match_rank_prefix_00_local",
             HIR_MATCH_RANK_SCAN,

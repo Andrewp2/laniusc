@@ -959,7 +959,7 @@ impl ParserBuffers {
         let tree_struct_dispatch_args = graph_buffer!(u32, "tree_struct_dispatch_args");
         let tree_depth_status = graph_buffer!(u32, "tree_depth_status");
         let raw_relation_step_capacity =
-            super::passes::hir::semantic::parent::step::canonical_relation_step_capacity(
+            super::passes::hir::semantic::walk_semantic_parents::canonical_relation_step_capacity(
                 tree_capacity,
             );
         let hir_raw_relation_dispatch_args = graph_buffer!(u32, "hir_raw_relation_dispatch_args");
@@ -969,9 +969,9 @@ impl ParserBuffers {
             "the graph retains one bindable indirect row when no relation-walk step is scheduled",
         );
         let local_relation_step_capacity =
-            super::passes::hir::semantic::parent::step::bounded_walk_steps_after_local_span(
+            super::passes::hir::semantic::walk_semantic_parents::bounded_walk_steps_after_local_span(
                 tree_capacity,
-                super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+                super::passes::hir::records::classify_hir_nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
             );
         let hir_local_relation_dispatch_args =
             graph_buffer!(u32, "hir_local_relation_dispatch_args");
@@ -1059,11 +1059,11 @@ impl ParserBuffers {
         let hir_params = uniform_from_val(
             device,
             "parser.hir_nodes.params",
-            &super::passes::hir::nodes::Params {
+            &super::passes::hir::records::classify_hir_nodes::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 semantic_parent_local_ancestor_span:
-                    super::passes::hir::nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+                    super::passes::hir::records::classify_hir_nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
                 parser_feature_flags,
             },
@@ -1071,7 +1071,7 @@ impl ParserBuffers {
         let hir_span_params = uniform_from_val(
             device,
             "parser.hir_spans.params",
-            &super::passes::hir::spans::Params {
+            &super::passes::hir::spans::compute_hir_spans::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 token_capacity: token_input_capacity,
@@ -1080,7 +1080,7 @@ impl ParserBuffers {
         let hir_type_fields_params = uniform_from_val(
             device,
             "parser.hir_type_fields.params",
-            &super::passes::hir::types::fields::Params {
+            &super::passes::hir::records::extract_type_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1114,7 +1114,7 @@ impl ParserBuffers {
         let hir_expr_fields_params = uniform_from_val(
             device,
             "parser.hir_expr_fields.params",
-            &super::passes::hir::expr::fields::Params {
+            &super::passes::hir::records::extract_expr_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 token_capacity: token_input_capacity,
@@ -1124,7 +1124,7 @@ impl ParserBuffers {
         let hir_member_fields_params = uniform_from_val(
             device,
             "parser.hir_member_fields.params",
-            &super::passes::hir::postfix_fields::Params {
+            &super::passes::hir::records::extract_postfix_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 parser_feature_flags,
@@ -1133,7 +1133,7 @@ impl ParserBuffers {
         let hir_stmt_fields_params = uniform_from_val(
             device,
             "parser.hir_stmt_fields.params",
-            &super::passes::hir::stmt_fields::Params {
+            &super::passes::hir::records::extract_stmt_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1142,7 +1142,7 @@ impl ParserBuffers {
         let hir_call_fields_params = uniform_from_val(
             device,
             "parser.hir_call_fields.params",
-            &super::passes::hir::call::fields::Params {
+            &super::passes::hir::records::extract_call_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1466,7 +1466,7 @@ impl ParserBuffers {
         let hir_literal_values_params = uniform_from_val(
             device,
             "parser.hir_literal_values.params",
-            &super::passes::hir::literal_values::Params {
+            &super::passes::hir::records::extract_literal_values::Params {
                 n: tree_capacity,
                 source_len: source_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
@@ -1849,7 +1849,7 @@ impl ParserBuffers {
                     hir_type_path_leaf_value_b => hir_type_path_leaf_value_a,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::expr::result_root_step::FINALIZE,
+                    crate::parser::passes::hir::records::walk_expr_result_roots::FINALIZE,
                     tree_bytes;
                     hir_expr_result_root_scratch_node => hir_expr_result_root_node,
                 ),
@@ -1859,7 +1859,7 @@ impl ParserBuffers {
                     hir_canonical_expr_root_scratch => hir_canonical_expr_root,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::context::relations::step::FINALIZE,
+                    crate::parser::passes::hir::context::walk_context_relations::FINALIZE,
                     tree_bytes;
                     hir_stmt_context_link_b => hir_stmt_context_link_a,
                     hir_contextual_stmt_value_b => hir_contextual_stmt_value_a,

@@ -4,7 +4,7 @@
 
 import prefix_scan;
 import blocked_search_tree;
-import parser.hir.semantic.parent.end_tree;
+import parser.hir.semantic.semantic_end_heaps;
 
 struct Params
 {

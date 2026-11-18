@@ -218,29 +218,34 @@ pub struct ParserPasses {
     pub tree_prev_sibling_scatter: tree::scatter_previous_siblings::TreePrevSiblingScatterPass,
 
     // HIR-facing classification
-    pub hir_nodes: hir::nodes::HirNodesPass,
-    pub hir_semantic_prefix_local: hir::semantic::prefix::local::HirSemanticPrefixLocalPass,
-    pub hir_semantic_prefix_blocks: hir::semantic::prefix::blocks::HirSemanticPrefixBlocksPass,
-    pub hir_semantic_compact_scatter: hir::semantic::compact_scatter::HirSemanticCompactScatterPass,
-    pub hir_semantic_dispatch_args: hir::semantic::dispatch_args::HirSemanticDispatchArgsPass,
-    pub hir_semantic_subtree_end: hir::semantic::subtree_end::HirSemanticSubtreeEndPass,
-    pub hir_semantic_end_rows: hir::semantic::parent::end_tree::HirSemanticEndRowsPass,
-    pub hir_semantic_end_blocks: hir::semantic::parent::end_tree::HirSemanticEndBlocksPass,
-    pub hir_semantic_end_top: hir::semantic::parent::end_tree::HirSemanticEndTopPass,
+    pub hir_nodes: hir::records::classify_hir_nodes::HirNodesPass,
+    pub hir_semantic_prefix_local: hir::semantic::mark_semantic_rows::HirSemanticPrefixLocalPass,
+    pub hir_semantic_prefix_blocks:
+        hir::semantic::scan_semantic_blocks::HirSemanticPrefixBlocksPass,
+    pub hir_semantic_compact_scatter:
+        hir::semantic::list_semantic_rows::HirSemanticCompactScatterPass,
+    pub hir_semantic_dispatch_args:
+        hir::semantic::write_semantic_dispatch_args::HirSemanticDispatchArgsPass,
+    pub hir_semantic_subtree_end:
+        hir::semantic::project_semantic_subtree_ends::HirSemanticSubtreeEndPass,
+    pub hir_semantic_end_rows: hir::semantic::build_semantic_end_heaps::HirSemanticEndRowsPass,
+    pub hir_semantic_end_blocks: hir::semantic::build_semantic_end_heaps::HirSemanticEndBlocksPass,
+    pub hir_semantic_end_top: hir::semantic::build_semantic_end_heaps::HirSemanticEndTopPass,
     pub hir_semantic_parent_traverse:
-        hir::semantic::parent::traverse::HirSemanticParentTraversePass,
-    pub hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation,
-    pub hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass,
+        hir::semantic::find_semantic_parents::HirSemanticParentTraversePass,
+    pub hir_tree_relations: hir::semantic::walk_semantic_parents::TreeRelationOperation,
+    pub hir_semantic_nav: hir::semantic::project_semantic_navigation::HirSemanticNavPass,
     pub hir_semantic_child_index_blocks:
-        hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass,
+        hir::semantic::build_child_index_heaps::HirSemanticChildIndexBlocksPass,
     pub hir_semantic_child_index_top:
-        hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass,
+        hir::semantic::build_child_index_heaps::HirSemanticChildIndexTopPass,
     pub hir_semantic_child_index_traverse:
-        hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass,
-    pub hir_record_clear_base: hir::record::clear::base::HirRecordClearBasePass,
-    pub hir_record_clear_calls: hir::record::clear::calls::HirRecordClearCallsPass,
-    pub hir_spans: hir::spans::HirSpansPass,
-    pub hir_type_fields: hir::types::fields::HirTypeFieldsPass,
+        hir::semantic::find_child_indices::HirSemanticChildIndexTraversePass,
+    pub hir_record_clear_base: hir::records::clear_hir_records::HirRecordClearBasePass,
+    pub hir_record_clear_calls:
+        hir::records::clear_call_and_member_records::HirRecordClearCallsPass,
+    pub hir_spans: hir::spans::compute_hir_spans::HirSpansPass,
+    pub hir_type_fields: hir::records::extract_type_records::HirTypeFieldsPass,
     pub hir_type_path_leaf_step: hir::types::path::leaf::step::HirTypePathLeafStepPass,
     pub hir_type_path_leaf_scatter: hir::types::path::leaf::scatter::HirTypePathLeafScatterPass,
     pub hir_path_segment_root: hir::path::segment::root::HirPathSegmentRootPass,
@@ -339,25 +344,25 @@ pub struct ParserPasses {
     pub hir_param_id_apply: hir::param::id_apply::HirParamIdApplyPass,
     pub hir_param_fields: hir::param::fields::HirParamFieldsPass,
     pub hir_method_fields: hir::method::fields::HirMethodFieldsPass,
-    pub hir_expr_fields: hir::expr::fields::HirExprFieldsPass,
-    pub hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass,
-    pub hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass,
-    pub hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass,
-    pub hir_binary_spans: hir::binary::spans::HirBinarySpansPass,
-    pub hir_postfix_fields: hir::postfix_fields::HirPostfixFieldsPass,
-    pub hir_member_spans: hir::member::spans::HirMemberSpansPass,
-    pub hir_range_spans: hir::range_spans::HirRangeSpansPass,
-    pub hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass,
-    pub hir_stmt_scope: hir::stmt_scope::HirStmtScopePass,
-    pub hir_literal_values: hir::literal_values::HirLiteralValuesPass,
-    pub hir_float_values: hir::float_values::HirFloatValuesPass,
+    pub hir_expr_fields: hir::records::extract_expr_records::HirExprFieldsPass,
+    pub hir_expr_result_root_step: hir::records::walk_expr_result_roots::HirExprResultRootStepPass,
+    pub hir_binary_span_apply: hir::spans::apply_binary_spans::HirBinarySpanApplyPass,
+    pub hir_binary_span_step: hir::spans::walk_binary_spans::HirBinarySpanStepPass,
+    pub hir_binary_spans: hir::spans::seed_binary_spans::HirBinarySpansPass,
+    pub hir_postfix_fields: hir::records::extract_postfix_records::HirPostfixFieldsPass,
+    pub hir_member_spans: hir::spans::widen_member_spans::HirMemberSpansPass,
+    pub hir_range_spans: hir::spans::trim_range_spans::HirRangeSpansPass,
+    pub hir_stmt_fields: hir::records::extract_stmt_records::HirStmtFieldsPass,
+    pub hir_stmt_scope: hir::context::finish_stmt_scopes::HirStmtScopePass,
+    pub hir_literal_values: hir::records::extract_literal_values::HirLiteralValuesPass,
+    pub hir_float_values: hir::records::convert_float_literals::HirFloatValuesPass,
     pub hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass,
     pub hir_string_compact_scatter: hir::string::compact_scatter::HirStringCompactScatterPass,
     pub hir_string_offset_local: hir::string::offset_local::HirStringOffsetLocalPass,
     pub hir_string_offset_scatter: hir::string::offset_scatter::HirStringOffsetScatterPass,
     pub hir_string_decode: hir::string::decode::HirStringDecodePass,
-    pub hir_call_fields: hir::call::fields::HirCallFieldsPass,
-    pub hir_call_spans: hir::call::spans::HirCallSpansPass,
+    pub hir_call_fields: hir::records::extract_call_records::HirCallFieldsPass,
+    pub hir_call_spans: hir::spans::widen_call_spans::HirCallSpansPass,
     pub hir_call_arg_links: hir::call::arg::links::HirCallArgLinksPass,
     pub hir_call_arg_ordinal_scatter:
         hir::call::arg::ordinal::scatter::HirCallArgOrdinalScatterPass,
@@ -376,14 +381,16 @@ pub struct ParserPasses {
         hir::matches::rank::compact_scatter::HirMatchRankCompactScatterPass,
     pub hir_match_arm_rank_step: hir::matches::arm::rank_step::HirMatchArmRankStepPass,
     pub hir_match_arm_scatter: hir::matches::arm::scatter::HirMatchArmScatterPass,
-    pub hir_context_relations_init: hir::context::relations::init::HirContextRelationsInitPass,
-    pub hir_context_relations_step: hir::context::relations::step::HirContextRelationsStepPass,
+    pub hir_context_relations_init:
+        hir::context::seed_context_relations::HirContextRelationsInitPass,
+    pub hir_context_relations_step:
+        hir::context::walk_context_relations::HirContextRelationsStepPass,
     pub hir_context_relations_step_small:
-        hir::context::relations::step_small::HirContextRelationsStepSmallPass,
+        hir::context::walk_small_context_relations::HirContextRelationsStepSmallPass,
     pub hir_context_relations_scatter:
-        hir::context::relations::scatter::HirContextRelationsScatterPass,
+        hir::context::publish_context_relations::HirContextRelationsScatterPass,
     pub hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass,
-    pub hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass,
+    pub hir_struct_lit_spans: hir::spans::widen_struct_literal_spans::HirStructLitSpansPass,
     pub hir_struct_rank_compact_scatter:
         hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass,
     pub hir_struct_field_rank_step: hir::structs::field::rank_step::HirStructFieldRankStepPass,
@@ -437,48 +444,48 @@ impl ParserPasses {
             )?,
             tree_prev_sibling_scatter:
                 tree::scatter_previous_siblings::TreePrevSiblingScatterPass::new(device)?,
-            hir_nodes: hir::nodes::HirNodesPass::new(device)?,
+            hir_nodes: hir::records::classify_hir_nodes::HirNodesPass::new(device)?,
             hir_semantic_prefix_local:
-                hir::semantic::prefix::local::HirSemanticPrefixLocalPass::new(device)?,
+                hir::semantic::mark_semantic_rows::HirSemanticPrefixLocalPass::new(device)?,
             hir_semantic_prefix_blocks:
-                hir::semantic::prefix::blocks::HirSemanticPrefixBlocksPass::new(device)?,
+                hir::semantic::scan_semantic_blocks::HirSemanticPrefixBlocksPass::new(device)?,
             hir_semantic_compact_scatter:
-                hir::semantic::compact_scatter::HirSemanticCompactScatterPass::new(device)?,
+                hir::semantic::list_semantic_rows::HirSemanticCompactScatterPass::new(device)?,
             hir_semantic_dispatch_args:
-                hir::semantic::dispatch_args::HirSemanticDispatchArgsPass::new(device)?,
-            hir_semantic_subtree_end: hir::semantic::subtree_end::HirSemanticSubtreeEndPass::new(
+                hir::semantic::write_semantic_dispatch_args::HirSemanticDispatchArgsPass::new(device)?,
+            hir_semantic_subtree_end: hir::semantic::project_semantic_subtree_ends::HirSemanticSubtreeEndPass::new(
                 device,
             )?,
             hir_semantic_end_rows:
-                hir::semantic::parent::end_tree::HirSemanticEndRowsPass::new(device)?,
+                hir::semantic::build_semantic_end_heaps::HirSemanticEndRowsPass::new(device)?,
             hir_semantic_end_blocks:
-                hir::semantic::parent::end_tree::HirSemanticEndBlocksPass::new(device)?,
+                hir::semantic::build_semantic_end_heaps::HirSemanticEndBlocksPass::new(device)?,
             hir_semantic_end_top:
-                hir::semantic::parent::end_tree::HirSemanticEndTopPass::new(device)?,
+                hir::semantic::build_semantic_end_heaps::HirSemanticEndTopPass::new(device)?,
             hir_semantic_parent_traverse:
-                hir::semantic::parent::traverse::HirSemanticParentTraversePass::new(device)?,
-            hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation::new(
+                hir::semantic::find_semantic_parents::HirSemanticParentTraversePass::new(device)?,
+            hir_tree_relations: hir::semantic::walk_semantic_parents::TreeRelationOperation::new(
                 device,
             )?,
-            hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass::new(device)?,
+            hir_semantic_nav: hir::semantic::project_semantic_navigation::HirSemanticNavPass::new(device)?,
             hir_semantic_child_index_blocks:
-                hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass::new(
+                hir::semantic::build_child_index_heaps::HirSemanticChildIndexBlocksPass::new(
                     device,
                 )?,
             hir_semantic_child_index_top:
-                hir::semantic::child::index::index_tree::HirSemanticChildIndexTopPass::new(
+                hir::semantic::build_child_index_heaps::HirSemanticChildIndexTopPass::new(
                     device,
                 )?,
             hir_semantic_child_index_traverse:
-                hir::semantic::child::index::traverse::HirSemanticChildIndexTraversePass::new(
+                hir::semantic::find_child_indices::HirSemanticChildIndexTraversePass::new(
                     device,
                 )?,
-            hir_record_clear_base: hir::record::clear::base::HirRecordClearBasePass::new(device)?,
-            hir_record_clear_calls: hir::record::clear::calls::HirRecordClearCallsPass::new(
+            hir_record_clear_base: hir::records::clear_hir_records::HirRecordClearBasePass::new(device)?,
+            hir_record_clear_calls: hir::records::clear_call_and_member_records::HirRecordClearCallsPass::new(
                 device,
             )?,
-            hir_spans: hir::spans::HirSpansPass::new(device)?,
-            hir_type_fields: hir::types::fields::HirTypeFieldsPass::new(device)?,
+            hir_spans: hir::spans::compute_hir_spans::HirSpansPass::new(device)?,
+            hir_type_fields: hir::records::extract_type_records::HirTypeFieldsPass::new(device)?,
             hir_type_path_leaf_step: hir::types::path::leaf::step::HirTypePathLeafStepPass::new(
                 device,
             )?,
@@ -608,20 +615,20 @@ impl ParserPasses {
             hir_param_id_apply: hir::param::id_apply::HirParamIdApplyPass::new(device)?,
             hir_param_fields: hir::param::fields::HirParamFieldsPass::new(device)?,
             hir_method_fields: hir::method::fields::HirMethodFieldsPass::new(device)?,
-            hir_expr_fields: hir::expr::fields::HirExprFieldsPass::new(device)?,
-            hir_expr_result_root_step: hir::expr::result_root_step::HirExprResultRootStepPass::new(
+            hir_expr_fields: hir::records::extract_expr_records::HirExprFieldsPass::new(device)?,
+            hir_expr_result_root_step: hir::records::walk_expr_result_roots::HirExprResultRootStepPass::new(
                 device,
             )?,
-            hir_binary_span_apply: hir::binary::span::apply::HirBinarySpanApplyPass::new(device)?,
-            hir_binary_span_step: hir::binary::span::step::HirBinarySpanStepPass::new(device)?,
-            hir_binary_spans: hir::binary::spans::HirBinarySpansPass::new(device)?,
-            hir_postfix_fields: hir::postfix_fields::HirPostfixFieldsPass::new(device)?,
-            hir_member_spans: hir::member::spans::HirMemberSpansPass::new(device)?,
-            hir_range_spans: hir::range_spans::HirRangeSpansPass::new(device)?,
-            hir_stmt_fields: hir::stmt_fields::HirStmtFieldsPass::new(device)?,
-            hir_stmt_scope: hir::stmt_scope::HirStmtScopePass::new(device)?,
-            hir_literal_values: hir::literal_values::HirLiteralValuesPass::new(device)?,
-            hir_float_values: hir::float_values::HirFloatValuesPass::new(device)?,
+            hir_binary_span_apply: hir::spans::apply_binary_spans::HirBinarySpanApplyPass::new(device)?,
+            hir_binary_span_step: hir::spans::walk_binary_spans::HirBinarySpanStepPass::new(device)?,
+            hir_binary_spans: hir::spans::seed_binary_spans::HirBinarySpansPass::new(device)?,
+            hir_postfix_fields: hir::records::extract_postfix_records::HirPostfixFieldsPass::new(device)?,
+            hir_member_spans: hir::spans::widen_member_spans::HirMemberSpansPass::new(device)?,
+            hir_range_spans: hir::spans::trim_range_spans::HirRangeSpansPass::new(device)?,
+            hir_stmt_fields: hir::records::extract_stmt_records::HirStmtFieldsPass::new(device)?,
+            hir_stmt_scope: hir::context::finish_stmt_scopes::HirStmtScopePass::new(device)?,
+            hir_literal_values: hir::records::extract_literal_values::HirLiteralValuesPass::new(device)?,
+            hir_float_values: hir::records::convert_float_literals::HirFloatValuesPass::new(device)?,
             hir_string_compact_local: hir::string::compact_local::HirStringCompactLocalPass::new(
                 device,
             )?,
@@ -643,8 +650,8 @@ impl ParserPasses {
                 hir::canonical::predicates::finalize::HirCanonicalPredicateFinalizePass::new(device)?,
             hir_canonical_predicate_scatter:
                 hir::canonical::predicates::scatter::HirCanonicalPredicateScatterPass::new(device)?,
-            hir_call_fields: hir::call::fields::HirCallFieldsPass::new(device)?,
-            hir_call_spans: hir::call::spans::HirCallSpansPass::new(device)?,
+            hir_call_fields: hir::records::extract_call_records::HirCallFieldsPass::new(device)?,
+            hir_call_spans: hir::spans::widen_call_spans::HirCallSpansPass::new(device)?,
             hir_call_arg_links: hir::call::arg::links::HirCallArgLinksPass::new(device)?,
             hir_call_arg_ordinal_scatter:
                 hir::call::arg::ordinal::scatter::HirCallArgOrdinalScatterPass::new(device)?,
@@ -677,17 +684,17 @@ impl ParserPasses {
             )?,
             hir_match_arm_scatter: hir::matches::arm::scatter::HirMatchArmScatterPass::new(device)?,
             hir_context_relations_init:
-                hir::context::relations::init::HirContextRelationsInitPass::new(device)?,
+                hir::context::seed_context_relations::HirContextRelationsInitPass::new(device)?,
             hir_context_relations_step:
-                hir::context::relations::step::HirContextRelationsStepPass::new(device)?,
+                hir::context::walk_context_relations::HirContextRelationsStepPass::new(device)?,
             hir_context_relations_step_small:
-                hir::context::relations::step_small::HirContextRelationsStepSmallPass::new(device)?,
+                hir::context::walk_small_context_relations::HirContextRelationsStepSmallPass::new(device)?,
             hir_context_relations_scatter:
-                hir::context::relations::scatter::HirContextRelationsScatterPass::new(device)?,
+                hir::context::publish_context_relations::HirContextRelationsScatterPass::new(device)?,
             hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass::new(
                 device,
             )?,
-            hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass::new(device)?,
+            hir_struct_lit_spans: hir::spans::widen_struct_literal_spans::HirStructLitSpansPass::new(device)?,
             hir_struct_rank_compact_scatter:
                 hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass::new(device)?,
             hir_struct_field_rank_step:
@@ -753,7 +760,7 @@ pub fn record_canonical_variants(
         ctx.device,
         ctx.encoder,
         ctx.buffers,
-        hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER,
+        hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER,
         ctx.bg_cache
             .as_deref_mut()
             .expect("debug parser requires a bind-group cache"),

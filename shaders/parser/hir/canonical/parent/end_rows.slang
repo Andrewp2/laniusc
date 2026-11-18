@@ -1,12 +1,12 @@
 // The first level of the canonical-end search heaps: one local maximum heap
 // over each block of 256 canonical subtree ends. The heaps use the
-// semantic-end layout (semantic/parent/end_tree.slang); canonical/core.slang
+// semantic-end layout (semantic_end_heaps.slang); canonical/core.slang
 // searches them for each canonical row's nearest canonical ancestor. One
 // workgroup owns one block of the canonical rows.
 
 import prefix_scan;
 import blocked_search_tree;
-import parser.hir.semantic.parent.end_tree;
+import parser.hir.semantic.semantic_end_heaps;
 
 struct Params
 {

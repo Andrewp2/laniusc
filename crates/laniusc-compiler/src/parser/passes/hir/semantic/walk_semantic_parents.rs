@@ -1,0 +1,437 @@
+use std::collections::HashMap;
+
+use anyhow::Result;
+
+use crate::{
+    gpu::passes_core::{BindGroupCache, PassData, make_pass_data_from_shader_key},
+    parser::{
+        buffers::ParserBuffers,
+        passes::hir::{
+            bounded_walk_step_capacity,
+            records::classify_hir_nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+        },
+    },
+};
+
+/// Reusable pointer-jump operation over one tree link and one or more payloads.
+pub struct TreeRelationOperation {
+    data: PassData,
+    rows_data: PassData,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::parser) struct TreeRelationInvocation {
+    pub a_to_b: &'static str,
+    pub b_to_a: &'static str,
+    pub a_to_b_final: &'static str,
+    pub finalize: &'static str,
+}
+
+pub(in crate::parser) const MATCH_ARM_OWNER: TreeRelationInvocation = TreeRelationInvocation {
+    a_to_b: "hir_match_arm_owner_step.a_to_b",
+    b_to_a: "hir_match_arm_owner_step.b_to_a",
+    a_to_b_final: "hir_match_arm_owner_step.a_to_b_final",
+    finalize: "hir_match_arm_owner_step.finalize",
+};
+/// Walked over compacted payload-chain rows with an even step count, so its
+/// unpaired final step and finalizer are never recorded.
+pub(in crate::parser) const CANONICAL_VARIANT_PAYLOAD_OWNER: TreeRelationInvocation =
+    TreeRelationInvocation {
+        a_to_b: "hir_canonical_variant_payload_owner_step.a_to_b",
+        b_to_a: "hir_canonical_variant_payload_owner_step.b_to_a",
+        a_to_b_final: "hir_canonical_variant_payload_owner_step.a_to_b_final",
+        finalize: "hir_canonical_variant_payload_owner_step.finalize",
+    };
+impl TreeRelationOperation {
+    pub fn new(device: &wgpu::Device) -> Result<Self> {
+        Ok(Self {
+            data: make_pass_data_from_shader_key(
+                device,
+                "hir_semantic_parent_step",
+                "main",
+                "parser/hir/semantic/walk_semantic_parents",
+            )?,
+            rows_data: make_pass_data_from_shader_key(
+                device,
+                "hir_semantic_parent_rows_step",
+                "main",
+                "parser/hir/semantic/walk_listed_semantic_parents",
+            )?,
+        })
+    }
+
+    /// Propagates one nearest-ancestor relation through caller-selected
+    /// phase-local link/value slots.
+    pub(in crate::parser) fn record_steps_for_buffers(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        self.record_steps_for_buffers_after_local_span(
+            device,
+            encoder,
+            buffers,
+            link_a,
+            value_a,
+            link_b,
+            value_b,
+            SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+            &buffers.hir_local_relation_dispatch_args,
+            invocation,
+            cache,
+        )
+    }
+
+    /// Propagates a canonical-family relation through the shared tree slots,
+    /// stepping only the rows compacted into `hir_list_rank_node`. The init
+    /// pass must seed every node into both the A and B slots.
+    pub(in crate::parser) fn record_canonical_row_steps(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        self.record_schedule(
+            device,
+            encoder,
+            buffers,
+            &self.rows_data,
+            Some((&buffers.hir_list_rank_node, &buffers.hir_list_rank_count)),
+            SINGLE_NAMES,
+            TreeRelationBuffers::new(
+                &buffers.hir_semantic_parent_link_a,
+                &buffers.hir_semantic_parent_link_b,
+                [&buffers.hir_semantic_parent_value_a],
+                [&buffers.hir_semantic_parent_value_b],
+            ),
+            crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+                buffers.tree_capacity,
+            ),
+            &buffers.hir_list_rank_dispatch_args,
+            false,
+            invocation,
+            cache,
+        )
+    }
+
+    /// Propagates one nearest-ancestor relation over the rows of a family
+    /// worklist (`rows`, `row_count`) only, for `family_relation_steps`
+    /// steps, so the result ends in the A slots. The family's init pass must
+    /// seed every row of the worklist, and every link must name another row
+    /// of it; rows outside the worklist are neither read nor written.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::parser) fn record_family_row_steps(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        rows: &crate::gpu::buffers::LaniusBuffer<u32>,
+        row_count: &crate::gpu::buffers::LaniusBuffer<u32>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        self.record_schedule(
+            device,
+            encoder,
+            buffers,
+            &self.rows_data,
+            Some((rows, row_count)),
+            SINGLE_NAMES,
+            TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
+            family_relation_steps(buffers.tree_capacity),
+            dispatch_args,
+            false,
+            invocation,
+            cache,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_steps_for_buffers_after_local_span(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        local_span: u32,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        self.record_schedule(
+            device,
+            encoder,
+            buffers,
+            &self.data,
+            None,
+            SINGLE_NAMES,
+            TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
+            bounded_walk_steps_after_local_span(buffers.tree_capacity, local_span),
+            dispatch_args,
+            true,
+            invocation,
+            cache,
+        )
+    }
+
+    fn record_schedule<const N: usize>(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        data: &PassData,
+        rows: Option<(
+            &crate::gpu::buffers::LaniusBuffer<u32>,
+            &crate::gpu::buffers::LaniusBuffer<u32>,
+        )>,
+        names: RelationNames<N>,
+        relation: TreeRelationBuffers<'_, N>,
+        steps: u32,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        per_step_dispatch_args: bool,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        for step in 0..steps {
+            let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                (
+                    "gHirSemantic".into(),
+                    buffers.hir_params.as_entire_binding(),
+                ),
+                (
+                    "tree_count_status".into(),
+                    if buffers.tree_count_uses_status {
+                        buffers.partial_parse_status.as_entire_binding()
+                    } else {
+                        buffers.ll1_status.as_entire_binding()
+                    },
+                ),
+            ]);
+            if let Some((rows, row_count)) = rows {
+                resources.insert("hir_list_rank_node".into(), rows.as_entire_binding());
+                resources.insert("hir_list_rank_count".into(), row_count.as_entire_binding());
+            }
+            let (link_in, values_in, link_out, values_out) = relation.for_step(step);
+            resources.insert(names.link_in.into(), link_in.as_entire_binding());
+            resources.insert(names.link_out.into(), link_out.as_entire_binding());
+            for index in 0..N {
+                resources.insert(
+                    names.values_in[index].into(),
+                    values_in[index].as_entire_binding(),
+                );
+                resources.insert(
+                    names.values_out[index].into(),
+                    values_out[index].as_entire_binding(),
+                );
+            }
+            let final_unpaired_step = step + 1 == steps && steps % 2 == 1;
+            let label = if final_unpaired_step {
+                invocation.a_to_b_final
+            } else if step % 2 == 0 {
+                invocation.a_to_b
+            } else {
+                invocation.b_to_a
+            };
+            let cache_identity = format!("{label}.{step}");
+            let bind_group = cache
+                .reflected_for_graph_invocation(
+                    device,
+                    &cache_identity,
+                    label,
+                    data,
+                    buffers,
+                    &resources,
+                    Some(dispatch_args),
+                )?
+                .into_iter()
+                .next()
+                .expect("tree-relation operation must have one reflected bind group");
+            let dispatch_offset = if per_step_dispatch_args {
+                u64::from(step) * 3 * std::mem::size_of::<u32>() as u64
+            } else {
+                0
+            };
+            crate::gpu::passes_core::record_or_defer_compute_indirect_offset(
+                encoder,
+                data,
+                bind_group.as_ref(),
+                label,
+                dispatch_args,
+                dispatch_offset,
+            );
+        }
+
+        if steps % 2 == 1 {
+            buffers.record_finalizer(invocation.finalize, encoder)?;
+        }
+
+        Ok(())
+    }
+
+    pub(in crate::parser) fn graph_single_pass(&self) -> &PassData {
+        &self.data
+    }
+
+    pub(in crate::parser) fn graph_rows_pass(&self) -> &PassData {
+        &self.rows_data
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RelationNames<const N: usize> {
+    link_in: &'static str,
+    link_out: &'static str,
+    values_in: [&'static str; N],
+    values_out: [&'static str; N],
+}
+
+const SINGLE_NAMES: RelationNames<1> = RelationNames {
+    link_in: "hir_semantic_parent_link_in",
+    link_out: "hir_semantic_parent_link_out",
+    values_in: ["hir_semantic_parent_value_in"],
+    values_out: ["hir_semantic_parent_value_out"],
+};
+#[derive(Clone, Copy)]
+pub struct TreeRelationBuffers<'a, const N: usize> {
+    link_a: &'a crate::gpu::buffers::LaniusBuffer<u32>,
+    link_b: &'a crate::gpu::buffers::LaniusBuffer<u32>,
+    values_a: [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+    values_b: [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+}
+
+impl<'a, const N: usize> TreeRelationBuffers<'a, N> {
+    pub fn new(
+        link_a: &'a crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &'a crate::gpu::buffers::LaniusBuffer<u32>,
+        values_a: [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+        values_b: [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+    ) -> Self {
+        Self {
+            link_a,
+            link_b,
+            values_a,
+            values_b,
+        }
+    }
+
+    fn for_step(
+        self,
+        step: u32,
+    ) -> (
+        &'a crate::gpu::buffers::LaniusBuffer<u32>,
+        [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+        &'a crate::gpu::buffers::LaniusBuffer<u32>,
+        [&'a crate::gpu::buffers::LaniusBuffer<u32>; N],
+    ) {
+        if step % 2 == 0 {
+            (self.link_a, self.values_a, self.link_b, self.values_b)
+        } else {
+            (self.link_b, self.values_b, self.link_a, self.values_a)
+        }
+    }
+}
+
+pub(in crate::parser) fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
+    bounded_walk_step_capacity(items.max(1).div_ceil(local_span.max(1)))
+}
+
+/// The steps of `record_family_row_steps`: those of the whole-tree walk after
+/// the local span, rounded up to even so the walk ends in the A slots.
+pub(in crate::parser) fn family_relation_steps(items: u32) -> u32 {
+    let steps = bounded_walk_steps_after_local_span(items, SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN);
+    steps + steps % 2
+}
+
+pub(in crate::parser) fn canonical_relation_step_capacity(items: u32) -> u32 {
+    bounded_walk_steps_after_local_span(
+        items,
+        crate::parser::passes::hir::canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bounded_walk_steps_after_local_span;
+    use crate::parser::passes::hir::{
+        canonical::RELATION_LOCAL_ANCESTOR_SPAN,
+        records::classify_hir_nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
+    };
+
+    fn scheduled_steps(items: u32, max_depth: u32, local_span: u32) -> u32 {
+        let required = bounded_walk_steps_after_local_span(max_depth + 1, local_span);
+        let capacity = bounded_walk_steps_after_local_span(items, local_span);
+        required + ((required ^ capacity) & 1)
+    }
+
+    #[test]
+    fn canonical_relation_rounds_cover_the_raw_tree_capacity() {
+        assert_eq!(bounded_walk_steps_after_local_span(1, 1), 0);
+        assert_eq!(bounded_walk_steps_after_local_span(64, 1), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(65, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(4_096, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(4_097, 1), 3);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 4);
+    }
+
+    #[test]
+    fn actual_depth_schedule_preserves_capacity_ping_pong_parity() {
+        let items = 1_687_524;
+        let capacity = bounded_walk_steps_after_local_span(items, RELATION_LOCAL_ANCESTOR_SPAN);
+        for max_depth in [0, 31, 32, 63, 64, 95, 96, 511, 65_535] {
+            let scheduled = scheduled_steps(items, max_depth, RELATION_LOCAL_ANCESTOR_SPAN);
+            assert!(scheduled <= capacity);
+            assert_eq!(scheduled % 2, capacity % 2);
+        }
+        assert_eq!(scheduled_steps(items, 0, 1), 0);
+        assert_eq!(scheduled_steps(items, 1, 1), 2);
+        assert_eq!(scheduled_steps(items, 15, 1), 2);
+        assert_eq!(scheduled_steps(items, 16, 1), 2);
+    }
+
+    #[test]
+    fn locally_seeded_relation_schedule_uses_the_remaining_depth() {
+        let items = 1_687_524;
+        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
+        let capacity = bounded_walk_steps_after_local_span(items, span);
+        for max_depth in [0, 31, 32, 63, 64, 511, 16_383, 65_535] {
+            let scheduled = scheduled_steps(items, max_depth, span);
+            assert!(scheduled <= capacity);
+            assert_eq!(scheduled % 2, capacity % 2);
+        }
+        // 1_687_524 rows over 32-row spans need three 64-link steps, so
+        // every schedule keeps that odd parity.
+        assert_eq!(scheduled_steps(items, 0, span), 1);
+        assert_eq!(scheduled_steps(items, 31, span), 1);
+        assert_eq!(scheduled_steps(items, 2_047, span), 1);
+        assert_eq!(scheduled_steps(items, 2_048, span), 3);
+    }
+
+    #[test]
+    fn bounded_relation_walk_composes_local_ancestor_spans() {
+        let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
+        assert_eq!(bounded_walk_steps_after_local_span(32, span), 0);
+        assert_eq!(bounded_walk_steps_after_local_span(33, span), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(2_048, span), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(2_049, span), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, span), 3);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 4);
+        assert_eq!(bounded_walk_steps_after_local_span(16_777_217, 1), 5);
+    }
+}
