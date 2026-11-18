@@ -41,6 +41,14 @@ void reject(uint use, uint bit)
 
 bool laid_out(uint t) { return pj_words(t) != RT_INVALID; }
 
+bool compatible_argument(uint expected, uint2 argument)
+{
+    // Checked pointer parameters accept the integer zero literal. Its i32
+    // producer writes zero to the whole native argument slot.
+    return (expected == SCALAR_PTR && (argument.y & RT_CALL_ARG_NULL_LITERAL) != 0u) ||
+        pj_argument_compatible(expected, argument.x, argument.y & ~RT_CALL_ARG_NULL_LITERAL);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -86,8 +94,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint status;
         if (pj_result(pj_req_result(target), status) != abi.x) { reject(use, C_RESULT); return; }
         for (uint k = 0u; k < args; k++)
-            if (!pj_argument_compatible(pj_result(pj_req_param(target, k), status),
-                nc_use_args[base + k].x, nc_use_args[base + k].y))
+            if (!compatible_argument(pj_result(pj_req_param(target, k), status),
+                nc_use_args[base + k]))
             {
                 reject(use, C_PARAM);
                 return;
@@ -105,6 +113,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (d1.y != 0u || d1.w != args) { reject(use, C_ARITY); return; }
     if (rt_sigs[d1.z] != abi.x) { reject(use, C_RESULT); return; }
     for (uint k = 0u; k < args; k++)
-        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], nc_use_args[base + k].x,
-            nc_use_args[base + k].y)) { reject(use, C_PARAM); return; }
+        if (!compatible_argument(rt_sigs[d1.z + 1u + k], nc_use_args[base + k]))
+        { reject(use, C_PARAM); return; }
 }

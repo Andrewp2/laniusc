@@ -131,11 +131,11 @@ fn large_pack_storage(retained: bool) {
                 compiler.compile_path_manifest_with_native_link_to_file(&manifest, &options, &output_path).await?
             };
             if retained {
-
-                assert_eq!(build.report.units, 2);
+                // Embedded core has its own unit alongside main and ffi/replay.
+                assert_eq!(build.report.units, 3);
                 assert_eq!(build.report.projection.instances, 2);
                 assert_eq!(build.report.instance_objects, 2);
-                assert_eq!(build.report.spilled_objects, 4, "each unit and instance is spilled immediately");
+                assert_eq!(build.report.spilled_objects, 5, "each unit and instance is spilled immediately");
             }
             let original = fs::read(&output_path).expect("read completed native executable");
             let limited = NativeLinkOptions {

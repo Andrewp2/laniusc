@@ -76,32 +76,6 @@ void check_literal(Row at, uint4 p, uint t, bool changed)
     }
 }
 
-// Struct `t`'s field of declaration ordinal `ordinal`: its closed type,
-// native word offset and words.
-uint3 struct_field(uint t, uint ordinal)
-{
-    uint decl = rt_term_words(t).x;
-    uint entry = pj_dir_entry(decl);
-    if (entry == RT_INVALID) return uint3(RT_INVALID, RT_INVALID, RT_INVALID);
-    uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
-    uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
-    uint types = d1.y & 0xffffu;
-    uint offset = 0u;
-    uint3 found = uint3(RT_INVALID, RT_INVALID, RT_INVALID);
-    for (uint k = 0u; k < d2.z; k++)
-    {
-        uint4 record = rt_schema[d2.y + k];
-        if ((record.y & 0xffu) != RT_SCHEMA_FIELD) continue;
-        uint field = pj_schema_type(t,k);
-        uint words = pj_words(field);
-        uint o = record.y >> 8u;
-        if (o == ordinal) found = uint3(field, 0u, words);
-        else if (o < ordinal) offset += words;
-    }
-    if (found.x != RT_INVALID) found.y = offset;
-    return found;
-}
-
 void check_struct_literal(Row at, uint4 p, uint t, uint use)
 {
     uint4 u0 = pj_use(at.rank, use, 0u);
@@ -121,7 +95,7 @@ void check_struct_literal(Row at, uint4 p, uint t, uint use)
     {
         uint4 record = pj_side(at.rank, PJ_SIDE_FIELDS, p.y + k, 0u);
         uint ordinal = pj_side(at.rank, PJ_SIDE_FIELDS, p.y + k, 1u).x;
-        uint3 field = struct_field(t, ordinal);
+        uint3 field = pj_struct_field(t, ordinal);
         // The frontend accepts a fixed array as a slice field's value
         // (`View { values: scratch }`); the element identity must match.
         if (field.x == RT_INVALID || !pj_argument_compatible(field.x, row_type(at, record.z), 2u))
@@ -140,7 +114,7 @@ void check_member(Row at, uint4 p, uint t, uint ordinal)
         fail(at, PJ_E_FIELD, 0xffffu);
         return;
     }
-    uint3 field = struct_field(receiver, ordinal);
+    uint3 field = pj_struct_field(receiver, ordinal);
     if (field.x == RT_INVALID || field.x != t)
     {
         fail(at, PJ_E_FIELD, ordinal);

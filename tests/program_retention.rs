@@ -371,8 +371,11 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     let expected = summary(&reference);
     let expected_probe = probe(&reference);
 
-    // Tiny capacities: every job overflows, rolls back and is retried.
-    let tiny = ProgramRetention::new(ProgramRetentionCapacity::tiny()).unwrap();
+    // Tiny export capacities force each job to retry. Give the acceptance
+    // probe argument space for the closed terms it interns after export.
+    let mut small_capacity = ProgramRetentionCapacity::tiny();
+    small_capacity.arenas[3] = 256; // term arguments
+    let tiny = ProgramRetention::new(small_capacity).unwrap();
     build(&compiler, &tiny);
     let (_, growths) = tiny.capacity();
     let reports = tiny.job_reports();
@@ -435,7 +438,7 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     assert_eq!(summary(&tiny), expected);
 
     // One probe chain for every key: equality is decided by full records.
-    let collided = ProgramRetention::new(ProgramRetentionCapacity::tiny()).unwrap();
+    let collided = ProgramRetention::new(small_capacity).unwrap();
     collided.set_hash_mask(0);
     build(&compiler, &collided);
     assert!(collided.capacity().1 > 0, "forced collisions also exercise growth and rehash");
