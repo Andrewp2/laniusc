@@ -2700,7 +2700,7 @@ pub(super) fn read_unit_facts(
     }
     // A trait requirement owns a contract but no native target, so its calls
     // are not retained. Their claims bind the trait's parameters, which the
-    // GPU checked against the bound's trait arguments (methods/07a).
+    // GPU checked against the bound's trait arguments (offer_bound_method_members).
     let requirement_names = metadata[requirement_metadata_start..][..requirement_hirs.len() * 4]
         .chunks_exact(4)
         .map(|payload| payload[1])

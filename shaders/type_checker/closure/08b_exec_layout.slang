@@ -5,7 +5,7 @@
 // sizes its token tables for a 1/EX_VIRTUAL_TOKEN_DIVISOR share of the
 // capacity (exec_lowering_token_capacity in instance_closure_passes.rs).
 // Checked type rows are numbered from the end of the type checker's token
-// tables (type/instances/allocate_application.slang), and lowering reads
+// tables (allocate_application.slang), and lowering reads
 // type rows and tokens in one id space, so virtual tokens also end before
 // those tables do. An entry past any capacity, every later entry and
 // every caller of one replay (EX_FLAG_CAPACITY). Also sizes the row and

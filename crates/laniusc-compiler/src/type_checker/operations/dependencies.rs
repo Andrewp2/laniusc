@@ -366,7 +366,7 @@ pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER: ReflectedCompu
         "type_checker/dependencies/projections/offer_dependency_bound_members"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
-// The preliminary lookup sweep dispatches from its gated grid (methods/08c).
+// The preliminary lookup sweep dispatches from its gated grid (gate_method_lookup_sweep).
 pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP: ReflectedComputeSpec =
     DEPENDENCY_BOUND_MEMBERS_OFFER
         .with_name("type_check.dependencies.offer_bound_members.lookup")

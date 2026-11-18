@@ -1,35 +1,35 @@
 // Offer the required members of imported traits to calls on a lexical type
 // parameter `P`, on each dependency page: a self member to a dotted call
 // `value.member(...)` whose receiver is `P` (directly or behind references),
-// a static one to a path call `P::member(...)`. methods/07a offers the
+// a static one to a path call `P::member(...)`. offer_bound_method_members offers the
 // members of local traits the same way.
 //
 // An accepted predicate `P: path::Trait<A..>` of the call's enclosing generic
 // scopes proves the member for every instantiation of `P`, so the trait's
 // required member is the symbolic callee. Its identity is portable: the
 // trait's library and unit, and the member's interface symbol. The second
-// page visit (project_dependency_methods, 07b) publishes its signature from the page
+// page visit (project_dependency_methods, scatter_dependency_call_parameters) publishes its signature from the page
 // that holds the trait; body specialization routes the call to the selected
-// implementation (methods/09_route_bound_members).
+// implementation (route_bound_method_members).
 //
 // The predicate's arguments bind the trait's parameters: argument i is the
 // trait's type parameter i, published as the call's context argument
-// (contextual_call_environment.slang) in caller scope, as 07a does. A trait
+// (contextual_call_environment.slang) in caller scope, as project_dependency_call_parameters does. A trait
 // on another page contributes nothing here; that page's visit offers it, and
 // candidates from several bounds meet in method_candidate_offer.
 //
 // One thread per call expression (HIR domain): the call owns the context
 // rows, and its callee member, or the leaf of its callee path, names the
-// method token (methods/06 keys an associated call at the leaf).
+// method token (mark_method_call_keys keys an associated call at the leaf).
 
 import gpu_index;
 import hir_records;
 import dependency_interface;
 import semantic_interface_layout;
-import type_checker.methods.candidate;
+import type_checker.methods.method_candidate;
 import type_checker.predicates.owner_lookup;
 import type_checker.predicates.trait_reference;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 
@@ -116,7 +116,7 @@ uint token_capacity() { return gTypeCheckParams.n_tokens; }
 
 #define LEXICAL_HIR_CAPACITY gParams.hir_capacity
 #define LEXICAL_TOKEN_CAPACITY token_capacity()
-#include "../../type/instances/lexical_parameter_lookup.slang"
+#include "../../types/parameters/lexical_parameter_lookup.slang"
 
 uint active_hir_count() { return min(compact_hir_count[0u], gParams.hir_capacity); }
 bool valid_hir(uint node) { return node < active_hir_count(); }
@@ -266,7 +266,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint2 aliases;
     uint token = method_call_token(call, aliases);
     if (!inference_item_active(token)) return;
-    // A path call `P::member(...)` has no receiver value (methods/06).
+    // A path call `P::member(...)` has no receiver value (mark_method_call_keys).
     bool dotted = aliases.x == INVALID;
     if (token >= min(token_count[0u], token_capacity()) ||
         method_call_selection_owned[token] == 0u ||

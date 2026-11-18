@@ -33,7 +33,7 @@ pub(super) const SUBSTITUTION_CALL_ENVS_KERNEL: &str =
     "type_checker/substitution/02_publish_call_envs";
 /// Words of `ct_subst_counts` (`CT_SUBST_COUNT_WORDS` in ct_subst.slang).
 pub(super) const SUBSTITUTION_COUNT_WORDS: u64 = 8;
-/// Imported alias targets (dependencies/14a) are realized after the last
+/// Imported alias targets (materialize_dependency_alias_targets) are realized after the last
 /// dependency page: dispatches that leave a busy target for the next one,
 /// then one that reports it. The early canonical stage re-arms the
 /// candidates 14a interned (`CT_COUNT_EARLY_REARM`).
@@ -73,7 +73,7 @@ pub(super) struct FieldClosurePasses {
 }
 
 /// The closed source applications, after the closed application index (in
-/// place of the old per-root materializer, type/instances/02d).
+/// place of the old per-root materializer, list_type_rows).
 pub(super) const SOURCE_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     roots: "type_check.substitution.expand.source_roots",
     roots_kernel: "type_checker/substitution/03_expand_source_roots",
@@ -85,7 +85,7 @@ pub(super) const SOURCE_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
 };
 
 /// A body specialization's applications, after its canonical stage and the
-/// body application index (in place of type/instances/02d there).
+/// body application index (in place of list_type_rows there).
 pub(super) const BODY_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     roots: "type_check.body_specialization.expand.roots",
     roots_kernel: "type_checker/substitution/03_expand_source_roots",
@@ -225,7 +225,7 @@ pub(super) fn register_substitution_body_passes(
 }
 
 /// Registers the realization of the imported alias targets, after
-/// dependencies/14a. `realize_bindings` resolve the row arena's write-only
+/// materialize_dependency_alias_targets. `realize_bindings` resolve the row arena's write-only
 /// layout words and the alias targets.
 pub(super) fn register_alias_target_passes(
     graph: &mut CompilerGraphBuilder,

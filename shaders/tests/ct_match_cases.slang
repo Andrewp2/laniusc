@@ -1,4 +1,4 @@
-// Cases for ct_match (type_checker/match/ct_match.slang). One lane interns
+// Cases for ct_match (type_checker/matches/checked_match_types.slang). One lane interns
 // the patterns and actuals of every case, runs each case through one
 // ct_match call site, then interns the expected bindings, so a binding that
 // ct_match interned itself must have the key the builders below give it.
@@ -8,7 +8,7 @@
 // match_errors[4 + i]. match_errors[3] counts the cases run.
 import type_checker.canonical.canonical_api;
 import type_checker.substitution.ct_spare;
-import type_checker.match.ct_match;
+import type_checker.matches.checked_match_types;
 import primitive_types;
 
 RWStructuredBuffer<uint> match_errors;

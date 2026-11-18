@@ -474,8 +474,8 @@ bool dependency_public_implementation_method(uint member)
 
 // A required member of a trait declaration. It has no native target: it is
 // the symbolic callee of a call through a bound on that trait
-// (dependencies/15b), which body specialization routes to an implementation
-// (methods/09).
+// (offer_dependency_bound_members), which body specialization routes to an implementation
+// (route_bound_method_members).
 bool dependency_trait_requirement(uint member)
 {
     if (member >= dependency_member_count()) return false;
@@ -489,7 +489,7 @@ bool dependency_trait_requirement(uint member)
 }
 
 // Slot hashes of the page's method index (dependency_method_index), which
-// type_checker/dependencies/00c builds: by callable identity and by name.
+// build_dependency_method_lookup builds: by callable identity and by name.
 uint dependency_method_identity_hash(uint library_id, uint unit_id, uint method_symbol)
 {
     uint hash = (2166136261u ^ library_id) * 16777619u;

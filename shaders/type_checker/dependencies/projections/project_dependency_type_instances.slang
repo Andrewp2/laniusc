@@ -137,7 +137,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     // A bare generic qualifier of an associated method, `Option::is_some(o)`,
     // names the declaration's own application, as a local bare qualifier
-    // does (modules/10k). Its operands are the declaration's parameters,
+    // does (project_type_instances). Its operands are the declaration's parameters,
     // which calls/03d leaves to the call's arguments and context. Variants
     // (resolved values) keep their own payload inference.
     if (qualified_value && type_instance_kind[leaf_token] != TYPE_INSTANCE_NAMED &&

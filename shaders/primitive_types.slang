@@ -111,7 +111,7 @@ public static const uint DISTINCT_TYPE_MISMATCH = 0x20000003u;
 // PRIMITIVE_CONSTANT
 public static const uint EXCLUSIVE_REFERENCE_ALIAS = 0x20000004u;
 // LNC0006 detail of a block arm (`pattern -> { ... }`) whose block can reach
-// its end: every path through it must return (returns/03_validate.slang).
+// its end: every path through it must return (validate_function_returns.slang).
 // PRIMITIVE_CONSTANT
 public static const uint BLOCK_ARM_FALLS_THROUGH = 0x20000005u;
 // LNC0006 detail of a `&mut` argument whose value a reference local still
@@ -120,18 +120,18 @@ public static const uint BLOCK_ARM_FALLS_THROUGH = 0x20000005u;
 // PRIMITIVE_CONSTANT
 public static const uint LIVE_REFERENCE_WRITTEN = 0x20000006u;
 // LNC0006 detail base of a `print` argument whose type `print` cannot write
-// (calls/03a_collect_row_args.slang). The low byte holds the argument's
+// (collect_call_argument_constraints.slang). The low byte holds the argument's
 // scalar code, or 0 for a type that is not a scalar.
 // PRIMITIVE_CONSTANT
 public static const uint PRINT_ARGUMENT_TYPE = 0x21000000u;
 // LNC0006 detail base of a `slice_len` or `string_len` argument of the wrong
-// type (calls/03a_collect_row_args.slang). Bit 8 is set for `string_len`.
+// type (collect_call_argument_constraints.slang). Bit 8 is set for `string_len`.
 // The low byte holds the argument's scalar code, or 0 for a type that is
 // not a scalar.
 // PRIMITIVE_CONSTANT
 public static const uint LENGTH_ARGUMENT_TYPE = 0x22000000u;
 // LNC0006 detail base of a bit cast argument of the wrong type
-// (calls/03a_collect_row_args.slang). Bits 8 and 9 select the cast: 0 for
+// (collect_call_argument_constraints.slang). Bits 8 and 9 select the cast: 0 for
 // `f64_to_bits`, 1 for `f64_from_bits`, 2 for `f32_to_bits` and 3 for
 // `f32_from_bits`. The low byte holds the argument's scalar code, or 0 for
 // a type that is not a scalar.

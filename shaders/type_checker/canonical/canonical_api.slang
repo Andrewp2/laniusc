@@ -107,7 +107,7 @@ public static const uint CT_COUNT_FINAL = 7u;     // nonzero: pending candidates
 public static const uint CT_COUNT_LIBRARY = 8u;   // job identity of local declarations
 public static const uint CT_COUNT_UNIT = 9u;
 // Nonzero: candidates were interned ahead of the early stage
-// (dependencies/14a), so its re-arm (03a_rearm_list) re-arms every interned
+// (materialize_dependency_alias_targets), so its re-arm (03a_rearm_list) re-arms every interned
 // candidate; 03b_rearm_args clears it.
 public static const uint CT_COUNT_EARLY_REARM = 10u;
 // Nonzero: some stage of this job still had pending candidates after a
@@ -119,7 +119,7 @@ public static const uint CT_COUNT_BATCH_PENDING = 11u;
 // Candidates a stage's re-arm listed in canonical_pending for round 0
 // (03a_rearm_list); 03b_rearm_args moves it to CT_COUNT_PENDING and zeroes it.
 public static const uint CT_COUNT_REARM_PENDING = 12u;
-// The record count when calls/03m1 ran, in an earlier dispatch than any
+// The record count when list_inference_blocks ran, in an earlier dispatch than any
 // reader of it; 0 from the job's clear. Records below it are frozen.
 public static const uint CT_COUNT_FROZEN = 13u;
 public static const uint CT_COUNT_WORDS = 16u;

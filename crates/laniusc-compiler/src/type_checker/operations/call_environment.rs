@@ -3,11 +3,12 @@
 //! Recursive substitution reads explicit, contextual and argument constant
 //! bindings at every step. Producers publish them; these passes record the
 //! validated outcome next to the evidence, so readers only load it:
-//! - 03a0b admits explicit constant rows after 03a0 binds an application.
-//! - 03a3b selects and checks each `(callee, slot)` argument claim group after
-//!   the claim index is rebuilt.
-//! - 03a4c admits contextual constants after producers that publish without
-//!   inline admission (03a4b, 03k3 and 03a8); 03d and 08a admit inline.
+//! - `validate_explicit_constants` admits rows after `bind_explicit_applications`.
+//! - `publish_call_environment` selects and checks each `(callee, slot)` argument
+//!   claim group after the claim index is rebuilt.
+//! - `admit_context_constants` admits contextual constants after result
+//!   comparisons, record contexts and explicit application validation.
+//!   Method receiver binding and dependency result validation admit inline.
 
 use super::super::*;
 use crate::gpu::compiler_graph::{AccessMode, ReflectedComputeSpec};
@@ -16,16 +17,16 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_CONSTANTS_ADMIT: ReflectedCompu
     typecheck_pass!(
         "type_check.calls.explicit_applications.admit_constants",
         Tokens,
-        "type_checker/calls/03a0b_validate_explicit_constants"
+        "type_checker/calls/claims/validate_explicit_constants"
     )
-    // The applications that reserved binding rows (03a0).
+    // Applications that reserved binding rows in bind_explicit_applications.
     .with_indirect_dispatch("call_explicit_admission_args");
 
 pub(in crate::type_checker) const CALLS_CONST_ENVIRONMENT_PUBLISH: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.calls.const_claims.environment",
         CallArguments,
-        "type_checker/calls/03a3b_publish_call_environment"
+        "type_checker/calls/claims/publish_call_environment"
     )
     // Each group's first chain row stores its outcome; readers stop at that
     // row, so cells of other rows are never read.
@@ -36,7 +37,7 @@ pub(in crate::type_checker) const CALLS_CONTEXT_CONSTANTS_ADMIT: ReflectedComput
     typecheck_pass!(
         "type_check.calls.contextual_result_requests.admit_constants",
         HirNodes,
-        "type_checker/calls/03a4c_admit_context_constants"
+        "type_checker/calls/claims/admit_context_constants"
     )
     .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT: ReflectedComputeSpec =

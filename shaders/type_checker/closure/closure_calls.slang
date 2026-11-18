@@ -17,7 +17,7 @@ uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_node(uint node) { return node < hir_count(); }
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 
-#include "../calls/callable_generic_requirements.slang"
+#include "../calls/signatures/callable_generic_requirements.slang"
 
 // The low `count` bits.
 uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
@@ -91,7 +91,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 
 // The trait HIR item whose required member is declaration `target`, or
-// INVALID (a required member publishes no method row; methods/02_collect).
+// INVALID (a required member publishes no method row; collect_implemented_methods).
 uint bound_member_trait(uint target)
 {
     if (!valid_token(target) || method_decl_method_row[target] != INVALID) return INVALID;
@@ -103,9 +103,9 @@ uint bound_member_trait(uint target)
 }
 
 // A bound-member call of the closure (D3): `value.member(...)` whose
-// receiver is a type parameter (methods/07a) and whose callee is the
+// receiver is a type parameter (offer_bound_method_members) and whose callee is the
 // required member of a trait of this unit. A replay routes it to the
-// implementation its concrete receiver selects (methods/09); 03c routes it
+// implementation its concrete receiver selects (route_bound_method_members); 03c routes it
 // under each instance environment. Sets the method token.
 bool closure_bound_call(uint call, out uint token)
 {

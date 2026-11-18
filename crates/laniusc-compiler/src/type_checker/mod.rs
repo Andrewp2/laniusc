@@ -61,7 +61,7 @@ mod operations;
 mod params;
 mod preflight;
 mod record;
-mod match_passes;
+mod struct_literal_field_types;
 mod resident;
 mod substitution_passes;
 mod semantic_interface;

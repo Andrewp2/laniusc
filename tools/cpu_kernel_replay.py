@@ -602,7 +602,7 @@ def main():
     p.add_argument("--break-dtid", help="X[,Y,Z]: stop in lanius_cpu_break before that dispatch thread runs")
     p.set_defaults(func=command_gdb)
     p = sub.add_parser("build", help="only compile a kernel for the CPU")
-    p.add_argument("kernel", help="artifact key, e.g. type_checker/calls/01a_clear_entrypoints")
+    p.add_argument("kernel", help="artifact key, e.g. type_checker/calls/signatures/clear_function_entrypoints")
     p.add_argument("--source", default="worktree")
     common(p, capture=False)
     p.set_defaults(func=command_build)

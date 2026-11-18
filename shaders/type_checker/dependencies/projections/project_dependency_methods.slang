@@ -124,7 +124,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (winner.state != METHOD_CANDIDATE_UNIQUE ||
         winner.callable_kind != METHOD_CALLABLE_DEPENDENCY) return;
     // A trait's required member is the winner of a call through a bound
-    // (15b); its signature, in the bound's context, types the call.
+    // (offer_dependency_bound_members); its signature, in the bound's context, types the call.
     uint member = dependency_find_method(winner.library_id, winner.unit_id, winner.local_index);
     if (member == INVALID) return;
     uint owner = dependency_member_word(member * MEMBER_WORDS);

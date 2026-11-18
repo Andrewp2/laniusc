@@ -308,7 +308,7 @@ impl GpuTypeChecker {
         resources.buffer("gReferenceExtent", &reference_extent_all);
         resources.buffer("gExplicitOperandParams", &self.params_buf);
         // Dependency kernels with their own gParams layout read this job's
-        // lookup capacities here (dependencies/15b).
+        // lookup capacities here (offer_dependency_bound_members).
         resources.buffer("gTypeCheckParams", &self.params_buf);
         resources.buffer("gConstantStoragePlan", &constant_storage_plan);
         resources.buffer(

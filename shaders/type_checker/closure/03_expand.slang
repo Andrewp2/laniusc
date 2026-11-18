@@ -13,7 +13,7 @@
 //
 // Bound-member edges (D3; 01_mark links them): each bound-member call of F,
 // `value.member(...)` with `value` of F's type parameter P, routes under E
-// as methods/09 routes it in a replay (bound_route.slang). A nongeneric
+// as route_bound_method_members routes it in a replay (bound_route.slang). A nongeneric
 // implementation's method is concrete and needs no instance. A generic one's
 // method is inserted one level deeper with the environment its pattern binds
 // from R and its routed target (instance_closure_targets).
@@ -23,7 +23,7 @@ import type_checker.substitution.ct_subst;
 import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
 import type_checker.closure.instance_closure;
-import type_checker.methods.lookup;
+import type_checker.methods.method_lookup;
 import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -44,7 +44,7 @@ StructuredBuffer<uint> call_const_claim_pattern_mask;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
-// A type mismatch whose detail is a count fit (calls/03a1_emit_generic_claims,
+// A type mismatch whose detail is a count fit (emit_generic_claims,
 // gpu_compiler/helpers.rs ASSIGN_MISMATCH_COUNT_FIT): the low bits are the
 // scalar the value does not fit.
 static const uint ERR_ASSIGN_MISMATCH = 3u;
@@ -84,7 +84,7 @@ void route_bound_edge(uint call, uint token, uint4 instance, inout CtSpare subst
     HirMethodCore core = compact_method_cores[selected];
     uint candidate = core.name_token;
     uint member = fn_hir_by_decl_token[candidate];
-    // The routed callee as methods/09 publishes it and host retention reads
+    // The routed callee as route_bound_method_members publishes it and host retention reads
     // it: its function start token (backend_call_fn_index), and a public
     // method's HIR or a private one's start token as its native symbol;
     // then its type parameter count, and its constant parameter count

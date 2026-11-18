@@ -251,9 +251,9 @@ uint enum_variant_named(uint enum_node, uint name)
 // has a variant of its name: one that two module imports provide, or one
 // that name lookup bound to a variant of another enum (a module's own
 // `Error::NonFinite` while matching an imported `Error`). Once inference
-// knows the scrutinee's type, bind the head as 10m binds a resolved one, and
+// knows the scrutinee's type, bind the head as bind_match_patterns binds a resolved one, and
 // its path resolves as one that names the variant. Until then, and when the
-// enum has no such variant, the head keeps its resolution (10m3 rejects a
+// enum has no such variant, the head keeps its resolution (validate_imported_unit_patterns rejects a
 // variant of another enum).
 void resolve_bare_arm_head(uint row)
 {
@@ -283,7 +283,7 @@ void resolve_bare_arm_head(uint row)
     uint variant = enum_variant_named(decl_hir_node[enum_decl], name_id_by_token[head]);
     if (variant == INVALID) return;
     uint variant_token = compact_variants[variant].name_token;
-    // The path resolves as if it named the variant: later passes (10o,
+    // The path resolves as if it named the variant: later passes (validate_match_exhaustive,
     // lowering) read the path's declaration.
     resolved_value_decl[path] = decl_id_by_name_token[variant_token];
     resolved_value_status[path] = PATH_RESOLVE_STATUS_OK;

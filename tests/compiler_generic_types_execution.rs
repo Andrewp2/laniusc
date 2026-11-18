@@ -11276,7 +11276,7 @@ fn main() -> i32 { return go(21); }
 fn generic_bound_member_calls_route_to_generic_implementations() {
     // Replay routes the member to the implementation the instance's evidence
     // selected, and binds that implementation's own parameter from the
-    // subject (methods/09_route_bound_members).
+    // subject (route_bound_method_members).
     execute_with_status("generic implementation", r#"
 trait Read { fn read(&self) -> i32; }
 struct Box<U> { v: U, n: i32 }

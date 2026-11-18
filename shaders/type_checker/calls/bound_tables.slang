@@ -1,10 +1,10 @@
 // Tables of bound-directed call inference (calls/03l*,
 // docs/compiler-generic-types.md, "Bound-directed generic call inference").
-// Before the inference rounds the counts are cleared and 03l2 appends the
+// Before the inference rounds the counts are cleared and collect_local_implementations appends the
 // trait implementations and bounds of this unit; a copy keeps those counts
-// (bound_inference_local_counts). Each round restores them, and 03l1 appends
+// (bound_inference_local_counts). Each round restores them, and collect_dependency_bounds appends
 // the trait implementations and free-function bounds of each resident
-// dependency page before 03l3 reads the tables
+// dependency page before infer_bound_generics reads the tables
 // (docs/compiler-call-inference-rounds.md). Rows hold canonical IDs, which
 // outlive the page they came from.
 //
@@ -39,7 +39,7 @@ public static const uint BOUND_IMPLEMENTATION_ARGUMENTS = 8u;
 public static const uint BOUND_PREDICATE_ARGUMENTS = 7u;
 public static const uint BOUND_COUNT_IMPLEMENTATIONS = 0u;
 public static const uint BOUND_COUNT_PREDICATES = 1u;
-// Nonzero when a row did not fit: the tables are incomplete and 03l3 infers
+// Nonzero when a row did not fit: the tables are incomplete and infer_bound_generics infers
 // nothing, since a missing implementation could make a selection ambiguous.
 public static const uint BOUND_COUNT_OVERFLOW = 2u;
 public static const uint BOUND_LOCAL_IMPLEMENTATION = 0xfffffffdu;
@@ -47,7 +47,7 @@ public static const uint BOUND_LOCAL_IMPLEMENTATION = 0xfffffffdu;
 // bound_inference_counts: the first row plus one (0: none) of each chain.
 // An implementation row is linked into the chain of a hash of its trait and
 // argument count, a predicate row into the chain of a hash of its owner.
-// 03l3 walks one chain instead of every row. The heads come before the owner
+// infer_bound_generics walks one chain instead of every row. The heads come before the owner
 // filter, so the snapshot and restore of the counts (BOUND_LOCAL_WORDS) also
 // return the heads to the local rows'. A local row's next word then names
 // only local rows, and a dependency row's is written when it is linked again.
@@ -56,7 +56,7 @@ public static const uint BOUND_IMPLEMENTATION_HEADS = 4u;
 public static const uint BOUND_PREDICATE_HEADS = BOUND_IMPLEMENTATION_HEADS + BOUND_HEAD_COUNT;
 public static const uint BOUND_LOCAL_WORDS = BOUND_PREDICATE_HEADS + BOUND_HEAD_COUNT;
 // Words BOUND_OWNER_FILTER.. of bound_inference_counts: one bit per hash of
-// the owner of every predicate row collected since the job's clear. 03l3
+// the owner of every predicate row collected since the job's clear. infer_bound_generics
 // skips a callee whose bit is clear, which then has no predicate row. A
 // round's restore of the counts keeps the bits, so the rows of an earlier
 // dependency page only leave bits that cost a chain walk.

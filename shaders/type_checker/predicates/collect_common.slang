@@ -12,7 +12,7 @@ import type_checker.concrete_type_equality;
 // bounds or impls as comments.
 
 import hir_records;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.module_lookup;
@@ -451,7 +451,7 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
 // Reuse canonical lexical lookup, including cross-domain name shadowing.
 // The collector's bound input aliases the same nearest-owner producer.
 #define generic_decl_owner_by_node_a generic_decl_owner_by_node
-#include "../type/instances/lexical_parameter_lookup.slang"
+#include "../types/parameters/lexical_parameter_lookup.slang"
 #undef generic_decl_owner_by_node_a
 #endif
 

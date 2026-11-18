@@ -23,7 +23,7 @@ import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
-import type_checker.methods.lookup;
+import type_checker.methods.method_lookup;
 import checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -52,7 +52,7 @@ uint2 entry_call(uint function, uint env)
     return entry == IT_NO_ENTRY ? uint2(IT_CALL_UNRESOLVED, 0u) : uint2(IT_CALL_ENTRY, entry);
 }
 
-// The method token of call `call`, as methods/09 reads it: its callee
+// The method token of call `call`, as route_bound_method_members reads it: its callee
 // member's name, or the leaf of a qualified callee path `P::member`; INVALID
 // for any other callee.
 uint member_token(uint call)

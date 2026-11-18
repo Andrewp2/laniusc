@@ -8,7 +8,7 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
-import type_checker.match.ct_match;
+import type_checker.matches.checked_match_types;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 
@@ -107,7 +107,7 @@ bool imported_candidate_matches(uint member, bool dotted, uint actual, out uint 
     if (ct_match<DependencySlots>(slots, pattern0, actual, pattern1, actual1,
         CT_NONE, 0u, false, spare, count_mask) != CT_MATCH_OK) return false;
     // A path call names every method: a self method takes its receiver as
-    // the first argument (dependencies/07b), so it has receiver mode 0.
+    // the first argument (scatter_dependency_call_parameters), so it has receiver mode 0.
     if (!dotted) return true;
     if (mode == 0u) return false;
     receiver_mode = mode == 3u ? 1u : mode;

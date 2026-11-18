@@ -5,7 +5,7 @@ pub(in crate::type_checker) const GENERIC_PARAM_LOOKUP_CLEAR: ReflectedComputeSp
     typecheck_pass!(
         "type_check.generic_params.lookup.clear",
         Declarations,
-        "type_checker/type/instances/00b1_clear_generic_param_lookup"
+        "type_checker/types/parameters/clear_generic_param_lookup"
     )
     .initializer();
 
@@ -13,7 +13,7 @@ pub(in crate::type_checker) const GENERIC_PARAM_LOOKUP_BUILD: ReflectedComputeSp
     typecheck_pass!(
         "type_check.generic_params.lookup.build",
         Declarations,
-        "type_checker/type/instances/00b2_build_generic_param_lookup"
+        "type_checker/types/parameters/build_generic_param_lookup"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -21,7 +21,7 @@ pub(in crate::type_checker) const GENERIC_PARAM_ROWS_SCATTER: ReflectedComputeSp
     typecheck_pass!(
         "type_check.generic_params.rows.scatter",
         Declarations,
-        "type_checker/type/instances/00d_scatter_generic_param_rows"
+        "type_checker/types/parameters/scatter_generic_param_rows"
     )
     .with_modes(&[(
         "generic_type_param_rows",

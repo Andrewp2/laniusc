@@ -3,7 +3,7 @@
 import hir_records;
 import atomics;
 import type_checker.interface.method_parameters;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.scalar_subject;
 import primitive_types;
 
@@ -43,7 +43,7 @@ RWStructuredBuffer<uint> interface_predicate_subject_row;
 RWStructuredBuffer<uint> interface_status;
 #define LEXICAL_HIR_CAPACITY gParams.hir_capacity
 #define LEXICAL_TOKEN_CAPACITY gParams.token_capacity
-#include "../../type/instances/lexical_parameter_lookup.slang"
+#include "../../types/parameters/lexical_parameter_lookup.slang"
 static const uint INVALID = 0xffffffffu;
 // A subject row with this bit set holds a scalar type code, not a generic
 // parameter row: `where bool: Rel<[i32; N]>` (01_scatter).

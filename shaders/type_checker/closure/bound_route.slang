@@ -1,5 +1,5 @@
 // The route of a bound-member call of the closure (closure_calls.slang,
-// closure_bound_call) under one instance environment, as methods/09 routes
+// closure_bound_call) under one instance environment, as route_bound_method_members routes
 // it in a replay: the closed receiver R = E(P) selects the implementation of
 // the member's trait whose receiver pattern matches R. 03c inserts the
 // generic implementation method it reaches; the instance table types the
@@ -8,7 +8,7 @@
 // v1 routes a pattern that is R's named head applied to the implementation's
 // type and constant parameters (each slot at least once) or to closed
 // arguments equal to R's. Type and constant parameters have separate slots
-// (methods/09 leaf_slot); a constant binds R's constant operand there, as
+// (route_bound_method_members leaf_slot); a constant binds R's constant operand there, as
 // 09 publishes it (identity mode 0). Anything else is left to the replays:
 // a nested parameter, a method with parameters of its own, an imported
 // trait or receiver head, a pattern without a canonical ID, or no unique
@@ -31,7 +31,7 @@ static const uint BOUND_UNKNOWN = 3u;
 static const uint TRAIT_REFERENCE_DEPENDENCY_BIT = 0x80000000u;
 
 // Whether implementation `impl` implements local trait item `trait`
-// (methods/09 `implements`, local bound).
+// (route_bound_method_members `implements`, local bound).
 bool implements_local(uint impl, uint trait)
 {
     if (!valid_node(impl)) return false;

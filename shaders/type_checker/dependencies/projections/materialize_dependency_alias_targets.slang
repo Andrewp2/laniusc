@@ -36,7 +36,7 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 // The tag of a target that substitution/08 has not realized yet; no reader
-// runs in between, and 08a leaves none behind.
+// runs in between, and validate_dependency_call_results leaves none behind.
 static const uint ALIAS_TARGET_PENDING = 0xfffffffeu;
 // Failure details: the leaf has no canonical ID, the signature has none,
 // or the substitution has none.

@@ -3,7 +3,7 @@ import hir_records;
 import parser.token_features;
 import type_checker.calls.explicit_call_environment;
 import type_checker.semantic.artifact.constant_reference;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.scalar_subject;
 import gpu_index;
 import native_c_abi;
@@ -127,7 +127,7 @@ RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
 #include "../../../codegen/lir/semantic/function_method.slang"
-#include "../../type/instances/lexical_parameter_lookup.slang"
+#include "../../types/parameters/lexical_parameter_lookup.slang"
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;

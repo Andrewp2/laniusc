@@ -8,10 +8,10 @@
 2076 tests/typed_constant_identity_graph
 2048 codegen/lir/semantic/aggregate_elements
 2048 tests/parameter_scoped_type_graph
-2048 type_checker/calls/03g_project_expression_types
-2048 type_checker/calls/03h_project_array_literal_elements
+2048 type_checker/calls/results/project_expression_types
+2048 type_checker/calls/results/project_array_literal_elements
 2048 type_checker/canonical/90_validate
-1280 type_checker/type/instances/02c_index_closed_applications
+1280 type_checker/types/instances/index_closed_applications
 1024 type_checker/dependencies/projections/project_dependency_type_instances
 768 type_checker/interface/type_topology/12_type_records
 512 type_checker/interface/type_topology/05_mark_reverse

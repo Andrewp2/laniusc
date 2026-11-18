@@ -1,4 +1,4 @@
-// Realize the imported alias targets of dependencies/14a as checked rows,
+// Realize the imported alias targets of materialize_dependency_alias_targets as checked rows,
 // after the last dependency page. A target published as (pending, ID)
 // becomes the checked reference of its row (ct_realize). A lane that meets
 // a row another lane is writing leaves its target for the next dispatch
@@ -17,7 +17,7 @@ RWStructuredBuffer<uint2> imported_type_alias_target;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
-// dependencies/14a: the tag of a target that is not realized yet.
+// materialize_dependency_alias_targets: the tag of a target that is not realized yet.
 static const uint ALIAS_TARGET_PENDING = 0xfffffffeu;
 // Failure detail: 0x41490020 | ct_realize failure bits.
 static const uint FAILURE_REALIZE = 0x41490020u;

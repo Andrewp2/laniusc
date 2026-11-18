@@ -3926,7 +3926,7 @@ fn return_mismatch_diagnostic(path: &Path, source: &str, start: usize, len: usiz
     )
 }
 
-// ReturnMismatch details of `value?` (calls/03f_infer_return_bindings).
+// ReturnMismatch details of `value?` (infer_return_bindings).
 const TRY_NOT_RESULT: u32 = 0x3f01;
 const TRY_RETURN_MISMATCH: u32 = 0x3f02;
 
@@ -5074,7 +5074,7 @@ mod tests {
             .expect_err("a local parent shadows imports on every page");
             // `Left` is looked up on the local `Choice` only. The method
             // resolver owns a type-qualified call and reports the missing
-            // associated item as LNC0027 (methods/03 resolve_associated_call),
+            // associated item as LNC0027 (validate_and_publish_method_calls),
             // as it does for any local type in a program with methods.
             assert_eq!(
                 error.to_public_diagnostic().code,

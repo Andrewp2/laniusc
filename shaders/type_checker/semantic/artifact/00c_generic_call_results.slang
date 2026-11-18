@@ -11,7 +11,7 @@ import type_checker.calls.explicit_call_environment;
 import type_checker.concrete_type_equality;
 import type_checker.concrete_type_closure;
 import type_checker.constant_atoms_identity;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import status;
 
 struct Params
@@ -75,7 +75,7 @@ static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 // type parameter that is not in scope at the call.
 static const uint FOREIGN_RESULT_PARAMETER = 18u;
 
-#include "../../type/instances/lexical_parameter_scope.slang"
+#include "../../types/parameters/lexical_parameter_scope.slang"
 
 // The checked type graph over this pass's writable instance columns.
 struct CallTypeArgumentGraph : ITypeStructureGraph

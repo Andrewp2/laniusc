@@ -278,7 +278,7 @@ pub(in crate::type_checker) struct NameHashParams {
     pub(in crate::type_checker) reserved: u32,
 }
 
-/// Selects the rows `02c_index_closed_applications` visits: `listed` 1 for
+/// Selects the rows `index_closed_applications` visits: `listed` 1 for
 /// the inference rounds' listed live rows, 0 for every live row.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -290,7 +290,7 @@ pub(in crate::type_checker) struct TypeRowListParams {
 }
 
 /// Selects the rows a body reference specialization pass visits
-/// (00g_specialize_checked_references.slang): `mode` 0 visits every row with
+/// (specialize_checked_references.slang): `mode` 0 visits every row with
 /// one lane per row; another mode visits the rows below its allocation
 /// count, strided over `lanes` lanes.
 #[repr(C)]

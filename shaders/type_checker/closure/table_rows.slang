@@ -16,7 +16,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
-import type_checker.methods.lookup;
+import type_checker.methods.method_lookup;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -92,7 +92,7 @@ void fail_row(uint row, uint failure)
 
 // A bound-member call keeps no type in the template: its callee is the
 // trait's required member. A copy replay routes it to the implementation
-// method its concrete receiver selects (methods/09) and types the call with
+// method its concrete receiver selects (route_bound_method_members) and types the call with
 // that method's return type. The table routes it the same way (bound_route,
 // as 03c does) on the receiver substituted under the entry's environment:
 // the next term is the selected method's declared return type, under the

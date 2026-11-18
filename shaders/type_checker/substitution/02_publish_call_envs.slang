@@ -49,7 +49,7 @@ uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_node(uint node) { return node < hir_count(); }
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 
-#include "../calls/callable_generic_requirements.slang"
+#include "../calls/signatures/callable_generic_requirements.slang"
 
 // The low `count` bits.
 uint low_bits(uint count) { return count == 0u ? 0u : 0xffffffffu >> (32u - min(count, 32u)); }
@@ -94,8 +94,8 @@ uint2 evidence_masks(uint token, uint2 context)
 // arity (a method's own parameters and its impl's) once the callee is
 // resolved, restricted to slots that can have evidence. In particular, an
 // unresolved primitive operator no longer probes all 64 empty slots. A
-// trait's required member reached through a bound (methods/07a,
-// dependencies/15b) also has the trait's
+// trait's required member reached through a bound (offer_bound_method_members,
+// offer_dependency_bound_members) also has the trait's
 // slots, which its header does not declare: the bound's trait arguments
 // are its context.
 uint2 candidate_masks(uint token)

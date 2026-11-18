@@ -59,7 +59,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     /// this `i` (right after the bindings): the operations from there on
     /// read the IDs of the specialized rows.
     pub(in crate::type_checker) body_canonical_split: usize,
-    /// The body field closure (in place of type/instances/02d) runs ahead of
+    /// The body field closure (in place of list_type_rows) runs ahead of
     /// `body_specialization[i]` for this `i` (right after the body
     /// application index).
     pub(in crate::type_checker) body_field_closure: substitution_passes::FieldClosureOperations,
@@ -164,15 +164,15 @@ impl SemanticProjectionOperations {
             body_specialization: [
                 (
                     "type_check.body_specialization.apply",
-                    "type_checker/type/instances/00f_apply_body_specialization",
+                    "type_checker/types/specialization/apply_body_specialization",
                 ),
                 (
                     "type_check.body_specialization.aggregates",
-                    "type_checker/type/instances/01d_collect_aggregate_details",
+                    "type_checker/types/instances/collect_aggregate_details",
                 ),
                 (
                     "type_check.body_specialization.constants",
-                    "type_checker/type/instances/00g_apply_body_constants",
+                    "type_checker/types/specialization/apply_body_constants",
                 ),
                 (
                     compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS,
@@ -180,27 +180,27 @@ impl SemanticProjectionOperations {
                 ),
                 (
                     "type_check.body_specialization.arguments",
-                    "type_checker/type/instances/01e_collect_named_arg_refs",
+                    "type_checker/types/instances/collect_named_arg_refs",
                 ),
                 (
                     "type_check.body_specialization.declarations",
-                    "type_checker/type/instances/01f_decl_refs",
+                    "type_checker/types/instances/project_declaration_type_references",
                 ),
                 (
                     "type_check.body_specialization.bindings",
-                    "type_checker/type/instances/01f_decl_refs",
+                    "type_checker/types/instances/project_declaration_type_references",
                 ),
                 (
                     "type_check.body_specialization.clear_application_index",
-                    "type_checker/type/instances/02b_clear_application_index",
+                    "type_checker/types/instances/clear_type_application_index",
                 ),
                 (
                     "type_check.body_specialization.index_applications",
-                    "type_checker/type/instances/02c_index_closed_applications",
+                    "type_checker/types/instances/index_closed_applications",
                 ),
                 (
                     "type_check.body_specialization.index_generated_applications",
-                    "type_checker/type/instances/02c_index_closed_applications",
+                    "type_checker/types/instances/index_closed_applications",
                 ),
                 (
                     "type_check.body_specialization.imported_fields",
@@ -208,35 +208,35 @@ impl SemanticProjectionOperations {
                 ),
                 (
                     "type_check.body_specialization.member_receivers",
-                    "type_checker/type/instances/03a_member_receivers",
+                    "type_checker/types/aggregates/seed_member_receivers",
                 ),
                 (
                     "type_check.body_specialization.member_results",
-                    "type_checker/type/instances/03_member_results",
+                    "type_checker/types/aggregates/project_member_field_results",
                 ),
                 (
                     "type_check.body_specialization.member_substitute",
-                    "type_checker/type/instances/03b_member_substitute",
+                    "type_checker/types/aggregates/publish_substituted_member_types",
                 ),
                 (
                     "type_check.body_specialization.literal_contexts",
-                    "type_checker/type/instances/04a2_struct_init_contexts",
+                    "type_checker/types/aggregates/project_struct_init_contexts",
                 ),
                 (
                     "type_check.body_specialization.nested_literal_contexts",
-                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                    "type_checker/types/aggregates/propagate_nested_struct_contexts",
                 ),
                 (
                     "type_check.body_specialization.literal_fields",
-                    "type_checker/type/instances/04_struct_init_fields",
+                    "type_checker/types/aggregates/project_struct_init_fields",
                 ),
                 (
                     "type_check.body_specialization.literal_substitute",
-                    "type_checker/type/instances/04b_struct_init_substitute",
+                    "type_checker/types/aggregates/substitute_struct_init_field_types",
                 ),
                 (
                     "type_check.body_specialization.array_literal_refs",
-                    "type_checker/type/instances/05b_array_literal_return_refs",
+                    "type_checker/types/aggregates/project_array_literal_return_references",
                 ),
                 (
                     compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS,
@@ -252,7 +252,7 @@ impl SemanticProjectionOperations {
                 ),
                 (
                     "type_check.body_specialization.bound_members",
-                    "type_checker/methods/09_route_bound_members",
+                    "type_checker/methods/route_bound_method_members",
                 ),
             ]
             .into_iter()

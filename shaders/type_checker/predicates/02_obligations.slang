@@ -3,7 +3,7 @@
 // contract as ordinary generic calls; up to 32 trait arguments are supported.
 
 import hir_records;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 import fixed.key;
 import fixed.compact_method;
 import hir_expr_semantics;
@@ -86,7 +86,7 @@ static const uint SOLVER_DEMAND_OBLIGATIONS = 0u;
 static const uint SOLVER_DEMAND_IMPLEMENTATIONS = 1u;
 #endif
 
-#include "../type/instances/lexical_parameter_lookup.slang"
+#include "../types/parameters/lexical_parameter_lookup.slang"
 
 static const uint INVALID = 0xffffffffu;
 

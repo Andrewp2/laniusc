@@ -981,7 +981,7 @@ mod compute_pass_counting_tests {
                 13,
             ),
             ("parser/syntax.rs", 4),
-            ("type_checker/bind_support/control.rs", 2),
+            ("type_checker/bind_support/control_flow.rs", 2),
             // The page swap of the graph's paged dependency slot: the page
             // store is no graph resource, and the copy stands where a host
             // upload of the page stood.

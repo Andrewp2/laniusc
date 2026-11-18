@@ -17,7 +17,7 @@ import hir_records;
 import range_query;
 import segment_tree;
 import status;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 
 struct Params
 {
@@ -140,7 +140,7 @@ bool valid_node(uint node)
     return node != INVALID && node < active_semantic_hir_count();
 }
 
-#include "../type/instances/lexical_parameter_lookup.slang"
+#include "../types/parameters/lexical_parameter_lookup.slang"
 
 bool parser_published_type_syntax(uint node, uint token_i)
 {

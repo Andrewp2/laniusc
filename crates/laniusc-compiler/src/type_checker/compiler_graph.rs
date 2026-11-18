@@ -351,7 +351,7 @@ pub(super) const CALLS_RECORD_NESTED_CONTEXTS_PASS: &str =
 pub(super) const CALLS_RECORD_IMPORTED_FIELDS_PASS: &str =
     "type_check.calls.record_imported_fields";
 /// Record-literal field expectations and dense struct-literal references in
-/// one dispatch (calls/03k4_record_fields_and_refs).
+/// one dispatch (project_record_field_expectations_and_references).
 pub(super) const CALLS_RECORD_FIELDS_AND_REFS_PASS: &str =
     "type_check.calls.record_fields_and_refs";
 
@@ -367,34 +367,34 @@ pub(super) const CALLS_RETURN_IMPORTED_FIELDS_PASS: &str =
 /// The inference rounds' row passes (the closed application index twice and
 /// the imported fields) visit the source rows that hold a type, listed once
 /// before the rounds, and the generated rows
-/// (shaders/type_checker/type/instances/live_type_row_list.slang).
+/// (shaders/type_checker/types/instances/live_type_row_list.slang).
 pub(super) const CALLS_TYPE_ROW_LIST_CLEAR_PASS: &str = "type_check.calls.type_rows.clear";
 pub(super) const CALLS_TYPE_ROW_LIST_PASS: &str = "type_check.calls.type_rows.list";
 pub(super) const CALLS_TYPE_ROW_LIST_ARGS_PASS: &str = "type_check.calls.type_rows.args";
-pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/type/instances/02d_list_type_rows";
+pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/types/instances/list_type_rows";
 pub(super) const CALLS_TYPE_ROW_LIST_ARGS_KERNEL: &str =
-    "type_checker/type/instances/02e_type_row_list_args";
+    "type_checker/types/instances/write_type_row_dispatch_args";
 /// The inference rounds' masked passes visit the listed blocks of rows that
 /// hold an item of an active function (shaders/type_checker/calls/
 /// inference_blocks.slang): each function's rows are recorded once before the
 /// rounds, and the list is written at the start of each round's passes.
 pub(super) const CALLS_INFERENCE_BLOCKS_CLEAR_PASS: &str = "type_check.calls.inference_blocks.clear";
 pub(super) const CALLS_INFERENCE_RANGES_PASS: &str = "type_check.calls.inference_blocks.ranges";
-pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/03m0_inference_ranges";
+pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/inference/list_inference_ranges";
 pub(super) const CALLS_INFERENCE_LIST_ARGS_PASS: &str = "type_check.calls.inference_blocks.list_args";
-pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/03m2_inference_list_args";
+pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/inference/write_inference_list_dispatch_args";
 pub(super) const CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS: &str = "type_check.calls.struct_literal_rows.clear";
 pub(super) const CALLS_STRUCT_LITERAL_ROWS_PASS: &str = "type_check.calls.struct_literal_rows.list";
-pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/03k5_list_struct_literal_rows";
+pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/results/list_struct_literal_rows";
 pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_PASS: &str = "type_check.calls.struct_literal_rows.args";
-pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/03k6_struct_literal_row_args";
+pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/results/write_struct_literal_dispatch_args";
 pub(super) const CALLS_CALL_ROOTS_COUNT_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_count";
 pub(super) const CALLS_CALL_ROOTS_ARGS_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_args";
 pub(super) const CALLS_CALL_ROOTS_LIST_PASS: &str = "type_check.substitution.call_roots.list";
 pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/04a_list_call_roots";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_KERNEL: &str =
-    "type_checker/calls/03m1_inference_block_list";
+    "type_checker/calls/inference/list_inference_blocks";
 /// The rounds' passes over HIR rows that dispatch from the listed blocks.
 pub(super) const LISTED_HIR_INFERENCE_PASSES: &[&str] = &[
     CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
@@ -409,10 +409,10 @@ pub(super) const LISTED_HIR_INFERENCE_PASSES: &[&str] = &[
 ];
 /// The rounds' passes over tokens that dispatch from the listed blocks.
 pub(super) const LISTED_TOKEN_INFERENCE_PASSES: &[&str] = &[TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS];
-/// The rounds' closed application index is `02c_index_closed_applications`
+/// The rounds' closed application index is `index_closed_applications`
 /// with `gTypeRowList.listed` set (`TypeRowListParams`).
 pub(super) const LISTED_APPLICATION_INDEX_KERNEL: &str =
-    "type_checker/type/instances/02c_index_closed_applications";
+    "type_checker/types/instances/index_closed_applications";
 pub(super) const LISTED_IMPORTED_FIELDS_KERNEL: &str =
     "type_checker/substitution/07b_project_listed_imported_fields";
 pub(super) const CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS: &str =
@@ -580,14 +580,14 @@ pub(crate) const CALL_INFERENCE_STALL_DETAIL: u32 = 16;
 pub(super) const CALL_INFERENCE_REPEAT_WARNING_ROUNDS: u32 = 64;
 
 pub(super) const BODY_REFERENCE_SPECIALIZATION_KERNEL: &str =
-    "type_checker/type/instances/00g_specialize_checked_references";
+    "type_checker/types/specialization/specialize_checked_references";
 /// The call constants a replay closed: claims and contextual constants that
 /// reach a body parameter through count projections fold to atoms once the
 /// body's constants are installed.
 pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS: &str =
     "type_check.body_specialization.constant_claims";
 pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL: &str =
-    "type_checker/type/instances/00g2_fold_body_constant_claims";
+    "type_checker/types/specialization/fold_body_constant_claims";
 /// The body canonical stage and the substitution restart follow this body
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
@@ -600,7 +600,7 @@ pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
 /// The rows a body reference specialization pass visits
-/// (00g_specialize_checked_references.slang, gReferenceExtent): every row,
+/// (specialize_checked_references.slang, gReferenceExtent): every row,
 /// or the rows below a GPU-written allocation count, strided over
 /// BODY_REFERENCE_LANES lanes.
 pub(super) const BODY_REFERENCE_EXTENT_ALL: u32 = 0;
@@ -610,7 +610,7 @@ pub(super) const BODY_REFERENCE_EXTENT_CALL_CONTEXTS: u32 = 3;
 pub(super) const BODY_REFERENCE_EXTENT_EXPLICIT_BINDINGS: u32 = 4;
 pub(super) const BODY_REFERENCE_EXTENT_IMPORTED_FIELDS: u32 = 5;
 /// Lanes of a bounded body reference pass and of the constant-claim fold
-/// (00g2_fold_body_constant_claims.slang, LANES).
+/// (fold_body_constant_claims.slang, LANES).
 pub(super) const BODY_REFERENCE_LANES: u32 = 1 << 18;
 pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str, u32)] = &[
     (
@@ -3172,14 +3172,14 @@ fn build_graph(
         _hir_active_count as "hir_active_count" in HirNodes => 4;
     });
     // The listed live type rows of the inference rounds
-    // (type/instances/live_type_row_list.slang).
+    // (live_type_row_list.slang).
     graph_resources!(graph, Workspace {
         type_live_rows as "type_live_rows" in Tokens => token_rows * 4;
         type_live_row_count as "type_live_row_count" in Calls => 16;
         _type_live_row_args as "type_live_row_args" in DispatchArguments [StorageIndirect] => 12;
     });
     // The listed active blocks of the inference rounds
-    // (calls/03m0_inference_ranges.slang).
+    // (list_inference_ranges.slang).
     graph_resources!(graph, Workspace {
         inference_block_tables as "inference_block_tables" in Calls =>
             (8 + 5 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks)) * 4;
@@ -3194,7 +3194,7 @@ fn build_graph(
         call_root_count as "call_root_count" in Calls => 4;
         call_root_args as "call_root_args" in DispatchArguments [StorageIndirect] => 12;
         // The rows of the rounds' struct-literal passes
-        // (calls/03k5_list_struct_literal_rows.slang).
+        // (list_struct_literal_rows.slang).
         _struct_literal_field_rows as "struct_literal_field_rows" in Tokens => token_rows * 4;
         _struct_literal_hir_rows as "struct_literal_hir_rows" in HirNodes => hir_rows * 4;
         struct_literal_row_counts as "struct_literal_row_counts" in Calls => 8;
@@ -3206,7 +3206,7 @@ fn build_graph(
     // 03m1 wrote them.
     graph.mark_zero_initialized(inference_hir_blocks)?;
     graph.mark_zero_initialized(inference_token_blocks)?;
-    // Method call keys (methods/06) append to the list wherever they run.
+    // Method call keys (mark_method_call_keys) append to the list wherever they run.
     // Before the list is built they append to a stale list, which the
     // clear and the listing then replace, so no pass reads what they wrote.
     graph.mark_zero_initialized(type_live_rows)?;
@@ -3877,7 +3877,7 @@ fn build_graph(
         _call_explicit_constant_valid_mask as "call_explicit_constant_valid_mask" in Tokens => token_rows * 4;
         _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
-        // Binding rows, then the applications listed for 03a0b and its
+        // Binding rows, then the applications listed for validate_explicit_constants and its
         // overflow flag.
         _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 12;
         _call_explicit_application_list as "call_explicit_application_list" in Tokens => token_rows * 4;
@@ -4255,7 +4255,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/01_clear",
+        "type_checker/control_flow/clear_if_depth_deltas",
         reflected_bindings!["if_delta" => if_delta: Write],
     )?;
     graph.add_kernel_pass_by_name(
@@ -4263,7 +4263,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/loop/depth/02_mark",
+        "type_checker/control_flow/mark_if_boundaries",
         &[],
     )?;
     graph.add_indirect_dispatch(IF_DEPTH_MARK_PASS, "hir_active_dispatch_args")?;
@@ -4272,7 +4272,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/03_local",
+        "type_checker/control_flow/scan_if_depths_in_blocks",
         reflected_bindings![
             "if_depth_inblock" => if_depth_inblock: Write,
             "block_sum" => if_block_sum: Write,
@@ -4285,8 +4285,8 @@ fn build_graph(
             up_first: IF_DEPTH_SCAN_UP_FIRST_PASS,
             up_rest: IF_DEPTH_SCAN_UP_REST_PASS,
             down: IF_DEPTH_SCAN_DOWN_PASS,
-            up_kernel: "type_checker/loop/depth/04_hierarchy_up",
-            down_kernel: "type_checker/loop/depth/04_hierarchy_down",
+            up_kernel: "type_checker/control_flow/sum_if_depth_blocks_up",
+            down_kernel: "type_checker/control_flow/propagate_if_depth_prefixes_down",
         },
         prefix_scan_hierarchy_levels(token_blocks),
         if_block_sum,
@@ -4299,7 +4299,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/loop/depth/05_apply",
+        "type_checker/control_flow/publish_if_nesting_depths",
         reflected_bindings![
             "block_prefix" => if_block_prefix: Read,
             "if_depth" => if_depth: Write,
@@ -4571,7 +4571,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/type/instances/00a_mark_generic_param_records",
+            "type_checker/types/parameters/mark_generic_param_records",
             reflected_bindings![
                 "compact_hir_count" => compact_hir_count: Read,
                 "compact_hir_core" => compact_hir_core: Read,
@@ -4586,7 +4586,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Declarations,
             kernels,
-            "type_checker/type/instances/00b_decl_generic_params",
+            "type_checker/types/parameters/collect_declaration_generic_parameters",
             reflected_bindings![
                 "generic_param_count_out" => generic_param_count_out: Write,
                 "generic_param_owner_token" => generic_param_owner_token: Write,
@@ -4606,7 +4606,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::HirNodes,
             kernels,
-            "type_checker/type/instances/00e_generic_param_use_slots",
+            "type_checker/types/parameters/resolve_generic_parameter_use_slots",
             &[],
         )?;
     } else {
@@ -4966,7 +4966,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/01h_clear_semantic_type_rows",
+        "type_checker/types/instances/clear_semantic_type_rows",
         reflected_bindings![
             "type_semantic_row_by_token" => type_semantic_row_by_token: Write,
             "type_semantic_scan_input" => type_semantic_scan_input: Write,
@@ -4983,7 +4983,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/01_clear",
+        "type_checker/control_flow/clear_function_contexts",
         reflected_bindings![
             "enclosing_fn" => enclosing_fn: Write,
             "enclosing_fn_end" => enclosing_fn_end: Write,
@@ -5000,7 +5000,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/fn/context/02_mark",
+        "type_checker/control_flow/mark_function_boundaries",
         &[],
     )?;
     graph.add_indirect_dispatch(FN_CONTEXT_MARK_PASS, "hir_active_dispatch_args")?;
@@ -5009,7 +5009,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/03_local",
+        "type_checker/control_flow/scan_function_boundaries_in_blocks",
         reflected_bindings![
             "fn_event_inblock" => fn_event_inblock: Write,
             "block_sum" => fn_block_sum: Write,
@@ -5022,8 +5022,8 @@ fn build_graph(
             up_first: FN_CONTEXT_SCAN_UP_FIRST_PASS,
             up_rest: FN_CONTEXT_SCAN_UP_REST_PASS,
             down: FN_CONTEXT_SCAN_DOWN_PASS,
-            up_kernel: "type_checker/fn/context/04_hierarchy_up",
-            down_kernel: "type_checker/fn/context/04_hierarchy_down",
+            up_kernel: "type_checker/control_flow/scan_function_boundary_blocks_up",
+            down_kernel: "type_checker/control_flow/propagate_function_boundary_prefixes_down",
         },
         prefix_scan_hierarchy_levels(token_blocks),
         fn_block_sum,
@@ -5036,7 +5036,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/fn/context/05_apply",
+        "type_checker/control_flow/resolve_enclosing_functions",
         reflected_bindings![
             "block_prefix" => fn_block_prefix: Read,
             "enclosing_fn" => enclosing_fn: Write,
@@ -5139,7 +5139,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/03a_member_receivers",
+                "type_checker/types/aggregates/seed_member_receivers",
                 member_receiver_overrides,
             )?;
             STRUCT_FIELD_LOOKUP_CLEAR.register_kernel(graph, kernels)?;
@@ -5149,7 +5149,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/03_member_results",
+                "type_checker/types/aggregates/project_member_field_results",
                 application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
@@ -5157,7 +5157,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Tokens,
                 kernels,
-                "type_checker/type/instances/03b_member_substitute",
+                "type_checker/types/aggregates/publish_substituted_member_types",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -5165,7 +5165,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/04a_struct_init_clear",
+        "type_checker/types/aggregates/clear_struct_init_expectations",
         reflected_bindings![
             "struct_init_field_context_instance" => struct_init_field_context_instance: Write,
             "struct_init_field_expected_ref_tag" => struct_init_field_expected_ref_tag: Write,
@@ -5182,7 +5182,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04a2_struct_init_contexts",
+                "type_checker/types/aggregates/project_struct_init_contexts",
                 &[],
             )?;
             graph.add_kernel_pass_by_name(
@@ -5190,7 +5190,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04a3_nested_struct_contexts",
+                "type_checker/types/aggregates/propagate_nested_struct_contexts",
                 application_bindings,
             )?;
             graph.add_kernel_pass_by_name(
@@ -5212,7 +5212,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/type/instances/04_struct_init_fields",
+                "type_checker/types/aggregates/project_struct_init_fields",
                 &[],
             )?;
             graph.add_pass(PassDesc {
@@ -5285,10 +5285,10 @@ fn build_graph(
                 "type_checker/semantic/artifact/01a_struct_literal_refs",
             )?;
             graph.require_complete_reflection(SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS)?;
-            super::match_passes::register_field_expected_ids_pass(
+            super::struct_literal_field_types::register_field_expected_ids_pass(
                 graph,
                 kernels,
-                super::match_passes::FIELD_EXPECTED_IDS_EARLY_PASS,
+                super::struct_literal_field_types::FIELD_EXPECTED_IDS_EARLY_PASS,
             )?;
             Ok(())
         };
@@ -5365,7 +5365,7 @@ fn build_graph(
     super::canonical_passes::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
     super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
-    super::match_passes::register_match_storage(&mut graph, token_rows)?;
+    super::struct_literal_field_types::register_match_storage(&mut graph, token_rows)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
         graph.add_kernel_pass_by_name(
@@ -5373,7 +5373,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -5397,7 +5397,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::Tokens,
             kernels,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             &[],
         )?;
         graph.add_indirect_dispatch(
@@ -5425,7 +5425,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03a_member_receivers",
+        "type_checker/types/aggregates/seed_member_receivers",
         member_receiver_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5433,7 +5433,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03_member_results",
+        "type_checker/types/aggregates/project_member_field_results",
         application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
@@ -5441,7 +5441,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/03b_member_substitute",
+        "type_checker/types/aggregates/publish_substituted_member_types",
         &[],
     )?;
     // Bound predicates, their owner chains and member contracts are needed by
@@ -5670,11 +5670,11 @@ fn build_graph(
     for (name, kernel) in [
         (
             CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
-            "type_checker/type/instances/02b_clear_application_index",
+            "type_checker/types/instances/clear_type_application_index",
         ),
         (
             CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
         ),
     ] {
         graph.add_kernel_pass_by_name(
@@ -5988,25 +5988,25 @@ fn build_graph(
     for (name, kernel, domain, bindings) in [
         (
             CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
-            "type_checker/calls/03d_bind_method_receiver_environment",
+            "type_checker/calls/claims/bind_method_receiver_environment",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
-            "type_checker/calls/03k_project_argument_contexts",
+            "type_checker/calls/arguments/project_argument_contexts",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_MATERIALIZE_RETURN_TYPES_PASS,
-            "type_checker/calls/03e_materialize_return_types",
+            "type_checker/calls/results/materialize_return_types",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
         (
             CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS,
-            "type_checker/calls/03k2_materialize_match_payloads",
+            "type_checker/calls/results/materialize_match_payloads",
             ResourceDomain::HirNodes,
             &application_bindings[..],
         ),
@@ -6024,19 +6024,19 @@ fn build_graph(
         ),
         (
             TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
-            "type_checker/type/instances/03a_member_receivers",
+            "type_checker/types/aggregates/seed_member_receivers",
             ResourceDomain::HirNodes,
             member_receiver_overrides,
         ),
         (
             TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
-            "type_checker/type/instances/03_member_results",
+            "type_checker/types/aggregates/project_member_field_results",
             ResourceDomain::HirNodes,
             application_bindings,
         ),
         (
             TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
-            "type_checker/type/instances/03b_member_substitute",
+            "type_checker/types/aggregates/publish_substituted_member_types",
             ResourceDomain::Tokens,
             &[][..],
         ),
@@ -6054,19 +6054,19 @@ fn build_graph(
         ),
         (
             CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
-            "type_checker/calls/03k1_project_literal_contexts",
+            "type_checker/calls/results/project_literal_contexts",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_PROJECT_EXPRESSION_TYPES_PASS,
-            "type_checker/calls/03g_project_expression_types",
+            "type_checker/calls/results/project_expression_types",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
-            "type_checker/calls/03h_project_array_literal_elements",
+            "type_checker/calls/results/project_array_literal_elements",
             ResourceDomain::HirNodes,
             reflected_bindings![
                 "array_literal_element_ref_tag" => _array_literal_element_ref_tag: Write,
@@ -6075,19 +6075,19 @@ fn build_graph(
         ),
         (
             CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
-            "type_checker/calls/03i_materialize_array_literals",
+            "type_checker/calls/results/materialize_array_literals",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_VALIDATE_ARRAY_LITERALS_PASS,
-            "type_checker/calls/03j_validate_array_literals",
+            "type_checker/calls/results/validate_array_literals",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             CALLS_INFER_RETURN_BINDINGS_PASS,
-            "type_checker/calls/03f_infer_return_bindings",
+            "type_checker/calls/inference/infer_return_bindings",
             ResourceDomain::HirNodes,
             &[][..],
         ),
@@ -6121,7 +6121,7 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/calls/03k3_project_record_contexts",
+                "type_checker/calls/results/project_record_contexts",
                 reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
             )?;
             graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "inference_hir_list_args")?;
@@ -6133,7 +6133,7 @@ fn build_graph(
             for (record_name, record_kernel, record_bindings) in [
                 (
                     CALLS_RECORD_NESTED_CONTEXTS_PASS,
-                    "type_checker/type/instances/04a3_nested_struct_contexts",
+                    "type_checker/types/aggregates/propagate_nested_struct_contexts",
                     &application_bindings[..],
                 ),
                 (
@@ -6143,7 +6143,7 @@ fn build_graph(
                 ),
                 (
                     CALLS_RECORD_FIELDS_AND_REFS_PASS,
-                    "type_checker/calls/03k4_record_fields_and_refs",
+                    "type_checker/calls/results/project_record_field_expectations_and_references",
                     &[][..],
                 ),
             ] {
@@ -6166,10 +6166,10 @@ fn build_graph(
                     },
                 )?;
             }
-            super::match_passes::register_field_expected_ids_pass(
+            super::struct_literal_field_types::register_field_expected_ids_pass(
                 &mut graph,
                 kernels,
-                super::match_passes::FIELD_EXPECTED_IDS_INFERENCE_PASS,
+                super::struct_literal_field_types::FIELD_EXPECTED_IDS_INFERENCE_PASS,
             )?;
         }
         graph.add_kernel_pass_by_name(
@@ -6248,7 +6248,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03a_member_receivers",
+        "type_checker/types/aggregates/seed_member_receivers",
         member_receiver_overrides,
     )?;
     graph.add_kernel_pass_by_name(
@@ -6256,7 +6256,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/03_member_results",
+        "type_checker/types/aggregates/project_member_field_results",
         application_bindings,
     )?;
     graph.add_kernel_pass_by_name(
@@ -6264,7 +6264,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/03b_member_substitute",
+        "type_checker/types/aggregates/publish_substituted_member_types",
         &[],
     )?;
     // Struct-literal field contexts are substituted before array literals
@@ -6275,7 +6275,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/type/instances/04b_struct_init_substitute",
+        "type_checker/types/aggregates/substitute_struct_init_field_types",
         application_bindings,
     )?;
     TYPE_INSTANCES_ARRAY_RETURN_REFS.register_kernel(&mut graph, kernels)?;
@@ -6288,7 +6288,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/08_validate_aggregate_access",
+        "type_checker/types/aggregates/validate_aggregate_access",
         &[],
     )?;
     {
@@ -6449,7 +6449,7 @@ fn build_graph(
         graph.add_indirect_dispatch(pass, "token_active_dispatch_args")?;
     }
     ReturnValidationOperation::register(&mut graph, kernels)?;
-    super::match_passes::register_validation_call_env_pass(&mut graph, kernels)?;
+    super::struct_literal_field_types::register_validation_call_env_pass(&mut graph, kernels)?;
     add_dependency_type_index_passes(
         &mut graph,
         kernels,
@@ -6512,7 +6512,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/calls/04_backend_targets",
+        "type_checker/calls/project_backend_call_targets",
         reflected_bindings![
             "call_dependency_library_id" => _call_dependency_library_id: Read,
             "backend_call_fn_index" => backend_call_fn_index: Write,
@@ -6540,7 +6540,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/type/instances/00f_apply_body_specialization",
+        "type_checker/types/specialization/apply_body_specialization",
         &[],
     )?;
     for &(name, tag_column, payload_column, _) in BODY_REFERENCE_SPECIALIZATION_PASSES {
@@ -6565,12 +6565,12 @@ fn build_graph(
     for (name, kernel, domain) in [
         (
             "type_check.body_specialization.aggregates",
-            "type_checker/type/instances/01d_collect_aggregate_details",
+            "type_checker/types/instances/collect_aggregate_details",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.constants",
-            "type_checker/type/instances/00g_apply_body_constants",
+            "type_checker/types/specialization/apply_body_constants",
             ResourceDomain::Types,
         ),
         (
@@ -6580,32 +6580,32 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.arguments",
-            "type_checker/type/instances/01e_collect_named_arg_refs",
+            "type_checker/types/instances/collect_named_arg_refs",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.declarations",
-            "type_checker/type/instances/01f_decl_refs",
+            "type_checker/types/instances/project_declaration_type_references",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.bindings",
-            "type_checker/type/instances/01f_decl_refs",
+            "type_checker/types/instances/project_declaration_type_references",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.clear_application_index",
-            "type_checker/type/instances/02b_clear_application_index",
+            "type_checker/types/instances/clear_type_application_index",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.index_applications",
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.index_generated_applications",
-            "type_checker/type/instances/02c_index_closed_applications",
+            "type_checker/types/instances/index_closed_applications",
             ResourceDomain::Tokens,
         ),
         (
@@ -6615,42 +6615,42 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.member_receivers",
-            "type_checker/type/instances/03a_member_receivers",
+            "type_checker/types/aggregates/seed_member_receivers",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.member_results",
-            "type_checker/type/instances/03_member_results",
+            "type_checker/types/aggregates/project_member_field_results",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.member_substitute",
-            "type_checker/type/instances/03b_member_substitute",
+            "type_checker/types/aggregates/publish_substituted_member_types",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.literal_contexts",
-            "type_checker/type/instances/04a2_struct_init_contexts",
+            "type_checker/types/aggregates/project_struct_init_contexts",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.nested_literal_contexts",
-            "type_checker/type/instances/04a3_nested_struct_contexts",
+            "type_checker/types/aggregates/propagate_nested_struct_contexts",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.literal_fields",
-            "type_checker/type/instances/04_struct_init_fields",
+            "type_checker/types/aggregates/project_struct_init_fields",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.literal_substitute",
-            "type_checker/type/instances/04b_struct_init_substitute",
+            "type_checker/types/aggregates/substitute_struct_init_field_types",
             ResourceDomain::Tokens,
         ),
         (
             "type_check.body_specialization.array_literal_refs",
-            "type_checker/type/instances/05b_array_literal_return_refs",
+            "type_checker/types/aggregates/project_array_literal_return_references",
             ResourceDomain::HirNodes,
         ),
         // The replay rewrote rows and constants the early canonical stage
@@ -6672,7 +6672,7 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.bound_members",
-            "type_checker/methods/09_route_bound_members",
+            "type_checker/methods/route_bound_method_members",
             ResourceDomain::HirNodes,
         ),
     ] {
@@ -6687,11 +6687,11 @@ fn build_graph(
             kernel,
             if kernel == IMPORTED_FIELDS_KERNEL {
                 imported_field_ct_overrides
-            } else if kernel == "type_checker/type/instances/03a_member_receivers" {
+            } else if kernel == "type_checker/types/aggregates/seed_member_receivers" {
                 member_receiver_overrides
-            } else if kernel == "type_checker/type/instances/03_member_results"
-                || kernel == "type_checker/type/instances/04a3_nested_struct_contexts"
-                || kernel == "type_checker/type/instances/04b_struct_init_substitute"
+            } else if kernel == "type_checker/types/aggregates/project_member_field_results"
+                || kernel == "type_checker/types/aggregates/propagate_nested_struct_contexts"
+                || kernel == "type_checker/types/aggregates/substitute_struct_init_field_types"
             {
                 // Field types under a receiver application are realized.
                 application_bindings

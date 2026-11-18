@@ -10,7 +10,7 @@
 import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
-import type_checker.methods.candidate;
+import type_checker.methods.method_candidate;
 
 struct Params
 {
@@ -291,7 +291,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint inferred_tag = call_inference_result_tag[row];
             uint inferred_payload = call_inference_result_payload[row];
             // A result bound only by the call's context (a trait parameter
-            // through a bound, methods/07a and dependencies/15b) has no
+            // through a bound, offer_bound_method_members and offer_dependency_bound_members) has no
             // argument claim for generic_call_results to read, and the
             // declaration's reference is the trait's or a routed impl's
             // symbolic T. The accepted result, which replay specializes, is

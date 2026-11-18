@@ -638,12 +638,12 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
     const MIRROR: usize = 5;
     const PROBE: usize = 6;
     let keys = [
-        "type_checker/calls/03a3_build_claim_lookup",
-        "type_checker/calls/03a0b_validate_explicit_constants",
-        "type_checker/calls/03a3b_publish_call_environment",
-        "type_checker/calls/03a4c_admit_context_constants",
-        "type_checker/calls/03a5_validate_const_claims",
-        "type_checker/calls/03a8_validate_explicit_applications",
+        "type_checker/calls/claims/build_claim_lookup",
+        "type_checker/calls/claims/validate_explicit_constants",
+        "type_checker/calls/claims/publish_call_environment",
+        "type_checker/calls/claims/admit_context_constants",
+        "type_checker/calls/claims/validate_const_claims",
+        "type_checker/calls/claims/validate_explicit_applications",
         "tests/constant_claim_publication",
     ];
     let passes: Vec<_> = keys

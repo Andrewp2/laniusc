@@ -6,7 +6,7 @@ import type_checker.constant_parameter_slots;
 import type_checker.constant_atoms;
 import constant_value;
 import primitive_types;
-import type_checker.type.instances.generic_param_lookup;
+import type_checker.types.parameters.generic_param_lookup;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -27,7 +27,7 @@ StructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_status;
 #define LEXICAL_HIR_CAPACITY gParams.hir_capacity
 #define LEXICAL_TOKEN_CAPACITY gParams.token_capacity
-#include "../../type/instances/lexical_parameter_lookup.slang"
+#include "../../types/parameters/lexical_parameter_lookup.slang"
 static const uint INVALID = 0xffffffffu;
 static const uint EXPORT_DEPTH_LIMIT = 64u;
 void checked_export_fail(uint root, uint detail)

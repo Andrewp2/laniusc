@@ -1,4 +1,4 @@
-//! ct_match cases on the physical GPU (shaders/type_checker/match/ct_match.slang).
+//! ct_match cases on the physical GPU (shaders/type_checker/matches/checked_match_types.slang).
 //! One lane interns every case's pattern and actual, matches them, and
 //! checks the interned environment against records it builds afterwards
 //! (shaders/tests/ct_match_cases.slang). The same kernel runs on the CPU

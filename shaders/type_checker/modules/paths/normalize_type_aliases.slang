@@ -1,10 +1,10 @@
 import type_checker.dependencies.constant_view;
-#include "../../type/instances/materialize_application_inputs.slang"
+#include "../../types/instances/materialize_application_inputs.slang"
 StructuredBuffer<uint> compact_type_alias_target;
 StructuredBuffer<uint2> imported_type_alias_target;
 import type_checker.constant_materialization;
 import type_checker.checked_array_counts;
-#include "../../type/instances/allocate_application.slang"
+#include "../../types/instances/allocate_application.slang"
 
 // Source rows and declaration targets are immutable for this dispatch. Each
 // lane owns its generated nodes and publishes one complete reference. The next

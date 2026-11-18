@@ -1,4 +1,4 @@
-// Clear the method index of the dependency page slot before 00c rebuilds it
+// Clear the method index of the dependency page slot before build_dependency_method_lookup rebuilds it
 // for the page loaded into the slot.
 
 import gpu_index;

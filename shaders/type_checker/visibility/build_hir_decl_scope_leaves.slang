@@ -32,7 +32,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 // Matches HIR_VISIBLE_DECL_ROW_BLOCK_SIZE on the Rust side. This pass is a
 // fixed-size leaf reduction over compact declaration rows; larger reductions
-// happen through the explicit tree levels in 03h.
+// happen through the explicit tree levels in build_hir_decl_scope_tree.
 static const uint HIR_VISIBLE_DECL_ROW_BLOCK_SIZE = 64u;
 
 uint linear_thread_id(uint3 dtid)

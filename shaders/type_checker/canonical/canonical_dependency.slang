@@ -13,7 +13,7 @@ import dependency_interface;
 import constant_value;
 import primitive_types;
 
-// Alias roots of the resident page (dependencies/09, 10): a type alias node
+// Alias roots of the resident page (seed_dependency_canonical_type_roots, 10): a type alias node
 // points at its signature node, every other node at itself.
 public StructuredBuffer<uint> canonical_type_roots;
 

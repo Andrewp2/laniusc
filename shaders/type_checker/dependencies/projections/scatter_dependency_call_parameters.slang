@@ -50,7 +50,7 @@ static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
 // A path call's &self receiver row: its type is the impl root behind one
-// reference, which argument checking adds (calls/03a, 03a1; dependencies/08).
+// reference, which argument checking adds (calls/03a, 03a1; validate_dependency_call_arguments).
 static const uint TY_BORROWED_SELF = 0x40000000u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;

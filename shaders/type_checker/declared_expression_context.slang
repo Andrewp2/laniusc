@@ -27,8 +27,8 @@ bool statement_expression_context(uint node, uint statement, out uint2 reference
 #ifdef CANONICAL_FIELD_EXPECTATION
 // A struct-literal field's context in caller scope: its reference as it is
 // when it has no context instance, else the checked row of its substituted
-// ID (match/field_expected.slang), never a scoped hash walk. The including
-// kernel imports match.field_expected and substitution.ct_rows.
+// ID (field_expected.slang), never a scoped hash walk. The including
+// kernel imports type_checker.types.aggregates.field_expected and substitution.ct_rows.
 bool canonical_field_reference<TGraph : IScopedTypeGraph>(uint token, uint scope,
     uint type_capacity, uint tokens, inout uint2 reference)
 {
@@ -93,7 +93,7 @@ bool declared_expression_context<TGraph : IScopedTypeGraph>(uint node,
                     struct_init_field_expected_context_instance.GetDimensions(tokens, stride);
 #if defined(CANONICAL_FIELD_EXPECTATION)
                     // The including kernel reads a scoped field's substituted
-                    // ID (match/field_expected.slang) instead of the hash walk.
+                    // ID (field_expected.slang) instead of the hash walk.
                     if (reference.x != 0u && reference.y != INVALID &&
                         canonical_field_reference<TGraph>(field.name_token, scope, type_capacity,
                             tokens, reference)) return true;
