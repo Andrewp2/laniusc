@@ -158,10 +158,12 @@ pub struct RetainedDiscovery {
     /// progress before their resolution, as the solve requires.
     eager_closed: bool,
     /// The published buffers of the last attempt, with the capacities
-    /// (instances, edges, uses, requests) they hold: a warm build with the
+    /// (instances, edges, requests) they hold: a warm build with the
     /// same capacities binds the same buffers, so its bind groups are the
     /// cached ones.
-    published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
+    published: Option<([u32; 3], ProjectionInputs, SubstitutionRequests)>,
+    root_routes: Option<LaniusBuffer<u32>>,
+    root_readiness: Option<LaniusBuffer<u32>>,
     /// See [`Self::defer_final_status`].
     defer_final_status: bool,
     /// Dispatches recorded but not yet in the encoder: kernel, bind group
@@ -195,6 +197,8 @@ impl RetainedDiscovery {
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
             eager_closed: false,
             published: None,
+            root_routes: None,
+            root_readiness: None,
             defer_final_status: false,
             pending: Vec::new(),
         })
@@ -281,22 +285,38 @@ impl RetainedDiscovery {
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
             self.queue.write_buffer_counted(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
-            let key = [self.capacity.instances, self.capacity.edges, uses.max(1), self.capacity.requests];
+            let key = [self.capacity.instances, self.capacity.edges, self.capacity.requests];
             if self.published.as_ref().is_none_or(|(held, ..)| *held != key) {
                 self.published = Some((
                     key,
                     ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges),
-                    self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
-                    self.buffer("dg_root_readiness", 16)?,
                     SubstitutionRequests::new_with_device(&self.device, self.capacity.requests),
                 ));
             }
-            let (_, inputs, root_routes, root_readiness, requests) =
+            let root_route_capacity = uses.max(1);
+            let route_bytes = u64::from(root_route_capacity) * 16;
+            if self.root_routes.as_ref().is_none_or(|buf| buf.buffer.size() < route_bytes) {
+                let buffer = self.buffer("dg_root_routes", route_bytes)?;
+                self.root_routes = Some(LaniusBuffer::new_labeled(
+                    (buffer, route_bytes),
+                    root_route_capacity as usize * 4,
+                    "dg_root_routes",
+                ));
+            }
+            if self.root_readiness.is_none() {
+                let buffer = self.buffer("dg_root_readiness", 16)?;
+                self.root_readiness = Some(LaniusBuffer::new_labeled(
+                    (buffer, 16), 4, "dg_root_readiness",
+                ));
+            }
+            let root_routes = self.root_routes.as_ref().expect("root routes allocated").clone();
+            let root_readiness = self.root_readiness.as_ref().expect("root readiness allocated").clone();
+            let (_, inputs, requests) =
                 self.published.clone().ok_or_else(|| anyhow!("discovery buffers are not allocated"))?;
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([
-                ("dg_root_routes", &root_routes),
-                ("dg_root_readiness", &root_readiness),
+                ("dg_root_routes", &root_routes.buffer),
+                ("dg_root_readiness", &root_readiness.buffer),
             ]);
             extra.extend(requests.buffers());
             let mut config = [0u32; 16];
@@ -723,14 +743,10 @@ impl RetainedDiscovery {
                 }
             }
             drop(extra);
-            let root_route_capacity = uses.max(1);
             return Ok(DiscoveryOutcome::Published(DiscoveryPublication {
                 inputs,
-                root_routes: LaniusBuffer::new(
-                    (root_routes, root_route_capacity as u64 * 16),
-                    root_route_capacity as usize * 4,
-                ),
-                root_readiness: LaniusBuffer::new((root_readiness, 16), 4),
+                root_routes,
+                root_readiness,
                 root_route_capacity,
                 generation,
                 report,

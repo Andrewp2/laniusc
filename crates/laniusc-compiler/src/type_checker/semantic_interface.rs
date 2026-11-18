@@ -2154,7 +2154,13 @@ impl GpuTypeChecker {
                 artifact.unit_id,
             ));
         }
-        artifact.resident_bytes = retain_resident_bytes(device, queue, &recorded._artifact_words, byte_len);
+        artifact.resident_bytes = retain_resident_bytes(
+            device,
+            queue,
+            &self.resident_interface_buffers,
+            &recorded._artifact_words,
+            byte_len,
+        );
         Ok(artifact)
     }
 }
@@ -2165,29 +2171,52 @@ impl GpuTypeChecker {
 fn retain_resident_bytes(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    pool: &Mutex<Vec<Arc<LaniusBuffer<u8>>>>,
     artifact_words: &LaniusBuffer<u32>,
     byte_len: usize,
 ) -> crate::compiler::ResidentInterfaceBytes {
-    let copy_len = byte_len.next_multiple_of(4) as u64;
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("semantic_interface.resident_bytes"),
-        size: copy_len.max(4),
-        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+    const LABEL: &str = "semantic_interface.resident_bytes";
+    let copy_len = byte_len.next_multiple_of(4);
+    let capacity = copy_len.max(4);
+    let allocate = || {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(LABEL),
+            size: capacity as u64,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Arc::new(LaniusBuffer::new_labeled((buffer, capacity as u64), capacity, LABEL))
+    };
+    let buffer = {
+        let mut pool = pool.lock().expect("resident interface buffer pool poisoned");
+        // Live artifacts pin their bytes. Prefer a free slot that already fits.
+        let slot = pool.iter_mut()
+            .filter(|slot| Arc::strong_count(slot) == 1)
+            .min_by_key(|slot| slot.byte_size < capacity);
+        if let Some(slot) = slot {
+            if slot.byte_size < capacity {
+                *slot = allocate();
+            }
+            slot.clone()
+        } else {
+            let buffer = allocate();
+            pool.push(buffer.clone());
+            buffer
+        }
+    };
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("semantic_interface.resident_bytes"),
+        label: Some(LABEL),
     });
     encoder.copy_buffer_counted(
         &artifact_words.buffer,
         artifact_words.absolute_offset(0),
-        &buffer,
+        &buffer.buffer,
         0,
-        copy_len,
+        copy_len as u64,
     );
     crate::gpu::passes_core::submit_with_progress(
         queue,
-        "semantic_interface.resident_bytes",
+        LABEL,
         encoder.finish(),
     );
     crate::compiler::ResidentInterfaceBytes::new(buffer, byte_len)

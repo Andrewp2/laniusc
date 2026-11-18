@@ -32,11 +32,21 @@ const PAGE_STRIDE: usize = 8;
 const DESCRIPTOR_STRIDE: usize = 28;
 const DESCRIPTOR_SECTIONS: usize = 4;
 
-/// The packing kernels' input buffers, kept across jobs and grown on demand.
+/// The packing kernels' resources, kept across jobs and grown on demand.
 #[derive(Clone, Default)]
 pub(crate) struct DependencyPackBuffers {
     sources: Option<LaniusBuffer<u32>>,
     plan: Option<LaniusBuffer<u32>>,
+    /// Single-page and streamed jobs bind different output buffers. Keep
+    /// their groups here because frontend workspace growth clears the
+    /// shared reflected cache while these buffers stay resident.
+    bindings: [Option<PackBindings>; 2],
+}
+
+#[derive(Clone)]
+struct PackBindings {
+    output: wgpu::Buffer,
+    groups: [Option<wgpu::BindGroup>; 2],
 }
 
 /// Records the packing of `pages` into `output`, page `p` at word
@@ -65,8 +75,13 @@ pub(super) fn record_pack(
         }
         source_words.push(words);
     }
-    let sources = grown(device, &mut buffers.sources, "type_check.dependencies.pack_sources",
-        total_source_words)?;
+    let sources = grown(
+        device,
+        &mut buffers.sources,
+        &mut buffers.bindings,
+        "type_check.dependencies.pack_sources",
+        total_source_words,
+    )?;
     for ((page, interfaces), words) in pages.iter().zip(interface_pages).zip(&source_words) {
         for (interface, &word) in page.interfaces.iter().zip(words) {
             let artifact = &interfaces[interface.index];
@@ -99,8 +114,13 @@ pub(super) fn record_pack(
     }
 
     let plan_words = plan_words(pages, page_words, &source_words)?;
-    let plan = grown(device, &mut buffers.plan, "type_check.dependencies.pack_plan",
-        plan_words.len() as u64)?;
+    let plan = grown(
+        device,
+        &mut buffers.plan,
+        &mut buffers.bindings,
+        "type_check.dependencies.pack_plan",
+        plan_words.len() as u64,
+    )?;
     plan.write(queue, 0, &plan_words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>());
 
     let rows = passes_core::make_pass_data_from_shader_key(device, LABEL, "main", ROWS_SHADER)?;
@@ -113,18 +133,32 @@ pub(super) fn record_pack(
     ];
     let row_threads = plan_words[1];
     let module_threads = plan_words[2];
+    let slot = &mut buffers.bindings[usize::from(pages.len() > 1)];
+    if slot.as_ref().is_none_or(|bound| bound.output != output.buffer) {
+        *slot = Some(PackBindings {
+            output: output.buffer.clone(),
+            groups: [None, None],
+        });
+    }
+    let groups = &mut slot.as_mut().expect("dependency pack bindings allocated").groups;
     let mut dispatches = Vec::with_capacity(2);
-    for (pass, threads) in [(&rows, row_threads), (&module_index, module_threads)] {
+    for ((pass, threads), group) in [(&rows, row_threads), (&module_index, module_threads)]
+        .into_iter()
+        .zip(groups)
+    {
         if threads == 0 {
             continue;
         }
-        let bind_group = passes_core::bind_group::create_bind_group_from_bindings(
-            device,
-            Some(LABEL),
-            pass,
-            0,
-            &bindings,
-        )?;
+        if group.is_none() {
+            *group = Some(passes_core::bind_group::create_bind_group_from_bindings(
+                device,
+                Some(LABEL),
+                pass,
+                0,
+                &bindings,
+            )?);
+        }
+        let bind_group = group.as_ref().expect("dependency pack group allocated");
         let workgroups = passes_core::plan_workgroups(
             DispatchDim::D1,
             InputElements::Elements1D(threads),
@@ -143,7 +177,7 @@ pub(super) fn record_pack(
             {
                 let mut compute = passes_core::begin_counted_compute_pass(encoder, &descriptor);
                 compute.set_pipeline(&pass.pipeline);
-                compute.set_bind_group(0, Some(bind_group), &[]);
+                compute.set_bind_group(0, Some(*bind_group), &[]);
                 passes_core::record_compute_dispatch();
                 compute.dispatch_workgroups(*x, *y, *z);
             }
@@ -154,7 +188,7 @@ pub(super) fn record_pack(
         let mut compute = passes_core::begin_counted_compute_pass(encoder, &descriptor);
         for (pass, bind_group, (x, y, z)) in &dispatches {
             compute.set_pipeline(&pass.pipeline);
-            compute.set_bind_group(0, Some(bind_group), &[]);
+            compute.set_bind_group(0, Some(*bind_group), &[]);
             passes_core::record_compute_dispatch();
             compute.dispatch_workgroups(*x, *y, *z);
             if timed {
@@ -243,6 +277,7 @@ fn plan_words(
 fn grown<'a>(
     device: &wgpu::Device,
     slot: &'a mut Option<LaniusBuffer<u32>>,
+    bindings: &mut [Option<PackBindings>; 2],
     label: &str,
     words: u64,
 ) -> Result<&'a LaniusBuffer<u32>> {
@@ -251,6 +286,7 @@ fn grown<'a>(
     if slot.as_ref().is_none_or(|buffer| buffer.count < words) {
         let capacity = words.next_power_of_two().max(1024);
         *slot = Some(storage_ro_from_u32s(device, label, &vec![0; capacity]));
+        *bindings = [None, None];
     }
     Ok(slot.as_ref().expect("pack buffer allocated"))
 }
