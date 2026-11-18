@@ -190,6 +190,13 @@ public static const uint RT_C_READY = 77u; // exported records complete so far; 
 // generation the publication recorded.
 public static const uint RT_C_GENERATION = 78u;
 public static const uint RT_C_JOB_SPARE = 80u; // + arena (decls..term args): spares at the job's start
+// Build totals at the job's start, which an uncommit restores
+// (export/19_uncommit.slang).
+public static const uint RT_C_SAVED_JOBS = 84u;
+public static const uint RT_C_SAVED_INVARIANT_TOTAL = 85u;
+public static const uint RT_C_SAVED_INCOMPLETE_TOTAL = 86u;
+public static const uint RT_C_SAVED_READY = 87u;
+public static const uint RT_C_SAVED_CONFLICTS = 88u;
 public static const uint RT_C_WORDS = 96u;
 
 public static const uint RT_OVERFLOW_DECL_TABLE = 1u << 16u;

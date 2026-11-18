@@ -818,6 +818,43 @@ impl GpuX86ObjectStage {
         metadata: &[u32],
         keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
     ) -> Result<(GpuX86FinishedObject, Vec<u32>)> {
+        self.finish_with_reads(device, queue, library_id, unit_id, metadata, keep, &[])
+            .map(|(object, call_hirs, _)| (object, call_hirs))
+    }
+
+    /// The object's undefined-symbol rows (four words each), the call HIR
+    /// of each, the word that counts them and the rows the buffers hold,
+    /// for the retained build's call rewrite, which updates the rows before
+    /// [`Self::finish`] reads them.
+    pub(crate) fn call_rows(&self) -> (
+        crate::type_checker::program_retention::JobTable,
+        crate::type_checker::program_retention::JobTable,
+        (wgpu::Buffer, u64),
+        u32,
+    ) {
+        use crate::type_checker::program_retention::JobTable;
+        let (count, offset, _, _) = &self.park_meta[1];
+        (
+            JobTable::from_lanius(&self.undefined_symbols),
+            JobTable::from_lanius(&self.call_hir_by_symbol),
+            (count.clone(), *offset),
+            u32::try_from(self.undefined_symbols.byte_size / 16).unwrap_or(u32::MAX),
+        )
+    }
+
+    /// [`Self::finish`], reading `extra` in the same readback as the
+    /// payload; their bytes follow the object.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finish_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        metadata: &[u32],
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+        extra: &[ReadbackRegion<'_>],
+    ) -> Result<(GpuX86FinishedObject, Vec<u32>, Vec<Vec<u8>>)> {
         let ticket = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         // An object parked in another build's store is read in full; that
         // build's store may be cleared before this build links.
@@ -856,6 +893,12 @@ impl GpuX86ObjectStage {
             payload_bytes[PAYLOAD_TEXT] = 0;
             payload_bytes[PAYLOAD_RODATA] = 0;
         }
+        let mut regions = self.payload_regions(payload_bytes)?.to_vec();
+        regions.extend_from_slice(extra);
+        let mut read = self
+            .payload_readback
+            .read_regions(device, queue, &regions, "x86 object payload readback")?;
+        let extra_bytes = read.split_off(7.min(read.len()));
         let [
             relocation_bytes,
             runtime_relocation_bytes,
@@ -864,14 +907,7 @@ impl GpuX86ObjectStage {
             text,
             rodata,
             call_hir_bytes,
-        ]: [Vec<u8>; 7] = self
-            .payload_readback
-            .read_regions(
-                device,
-                queue,
-                &self.payload_regions(payload_bytes)?,
-                "x86 object payload readback",
-            )?
+        ]: [Vec<u8>; 7] = read
             .try_into()
             .map_err(|_| anyhow::anyhow!("x86 object payload readback shape changed"))?;
         // Semantic rows (calls, string addresses) first, then each target
@@ -958,12 +994,12 @@ impl GpuX86ObjectStage {
             if let Some(ticket) = foreign {
                 ticket.commit(library_id, unit_id);
             }
-            return Ok((GpuX86FinishedObject::Host(object), call_hirs));
+            return Ok((GpuX86FinishedObject::Host(object), call_hirs, extra_bytes));
         };
         let sections = ticket.sections(text_len as u32, rodata_len as u32);
         let object = super::x86::GpuX86FileObject::parked(object, sections).map_err(anyhow::Error::msg)?;
         ticket.commit(library_id, unit_id);
-        Ok((GpuX86FinishedObject::Parked(object), call_hirs))
+        Ok((GpuX86FinishedObject::Parked(object), call_hirs, extra_bytes))
     }
 }
 

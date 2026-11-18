@@ -199,24 +199,35 @@ The build has seven steps.
    - Nongeneric bodies are lowered as before.
    - `record_exec` is off, so the frontend copies no instance. The counts
      are still published.
-3. **Provisional calls.** Right after the job's export, one GPU lane per
-   undefined symbol runs `type_checker/retention/native/00_provisional`.
+3. **Provisional calls.** Right behind the job's export and lowering,
+   before the object is read, one kernel
+   (`type_checker/retention/native/00_provisional`) rewrites the object's
+   own GPU rows in place: one lane per undefined symbol of an x86 object
+   (four-word rows and `call_hir_by_symbol`), or one lane per relocation
+   row of a Wasm object (a symbol row carries its identity and call HIR).
+   The lane count comes from the object's own total, copied on the GPU.
    The lane maps the symbol's call HIR to its retained use through
    `rt_x_flags[row].y`, `rt_x_scan[row].y` and
-   `rt_x_counts[RT_X_BASE + RT_A_USES]`.
-   - For a DIRECT or METHOD use whose callee is a generic template, the lane writes
-     the identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE, use)` and its
-     hash.
+   `rt_x_counts[RT_X_BASE + RT_A_USES]`. Nothing runs unless the job's
+   export committed (`RT_C_JOB_STATE`).
+   - For a DIRECT or METHOD use whose callee is a generic template, the
+     lane writes the identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE,
+     use)`. The host hashes identity words when it decodes the object, as
+     for every symbol, so the object arrives with the rewritten symbols.
+   - An x86 lane also writes the symbol's final identity words to
+     `nc_identity`, which `ParkedSlot::record_identities` copies into the
+     resident link's region 6 in the same submission.
    - It records the caller's ABI facts in `NativeCallTables`. `nc_use_abi`
      holds the accepted result, argument count, flags, generation and an
      argument-pool offset. `nc_use_args` holds `(term, passing mode)` pairs
-     translated from each call's checked arguments. GPU allocation reports
-     pool demand; the host grows and retries before publishing the object.
-     A failed attempt preserves earlier units' argument records. No fixed
-     argument-count limit is introduced at this boundary.
-   - The host uploads and reads back the object's opaque symbol columns.
-     `X86SymbolColumns::apply_to_object` checks that every other field is
-     unchanged.
+     translated from each call's checked arguments. The pool is sized from
+     the job's call-argument rows plus one row per object row, so it cannot
+     overflow; the argument cursor (`nc_status` word 1) runs over the
+     build.
+   - The rewrite's status words come back in the object's own readback,
+     with the export's counters (`compiler-program-retention.md`, "Native
+     builds: no export readback"). There is no upload of symbol columns and
+     no readback of rewritten columns.
 4. **Catalog admission.** The existing GPU retained-catalog producer and
    solver check whole-program identities, implementation coverage and
    coherence before discovery. This includes unused impls from sibling

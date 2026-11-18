@@ -1017,6 +1017,31 @@ fn retained_native_compound_generic_fields_have_exact_layouts() {
     });
 }
 
+// The program retention store starts tiny and is not sized from the
+// source: the job's export overflows and rolls back on the GPU, the host
+// reads that with the job's object, grows the store from the demand the GPU
+// recorded and runs the job again. The second build fits the grown store.
+#[test]
+fn retained_native_export_overflow_reruns_with_grown_store() {
+    common::run_with_timeout("retained export overflow", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-export-overflow-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::default()).unwrap();
+        build.reset_store_for_test(laniusc_compiler::type_checker::program_retention::ProgramRetentionCapacity::tiny()).unwrap();
+        let mut growths=Vec::new();
+        for pass in 0..2 {
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            growths.push(build.store().capacity().1);
+            let output=common::run_x86_64_elf_output("retained export overflow","retained_export_overflow",&elf);
+            assert_eq!(output.status.code(),Some(42),"pass {pass}: {output:?}");
+        }
+        assert!(growths[0]>0,"the tiny store grows: {growths:?}");
+        assert_eq!(growths[1],growths[0],"the grown store fits the second build");
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
 // The projection's substitution and the schema rounds run chained, with one
 // readback. A tiny substitution capacity makes the chained projection run
 // overflow, so it runs again on the full path; one schema row makes the

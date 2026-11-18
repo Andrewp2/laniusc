@@ -99,6 +99,16 @@ impl<'a> ReadbackRegion<'a> {
         })
     }
 
+    /// The leading `byte_len` bytes of a whole buffer (at most its size).
+    pub(crate) fn from_wgpu(source: &'a wgpu::Buffer, byte_len: usize) -> Self {
+        Self {
+            source,
+            source_offset: 0,
+            byte_len: byte_len.min(source.size() as usize),
+            allocation: None,
+        }
+    }
+
     pub(crate) fn byte_len(&self) -> usize {
         self.byte_len
     }

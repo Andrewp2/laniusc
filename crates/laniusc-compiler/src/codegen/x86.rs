@@ -27,7 +27,6 @@ pub(crate) use link::{
     ResidentRoutes,
     ResidentSections,
     park as park_resident_object,
-    park_identities as park_resident_identities,
     GpuX86MissingSymbolDefinition,
     X86_LINK_NO_ENTRY_OBJECT,
     X86DynamicImage,

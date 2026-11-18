@@ -4,7 +4,7 @@
 //! projection is recorded ([`park`]): the metadata words, relocation and
 //! symbol rows, text and rodata are copied into a store the linker keeps.
 //! The retained build's original-call rewrite adds the rewritten undefined
-//! identities ([`park_identities`]). When the object is published
+//! identities ([`ParkedSlot::record_identities`]). When the object is published
 //! (`GpuX86ObjectStage::finish`) its slot is committed under the object's
 //! `(library, unit)`. The link then runs in two submissions
 //! (`shaders/codegen/x86/link/resident/`):
@@ -401,38 +401,26 @@ pub(crate) fn park(encoder: &mut wgpu::CommandEncoder, sources: &ParkSources<'_>
     Some(ParkTicket { store: store.clone(), generation: state.generation, slot })
 }
 
-/// Records the identities of the first `undefined` symbols of the published
-/// unit `(library_id, unit_id)` after the retained build rewrote its generic
-/// calls (`program_retention/native_calls.rs`): `identity` holds the
-/// object's identity column, twelve bytes per symbol.
-pub(crate) fn park_identities(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    library_id: u32,
-    unit_id: u32,
-    identity: &wgpu::Buffer,
-    undefined: u32,
-) {
-    let Some(store) = ACTIVE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() else {
-        return;
-    };
-    let mut state = store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Some(slot) = state.slots.iter_mut().rev().find(|slot| slot.key == Some((library_id, unit_id))) else {
-        return;
-    };
-    let bytes = u64::from(undefined) * 12;
-    if undefined > slot.caps[2] || bytes > identity.size() {
-        return;
+impl ParkedSlot {
+    /// Records the copy of the object's undefined identities after the
+    /// retained build rewrote its generic calls
+    /// (`program_retention/native_calls.rs`): `identity` holds three words
+    /// per undefined symbol, for every row the slot can hold.
+    pub(crate) fn record_identities(&self, encoder: &mut wgpu::CommandEncoder, identity: &wgpu::Buffer) {
+        let mut state = self.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.generation != self.generation {
+            return;
+        }
+        let Some(slot) = state.slots.get_mut(self.slot) else {
+            return;
+        };
+        let bytes = (u64::from(slot.caps[2]) * 12).min(identity.size()) / 4 * 4;
+        slot.identities = true;
+        let (chunk, base) = (slot.chunk, slot.base[6]);
+        if bytes != 0 {
+            encoder.copy_buffer_counted(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
+        }
     }
-    slot.identities = true;
-    let (chunk, base) = (slot.chunk, slot.base[6]);
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("codegen.x86.link.resident.identities"),
-    });
-    if bytes != 0 {
-        encoder.copy_buffer_counted(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
-    }
-    crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.identities", encoder.finish());
 }
 
 impl GpuX86LinkStore {

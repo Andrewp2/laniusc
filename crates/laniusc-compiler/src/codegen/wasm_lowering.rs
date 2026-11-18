@@ -827,6 +827,26 @@ impl GpuWasmLirStage {
             .finish(device, queue, library_id, unit_id)
     }
 
+    /// [`Self::finish_object`], reading `extra` in the object's readback.
+    pub(crate) fn finish_with_reads(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        extra: &[crate::gpu::readback::ReadbackRegion<'_>],
+    ) -> Result<(super::wasm::GpuWasmRelocatableObject, Vec<u32>, Vec<Vec<u8>>)> {
+        self.object
+            .as_ref()
+            .context("Wasm object projection was not allocated for this lowering job")?
+            .finish_with_reads(device, queue, library_id, unit_id, extra)
+    }
+
+    /// The object's relocation rows for the retained call rewrite.
+    pub(crate) fn call_rows(&self) -> Option<(crate::type_checker::program_retention::JobTable, (wgpu::Buffer, u64), u32)> {
+        Some(self.object.as_ref()?.call_rows())
+    }
+
     /// Maps the daemon-resident readback buffers after the command buffer has
     /// been submitted. Recording allocates nothing; the same staging storage
     /// is reused by every sequential daemon job.
