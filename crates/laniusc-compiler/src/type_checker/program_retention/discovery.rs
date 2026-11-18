@@ -30,20 +30,20 @@ use crate::gpu::{
 };
 
 const KERNELS: &[&str] = &[
-    "type_checker/retention/discovery/00_requests",
-    "type_checker/retention/discovery/01_resolve",
-    "type_checker/retention/discovery/02_scan",
-    "type_checker/retention/discovery/03_term_order",
-    "type_checker/retention/discovery/04_instance_order",
-    "type_checker/retention/discovery/05_publish",
-    "type_checker/retention/discovery/06_bound_routes",
+    "type_checker/retention/discovery/collect_discovery_requests",
+    "type_checker/retention/discovery/resolve_discovery_requests",
+    "type_checker/retention/discovery/scan_discovery_use_counts",
+    "type_checker/retention/discovery/rank_discovered_terms",
+    "type_checker/retention/discovery/rank_discovered_instances",
+    "type_checker/retention/discovery/publish_discovery_wave",
+    "type_checker/retention/discovery/attach_discovered_method_routes",
 ];
 const STATUS_WORDS: usize = 32;
 /// Route header words 8-10 of a retained trait publication: status (1
 /// valid), route failures, first failure (retained_route_abi.slang).
 const PUBLICATION_STATUS_WORD: u64 = 8;
 const PUBLICATION_STATUS_WORDS: usize = 3;
-/// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
+/// Keys one workgroup sorts in shared memory (discovery_workspace.slang DG_SORT_BLOCK).
 const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
 /// Words of dg_levels holding the closed terms per height.
@@ -364,7 +364,7 @@ impl RetainedDiscovery {
             let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
             if self.admission.is_some() {
                 // The publication's solve may not have finished (its status
-                // is checked on the GPU, 05_publish mode 5): the roots pass
+                // is checked on the GPU, publish_discovery_wave mode 5): the roots pass
                 // runs only over a valid publication.
                 let bound_args = self.scratch["dg_bound_args"].clone();
                 let mut gate = config;
@@ -817,7 +817,7 @@ impl RetainedDiscovery {
     /// Records waves without closed predicates in one submit, starting
     /// with the frontier `lo..hi` (`wave` is lo, hi, edges, depth, the
     /// predicated instance count and the number of waves). Wave 0 is the
-    /// host's; before each later wave `05_publish` mode 3 places the
+    /// host's; before each later wave `publish_discovery_wave` mode 3 places the
     /// instances the previous wave inserted, or an empty frontier when the
     /// host must decide first (a failure, an overflow, new closed
     /// predicates), and copies (lo, hi, edges) into the wave's configs.
@@ -975,15 +975,15 @@ impl RetainedDiscovery {
     /// solve before the host has read the wave before it
     /// (`RetainedTraitPublication::record_chained`): sized from the
     /// capacities, gated by plan_closed_obligation_dispatches, which skips it unless the wave has new
-    /// instances with closed predicates. Its receipt check (05_publish mode
+    /// instances with closed predicates. Its receipt check (publish_discovery_wave mode
     /// 4) stops the chain with code 12 when a solve that ran did not place
     /// its batch or did not finish, and gates the wave's method and bound
     /// routes. Routes that did not finish stop it with code 13
-    /// (06_bound_routes). The tail stops at new closed predicates, as
+    /// (attach_discovered_method_routes). The tail stops at new closed predicates, as
     /// `chain_waves` does.
     ///
     /// Each wave with a closed solve takes three submits: the frontier
-    /// (05_publish mode 3), the solve's own, then the wave and its
+    /// (publish_discovery_wave mode 3), the solve's own, then the wave and its
     /// resolution, whose configs take the frontier from the GPU after the
     /// host writes them.
     #[allow(clippy::too_many_arguments)]
@@ -1255,7 +1255,7 @@ impl RetainedDiscovery {
         let levels_buffer = self.scratch["dg_levels"].clone();
         config[0] = 0;
         let ran = {
-            // 01_resolve does nothing unless this run's publication
+            // resolve_discovery_requests does nothing unless this run's publication
             // committed, so it may follow the first batch on the GPU.
             let mut consumer = |encoder: &mut wgpu::CommandEncoder,
                                 guard: &Store,
@@ -1359,7 +1359,7 @@ impl RetainedDiscovery {
     }
     /// `terms` is the store's term count, read with the last status.
     /// `levels` are the closed terms per height when the last readback
-    /// carried a current count (`03_term_order` mode 6, which also left the
+    /// carried a current count (`rank_discovered_terms` mode 6, which also left the
     /// rest of dg_levels clear); otherwise this counts and reads them.
     fn rank_terms(
         &mut self,

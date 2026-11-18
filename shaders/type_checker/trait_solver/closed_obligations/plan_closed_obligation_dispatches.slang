@@ -9,7 +9,7 @@
 // count before this wave). Otherwise every producer pass after this one
 // dispatches no workgroups and the fault word says CW_SKIPPED: the batch
 // counts are zero, the publication passes do nothing, and discovery's
-// receipt check (05_publish mode 4) skips the wave's method routes.
+// receipt check (publish_discovery_wave mode 4) skips the wave's method routes.
 //
 // A solve that runs takes the store's term count and its frontier into
 // cw_config, then sizes each pass from them. cw_indirect holds one

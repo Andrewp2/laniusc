@@ -1422,7 +1422,7 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
     );
 }
 
-/// The GPU consumer's check (`sb_consumer.slang`) of one publication's
+/// The GPU consumer's check (`retained_substitution_results.slang`) of one publication's
 /// buffers against `store`: (publication current, row current, row
 /// status, row result if current).
 fn consume(

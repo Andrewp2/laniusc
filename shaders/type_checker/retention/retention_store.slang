@@ -210,7 +210,7 @@ public static const uint RT_FAULT_LOCATED = 0x100u;
 public static const uint RT_FAULT_NO_ROW = 0xffffffu;
 public static const uint RT_C_JOB_SPARE = 80u; // + arena (decls..term args): spares at the job's start
 // Build totals at the job's start, which an uncommit restores
-// (export/19_uncommit.slang).
+// (retract_unaccepted_retained_export.slang).
 public static const uint RT_C_SAVED_JOBS = 84u;
 public static const uint RT_C_SAVED_INVARIANT_TOTAL = 85u;
 public static const uint RT_C_SAVED_INCOMPLETE_TOTAL = 86u;

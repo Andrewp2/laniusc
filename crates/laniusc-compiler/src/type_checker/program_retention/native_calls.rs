@@ -5,7 +5,7 @@
 //! call to a generic template is an undefined symbol whose identity the
 //! original lowering wrote. Right behind a job's export, while the export
 //! scratch still maps the job's HIR rows to retained uses, one GPU kernel
-//! (`shaders/type_checker/retention/native/00_provisional.slang`) gives each
+//! (`shaders/type_checker/retention/projection/project_provisional_native_call_symbols.slang`) gives each
 //! such symbol the provisional identity `(RESERVED, NS_USE, global use)` in
 //! the object's own rows, before the object is read, and records the
 //! caller's ABI facts of the use (accepted result and argument terms) in
@@ -15,10 +15,10 @@
 use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
 
-const KERNEL: &str = "type_checker/retention/native/00_provisional";
+const KERNEL: &str = "type_checker/retention/projection/project_provisional_native_call_symbols";
 
 /// Caller ABI facts per build-global use, for the certification
-/// (projection/10_certify.slang): `nc_use_abi` (result term, argument count,
+/// (certify_retained_native_abi.slang): `nc_use_abi` (result term, argument count,
 /// flags, generation; argument base, 0, 0, 0) and a compact `nc_use_args`
 /// pool of (term, passing mode) pairs. Rows of
 /// another build carry another generation and never certify.

@@ -807,7 +807,7 @@ impl RetainedTraitPublication {
     /// workgroups it wrote: none when the wave has no new instances with
     /// closed predicates or discovery stopped. The solve is deferred and
     /// its receipt is not read: discovery copies it (`copy_receipt`) and
-    /// checks it on the GPU (05_publish mode 4). A batch over its bounds
+    /// checks it on the GPU (publish_discovery_wave mode 4). A batch over its bounds
     /// leaves the producer word set, and the check stops the chain.
     pub fn record_chained(
         &mut self,

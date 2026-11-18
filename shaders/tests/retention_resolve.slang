@@ -18,8 +18,8 @@
 // rt_test_out (RT_PROBE_WORDS per lane).
 import primitive_types;
 import type_checker.retention.retention_store;
-import type_checker.retention.retention_subst;
-import type_checker.retention.row_classes;
+import type_checker.retention.retained_substitution;
+import type_checker.retention.retained_row_classes;
 
 RWStructuredBuffer<uint> rt_test_out;
 StructuredBuffer<uint4> rt_test_requests;

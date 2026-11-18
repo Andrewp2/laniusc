@@ -384,7 +384,7 @@ const DEBUG: &[(&str, &str, &str)] = &[
         "instance table validation mode",
     ),
     (
-        "type_checker/program_retention/projection.rs",
+        "type_checker/program_retention/projection/mod.rs",
         "retained_projection.test_readback",
         "test oracle `read_test_buffer`",
     ),
