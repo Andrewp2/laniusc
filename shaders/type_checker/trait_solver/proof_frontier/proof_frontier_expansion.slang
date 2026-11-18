@@ -4,7 +4,7 @@ import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_frontier.proof_work;
 import type_checker.trait_solver.proof_frontier.proof_frontier_selection;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_contract;
 
 public SolverStatus pps_initialize_obligation(uint obligation)
 {

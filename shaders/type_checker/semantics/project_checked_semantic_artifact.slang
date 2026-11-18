@@ -7,7 +7,7 @@ import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.predicate_scalar_subject;
 import shared.buffers.gpu_index;
 import shared.native_interfaces.native_c_abi;
-import type_checker.local_struct_layout;
+import type_checker.concrete_types.local_struct_layout;
 import shared.buffers.status;
 
 // Projection columns are sparse by their compact semantic domain. Value,

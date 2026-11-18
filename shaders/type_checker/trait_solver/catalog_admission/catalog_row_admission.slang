@@ -6,7 +6,7 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.catalog_admission.definition_admission;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_contract;
 
 // Public (library, unit) membership and exact immutable snapshot/alias matching
 // remain host registry preconditions. Do not turn them into an unbounded GPU

@@ -1,14 +1,14 @@
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Create checked applications required by record fields and local enum payloads. Source
 // type rows are immutable. Independent roots own their traversal stacks and
 // atomically reserve private rows; completed rows are indexed in a later pass.
 import shared.syntax.hir_records;
 import shared.buffers.atomics;
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_equality;
-import type_checker.local_struct_layout;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.concrete_types.local_struct_layout;
 import shared.semantics.dependency_interface;
 import type_checker.dependencies.canonical_field_types;
 

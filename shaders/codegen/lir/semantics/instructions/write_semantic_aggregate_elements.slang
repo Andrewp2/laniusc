@@ -1,7 +1,7 @@
 import shared.native_interfaces.native_value_layout;
-import type_checker.native_nominal_identity;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
+import type_checker.concrete_types.native_nominal_identity;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_type_graph;
 import shared.syntax.hir_records;
 import codegen.lir.semantics.instructions.semantic_instruction_recipes;
 import codegen.lir.lowering_ir;

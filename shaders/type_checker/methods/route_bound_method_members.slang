@@ -16,12 +16,12 @@ import shared.syntax.hir_records;
 import shared.buffers.status;
 import type_checker.methods.method_lookup;
 import type_checker.methods.method_candidate;
-import type_checker.checked_type_graph;
-import type_checker.constant_atoms;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.constants.constant_atoms;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.checked_operand_ids;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
 import shared.semantics.callable_identity;
 

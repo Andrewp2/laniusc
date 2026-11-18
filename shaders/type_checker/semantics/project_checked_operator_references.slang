@@ -31,8 +31,8 @@
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.buffers.gpu_index;
-import type_checker.literal_symbolic_context;
-import type_checker.inherited_expression_type;
+import type_checker.expression_rules.literal_symbolic_context;
+import type_checker.expression_contexts.inherited_expression_type;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

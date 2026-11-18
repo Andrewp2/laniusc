@@ -1,4 +1,4 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 import type_checker.calls.contextual_call_environment;
 // Observation only. The harness runs the production claim index, validation,
 // and explicit publication stages before this reader. Expected values live in

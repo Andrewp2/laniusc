@@ -15,7 +15,7 @@ import shared.semantics.dependency_interface;
 import shared.semantics.dependency_method_index;
 import shared.semantics.semantic_interface_layout;
 import type_checker.methods.method_candidate;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;

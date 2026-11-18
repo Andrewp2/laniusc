@@ -33,10 +33,10 @@ import shared.numbers.integer_words;
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.buffers.status;
-import type_checker.checked_index_reference;
-import type_checker.operator_operand_rules;
-import type_checker.float_literal_selection;
-import type_checker.literal_symbolic_context;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.expression_rules.operator_operand_rules;
+import type_checker.expression_rules.float_literal_selection;
+import type_checker.expression_rules.literal_symbolic_context;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
 

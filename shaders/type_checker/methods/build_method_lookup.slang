@@ -2,8 +2,8 @@ import shared.buffers.atomics;
 import shared.buffers.gpu_index;
 import shared.syntax.hir_records;
 import type_checker.methods.method_lookup;
-import type_checker.instance_arguments;
-import type_checker.constant_parameter_slots;
+import type_checker.concrete_types.instance_arguments;
+import type_checker.constants.constant_parameter_slots;
 
 struct Params
 {

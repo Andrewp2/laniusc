@@ -16,8 +16,8 @@
 // member row's field range goes to pj_g_aux.yz.
 import shared.native_interfaces.native_c_entry;
 import shared.native_interfaces.native_c_abi;
-import type_checker.operator_operand_rules;
-import type_checker.intrinsic_operand_rules;
+import type_checker.expression_rules.operator_operand_rules;
+import type_checker.expression_rules.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;
 import type_checker.retention.projection_rows.retained_projection_type_tables;
 import type_checker.retention.projection_schema.retained_schema_projection;

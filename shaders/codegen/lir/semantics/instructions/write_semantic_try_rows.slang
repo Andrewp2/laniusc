@@ -19,7 +19,7 @@
 // node's synthetic local n_tokens + node (scatter_semantic_locals.slang), as for a match.
 import shared.semantics.primitive_types;
 import shared.native_interfaces.native_value_layout;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import shared.syntax.hir_records;
 import codegen.lir.semantics.instructions.semantic_instruction_recipes;
 import codegen.lir.scheduling.target_schedule_layout;

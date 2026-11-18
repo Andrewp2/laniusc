@@ -18,8 +18,8 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_bridge;
 import type_checker.canonicalization.canonical_crosscheck;
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.scoped_types.scoped_type_equality;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

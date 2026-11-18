@@ -5,7 +5,7 @@
 // including kernel's graph. No reader here keeps its own form list.
 // The including kernel defines ARGUMENT_TYPE_GRAPH (the graph it reads type
 // rows through) and parameter_type_capacity().
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 #include "../results/argument_result_reference.slang"
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -13,7 +13,7 @@ import shared.semantics.primitive_types;
 #define INFERENCE_INDEX_GRAPH ARGUMENT_TYPE_GRAPH
 #define INFERENCE_TYPE_CAPACITY() parameter_type_capacity()
 #define INFERENCE_CALL_RESULT_CLOSED(instance) concrete_instance_is_closed<ARGUMENT_TYPE_GRAPH, CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(instance, parameter_type_capacity(), gParams.n_tokens)
-#include "../../inference_expression_reference.slang"
+#include "../../expression_contexts/inference_expression_reference.slang"
 
 uint expr_record_slot(uint node, uint slot)
 {

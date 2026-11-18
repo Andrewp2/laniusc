@@ -1,6 +1,6 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 import shared.syntax.hir_records;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.explicit_constant_operand;
 
 // Scatter named generic argument refs from the compact type-argument family.

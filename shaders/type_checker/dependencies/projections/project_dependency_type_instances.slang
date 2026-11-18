@@ -6,7 +6,7 @@ import type_checker.calls.explicit_constant_operand;
 
 import shared.semantics.dependency_interface;
 import shared.syntax.hir_records;
-import type_checker.local_struct_layout;
+import type_checker.concrete_types.local_struct_layout;
 import type_checker.dependencies.enum_instance_layout;
 import shared.buffers.gpu_index;
 

@@ -9,8 +9,8 @@ import shared.semantics.primitive_types;
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
 import shared.semantics.checked_semantic_artifact;
-import type_checker.checked_index_reference;
-import type_checker.literal_symbolic_context;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.expression_rules.literal_symbolic_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

@@ -8,12 +8,12 @@
 // INTERIM: the end state (P7) compares canonical type IDs instead.
 import shared.semantics.constant_value;
 import shared.semantics.dependency_interface;
-import type_checker.concrete_type_equality;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_stackless;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.predicates.scoped_type_stackless;
 import type_checker.dependencies.constant_view;
 import type_checker.dependencies.canonical_field_types;
-#include "../scoped_type_path.slang"
+#include "../predicates/scoped_type_path.slang"
 
 // As canonical_type_reference_matches. A root that resolves to a leaf is the
 // walk's only node, so the leaf comparison and the field walk share one

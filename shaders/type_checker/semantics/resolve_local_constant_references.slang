@@ -1,4 +1,4 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // One constant reference round, resolve phase: a name or path use of a local
 // constant whose initializer root is present takes its value and is staged
 // (type_checker.semantics.const_fold). Staged rows become present in

@@ -1,4 +1,4 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // GPU hash-indexed method-key validation.
 //
 // Scheduling contract:
@@ -17,8 +17,8 @@ import type_checker.constant_parameter_slots;
 import shared.syntax.hir_records;
 import shared.buffers.status;
 import type_checker.methods.method_lookup;
-import type_checker.instance_arguments;
-import type_checker.constant_atoms;
+import type_checker.concrete_types.instance_arguments;
+import type_checker.constants.constant_atoms;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.substitution_scratch;
 import type_checker.matches.checked_match_types;

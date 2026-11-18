@@ -7,8 +7,8 @@ import shared.semantics.primitive_types;
 
 import shared.syntax.hir_records;
 import type_checker.calls.explicit_constant_operand;
-import type_checker.checked_array_counts;
-import type_checker.constant_publication;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.constants.constant_publication;
 import shared.buffers.status;
 
 struct Params

@@ -17,7 +17,7 @@
 // docs/canonical-type-ids.md) and the exact one is kept.
 //
 // Callers own the call's owner tokens (call_context_owner_by_token).
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.calls.contextual_call_environment;

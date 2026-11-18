@@ -1,7 +1,7 @@
-import type_checker.concrete_type_equality;
-import type_checker.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.constants.constant_atoms_identity;
 import shared.semantics.primitive_types;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // Validate resolved type references from dense compact HIR. Method-contract
 // generic failures are classified through the compact method family rather
 // than raw production IDs or raw ancestor links.
@@ -11,8 +11,8 @@ import type_checker.calls.explicit_call_environment;
 import shared.search.compact_method_lookup;
 import shared.buffers.gpu_index;
 import shared.buffers.status;
-import type_checker.checked_array_counts;
-import type_checker.array_extent_literal;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.expression_rules.array_extent_literal;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 struct TokenIn { uint kind; uint start; uint len; };

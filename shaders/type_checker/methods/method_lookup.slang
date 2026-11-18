@@ -1,8 +1,8 @@
 // Shared structural-head index for declaration insertion and candidate lookup.
 // A head only narrows candidate discovery; complete checked constraints decide
 // applicability. Header validation owns the validity of every child.
-import type_checker.scoped_type_equality;
-import type_checker.concrete_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 
 public struct MethodReceiverHead
 {

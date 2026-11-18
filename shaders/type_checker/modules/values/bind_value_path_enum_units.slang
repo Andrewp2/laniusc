@@ -1,8 +1,8 @@
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
-import type_checker.argument_context;
-import type_checker.checked_type_graph;
-import type_checker.checked_canonical;
+import type_checker.expression_contexts.argument_context;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_canonical;
 import type_checker.canonicalization.canonical_candidates;
 import shared.syntax.hir_match_patterns;
 import shared.buffers.status;
@@ -160,7 +160,7 @@ bool valid_hir(uint node) { return node < active_hir_count(); }
 [ForceInline]
 bool valid_token(uint token) { return token < gParams.n_tokens; }
 #define DECLARED_CONTEXT_CANONICAL OnDemandIds
-#include "../../result_expression_context.slang"
+#include "../../expression_contexts/result_expression_context.slang"
 
 bool unit_family_matches(uint2 reference, uint declaration, uint token, bool imported)
 {

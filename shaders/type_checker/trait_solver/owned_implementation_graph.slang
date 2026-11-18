@@ -6,8 +6,8 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
-import type_checker.owned_type_constraint_contract;
-import type_checker.owned_type_constraint_engine;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
 
 public struct CatalogImplementationPatternGraph : IOwnedConstraintPatternGraph
 {

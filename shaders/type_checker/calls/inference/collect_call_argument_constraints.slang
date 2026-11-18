@@ -1,4 +1,4 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // Row-dispatched direct call argument validation and generic inference over
 // canonical IDs.
 //
@@ -14,8 +14,8 @@ import type_checker.calls.parameter_pattern_page;
 import shared.syntax.hir_records;
 import shared.buffers.atomics;
 import shared.syntax.hir_expr_semantics;
-import type_checker.checked_index_reference;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_checked_rows;
@@ -25,7 +25,7 @@ import type_checker.substitution.checked_operand_ids;
 import type_checker.matches.checked_match_types;
 import shared.semantics.constant_value;
 import shared.buffers.status;
-import type_checker.intrinsic_operand_rules;
+import type_checker.expression_rules.intrinsic_operand_rules;
 import type_checker.calls.inference_activity;
 
 struct Params

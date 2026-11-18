@@ -12,8 +12,8 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_constants;
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
 import type_checker.substitution.canonical_checked_type_rows;
 
 static const uint INVALID = 0xffffffffu;

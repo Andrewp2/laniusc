@@ -8,7 +8,7 @@
 
 import shared.syntax.hir_records;
 import shared.semantics.external_type_identity;
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 
 struct Params
 {
@@ -369,7 +369,7 @@ bool publish_array_element_context(uint literal_node, uint stmt_node)
     return true;
 }
 
-#include "../../checked_record_constructor_reference.slang"
+#include "../../checked_types/checked_record_constructor_reference.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

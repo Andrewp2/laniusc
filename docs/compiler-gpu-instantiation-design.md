@@ -236,7 +236,7 @@ types.
   literal's context. When the only context is a value or declared type of a
   type parameter, `literal_context_type_by_hir` holds
   `LITERAL_CONTEXT_SYMBOLIC | P`, where `P` is the parameter's declaration
-  token ([`literal_symbolic_context`](../shaders/type_checker/literal_symbolic_context.slang)).
+  token ([`literal_symbolic_context`](../shaders/type_checker/expression_rules/literal_symbolic_context.slang)).
   That exact parameter must belong to the literal's enclosing binder chain,
   using the same scope check as call-result references. A field's unresolved
   declaration parameter from a different binder is not a caller context;
@@ -271,7 +271,7 @@ types.
   `table_rows` and `01e` share the inherited-result edge definition. They
   still walk a left chain; pointer jumping remains needed to remove the
   existing quadratic work on deep operator trees.
-- **Operand classes.** [`operator_operand_rules`](../shaders/type_checker/operator_operand_rules.slang)
+- **Operand classes.** [`operator_operand_rules`](../shaders/type_checker/expression_rules/operator_operand_rules.slang)
   classifies a resolved struct or enum as `OPR_TY_NAMED` and an array or
   slice as `OPR_TY_SEQUENCE`. Neither takes arithmetic, negation, a
   condition, a logical operand or an index role. Named values keep equality

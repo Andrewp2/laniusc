@@ -7,7 +7,7 @@
 // instead. Included by both entry files.
 import shared.syntax.hir_records;
 import shared.semantics.primitive_types;
-import type_checker.inherited_expression_type;
+import type_checker.expression_contexts.inherited_expression_type;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_substitution;
 import type_checker.substitution.source_slot_adapter;

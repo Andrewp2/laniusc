@@ -1,4 +1,4 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // Derive stable per-public-declaration generic counts from the same compacted
 // rows and slots consumed by member scatter.
 import shared.syntax.hir_records;

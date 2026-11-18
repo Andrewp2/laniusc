@@ -3,7 +3,7 @@
 // source import edges. Visibility and global depth ranking finish only after
 // all local and imported candidates have been offered.
 #include "../method_candidates.slang"
-import type_checker.constant_atoms;
+import type_checker.constants.constant_atoms;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.substitution.substitution_scratch;

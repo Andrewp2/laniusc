@@ -1,4 +1,4 @@
-import type_checker.constant_storage_plan;
+import type_checker.constants.constant_storage_plan;
 // Initialize one parent pointer per canonical dependency type. Type aliases
 // point at their checked signature type; all other nodes are roots. Later
 // parallel pointer-jumping rounds flatten arbitrary alias chains.

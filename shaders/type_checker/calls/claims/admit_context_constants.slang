@@ -4,9 +4,9 @@
 // admission; environment binding readers load these bits and never inspect
 // contextual references again. Presence and admission stay distinct: a
 // present but inadmissible binding still rejects.
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 import shared.syntax.hir_records;

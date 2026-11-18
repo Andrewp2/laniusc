@@ -1,5 +1,5 @@
-import type_checker.checked_array_counts;
-import type_checker.constant_parameter_slots;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.constants.constant_parameter_slots;
 // Publish per-call array-argument facts from compact argument rows.
 //
 // Conditions consume this fact instead of scanning a fixed argument window.
@@ -12,9 +12,9 @@ import shared.syntax.hir_records;
 import shared.semantics.primitive_types;
 import shared.buffers.atomics;
 import shared.syntax.hir_expr_semantics;
-import type_checker.checked_index_reference;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_type_graph;
 
 struct Params
 {
@@ -51,7 +51,7 @@ StructuredBuffer<uint> call_arg_param_row;
 
 RWStructuredBuffer<uint> call_result_instance;
 
-#include "../../inference_expression_reference.slang"
+#include "../../expression_contexts/inference_expression_reference.slang"
 
 static const uint INVALID = 0xffffffffu;
 

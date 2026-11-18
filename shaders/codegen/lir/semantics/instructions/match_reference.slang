@@ -1,5 +1,5 @@
 // Included by count_semantic_instructions.slang and materialize_semantic_operations.slang after their checked/HIR inputs.
-#include "../../../../type_checker/checked_referent.slang"
+#include "../../../../type_checker/checked_types/checked_referent.slang"
 
 uint semantic_match_variant_ordinal(uint pattern, uint hir_count)
 {

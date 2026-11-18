@@ -7,8 +7,8 @@
 // (live_type_row_list.slang), the others every live row
 // (live_type_rows.slang). One kernel serves both: new kernels may keep no
 // per-thread arrays, and the structural hash keeps one.
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_hash;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.scoped_types.scoped_type_hash;
 #include "live_type_row_list.slang"
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

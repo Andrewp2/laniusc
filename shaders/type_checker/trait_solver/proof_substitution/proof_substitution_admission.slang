@@ -13,9 +13,9 @@ import type_checker.trait_solver.proof_substitution.proof_binding_materializatio
 import type_checker.trait_solver.normalization.proof_term_candidate;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.proof_frontier.implementation_goal_matching;
-import type_checker.owned_type_constraint_contract;
-import type_checker.owned_type_constraint_engine;
-import type_checker.scoped_type_equality;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
+import type_checker.scoped_types.scoped_type_equality;
 
 // Substitution4: implementation, first Binding, count, conclusion Goal.
 // Binding8: substitution backlink, exact parameter atom, term tag/payload;

@@ -1,4 +1,4 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 // Validate dependency-call arguments over canonical IDs. The parameter's
 // declared type under the call's accepted environment (canonical_call_environments.slang, the
 // value environment) must be the argument's checked type, by ID. A declared
@@ -13,9 +13,9 @@ import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
 import shared.syntax.hir_expr_semantics;
 import shared.semantics.primitive_types;
-import type_checker.generic_result_type_origin;
-import type_checker.checked_type_graph;
-import type_checker.concrete_type_closure;
+import type_checker.expression_contexts.generic_result_type_origin;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.concrete_type_closure;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.checked_operand_ids;

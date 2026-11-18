@@ -5,7 +5,7 @@
 // index.
 import shared.buffers.status;
 import type_checker.canonicalization.canonical_api;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.substitution.field_closure;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

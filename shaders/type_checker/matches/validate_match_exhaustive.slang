@@ -32,7 +32,7 @@
 // declaration there.
 
 import shared.syntax.hir_records;
-import type_checker.checked_pattern_path;
+import type_checker.checked_types.checked_pattern_path;
 import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

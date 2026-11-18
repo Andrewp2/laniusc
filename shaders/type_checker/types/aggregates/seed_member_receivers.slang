@@ -1,8 +1,8 @@
 // Initialize dense-HIR member/index chains from immutable root references.
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 

@@ -5,7 +5,7 @@
 // and count constant identity. A pair whose type operands differ is caught
 // at the deepest differing level, where all type operands agree.
 import type_checker.canonicalization.canonical_api;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 
 // [0, buckets): chain heads (row + 1); [buckets, buckets + rows): next links.
 public RWStructuredBuffer<uint> canonical_crosscheck_links;

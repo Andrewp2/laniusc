@@ -1,7 +1,7 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_hash;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_hash;
 import tests.typed_constant_identity_fixture;
 
 RWStructuredBuffer<uint4> results;

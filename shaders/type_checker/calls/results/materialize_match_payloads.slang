@@ -5,8 +5,8 @@
 import shared.syntax.hir_records;
 import shared.buffers.status;
 import shared.semantics.dependency_interface;
-import type_checker.checked_pattern_path;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.checked_pattern_path;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
 import type_checker.substitution.canonical_substitution;
@@ -41,7 +41,7 @@ static const uint INVALID = 0xffffffffu;
 
 uint hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 
-#include "../../checked_referent.slang"
+#include "../../checked_types/checked_referent.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

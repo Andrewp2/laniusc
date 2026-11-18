@@ -16,10 +16,10 @@ import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
 import shared.semantics.checked_semantic_artifact;
 import type_checker.dependencies.record_fields;
-import type_checker.checked_canonical;
-import type_checker.checked_type_graph;
-import type_checker.local_struct_layout;
-import type_checker.native_nominal_identity;
+import type_checker.checked_types.checked_canonical;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.local_struct_layout;
+import type_checker.concrete_types.native_nominal_identity;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
 

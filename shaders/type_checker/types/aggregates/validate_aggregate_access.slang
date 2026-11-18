@@ -10,8 +10,8 @@ import shared.syntax.hir_expr_semantics;
 import shared.semantics.primitive_types;
 import shared.buffers.status;
 import type_checker.types.aggregates.struct_field_lookup;
-import type_checker.checked_type_identity;
-import type_checker.local_struct_layout;
+import type_checker.checked_types.checked_type_identity;
+import type_checker.concrete_types.local_struct_layout;
 
 struct Params
 {

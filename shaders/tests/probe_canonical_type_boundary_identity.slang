@@ -1,6 +1,6 @@
 import tests.canonical_type_boundary_fixture;
 import type_checker.dependencies.canonical_field_types;
-import type_checker.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_hash;
 
 [shader("compute")]
 [numthreads(32, 1, 1)]

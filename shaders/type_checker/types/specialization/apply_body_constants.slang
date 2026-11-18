@@ -1,7 +1,7 @@
 import shared.semantics.constant_value;
-import type_checker.constant_atoms;
-import type_checker.constant_atoms_identity;
-import type_checker.constant_publication;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_atoms_identity;
+import type_checker.constants.constant_publication;
 
 // Install the selected body's checked constant values after generic signature
 // validation and aggregate rebuilding. Constants retain declaration identity:

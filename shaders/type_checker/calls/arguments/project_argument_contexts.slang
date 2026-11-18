@@ -8,7 +8,7 @@ import shared.syntax.hir_records;
 import shared.buffers.status;
 import shared.semantics.dependency_interface;
 import shared.semantics.dependency_method_index;
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
 import type_checker.substitution.canonical_substitution;

@@ -20,9 +20,9 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_substitution;
 import type_checker.substitution.canonical_checked_type_rows;
-import type_checker.mutable_checked_type_graph;
-import type_checker.constant_atoms;
-import type_checker.constant_publication;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_publication;
 import shared.semantics.primitive_types;
 
 public RWStructuredBuffer<uint> type_application_count;

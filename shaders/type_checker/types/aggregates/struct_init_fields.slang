@@ -9,7 +9,7 @@
 // of scanning declaration subtrees.
 
 import shared.syntax.hir_records;
-import type_checker.shared_bindings;
+import type_checker.semantics.shared_bindings;
 import type_checker.types.aggregates.struct_field_lookup;
 import type_checker.calls.inference_activity;
 

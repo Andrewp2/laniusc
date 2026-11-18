@@ -1,11 +1,11 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 import shared.semantics.semantic_interface_layout;
 import shared.semantics.dependency_interface;
 import shared.semantics.dependency_method_index;
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
-import type_checker.instance_arguments;
-import type_checker.scoped_type_equality;
+import type_checker.concrete_types.instance_arguments;
+import type_checker.scoped_types.scoped_type_equality;
 import type_checker.dependencies.canonical_field_types;
 import type_checker.methods.method_candidate;
 

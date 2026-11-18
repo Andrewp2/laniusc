@@ -8,9 +8,9 @@ import shared.buffers.gpu_index;
 import shared.semantics.checked_semantic_artifact;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.explicit_call_environment;
-import type_checker.concrete_type_equality;
-import type_checker.concrete_type_closure;
-import type_checker.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_closure;
+import type_checker.constants.constant_atoms_identity;
 import type_checker.types.parameters.generic_param_lookup;
 import shared.buffers.status;
 

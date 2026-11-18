@@ -4,9 +4,9 @@
 // aggregate_args pass, never walked serially here.
 
 import shared.semantics.primitive_types;
-import type_checker.checked_type_graph;
-import type_checker.checked_type_identity;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_type_identity;
+import type_checker.checked_types.checked_slots;
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
 import shared.buffers.status;

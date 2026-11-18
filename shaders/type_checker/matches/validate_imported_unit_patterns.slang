@@ -8,10 +8,10 @@
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.semantics.primitive_types;
-import type_checker.checked_type_graph;
-import type_checker.checked_scoped_types;
-import type_checker.checked_index_reference;
-import type_checker.checked_pattern_path;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_pattern_path;
 import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -105,8 +105,8 @@ bool same_external_enum(uint expected_token, uint actual_token)
             external_type_local_index[actual_token];
 }
 
-#include "../inference_expression_reference.slang"
-#include "../checked_referent.slang"
+#include "../expression_contexts/inference_expression_reference.slang"
+#include "../checked_types/checked_referent.slang"
 
 bool matches_scrutinee(uint match_node, uint pattern_token)
 {

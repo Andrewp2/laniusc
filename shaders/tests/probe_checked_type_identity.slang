@@ -9,7 +9,7 @@
 // Each builder and comparison has one call site.
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_constants;
-import type_checker.checked_type_identity;
+import type_checker.checked_types.checked_type_identity;
 import type_checker.substitution.substitution_scratch;
 import type_checker.substitution.canonical_substitution;
 import shared.semantics.primitive_types;

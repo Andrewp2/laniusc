@@ -7,7 +7,7 @@
 // bridge_errors[4 + i]. Each reader has one call site.
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_bridge;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import shared.semantics.primitive_types;
 
 RWStructuredBuffer<uint> bridge_errors;

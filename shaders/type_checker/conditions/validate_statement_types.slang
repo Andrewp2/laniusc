@@ -1,6 +1,6 @@
 import shared.semantics.primitive_types;
-import type_checker.constant_parameter_slots;
-import type_checker.operator_operand_rules;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.expression_rules.operator_operand_rules;
 // Validate declaration initializers, assignments, and returns from dense
 // compact HIR. Scalar compatibility is checked here. Aggregate structure stays
 // in the type-instance passes, while this boundary rejects a definite

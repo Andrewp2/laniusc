@@ -1,6 +1,6 @@
 import shared.semantics.semantic_interface_layout;
-import type_checker.mutable_checked_type_graph;
-import type_checker.checked_index_reference;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.checked_types.checked_index_reference;
 import type_checker.substitution.scoped_reference_substitution;
 // HIR member field result projection.
 //

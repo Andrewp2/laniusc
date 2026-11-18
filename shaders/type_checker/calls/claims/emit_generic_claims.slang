@@ -4,20 +4,20 @@
 // publishes that span; other lanes leave it untouched. All call forms use
 // this same relation and conflict validator. Each claim is spelled by the
 // checked row of its binding's ID (ct_realize).
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 import type_checker.calls.explicit_call_environment;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 import type_checker.calls.parameter_pattern_page;
 import shared.semantics.dependency_interface;
 import shared.syntax.hir_records;
 import shared.buffers.atomics;
 import shared.syntax.hir_expr_semantics;
-import type_checker.checked_index_reference;
-import type_checker.generic_result_type_origin;
-import type_checker.concrete_type_closure;
-import type_checker.instance_arguments;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.expression_contexts.generic_result_type_origin;
+import type_checker.concrete_types.concrete_type_closure;
+import type_checker.concrete_types.instance_arguments;
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_mutable_rows;

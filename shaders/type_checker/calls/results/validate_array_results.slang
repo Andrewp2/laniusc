@@ -18,9 +18,9 @@
 
 import shared.syntax.hir_records;
 import shared.buffers.status;
-import type_checker.checked_array_counts;
-import type_checker.checked_type_graph;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_slots;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.checked_call_environment;
 import type_checker.calls.checked_constant_environment;

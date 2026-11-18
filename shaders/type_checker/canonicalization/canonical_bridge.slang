@@ -21,11 +21,11 @@
 // Every bridged read is a few loads with no nested helpers: the old walkers
 // expand a graph read at each of their call sites.
 import type_checker.canonicalization.canonical_api;
-import type_checker.checked_type_graph;
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
-import type_checker.concrete_type_equality;
-import type_checker.scoped_type_equality;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
 import shared.semantics.primitive_types;
 
 // The type capacity a bridged comparison passes to the walkers: the bridge

@@ -1,9 +1,9 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Synthetic storage deliberately defeats row-address identity. Results are
 // production equality/hash outcomes, not a duplicate host type evaluator.
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_hash;
 
 public static const uint INVALID = 0xffffffffu;
 static const uint ATOM = 0x80000001u;

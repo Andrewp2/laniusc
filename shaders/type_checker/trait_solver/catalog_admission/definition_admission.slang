@@ -5,7 +5,7 @@ import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.catalog_admission.graph_admission;
 import type_checker.trait_solver.owned_implementation_graph;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_contract;
 
 public bool ts_callable_atom_is_valid(uint atom)
 {

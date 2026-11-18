@@ -21,7 +21,7 @@
 // so a binding inferred here can feed the next call's argument claims.
 import shared.syntax.hir_records;
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;
 import type_checker.calls.explicit_call_environment;

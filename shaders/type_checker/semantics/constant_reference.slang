@@ -1,8 +1,8 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Project a checked scalar constant reference after body substitution. Source
 // references remain immutable; the selected body supplies parameter atoms.
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 
 // (scalar, low bits, high bits, presence). The symbolic marker records a value
 // dependency for native body closure; its declaration token is never executable

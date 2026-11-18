@@ -1,4 +1,4 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // Bind only the callable's own ordered header. Method lexical slots already
 // include the impl domain; the receiver producer owns those inherited bindings.
 import shared.syntax.hir_records;
@@ -6,8 +6,8 @@ import type_checker.calls.explicit_application_owner;
 import type_checker.calls.explicit_binding_metadata;
 import type_checker.calls.explicit_constant_operand;
 import type_checker.calls.claim_reference;
-import type_checker.checked_type_graph;
-import type_checker.concrete_type_equality;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };

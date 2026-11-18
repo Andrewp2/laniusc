@@ -1,11 +1,11 @@
 import shared.semantics.primitive_types;
-import type_checker.checked_array_counts;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.checked_operand_ids;
-import type_checker.checked_type_identity;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_type_identity;
+import type_checker.checked_types.checked_slots;
 // HIR array-literal projection and validation.
 //
 // This pass consumes return-statement records, expression records, parser-owned
@@ -58,7 +58,7 @@ StructuredBuffer<uint> call_inference_result_tag;
 StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> call_fn_index;
-#include "../../assignment_expression_context.slang"
+#include "../../expression_contexts/assignment_expression_context.slang"
 
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;

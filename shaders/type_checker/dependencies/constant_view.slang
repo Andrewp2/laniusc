@@ -1,12 +1,12 @@
 import shared.semantics.constant_value;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Read-only view of portable constant recipes under an exact caller environment.
 // Virtual references exist only during inspection. They are never source rows,
 // serialized references, or values that may be published into checked graphs.
 import shared.semantics.dependency_interface;
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
-import type_checker.scoped_type_equality;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.scoped_types.scoped_type_equality;
 import type_checker.canonicalization.canonical_api;
 
 public StructuredBuffer<uint2> dependency_constant_ref_by_type;

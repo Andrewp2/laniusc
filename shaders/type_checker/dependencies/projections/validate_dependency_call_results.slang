@@ -1,5 +1,5 @@
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
 import shared.semantics.semantic_interface_layout;
 import shared.native_interfaces.native_value_layout;
 import type_checker.calls.checked_constant_environment;
@@ -11,10 +11,10 @@ import type_checker.calls.checked_constant_environment;
 
 import shared.semantics.dependency_interface;
 import shared.semantics.dependency_method_index;
-import type_checker.concrete_type_equality;
-import type_checker.mutable_checked_type_graph;
-import type_checker.scoped_type_equality;
-import type_checker.instance_arguments;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.concrete_types.instance_arguments;
 import type_checker.dependencies.canonical_field_types;
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
@@ -32,8 +32,8 @@ import type_checker.substitution.source_slot_adapter;
 import type_checker.matches.checked_match_types;
 import type_checker.matches.checked_match_context_publication;
 import type_checker.types.aggregates.field_expected;
-import type_checker.local_struct_layout;
-import type_checker.argument_context;
+import type_checker.concrete_types.local_struct_layout;
+import type_checker.expression_contexts.argument_context;
 import type_checker.calls.inference_activity;
 
 struct Params
@@ -313,7 +313,7 @@ uint dependency_type(uint t)
 }
 
 #define CANONICAL_FIELD_EXPECTATION
-#include "../../result_expression_context.slang"
+#include "../../expression_contexts/result_expression_context.slang"
 
 // The call owns its published context, through the callee token and, for a
 // call that is not dotted, its head and call tokens.

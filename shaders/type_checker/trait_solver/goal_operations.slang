@@ -6,9 +6,9 @@ import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.checked_graph_operations;
 import type_checker.trait_solver.catalog_admission.graph_admission;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_scratch;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
 
 public struct SolverGoal
 {

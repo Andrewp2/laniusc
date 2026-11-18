@@ -94,7 +94,7 @@ preserves that encoded value in a call's `payload.d`.
 
 For captured call 130, `payload.d` is `0x8000007e`: statement 126 plus the flag.
 Its parent is member expression 129, whose parent is assignment 126. The old
-[assignment context reader](../shaders/type_checker/assignment_expression_context.slang)
+[assignment context reader](../shaders/type_checker/expression_contexts/assignment_expression_context.slang)
 treated the encoded value as an out-of-range HIR ID. Its fallback walk then
 stopped at the member expression, which is not a forwarding wrapper, before
 reaching the assignment. Calls 136 and 220 fail the same way. Direct binding's

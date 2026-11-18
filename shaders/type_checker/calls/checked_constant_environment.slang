@@ -1,7 +1,7 @@
-import type_checker.concrete_type_equality;
-import type_checker.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.constants.constant_atoms_identity;
 import type_checker.calls.constant_claim_identity;
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 // Complete constant bindings, indexed by (callee, constant slot). References
 // retain typed atoms, exact caller parameters, or checked count projections.
 import type_checker.calls.claim_lookup;

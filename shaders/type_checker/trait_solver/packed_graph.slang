@@ -2,8 +2,8 @@ import shared.semantics.constant_value;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.scoped_type_equality;
-import type_checker.concrete_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 
 public bool ts_atom(uint atom, out uint4 low, out uint4 high)
 {

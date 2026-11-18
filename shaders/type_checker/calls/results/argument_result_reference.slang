@@ -1,8 +1,8 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 // A completed expression result is an argument value in caller scope. Preserve its
 // whole reference before following identity-call argument shortcuts or reading
 // declaration-only references. Legacy scalar codes cannot describe a wrapper.
-import type_checker.concrete_type_closure;
+import type_checker.concrete_types.concrete_type_closure;
 StructuredBuffer<uint> call_inference_result_tag;
 StructuredBuffer<uint> call_inference_result_payload;
 

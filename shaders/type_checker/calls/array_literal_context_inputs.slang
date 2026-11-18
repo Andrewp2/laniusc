@@ -1,10 +1,10 @@
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
-import type_checker.checked_index_reference;
-import type_checker.scoped_type_equality;
-import type_checker.argument_context;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.expression_contexts.argument_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -60,7 +60,7 @@ bool sequence_instance(uint instance)
     return valid_instance(instance) && (type_instance_kind[instance] == TYPE_INSTANCE_ARRAY ||
         type_instance_kind[instance] == TYPE_INSTANCE_SLICE);
 }
-#include "../array_literal_expected.slang"
+#include "../expression_contexts/array_literal_expected.slang"
 
 // Nested literals consume the enclosing literal's expected type, including an
 // annotation above multiple array layers: the nearest array or slice context,

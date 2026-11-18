@@ -16,8 +16,8 @@ import type_checker.trait_solver.proof_frontier.proof_frontier_reduction;
 import type_checker.trait_solver.proof_scratch_handoff;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.proof_frontier.implementation_goal_matching;
-import type_checker.owned_type_constraint_contract;
-import type_checker.owned_type_constraint_engine;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
 
 // INTERIM (P7): a substitution walk runs as separate dispatches over one chunk
 // of at most THREAD_SCRATCH_SLOTS rows, so no kernel inlines more than two of
