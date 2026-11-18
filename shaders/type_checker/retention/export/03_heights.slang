@@ -6,13 +6,35 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
 
+bool published(uint record, uint2 hash)
+{
+    uint mask = ct_slot_capacity() - 1u;
+    uint slot = ct_probe_start(hash);
+    for (uint probe = 0u; probe <= mask; probe++)
+    {
+        uint occupant = ct_slot[slot];
+        if (occupant == record) return true;
+        if (occupant == 0u) return false;
+        slot = (slot + 1u) & mask;
+    }
+    return false;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint record = export_lane(dtid);
     if (record < CT_FIRST_RECORD || record >= min(ct_counts[CT_COUNT_NEXT_RECORD], ct_record_capacity())) return;
-    uint height = ct_meta[record].y & 0xffffu;
+    // Losing canonical candidates can leave complete records below the
+    // allocation watermark. Translating them races to intern the same term.
+    uint4 meta = ct_meta[record];
+    if (!published(record, meta.zw))
+    {
+        rt_x_term_map[record] = RT_UNKNOWN;
+        return;
+    }
+    uint height = meta.y & 0xffffu;
     if (height == 0u || height >= RT_X_HEIGHTS)
     {
         rt_x_term_map[record] = RT_UNKNOWN;

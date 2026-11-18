@@ -11,6 +11,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint record = export_lane(dtid);
     if (record < CT_FIRST_RECORD || record >= min(ct_counts[CT_COUNT_NEXT_RECORD], ct_record_capacity())) return;
+    if (rt_x_term_map[record] == RT_UNKNOWN) return; // rejected by 03_heights
     uint height = ct_meta[record].y & 0xffffu;
     if (height == 0u || height >= RT_X_HEIGHTS) return;
     uint slot;

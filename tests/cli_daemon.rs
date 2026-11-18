@@ -30,6 +30,7 @@ impl Drop for ChildGuard {
 }
 
 fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Option<&str>) {
+    const TERM_JOBS: usize = 20;
     let source = common::temp_artifact_path("laniusc_daemon_capacity", backend, Some("lani"));
     let alternate_source = common::temp_artifact_path(
         "laniusc_daemon_capacity",
@@ -38,6 +39,7 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
     );
     let grown_source = common::temp_artifact_path("laniusc_daemon_capacity", "grown", Some("lani"));
     let dense_source = common::temp_artifact_path("laniusc_daemon_capacity", "dense", Some("lani"));
+    let term_source = common::temp_artifact_path("laniusc_daemon_capacity", "terms", Some("lani"));
     let artifact = common::temp_artifact_path("laniusc_daemon_capacity", emit, extension);
     let requests = common::temp_artifact_path("laniusc_daemon_capacity", "requests", Some("jsonl"));
     fs::write(&source, "fn main() -> i32 { return 42; }\n")
@@ -57,6 +59,8 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         "fn main() -> i32 { let a = 1; let b = 2; let c = 3; let d = 4; let e = 5; return a + b + c + d + e; }\n",
     )
     .expect("write token-dense daemon source");
+    fs::write(&term_source, "fn main() { print(7); return; }\n")
+        .expect("write term interning fixture");
 
     let mut request_lines = (0..21)
         .map(|job| {
@@ -99,6 +103,18 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
             .to_string(),
         );
     }
+    for job in 0..TERM_JOBS {
+        request_lines.push(
+            serde_json::json!({
+                "id": format!("terms-{job}"),
+                "command": "compile",
+                "emit": emit,
+                "input": term_source,
+                "output": artifact,
+            })
+            .to_string(),
+        );
+    }
     request_lines.push(serde_json::json!({"id": "shutdown", "command": "shutdown"}).to_string());
     fs::write(&requests, format!("{}\n", request_lines.join("\n")))
         .expect("write capacity-stable daemon requests");
@@ -112,6 +128,7 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         .arg(backend)
         .arg("--stdlib-root")
         .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .env("LANIUS_REPORT", "resources")
         .stdin(Stdio::from(stdin));
     let output = common::codegen_command_output_with_timeout(
         &format!("laniusc daemon {backend} twenty-job reuse"),
@@ -126,8 +143,8 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         .collect::<Vec<_>>();
     assert_eq!(
         responses.len(),
-        27,
-        "ready, 21 stable jobs, token growth and repeat, byte growth and repeat, and shutdown"
+        27 + TERM_JOBS,
+        "ready, stable jobs, token and byte growth jobs, term interning jobs, and shutdown"
     );
     assert_eq!(responses[0]["event"], "ready");
     assert_eq!(responses[0]["targets"], serde_json::json!([emit]));
@@ -189,6 +206,37 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
     assert_eq!(
         responses[25]["resources_created_during_job"]["compute_pipelines"],
         0
+    );
+    for response in &responses[26..26 + TERM_JOBS] {
+        assert_eq!(response["ok"], true, "term interning job failed: {response}");
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let term_counts = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[program_retention] export term_rows="))
+        .map(|fields| {
+            let (rows, spares) = fields
+                .split_once(" spare_term_rows=")
+                .expect("export report should include both term counters");
+            (
+                rows.parse::<u32>().expect("term arena length"),
+                spares.parse::<u32>().expect("spare term rows"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        term_counts.len(),
+        responses.len() - 2,
+        "expected one export count per job for {backend}: {stderr}",
+    );
+    let repeated = &term_counts[term_counts.len() - TERM_JOBS..];
+    assert!(
+        repeated.iter().all(|&(rows, _)| rows == repeated[0].0),
+        "{backend} changed the term arena length across identical jobs: {repeated:?}",
+    );
+    assert!(
+        repeated.iter().all(|&(_, spares)| spares == 0),
+        "{backend} allocated spare term rows for the interning fixture: {repeated:?}",
     );
 }
 
