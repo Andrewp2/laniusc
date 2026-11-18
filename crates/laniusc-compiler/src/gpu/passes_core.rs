@@ -587,8 +587,12 @@ fn recorded_since_last_submission() -> [u64; 4] {
 static READBACK_ROUND_TRIPS: AtomicU64 = AtomicU64::new(0);
 static READBACK_WAIT_NS: AtomicU64 = AtomicU64::new(0);
 
-/// Process-wide completed readback maps and the host time spent waiting for
+/// Process-wide completed readback maps and the host time spent blocked on
 /// them, in nanoseconds. Each one is a host round trip that drains the queue.
+///
+/// The GPU runs every dispatch queued before the readback while the host is
+/// blocked. The time is therefore mostly GPU compute for queued work. It is
+/// not the cost of the readbacks, and removing one does not remove its share.
 pub(crate) fn readback_round_trips() -> (u64, u64) {
     (
         READBACK_ROUND_TRIPS.load(Ordering::Relaxed),
