@@ -42,6 +42,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalMatc
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
+                "hir_match_rank_node".into(),
+                b.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_count".into(),
+                b.hir_match_rank_count.as_entire_binding(),
+            ),
+            (
                 "arm_owner_match".into(),
                 b.hir_match_payload_match_node.as_entire_binding(),
             ),

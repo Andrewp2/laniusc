@@ -59,6 +59,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirArrayElementS
                 b.hir_array_element_previous.as_entire_binding(),
             ),
             (
+                "hir_list_rank_node".into(),
+                b.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                b.hir_list_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_array_lit_first_element".into(),
                 b.hir_array_lit_first_element.as_entire_binding(),
             ),

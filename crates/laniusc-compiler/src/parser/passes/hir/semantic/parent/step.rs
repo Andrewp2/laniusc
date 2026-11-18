@@ -102,6 +102,7 @@ impl TreeRelationOperation {
             encoder,
             buffers,
             &self.rows_data,
+            Some((&buffers.hir_list_rank_node, &buffers.hir_list_rank_count)),
             SINGLE_NAMES,
             TreeRelationBuffers::new(
                 &buffers.hir_semantic_parent_link_a,
@@ -113,6 +114,43 @@ impl TreeRelationOperation {
                 buffers.tree_capacity,
             ),
             &buffers.hir_list_rank_dispatch_args,
+            false,
+            invocation,
+            cache,
+        )
+    }
+
+    /// Propagates one nearest-ancestor relation over the rows of a family
+    /// worklist (`rows`, `row_count`) only, for `family_relation_steps`
+    /// steps, so the result ends in the A slots. The family's init pass must
+    /// seed every row of the worklist, and every link must name another row
+    /// of it; rows outside the worklist are neither read nor written.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::parser) fn record_family_row_steps(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        rows: &crate::gpu::buffers::LaniusBuffer<u32>,
+        row_count: &crate::gpu::buffers::LaniusBuffer<u32>,
+        dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        link_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        value_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        invocation: TreeRelationInvocation,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        self.record_schedule(
+            device,
+            encoder,
+            buffers,
+            &self.rows_data,
+            Some((rows, row_count)),
+            SINGLE_NAMES,
+            TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
+            family_relation_steps(buffers.tree_capacity),
+            dispatch_args,
             false,
             invocation,
             cache,
@@ -139,6 +177,7 @@ impl TreeRelationOperation {
             encoder,
             buffers,
             &self.data,
+            None,
             SINGLE_NAMES,
             TreeRelationBuffers::new(link_a, link_b, [value_a], [value_b]),
             bounded_walk_steps_after_local_span(buffers.tree_capacity, local_span),
@@ -155,6 +194,10 @@ impl TreeRelationOperation {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         data: &PassData,
+        rows: Option<(
+            &crate::gpu::buffers::LaniusBuffer<u32>,
+            &crate::gpu::buffers::LaniusBuffer<u32>,
+        )>,
         names: RelationNames<N>,
         relation: TreeRelationBuffers<'_, N>,
         steps: u32,
@@ -178,15 +221,9 @@ impl TreeRelationOperation {
                     },
                 ),
             ]);
-            if std::ptr::eq(data, &self.rows_data) {
-                resources.insert(
-                    "hir_list_rank_node".into(),
-                    buffers.hir_list_rank_node.as_entire_binding(),
-                );
-                resources.insert(
-                    "hir_list_rank_count".into(),
-                    buffers.hir_list_rank_count.as_entire_binding(),
-                );
+            if let Some((rows, row_count)) = rows {
+                resources.insert("hir_list_rank_node".into(), rows.as_entire_binding());
+                resources.insert("hir_list_rank_count".into(), row_count.as_entire_binding());
             }
             let (link_in, values_in, link_out, values_out) = relation.for_step(step);
             resources.insert(names.link_in.into(), link_in.as_entire_binding());
@@ -310,6 +347,13 @@ impl<'a, const N: usize> TreeRelationBuffers<'a, N> {
 
 pub(in crate::parser) fn bounded_walk_steps_after_local_span(items: u32, local_span: u32) -> u32 {
     bounded_walk_step_capacity(items.max(1).div_ceil(local_span.max(1)))
+}
+
+/// The steps of `record_family_row_steps`: those of the whole-tree walk after
+/// the local span, rounded up to even so the walk ends in the A slots.
+pub(in crate::parser) fn family_relation_steps(items: u32) -> u32 {
+    let steps = bounded_walk_steps_after_local_span(items, SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN);
+    steps + steps % 2
 }
 
 pub(in crate::parser) fn canonical_relation_step_capacity(items: u32) -> u32 {

@@ -386,11 +386,8 @@ pub struct ParserPasses {
         hir::context::relations::step_small::HirContextRelationsStepSmallPass,
     pub hir_context_relations_scatter:
         hir::context::relations::scatter::HirContextRelationsScatterPass,
-    pub hir_struct_fields: hir::structs::fields::HirStructFieldsPass,
     pub hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass,
     pub hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass,
-    pub hir_struct_rank_prefix_local:
-        hir::structs::rank::prefix_local::HirStructRankPrefixLocalPass,
     pub hir_struct_rank_compact_scatter:
         hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass,
     pub hir_struct_field_rank_step: hir::structs::field::rank_step::HirStructFieldRankStepPass,
@@ -691,13 +688,10 @@ impl ParserPasses {
                 hir::context::relations::step_small::HirContextRelationsStepSmallPass::new(device)?,
             hir_context_relations_scatter:
                 hir::context::relations::scatter::HirContextRelationsScatterPass::new(device)?,
-            hir_struct_fields: hir::structs::fields::HirStructFieldsPass::new(device)?,
             hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass::new(
                 device,
             )?,
             hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass::new(device)?,
-            hir_struct_rank_prefix_local:
-                hir::structs::rank::prefix_local::HirStructRankPrefixLocalPass::new(device)?,
             hir_struct_rank_compact_scatter:
                 hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass::new(device)?,
             hir_struct_field_rank_step:
@@ -723,8 +717,9 @@ pub fn record_canonical_variants(
         crate::parser::compiler_graph::hir::CANONICAL_VARIANT_CLEAR,
         ctx.encoder,
     )?;
+    // Over the enum family's rows, where the variant arrays are defined.
     p.hir_canonical_variant_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &ctx.buffers.hir_enum_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::Variant)?;
     p.hir_canonical_variant_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -733,23 +728,12 @@ pub fn record_canonical_variants(
         crate::parser::compiler_graph::hir::CANONICAL_VARIANT_PAYLOAD_CLEAR,
         ctx.encoder,
     )?;
+    // The owner init also lists the payload types and the variant-field
+    // chains above them, so it covers every block of the tree; the walk runs
+    // over that list only.
     p.hir_canonical_variant_payload_owner_init
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    // Only payload types and the variant-field chains above them link to a
-    // parent: compact those rows and walk only them.
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
     let invocation = hir::list::rank::ListRankInvocation::VariantPayloadOwners;
-    p.hir_list_rank_prefix_local.record_for_owner_link(
-        ctx.device,
-        ctx.encoder,
-        ctx.buffers,
-        &ctx.buffers.hir_type_fields_params,
-        &ctx.buffers.hir_semantic_parent_value_a,
-        &ctx.buffers.hir_semantic_parent_link_a,
-        ctx.bg_cache
-            .as_deref_mut()
-            .expect("debug parser requires a bind-group cache"),
-        invocation,
-    )?;
     p.hir_semantic_prefix_blocks.record_list_rank_scan(
         ctx.device,
         ctx.encoder,
@@ -844,11 +828,11 @@ pub fn record_canonical_call_arguments(
         ctx.encoder,
     )?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::CallArgument)?;
-    // Rows past the active tree were not written by this job's argument
-    // links, so the scatter reads only the active rows.
+    // Over the call argument list that the argument links pass built: the
+    // argument arrays are defined on those rows only.
     let buffers = ctx.buffers;
     p.hir_canonical_call_arg_scatter
-        .record_pass_indirect(ctx, &buffers.tree_active_dispatch_args)?;
+        .record_pass_indirect(ctx, &buffers.hir_list_rank_dispatch_args)?;
     Ok(())
 }
 
@@ -864,8 +848,9 @@ pub fn record_canonical_array_elements(
         crate::parser::compiler_graph::hir::CANONICAL_ARRAY_ELEMENT_CLEAR,
         ctx.encoder,
     )?;
+    // Over the array element list that the element links pass built.
     p.hir_canonical_array_element_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &ctx.buffers.hir_list_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::ArrayElement)?;
     p.hir_canonical_array_element_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -885,8 +870,9 @@ pub fn record_canonical_matches(
         crate::parser::compiler_graph::hir::CANONICAL_MATCH_ARM_CLEAR,
         ctx.encoder,
     )?;
+    let buffers = ctx.buffers;
     p.hir_canonical_match_arm_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &buffers.hir_match_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::MatchArm)?;
     p.hir_canonical_match_arm_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -896,7 +882,7 @@ pub fn record_canonical_matches(
         ctx.encoder,
     )?;
     p.hir_canonical_match_payload_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &buffers.hir_match_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::MatchPayload)?;
     p.hir_canonical_match_payload_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;

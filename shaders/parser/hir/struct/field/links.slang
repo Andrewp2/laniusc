@@ -1,8 +1,19 @@
-// Seed struct declaration/literal field links from grammar tree records.
+// Seed struct declaration/literal field links from grammar tree records, and
+// list the fields.
 //
 // Struct field lists have the same right-recursive shape as call arguments:
 // first fields seed the owning struct/literal, and later fields point at their
 // previous field. A separate pointer-jump pass computes ordinals and owners.
+//
+// Only the family's rows are written: struct declaration fields, struct
+// literal fields, and the literal's head on struct literal rows. The field
+// arrays are undefined on every other row, and readers test the row's
+// production first. A field links only to another field. When debug rows are
+// retained, every row's defaults are written, since debug readbacks read every
+// row. The pass also marks the fields and counts them per block, in the layout
+// of parser/hir/list/rank/prefix_00_local.slang, so the list compaction that
+// follows lists them for the walk and the scatter. One workgroup covers one
+// block of 256 rows; the dispatch covers every block of the tree.
 
 import generated_parse_production_ids;
 
@@ -23,8 +34,15 @@ StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 
+RWStructuredBuffer<uint> hir_struct_field_parent_struct;
+RWStructuredBuffer<uint> hir_struct_field_ordinal;
 RWStructuredBuffer<uint> hir_struct_field_type_node;
+RWStructuredBuffer<uint> hir_struct_decl_field_start;
+RWStructuredBuffer<uint> hir_struct_decl_field_count;
 RWStructuredBuffer<uint> hir_struct_lit_head_node;
+RWStructuredBuffer<uint> hir_struct_lit_field_start;
+RWStructuredBuffer<uint> hir_struct_lit_field_count;
+RWStructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 RWStructuredBuffer<uint> hir_struct_lit_field_value_node;
 RWStructuredBuffer<uint> hir_struct_field_owner_a;
 RWStructuredBuffer<uint> hir_struct_field_link_a;
@@ -33,6 +51,11 @@ RWStructuredBuffer<uint> hir_struct_lit_field_owner_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_link_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_rank_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_previous;
+RWStructuredBuffer<uint> hir_struct_rank_flag;
+RWStructuredBuffer<uint> hir_struct_rank_block_sum;
+
+static const uint FLAG_WORDS_PER_BLOCK = 8u;
+groupshared uint g_flag_words[FLAG_WORDS_PER_BLOCK];
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -41,9 +64,9 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_EXPR = 14u;
 
-uint linear_thread_id(uint3 dtid)
+uint linear_group_id(uint3 gid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return gid.x + gid.y * MAX_GROUPS_X;
 }
 
 uint active_node_count()
@@ -203,14 +226,8 @@ void seed_literal_field(uint node)
     }
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void clear_field_links(uint node)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirStruct.n)
-        return;
-
     hir_struct_field_owner_a[node] = INVALID;
     hir_struct_field_link_a[node] = INVALID;
     hir_struct_field_rank_a[node] = 0u;
@@ -218,28 +235,52 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_struct_lit_field_link_a[node] = INVALID;
     hir_struct_lit_field_rank_a[node] = 0u;
     hir_struct_lit_field_previous[node] = INVALID;
-    if (!valid_node(node))
-        return;
+}
 
+// Every row's defaults, for debug readbacks.
+void clear_debug_row(uint node)
+{
+    clear_field_links(node);
+    hir_struct_field_parent_struct[node] = INVALID;
+    hir_struct_field_ordinal[node] = INVALID;
+    hir_struct_field_type_node[node] = INVALID;
+    hir_struct_decl_field_start[node] = INVALID;
+    hir_struct_decl_field_count[node] = 0u;
+    hir_struct_lit_head_node[node] = INVALID;
+    hir_struct_lit_field_start[node] = INVALID;
+    hir_struct_lit_field_count[node] = 0u;
+    hir_struct_lit_field_parent_lit[node] = INVALID;
+    hir_struct_lit_field_value_node[node] = INVALID;
+}
+
+// Writes a family row; returns whether the row is a field.
+bool seed_row(uint node)
+{
     uint prod = node_kind[node];
     if (prod == PROD_STRUCT_FIELD)
     {
+        clear_field_links(node);
+        hir_struct_field_parent_struct[node] = INVALID;
+        hir_struct_field_ordinal[node] = INVALID;
         hir_struct_field_type_node[node] =
             first_child_with_hir_kind(node, HIR_TYPE);
         seed_struct_field(node);
-        return;
+        return true;
     }
 
     if (prod == PROD_STRUCT_LIT)
     {
         uint previous = previous_sibling_node(node);
-        if (valid_node(previous) && node_kind[previous] == PROD_PATH)
-            hir_struct_lit_head_node[node] = previous;
-        return;
+        hir_struct_lit_head_node[node] =
+            valid_node(previous) && node_kind[previous] == PROD_PATH
+            ? previous
+            : INVALID;
+        return false;
     }
 
     if (prod == PROD_STRUCT_LIT_FIELD)
     {
+        clear_field_links(node);
         uint output_row = gHirStruct.retain_debug_rows != 0u
             ? node
             : hir_token_pos[node];
@@ -247,5 +288,37 @@ void main(uint3 dtid: SV_DispatchThreadID)
             hir_struct_lit_field_value_node[output_row] =
                 first_child_with_hir_kind(node, HIR_EXPR);
         seed_literal_field(node);
+        return true;
+    }
+    return false;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
+{
+    uint block_i = linear_group_id(gid);
+    uint lane = ltid.x;
+    uint node = block_i * WG_SIZE + lane;
+
+    if (lane < FLAG_WORDS_PER_BLOCK)
+        g_flag_words[lane] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (node < gHirStruct.n && gHirStruct.retain_debug_rows != 0u)
+        clear_debug_row(node);
+    if (valid_node(node) && seed_row(node))
+        InterlockedOr(g_flag_words[lane >> 5u], 1u << (lane & 31u));
+    GroupMemoryBarrierWithGroupSync();
+
+    uint word_i = block_i * FLAG_WORDS_PER_BLOCK + lane;
+    if (lane < FLAG_WORDS_PER_BLOCK && word_i < (gHirStruct.n + 31u) / 32u)
+        hir_struct_rank_flag[word_i] = g_flag_words[lane];
+    if (lane == 0u)
+    {
+        uint total = 0u;
+        for (uint w = 0u; w < FLAG_WORDS_PER_BLOCK; ++w)
+            total += countbits(g_flag_words[w]);
+        hir_struct_rank_block_sum[block_i] = total;
     }
 }

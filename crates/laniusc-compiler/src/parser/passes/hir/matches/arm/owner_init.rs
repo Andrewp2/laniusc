@@ -43,6 +43,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmOwner
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            (
+                "hir_match_rank_node".into(),
+                b.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_count".into(),
+                b.hir_match_rank_count.as_entire_binding(),
+            ),
             ("parent".into(), b.parent.as_entire_binding()),
             (
                 "hir_semantic_parent_link_a".into(),

@@ -65,6 +65,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalCall
                 b.hir_call_arg_count.as_entire_binding(),
             ),
             (
+                "hir_list_rank_node".into(),
+                b.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                b.hir_list_rank_count.as_entire_binding(),
+            ),
+            (
                 "family_count".into(),
                 b.hir_call_arg_table_count.as_entire_binding(),
             ),

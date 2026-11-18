@@ -1,4 +1,7 @@
 // Finalize canonical path segment counts from pointer-jumped owner/ordinal rows.
+//
+// The pass runs over the path segment list (hir_list_rank_node) that the
+// segment links pass marked.
 
 import atomics;
 import generated_parse_production_ids;
@@ -11,6 +14,8 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_path_segment_owner_a;
 StructuredBuffer<uint> hir_path_segment_rank_a;
+StructuredBuffer<uint> hir_list_rank_node;
+StructuredBuffer<uint> hir_list_rank_count;
 RWStructuredBuffer<uint> hir_path_segment_count;
 
 static const uint INVALID = 0xffffffffu;
@@ -30,7 +35,10 @@ bool is_path_segment(uint prod)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_list_rank_count[0u])
+        return;
+    uint node = hir_list_rank_node[row];
     if (!valid_node(node) || !is_path_segment(node_kind[node]))
         return;
     uint owner = hir_path_segment_owner_a[node];

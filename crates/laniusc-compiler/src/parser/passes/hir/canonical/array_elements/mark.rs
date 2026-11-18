@@ -44,6 +44,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalArra
                 b.hir_array_element_parent_lit.as_entire_binding(),
             ),
             ("element_ordinal".into(), b.hir_array_element_ordinal.as_entire_binding()),
+            (
+                "hir_list_rank_node".into(),
+                b.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_count".into(),
+                b.hir_list_rank_count.as_entire_binding(),
+            ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "candidate_raw_by_anchor".into(),

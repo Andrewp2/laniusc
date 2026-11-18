@@ -50,6 +50,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalVari
                 b.hir_canonical_anchor_owner.as_entire_binding(),
             ),
             (
+                "hir_enum_rank_node".into(),
+                b.hir_enum_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_enum_rank_count".into(),
+                b.hir_enum_rank_count.as_entire_binding(),
+            ),
+            (
                 "family_flag".into(),
                 b.hir_variant_family_flag.as_entire_binding(),
             ),
