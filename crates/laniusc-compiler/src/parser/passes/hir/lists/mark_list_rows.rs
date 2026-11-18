@@ -17,7 +17,7 @@ pub struct HirListRankPrefixLocalPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     HirListRankPrefixLocalPass,
-    label: "hir_list_rank_prefix_00_local",
+    label: "hir_mark_list_rows",
     shader: "parser/hir/lists/mark_list_rows"
 );
 

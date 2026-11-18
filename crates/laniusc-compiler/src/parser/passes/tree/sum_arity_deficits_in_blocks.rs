@@ -25,12 +25,12 @@ pub struct TreePrefixLocalPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     TreePrefixLocalPass,
-    label: "tree_prefix_01_local",
+    label: "tree_sum_arity_deficits_in_blocks",
     shader: "parser/tree/sum_arity_deficits_in_blocks"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreePrefixLocalPass {
-    const NAME: &'static str = "tree_prefix_01_local";
+    const NAME: &'static str = "tree_sum_arity_deficits_in_blocks";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

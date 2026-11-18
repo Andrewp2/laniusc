@@ -34,7 +34,7 @@ const CATALOG_KEYS: [&str; 23] = [
     "type_checker/trait_solver/catalog/freeze_trait_catalog",
 ];
 
-// 02_09 admits implementations in two kernels split at head coverage. The
+// Implementation admission splits head coverage and member admission. The
 // members kernel runs only while the catalog is still building, so every row
 // it sees has passed its head; the two run chunk by chunk, in the one-kernel
 // order (a failure in one chunk stops every later chunk).
@@ -64,7 +64,7 @@ impl CatalogKernels {
         let work_rows = count(1).max(count(9));
         let buckets = crate::compiler::gpu_compiler::trait_solver::abi::buckets(work_rows)?;
         let clear_count = work_rows.max(buckets); // >=1, even for empty catalog.
-        // Phase02 is one typed shader per catalog table. Keep explicit phase
+        // Catalog admission runs one typed shader per table. Keep explicit phase
         // numbers: shader array index11 is an admission, not singleton freeze.
         let schedule: [(u32, u32); 23] = [
             (0, 1),

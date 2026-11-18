@@ -52,15 +52,15 @@ pub(in crate::parser) const PACK_STATUS_PROMOTE: &str = "parser.pack_status.prom
 pub(in crate::parser) const PACK_OFFSETS_LOCAL: &str = "pack_offsets_scan.local";
 pub(in crate::parser) const PACK_OFFSETS_APPLY: &str = "pack_offsets_scan.apply";
 pub(in crate::parser) const TREE_FEATURE_DISPATCH: &str = "parser.tree_feature_dispatch_args";
-pub(in crate::parser) const BRACKET_SCAN_UP: &str = "brackets_02_scan_block_prefix.up";
-pub(in crate::parser) const BRACKET_SCAN_DOWN: &str = "brackets_02_scan_block_prefix.down";
-pub(in crate::parser) const BRACKET_SCAN_FINALIZE: &str = "brackets_02_scan_block_prefix.finalize";
-pub(in crate::parser) const TREE_PREFIX_SCAN: &str = "tree_prefix_02_scan_blocks";
-pub(in crate::parser) const HIR_SEMANTIC_SCAN: &str = "hir_semantic_prefix_01_blocks";
+pub(in crate::parser) const BRACKET_SCAN_UP: &str = "brackets_sum_bracket_blocks_up";
+pub(in crate::parser) const BRACKET_SCAN_DOWN: &str = "brackets_carry_bracket_blocks_down";
+pub(in crate::parser) const BRACKET_SCAN_FINALIZE: &str = "brackets_finish_bracket_block_prefix";
+pub(in crate::parser) const TREE_PREFIX_SCAN: &str = "tree_scan_arity_deficit_blocks";
+pub(in crate::parser) const HIR_SEMANTIC_SCAN: &str = "hir_semantic.scan_blocks";
 pub(in crate::parser) const HIR_CANONICAL_IDENTITY_SCAN: &str = "hir_canonical_identity_prefix";
-pub(in crate::parser) const HIR_STRUCT_RANK_SCAN: &str = "hir_struct_rank_prefix_01_blocks";
-pub(in crate::parser) const HIR_ENUM_RANK_SCAN: &str = "hir_enum_rank_prefix_01_blocks";
-pub(in crate::parser) const HIR_MATCH_RANK_SCAN: &str = "hir_match_rank_prefix_01_blocks";
+pub(in crate::parser) const HIR_STRUCT_RANK_SCAN: &str = "hir_struct_rank.scan_blocks";
+pub(in crate::parser) const HIR_ENUM_RANK_SCAN: &str = "hir_enum_rank.scan_blocks";
+pub(in crate::parser) const HIR_MATCH_RANK_SCAN: &str = "hir_match_rank.scan_blocks";
 pub(in crate::parser) const HIR_PATH_SEGMENT_SCAN: &str = "hir_canonical_path_segment_prefix";
 pub(in crate::parser) const HIR_TYPE_PATH_LEAF_STEPS: [&str; 8] = [
     "hir_type_path_leaf_step.0",
@@ -2274,7 +2274,7 @@ fn build_graph(
     ];
     static_pass(
         &mut graph,
-        &passes.b01,
+        &passes.scan_bracket_depths_in_blocks,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2303,10 +2303,10 @@ fn build_graph(
     )?;
     indirect(
         &mut graph,
-        "brackets_01_scan_inblock",
+        "brackets_scan_bracket_depths_in_blocks",
         "active_stack_thread_dispatch_args",
     )?;
-    let (bracket_up, bracket_down, bracket_finalize) = passes.b02.graph_passes();
+    let (bracket_up, bracket_down, bracket_finalize) = passes.scan_bracket_blocks.graph_passes();
     let bracket_scan_aliases = [
         ("block_sum", "bracket_block_sum", None),
         ("block_minpref", "bracket_block_minpref", None),
@@ -2381,7 +2381,7 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
-        &passes.b03,
+        &passes.apply_bracket_block_prefix,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2399,12 +2399,12 @@ fn build_graph(
     )?;
     indirect(
         &mut graph,
-        "brackets_03_apply_prefix",
+        "brackets_apply_bracket_block_prefix",
         "active_stack_thread_dispatch_args",
     )?;
     reflected(
         &mut graph,
-        "brackets_04_build_min_tree",
+        "brackets_build_bracket_min_tree",
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         passes.b_min_tree.graph_pass(),
@@ -2413,11 +2413,11 @@ fn build_graph(
             ("min_tree", "bracket_min_tree", None),
         ],
     )?;
-    graph.mark_pass_bindings_initialize("brackets_04_build_min_tree", &["min_tree"])?;
+    graph.mark_pass_bindings_initialize("brackets_build_bracket_min_tree", &["min_tree"])?;
     graph.repeat_pass_range(
         crate::gpu::scan::heap_build_levels(bracket_leaf_base).len() as u32,
-        "brackets_04_build_min_tree",
-        "brackets_04_build_min_tree",
+        "brackets_build_bracket_min_tree",
+        "brackets_build_bracket_min_tree",
     )?;
     if capacity.emit_stack_matches {
         static_pass(
@@ -2433,13 +2433,13 @@ fn build_graph(
         )?;
         indirect(
             &mut graph,
-            "brackets_04_clear_matches",
+            "brackets_clear_bracket_matches",
             "active_stack_thread_dispatch_args",
         )?;
     }
     static_pass(
         &mut graph,
-        &passes.pse04,
+        &passes.pair_brackets_by_layer,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2461,7 +2461,7 @@ fn build_graph(
     )?;
     indirect(
         &mut graph,
-        "brackets_pse_04_pair_by_layer",
+        "brackets_pair_brackets_by_layer",
         "active_stack_thread_dispatch_args",
     )?;
     static_pass(
@@ -2516,7 +2516,7 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
-        &passes.tree_prefix_01,
+        &passes.sum_arity_deficits_in_blocks,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2536,7 +2536,7 @@ fn build_graph(
         TREE_PREFIX_SCAN,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
-        passes.tree_prefix_02.data(),
+        passes.scan_arity_deficit_blocks.data(),
         &[
             ("block_sum", "tree_block_sum", None),
             ("block_prefix", "tree_block_prefix", Some(AccessMode::Write)),
@@ -2544,7 +2544,7 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
-        &passes.tree_prefix_03,
+        &passes.apply_arity_deficit_prefix,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2567,7 +2567,7 @@ fn build_graph(
     )?;
     static_pass(
         &mut graph,
-        &passes.tree_prefix_04,
+        &passes.build_deficit_max_tree,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         &[
@@ -2575,14 +2575,12 @@ fn build_graph(
             ("prefix_block_max_tree", "tree_prefix_block_max_tree", None),
         ],
     )?;
-    graph.mark_pass_bindings_initialize(
-        "tree_prefix_04_build_max_tree",
-        &["prefix_block_max_tree"],
-    )?;
+    graph
+        .mark_pass_bindings_initialize("tree_build_deficit_max_tree", &["prefix_block_max_tree"])?;
     graph.repeat_pass_range(
         crate::gpu::scan::heap_build_levels(prefix_leaf_base).len() as u32,
-        "tree_prefix_04_build_max_tree",
-        "tree_prefix_04_build_max_tree",
+        "tree_build_deficit_max_tree",
+        "tree_build_deficit_max_tree",
     )?;
     static_pass(
         &mut graph,
@@ -3546,27 +3544,27 @@ mod tests {
         for (producer, consumer) in [
             (
                 token_frontend::DELIMITER_DEPTH_SCAN,
-                "parser.tokens.impl_header.local",
+                "parser.tokens.summarize_impl_headers",
             ),
             (
-                "parser.tokens.impl_header.apply",
-                "parser.tokens.bracket_match.pair_pse",
+                "parser.tokens.apply_impl_headers",
+                "parser.tokens.classify_square_brackets",
             ),
             (
-                "parser.tokens.delimiter_match.depth_blocks",
-                "parser.tokens.delimiter_match.build_min_tree",
+                "parser.tokens.build_delimiter_match_heaps",
+                "parser.tokens.build_delimiter_min_trees",
             ),
             (
-                "parser.tokens.delimiter_match.build_min_tree",
-                "parser.tokens.delimiters.owner_apply",
+                "parser.tokens.build_delimiter_min_trees",
+                "parser.tokens.apply_brace_owner_headers",
             ),
             (
-                "parser.tokens.statement_phase.apply",
-                "parser.tokens.bracket.kinds",
+                "parser.tokens.apply_statement_phases",
+                "parser.tokens.classify_bracket_roles",
             ),
             (
-                "parser.tokens.bracket.kinds",
-                "parser.tokens.bracket_match.pair_pse",
+                "parser.tokens.classify_bracket_roles",
+                "parser.tokens.classify_square_brackets",
             ),
         ] {
             assert!(
@@ -3575,7 +3573,7 @@ mod tests {
             );
         }
         let array_context = graph
-            .pass_id("parser.tokens.bracket_match.pair_pse")
+            .pass_id("parser.tokens.classify_square_brackets")
             .unwrap();
         let impl_context = graph.resource_id("token_impl_context_event").unwrap();
         assert!(
@@ -3595,7 +3593,7 @@ mod tests {
         // Bracket pairing reads each open's enclosing angle through the
         // enclosing-opens tables instead of searching the angle tree itself.
         let bracket_pair = graph
-            .pass_id("parser.tokens.bracket_match.pair_pse")
+            .pass_id("parser.tokens.classify_square_brackets")
             .unwrap();
         for name in ["token_enclosing_open", "token_angle_close"] {
             let resource = graph.resource_id(name).unwrap();
@@ -3614,7 +3612,7 @@ mod tests {
         // enclosing-opens search climbs the per-block heaps instead.
         for (consumer, names) in [
             (
-                "parser.tokens.delimiters.owner_apply",
+                "parser.tokens.apply_brace_owner_headers",
                 &[
                     "angle_match_depth",
                     "angle_match_block_min",
@@ -3738,38 +3736,38 @@ mod tests {
                 < graph.pass_id("hir_struct_field_scatter").unwrap().index()
         );
         for name in [
-            "parser.tokens.impl_header.local",
-            "parser.tokens.impl_header.apply",
-            "parser.tokens.delimiters.local",
+            "parser.tokens.summarize_impl_headers",
+            "parser.tokens.apply_impl_headers",
+            "parser.tokens.scan_delimiter_depths_in_blocks",
             token_frontend::DELIMITER_DEPTH_SCAN,
-            "parser.tokens.generic_shr.raw_local",
+            "parser.tokens.scan_raw_angle_depths_in_blocks",
             token_frontend::GENERIC_SHR_RAW_SCAN,
-            "parser.tokens.generic_shr.raw_apply",
-            "parser.tokens.delimiters.owner_local",
+            "parser.tokens.apply_raw_angle_depths",
+            "parser.tokens.summarize_brace_owner_headers",
             token_frontend::DELIMITER_OWNER_HEADER_SCAN,
-            "parser.tokens.delimiters.owner_apply",
+            "parser.tokens.apply_brace_owner_headers",
             token_frontend::DELIMITER_OWNER_SCAN,
             "parser.tokens.brace_context",
-            "parser.tokens.statement_phase.local",
-            "parser.tokens.statement_phase.apply",
-            "parser.tokens.delimiter_match.depth_blocks",
-            "parser.tokens.delimiter_match.build_min_tree",
-            "parser.tokens.brace_match.pair_pse",
-            "parser.tokens.bracket_match.pair_pse",
-            "parser.tokens.match_pattern.local",
-            "parser.tokens.match_pattern.apply",
-            "parser.tokens.where_clause.local",
-            "parser.tokens.where_clause.apply",
+            "parser.tokens.summarize_statement_phases",
+            "parser.tokens.apply_statement_phases",
+            "parser.tokens.build_delimiter_match_heaps",
+            "parser.tokens.build_delimiter_min_trees",
+            "parser.tokens.classify_closing_braces",
+            "parser.tokens.classify_square_brackets",
+            "parser.tokens.summarize_match_patterns",
+            "parser.tokens.apply_match_patterns",
+            "parser.tokens.summarize_where_clauses",
+            "parser.tokens.apply_where_clauses",
             token_frontend::ENCLOSING_OPENS,
             token_frontend::ANGLE_KINDS,
             "parser.tokens_to_kinds.pass",
-            "parser.tokens.type_path_context.local",
-            "parser.tokens.type_path_context.apply",
+            "parser.tokens.summarize_type_path_contexts",
+            "parser.tokens.apply_type_path_contexts",
             "parser.tokens_to_identifier_kinds.pass",
-            "parser.tokens.generic_shr.local",
+            "parser.tokens.summarize_generic_angle_effects",
             token_frontend::GENERIC_SHR_SCAN,
-            "parser.tokens.generic_shr.apply",
-            "parser.tokens.generic_shr.close_kinds",
+            "parser.tokens.mark_generic_shift_splits",
+            "parser.tokens.classify_split_shift_closers",
             ACTIVE_PAIR_DISPATCH,
             "llp_pairs",
             PACK_TOTALS_BLOCKS,
@@ -3785,7 +3783,7 @@ mod tests {
             "tree_parent_parallel",
             "hir_nodes",
             "tree_depth_schedule",
-            "hir_semantic_prefix_00_local",
+            "hir_mark_semantic_rows",
             HIR_SEMANTIC_SCAN,
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
@@ -3794,13 +3792,13 @@ mod tests {
             "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
             "hir_type_arg_links",
-            "hir_type_arg_rank_prefix_01_blocks",
+            "hir_type_arg_rank.scan_blocks",
             "hir_type_arg_rank_compact_scatter",
             "hir_type_arg_rank_step.a_to_b",
             "hir_type_arg_rank_step.b_to_a",
             "hir_type_arg_scatter",
             "hir_type_root_owner_init",
-            "hir_type_root_rank_prefix_01_blocks",
+            "hir_type_root_rank.scan_blocks",
             "hir_type_root_rank_compact_scatter",
             crate::parser::passes::hir::types::walk_type_roots::A_TO_B,
             crate::parser::passes::hir::types::walk_type_roots::B_TO_A,
@@ -3811,7 +3809,7 @@ mod tests {
             "hir_item_fields",
             "hir_path_segment_root",
             "hir_path_segment_links",
-            "hir_path_segment_rank_prefix_01_blocks",
+            "hir_path_segment_rank.scan_blocks",
             "hir_path_segment_rank_compact_scatter",
             "hir_path_segment_step.a_to_b",
             "hir_path_segment_step.b_to_a",
@@ -3821,8 +3819,8 @@ mod tests {
             crate::parser::passes::hir::types::walk_type_alias_owners::B_TO_A,
             "hir_type_alias_target",
             "hir_param_links",
-            "hir_param_rank_prefix_00_local",
-            "hir_param_rank_prefix_01_blocks",
+            "hir_param_rank.mark_rows",
+            "hir_param_rank.scan_blocks",
             "hir_param_rank_compact_scatter",
             "hir_param_id_clear",
             "hir_param_id_base",
@@ -3831,8 +3829,8 @@ mod tests {
             crate::parser::passes::hir::records::walk_expr_result_roots::A_TO_B,
             crate::parser::passes::hir::records::walk_expr_result_roots::B_TO_A,
             "hir_binary_spans",
-            "hir_binary_span_rank_prefix_00_local",
-            "hir_binary_span_rank_prefix_01_blocks",
+            "hir_binary_span_rank.mark_rows",
+            "hir_binary_span_rank.scan_blocks",
             "hir_binary_span_rank_compact_scatter",
             crate::parser::passes::hir::spans::walk_binary_spans::A_TO_B,
             crate::parser::passes::hir::spans::walk_binary_spans::B_TO_A,
@@ -3842,10 +3840,10 @@ mod tests {
             "hir_stmt_fields",
             "parser_hir_literal_values",
             "hir_string_compact_local",
-            "hir_string_compact_prefix_01_blocks",
+            "hir_string_compact.scan_blocks",
             "hir_string_compact_scatter",
             "hir_string_offset_local",
-            "hir_string_offset_prefix_01_blocks",
+            "hir_string_offset.scan_blocks",
             "hir_string_offset_scatter",
             "parser_hir_string_decode",
             "hir_call_fields",
@@ -3855,38 +3853,38 @@ mod tests {
             "hir_canonical_stmt_compact",
             "hir_canonical_variant_mark",
             "hir_canonical_variant_local",
-            "hir_canonical_variant_prefix_01_blocks",
+            "hir_canonical_variant.scan_blocks",
             "hir_canonical_variant_scatter",
             "hir_canonical_variant_payload_owner_init",
-            "hir_variant_payload_owner_rank_prefix_01_blocks",
+            "hir_variant_payload_owner_rank.scan_blocks",
             "hir_variant_payload_owner_rank_compact_scatter",
             crate::parser::passes::hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .a_to_b,
             crate::parser::passes::hir::semantic::walk_semantic_parents::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .b_to_a,
             "hir_canonical_variant_payload_local",
-            "hir_canonical_variant_payload_prefix_01_blocks",
+            "hir_canonical_variant_payload.scan_blocks",
             "hir_canonical_variant_payload_scatter",
             "hir_canonical_variant_payload_ordinal",
             "hir_call_arg_links",
-            "hir_call_arg_rank_prefix_01_blocks",
+            "hir_call_arg_rank.scan_blocks",
             "hir_call_arg_rank_compact_scatter",
             "hir_call_arg_ordinal_step.a_to_b",
             "hir_call_arg_ordinal_step.b_to_a",
             "hir_call_arg_ordinal_scatter",
             "hir_canonical_call_arg_mark",
             "hir_canonical_call_arg_local",
-            "hir_canonical_call_arg_prefix_01_blocks",
+            "hir_canonical_call_arg.scan_blocks",
             "hir_canonical_call_arg_scatter",
             "hir_array_element_links",
-            "hir_array_element_rank_prefix_01_blocks",
+            "hir_array_element_rank.scan_blocks",
             "hir_array_element_rank_compact_scatter",
             "hir_array_element_rank_step.a_to_b",
             "hir_array_element_rank_step.b_to_a",
             "hir_array_element_scatter",
             "hir_canonical_array_element_mark",
             "hir_canonical_array_element_local",
-            "hir_canonical_array_element_prefix_01_blocks",
+            "hir_canonical_array_element.scan_blocks",
             "hir_canonical_array_element_scatter",
             "hir_struct_field_links",
             HIR_STRUCT_RANK_SCAN,
@@ -3897,7 +3895,7 @@ mod tests {
             "hir_struct_field_scatter",
             "hir_canonical_field_mark",
             "hir_canonical_field_local",
-            "hir_canonical_field_prefix_01_blocks",
+            "hir_canonical_field.scan_blocks",
             "hir_canonical_field_scatter",
             "hir_context_relations_init",
             crate::parser::passes::hir::context::walk_context_relations::A_TO_B,
@@ -3906,11 +3904,11 @@ mod tests {
             "hir_stmt_scope",
             "hir_canonical_param_mark",
             "hir_canonical_param_local",
-            "hir_canonical_param_prefix_01_blocks",
+            "hir_canonical_param.scan_blocks",
             "hir_canonical_param_scatter",
             "hir_canonical_type_arg_mark",
             "hir_canonical_type_arg_local",
-            "hir_canonical_type_arg_prefix_01_blocks",
+            "hir_canonical_type_arg.scan_blocks",
             "hir_canonical_type_arg_scatter",
             "hir_canonical_end_rows",
             "hir_canonical_end_blocks",
@@ -3924,19 +3922,19 @@ mod tests {
             "hir_canonical_generic_param_candidate_mark",
             "hir_canonical_generic_param_finalize",
             "hir_canonical_generic_param_local",
-            "hir_canonical_generic_param_prefix_01_blocks",
+            "hir_canonical_generic_param.scan_blocks",
             "hir_canonical_generic_param_scatter",
             "hir_canonical_path_segment_mark",
             HIR_PATH_SEGMENT_SCAN,
             "hir_canonical_path_segment_scatter",
             "hir_canonical_path_mark",
             "hir_canonical_path_local",
-            "hir_canonical_path_prefix_01_blocks",
+            "hir_canonical_path.scan_blocks",
             "hir_canonical_path_scatter",
             "hir_canonical_string_scatter",
             "hir_canonical_predicate_finalize",
             "hir_canonical_predicate_local",
-            "hir_canonical_predicate_prefix_01_blocks",
+            "hir_canonical_predicate.scan_blocks",
             "hir_canonical_predicate_scatter",
             "hir_canonical_validate",
             "hir_canonical_decl_index_clear",
@@ -3954,7 +3952,7 @@ mod tests {
                 .any(|region| { region.first_pass == graph.pass_id(BRACKET_SCAN_UP).unwrap() })
         );
         let min_tree = graph
-            .pass_id("parser.tokens.delimiter_match.build_min_tree")
+            .pass_id("parser.tokens.build_delimiter_min_trees")
             .unwrap();
         assert!(
             graph
@@ -4005,7 +4003,7 @@ mod tests {
             crate::parser::passes::hir::semantic::walk_semantic_parents::MATCH_ARM_OWNER.a_to_b,
             crate::parser::passes::hir::semantic::walk_semantic_parents::MATCH_ARM_OWNER.b_to_a,
             "hir_match_arm_links",
-            "hir_match_rank_prefix_00_local",
+            "hir_mark_match_rows",
             HIR_MATCH_RANK_SCAN,
             "hir_match_rank_compact_scatter",
             crate::parser::passes::hir::matches::rank_match_arms::A_TO_B,
@@ -4013,11 +4011,11 @@ mod tests {
             "hir_match_arm_scatter",
             "hir_canonical_match_arm_mark",
             "hir_canonical_match_arm_local",
-            "hir_canonical_match_arm_prefix_01_blocks",
+            "hir_canonical_match_arm.scan_blocks",
             "hir_canonical_match_arm_scatter",
             "hir_canonical_match_payload_mark",
             "hir_canonical_match_payload_local",
-            "hir_canonical_match_payload_prefix_01_blocks",
+            "hir_canonical_match_payload.scan_blocks",
             "hir_canonical_match_payload_scatter",
         ] {
             assert!(
@@ -4034,7 +4032,7 @@ mod tests {
             "hir_method_signature_status",
             "hir_canonical_method_mark",
             "hir_canonical_method_local",
-            "hir_canonical_method_prefix_01_blocks",
+            "hir_canonical_method.scan_blocks",
             "hir_canonical_method_scatter",
         ] {
             assert!(

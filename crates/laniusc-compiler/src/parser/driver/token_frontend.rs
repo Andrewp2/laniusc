@@ -75,7 +75,6 @@ impl GpuParser {
         bufs: &'a ParserBuffers,
         token_buf: &'a wgpu::Buffer,
         token_count_buf: &'a wgpu::Buffer,
-        cache_key: &str,
         operation: &'static str,
         pass: &crate::gpu::passes_core::PassData,
         extras: &[(&'static str, wgpu::BindingResource<'a>)],
@@ -84,7 +83,7 @@ impl GpuParser {
         self.record_cached_operation(
             encoder,
             bufs,
-            cache_key,
+            operation,
             operation,
             pass,
             || {
@@ -235,9 +234,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_generic_shr_01_local",
-            "parser.tokens.generic_shr.local",
-            &self.passes.token_frontend.tokens_generic_shr_01_local,
+            "parser.tokens.summarize_generic_angle_effects",
+            &self.passes.token_frontend.summarize_generic_angle_effects,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -253,9 +251,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_generic_shr_03_apply",
-            "parser.tokens.generic_shr.apply",
-            &self.passes.token_frontend.tokens_generic_shr_03_apply,
+            "parser.tokens.mark_generic_shift_splits",
+            &self.passes.token_frontend.mark_generic_shift_splits,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_input_capacity,
         )?;
@@ -265,9 +262,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_generic_shr_04_close_kinds",
-            "parser.tokens.generic_shr.close_kinds",
-            &self.passes.token_frontend.tokens_generic_shr_04_close_kinds,
+            "parser.tokens.classify_split_shift_closers",
+            &self.passes.token_frontend.classify_split_shift_closers,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_input_capacity,
         )?;
@@ -287,9 +283,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_generic_shr_00_raw_local",
-            "parser.tokens.generic_shr.raw_local",
-            &self.passes.token_frontend.tokens_generic_shr_00_raw_local,
+            "parser.tokens.scan_raw_angle_depths_in_blocks",
+            &self.passes.token_frontend.scan_raw_angle_depths_in_blocks,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -305,9 +300,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_generic_shr_00_raw_apply",
-            "parser.tokens.generic_shr.raw_apply",
-            &self.passes.token_frontend.tokens_generic_shr_00_raw_apply,
+            "parser.tokens.apply_raw_angle_depths",
+            &self.passes.token_frontend.apply_raw_angle_depths,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_input_capacity,
         )?;
@@ -326,7 +320,7 @@ impl GpuParser {
             bufs,
             label,
             label,
-            &self.passes.token_frontend.tokens_generic_shr_02_scan,
+            &self.passes.token_frontend.scan_generic_angle_effect_blocks,
             &[("gGenericScan", bufs.token_block_scan.params.as_entire_binding())],
             1,
         )
@@ -345,16 +339,15 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_type_path_context_01_local",
-            "parser.tokens.type_path_context.local",
-            &self.passes.token_frontend.tokens_type_path_context_01_local,
+            "parser.tokens.summarize_type_path_contexts",
+            &self.passes.token_frontend.summarize_type_path_contexts,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.type_path_context.local.done",
+            "parser.tokens.summarize_type_path_contexts.done",
         );
 
         self.record_cached_token_operation(
@@ -362,16 +355,15 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_type_path_context_02_apply",
-            "parser.tokens.type_path_context.apply",
-            &self.passes.token_frontend.tokens_type_path_context_02_apply,
+            "parser.tokens.apply_type_path_contexts",
+            &self.passes.token_frontend.apply_type_path_contexts,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.type_path_context.apply.done",
+            "parser.tokens.apply_type_path_contexts.done",
         );
         Ok(())
     }
@@ -397,26 +389,28 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_impl_header_01_local",
-            "parser.tokens.impl_header.local",
-            &self.passes.token_frontend.tokens_impl_header_01_local,
+            "parser.tokens.summarize_impl_headers",
+            &self.passes.token_frontend.summarize_impl_headers,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.local.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.summarize_impl_headers.done",
+        );
 
         self.record_cached_token_operation(
             encoder,
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_impl_header_02_apply",
-            "parser.tokens.impl_header.apply",
-            &self.passes.token_frontend.tokens_impl_header_02_apply,
+            "parser.tokens.apply_impl_headers",
+            &self.passes.token_frontend.apply_impl_headers,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.apply.done");
+        stamp_timer(timer_ref, encoder, "parser.tokens.apply_impl_headers.done");
         Ok(())
     }
 
@@ -433,26 +427,28 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_where_clause_01_local",
-            "parser.tokens.where_clause.local",
-            &self.passes.token_frontend.tokens_where_clause_01_local,
+            "parser.tokens.summarize_where_clauses",
+            &self.passes.token_frontend.summarize_where_clauses,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.local.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.summarize_where_clauses.done",
+        );
 
         self.record_cached_token_operation(
             encoder,
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_where_clause_02_apply",
-            "parser.tokens.where_clause.apply",
-            &self.passes.token_frontend.tokens_where_clause_02_apply,
+            "parser.tokens.apply_where_clauses",
+            &self.passes.token_frontend.apply_where_clauses,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.apply.done");
+        stamp_timer(timer_ref, encoder, "parser.tokens.apply_where_clauses.done");
         Ok(())
     }
 
@@ -469,26 +465,32 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_match_pattern_01_local",
-            "parser.tokens.match_pattern.local",
-            &self.passes.token_frontend.tokens_match_pattern_01_local,
+            "parser.tokens.summarize_match_patterns",
+            &self.passes.token_frontend.summarize_match_patterns,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.local.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.summarize_match_patterns.done",
+        );
 
         self.record_cached_token_operation(
             encoder,
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_match_pattern_02_apply",
-            "parser.tokens.match_pattern.apply",
-            &self.passes.token_frontend.tokens_match_pattern_02_apply,
+            "parser.tokens.apply_match_patterns",
+            &self.passes.token_frontend.apply_match_patterns,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.apply.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.apply_match_patterns.done",
+        );
         Ok(())
     }
 
@@ -508,13 +510,16 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_delimiters_01_local",
-            "parser.tokens.delimiters.local",
-            &self.passes.token_frontend.token_delimiters_01,
+            "parser.tokens.scan_delimiter_depths_in_blocks",
+            &self.passes.token_frontend.scan_delimiter_depths_in_blocks,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.delimiters.local.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.scan_delimiter_depths_in_blocks.done",
+        );
 
         self.record_token_delimiter_scan(
             encoder,
@@ -524,7 +529,7 @@ impl GpuParser {
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.delimiters.depth_scan.done",
+            "parser.tokens.delimiter_depths.scan_delimiter_depth_blocks.done",
         );
         self.record_impl_header_phase_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
         self.record_raw_clamped_angle_depth(encoder, token_buf, token_count_buf, bufs)?;
@@ -538,12 +543,16 @@ impl GpuParser {
         // Delimiter ownership is published as soon as the raw match depths
         // and their search trees exist; pairing and classification read it.
         token_enclosing_opens.record_elements(encoder, token_capacity)?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.enclosing_opens.done");
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.find_enclosing_delimiters.done",
+        );
         self.record_token_delimiter_owner_local(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.delimiters.owner_header.local.done",
+            "parser.tokens.summarize_brace_owner_headers.done",
         );
         self.record_token_delimiter_scan(
             encoder,
@@ -553,13 +562,13 @@ impl GpuParser {
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.delimiters.owner_header.scan.done",
+            "parser.tokens.brace_owner_headers.scan_delimiter_depth_blocks.done",
         );
         self.record_token_delimiter_owner_apply(encoder, token_buf, token_count_buf, bufs)?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.delimiters.owner_apply.done",
+            "parser.tokens.apply_brace_owner_headers.done",
         );
         self.record_token_delimiter_scan(
             encoder,
@@ -569,7 +578,7 @@ impl GpuParser {
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.delimiters.owner_scan.done",
+            "parser.tokens.brace_owners.scan_delimiter_depth_blocks.done",
         );
 
         self.record_cached_token_operation(
@@ -577,7 +586,6 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_brace_context",
             "parser.tokens.brace_context",
             &self.passes.token_frontend.tokens_brace_context,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
@@ -606,16 +614,15 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_statement_phase_01_local",
-            "parser.tokens.statement_phase.local",
-            &self.passes.token_frontend.tokens_statement_phase_01_local,
+            "parser.tokens.summarize_statement_phases",
+            &self.passes.token_frontend.summarize_statement_phases,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.statement_phase.local.done",
+            "parser.tokens.summarize_statement_phases.done",
         );
 
         self.record_cached_token_operation(
@@ -623,16 +630,15 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_statement_phase_02_apply",
-            "parser.tokens.statement_phase.apply",
-            &self.passes.token_frontend.tokens_statement_phase_02_apply,
+            "parser.tokens.apply_statement_phases",
+            &self.passes.token_frontend.apply_statement_phases,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
         stamp_timer(
             timer_ref,
             encoder,
-            "parser.tokens.statement_phase.apply.done",
+            "parser.tokens.apply_statement_phases.done",
         );
         Ok(())
     }
@@ -649,12 +655,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_delimiter_match_01_depth_blocks",
-            "parser.tokens.delimiter_match.depth_blocks",
-            &self
-                .passes
-                .token_frontend
-                .tokens_delimiter_match_01_depth_blocks,
+            "parser.tokens.build_delimiter_match_heaps",
+            &self.passes.token_frontend.build_delimiter_match_heaps,
             &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -674,9 +676,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_bracket_01_kinds",
-            "parser.tokens.bracket.kinds",
-            &self.passes.token_frontend.tokens_bracket_01_kinds,
+            "parser.tokens.classify_bracket_roles",
+            &self.passes.token_frontend.classify_bracket_roles,
             &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -698,9 +699,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_bracket_match_03_pair_pse",
-            "parser.tokens.bracket_match.pair_pse",
-            &self.passes.token_frontend.tokens_bracket_match_03_pair_pse,
+            "parser.tokens.classify_square_brackets",
+            &self.passes.token_frontend.classify_square_brackets,
             &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
             n_tokens,
         )?;
@@ -722,9 +722,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_brace_match_03_pair_pse",
-            "parser.tokens.brace_match.pair_pse",
-            &self.passes.token_frontend.tokens_brace_match_03_pair_pse,
+            "parser.tokens.classify_closing_braces",
+            &self.passes.token_frontend.classify_closing_braces,
             &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
             n_tokens,
         )?;
@@ -738,16 +737,13 @@ impl GpuParser {
         bufs: &ParserBuffers,
     ) -> Result<()> {
         for (index, step) in bufs.token_brace_match_min_tree_steps.iter().enumerate() {
-            let invocation = format!("parser_tokens_delimiter_match_02_build_min_tree.{index}");
+            let invocation = format!("parser.tokens.build_delimiter_min_trees.{index}");
             self.record_cached_graph_operation(
                 encoder,
                 bufs,
                 &invocation,
-                "parser.tokens.delimiter_match.build_min_tree",
-                &self
-                    .passes
-                    .token_frontend
-                    .tokens_delimiter_match_02_build_min_tree,
+                "parser.tokens.build_delimiter_min_trees",
+                &self.passes.token_frontend.build_delimiter_min_trees,
                 &[("gMinTree", step.params.as_entire_binding())],
                 step.work_items,
             )?;
@@ -767,7 +763,7 @@ impl GpuParser {
             bufs,
             label,
             label,
-            &self.passes.token_frontend.token_delimiters_02_scan,
+            &self.passes.token_frontend.scan_delimiter_depth_blocks,
             &[("gDelimiterScan", bufs.token_block_scan.params.as_entire_binding())],
             1,
         )
@@ -785,9 +781,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_delimiters_03_owner_local",
-            "parser.tokens.delimiters.owner_local",
-            &self.passes.token_frontend.token_delimiters_03_owner_local,
+            "parser.tokens.summarize_brace_owner_headers",
+            &self.passes.token_frontend.summarize_brace_owner_headers,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -807,9 +802,8 @@ impl GpuParser {
             bufs,
             token_buf,
             token_count_buf,
-            "parser_tokens_delimiters_04_owner_apply",
-            "parser.tokens.delimiters.owner_apply",
-            &self.passes.token_frontend.token_delimiters_04_owner_apply,
+            "parser.tokens.apply_brace_owner_headers",
+            &self.passes.token_frontend.apply_brace_owner_headers,
             &[("gParams", bufs.token_delimiter_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
@@ -917,10 +911,7 @@ impl GpuParser {
         };
         let token_enclosing_opens = token_operation(
             graph_labels::ENCLOSING_OPENS,
-            &self
-                .passes
-                .token_frontend
-                .tokens_delimiter_match_03_enclosing_opens,
+            &self.passes.token_frontend.find_enclosing_delimiters,
         )?;
         let tokens_to_angle_kinds = token_operation(
             graph_labels::ANGLE_KINDS,

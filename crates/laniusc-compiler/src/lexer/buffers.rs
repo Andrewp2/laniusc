@@ -58,9 +58,9 @@ pub struct GpuBuffers {
     pub token_map: LaniusBuffer<u32>,
 
     /// Ping buffer for DFA block-prefix scans.
-    pub dfa_02_ping: LaniusBuffer<u32>,
+    pub dfa_ping: LaniusBuffer<u32>,
     /// Pong buffer for DFA block-prefix scans.
-    pub dfa_02_pong: LaniusBuffer<u32>,
+    pub dfa_pong: LaniusBuffer<u32>,
     /// Per-block DFA summaries retained for prefix application.
     pub dfa_chunk_summaries: LaniusBuffer<u32>,
     pub(in crate::lexer) dfa_scan_params: Option<DynamicUniformBuffer<super::passes::ScanParams>>,
@@ -252,11 +252,11 @@ impl GpuBuffers {
             storage_ro_from_u32s_with_queue(device, queue, "next_u8", next_u8_packed);
 
         let per_block_count = N_STATES * (nb_dfa as usize);
-        let dfa_02_ping: LaniusBuffer<u32> = compiler_graph.buffer("dfa_ping")?;
-        let dfa_02_pong: LaniusBuffer<u32> = compiler_graph.buffer("dfa_pong")?;
+        let dfa_ping: LaniusBuffer<u32> = compiler_graph.buffer("dfa_ping")?;
+        let dfa_pong: LaniusBuffer<u32> = compiler_graph.buffer("dfa_pong")?;
         let dfa_chunk_summaries: LaniusBuffer<u32> =
             compiler_graph.buffer("dfa_chunk_summaries")?;
-        debug_assert_eq!(dfa_02_ping.count, per_block_count);
+        debug_assert_eq!(dfa_ping.count, per_block_count);
         debug_assert_eq!(dfa_chunk_summaries.count, per_block_count * DFA_CHUNK_COUNT);
         let dfa_scan_values = (0..super::util::compute_rounds(nb_dfa))
             .map(|round| super::passes::ScanParams {
@@ -276,7 +276,7 @@ impl GpuBuffers {
 
         let flags_packed: LaniusBuffer<u32> = compiler_graph.buffer("flags_packed")?;
 
-        // end_excl_by_i eliminated (computed inline); pair scan reuses dfa_02 ping/pong
+        // end_excl_by_i eliminated (computed inline); pair scan reuses scan_dfa_block_summaries ping/pong
 
         let s_all_final: LaniusBuffer<u32> = compiler_graph.buffer("s_all_final")?;
         let s_keep_final: LaniusBuffer<u32> = compiler_graph.buffer("s_keep_final")?;
@@ -348,8 +348,8 @@ impl GpuBuffers {
             next_u8,
             token_map,
 
-            dfa_02_ping,
-            dfa_02_pong,
+            dfa_ping,
+            dfa_pong,
             dfa_chunk_summaries,
             dfa_scan_params,
             tok_types,

@@ -9,6 +9,29 @@ import sys
 from collections.abc import Callable
 
 
+LEXER_PASS_NAMES = frozenset({
+    "summarize_dfa_blocks",
+    "scan_dfa_block_summaries",
+    "mark_token_boundaries",
+    "count_token_boundaries_in_blocks",
+    "scan_token_boundary_counts",
+    "rank_token_boundaries",
+})
+
+TOKEN_DELIMITER_PASSES = frozenset({
+    "parser.tokens.scan_delimiter_depths_in_blocks",
+    "parser.tokens.delimiter_depths.scan_delimiter_depth_blocks",
+    "parser.tokens.brace_owner_headers.scan_delimiter_depth_blocks",
+    "parser.tokens.brace_owners.scan_delimiter_depth_blocks",
+    "parser.tokens.summarize_brace_owner_headers",
+    "parser.tokens.apply_brace_owner_headers",
+    "parser.tokens.build_delimiter_match_heaps",
+    "parser.tokens.build_delimiter_min_trees",
+    "parser.tokens.classify_closing_braces",
+    "parser.tokens.classify_square_brackets",
+})
+
+
 REGIME_METRICS = {
     "sm_throughput_pct": "GPUTrace.sm__throughput.avg.pct_of_peak_sustained_elapsed",
     "alu_throughput_pct": (
@@ -153,7 +176,7 @@ def compiler_phase(pass_name: str) -> str:
         return "x86_codegen"
     if pass_name.startswith("codegen/lir/wasm/"):
         return "wasm_codegen"
-    if pass_name.startswith(("lexer.", "dfa_", "pair_")):
+    if pass_name in LEXER_PASS_NAMES or pass_name.startswith(("lexer.", "dfa_", "pair_")):
         return "lexer"
     if pass_name.startswith("type_check"):
         return "typecheck"
@@ -265,7 +288,7 @@ def parser_hir_stage(pass_name: str) -> str:
     """Classify parser work by the artifact or relation it produces."""
     if pass_name.startswith("parser.tokens_to_"):
         return "parser.token_classification"
-    if pass_name.startswith("brackets_") or (
+    if pass_name in TOKEN_DELIMITER_PASSES or pass_name.startswith("brackets_") or (
         pass_name.startswith("parser.tokens.")
         and any(
             marker in pass_name
@@ -281,6 +304,8 @@ def parser_hir_stage(pass_name: str) -> str:
         return "parser.raw_tree_recovery"
     if pass_name in ("parser.semantic-nav.batch", "hir_semantic_nav"):
         return "hir.semantic_navigation_batch"
+    if pass_name in ("hir_mark_semantic_rows", "hir_semantic.scan_blocks"):
+        return "hir.semantic_compaction"
     if pass_name.startswith("hir_semantic_"):
         if any(marker in pass_name for marker in ("prefix", "compact", "dispatch")):
             return "hir.semantic_compaction"
@@ -293,7 +318,7 @@ def parser_hir_stage(pass_name: str) -> str:
         if "subtree" in pass_name:
             return "hir.semantic_subtree_ranges"
         return "hir.semantic_navigation_other"
-    if pass_name.startswith("hir_canonical_"):
+    if pass_name.startswith(("hir_canonical_", "hir_canonical.")):
         if any(
             marker in pass_name
             for marker in (
@@ -310,7 +335,8 @@ def parser_hir_stage(pass_name: str) -> str:
         if pass_name in {
             "hir_canonical_mark",
             "hir_canonical_local",
-            "hir_canonical_prefix_01_blocks",
+            "hir_canonical.scan_blocks",
+            "hir_canonical_prefix_01_blocks",  # Historical captures.
             "hir_canonical_scatter",
             "hir_canonical_core",
             "hir_canonical_validate",
@@ -321,13 +347,13 @@ def parser_hir_stage(pass_name: str) -> str:
         }:
             return "hir.canonical_core_compaction"
         return "hir.canonical_side_tables"
-    if pass_name.startswith("hir_list_rank_"):
+    if pass_name == "hir_mark_list_rows" or pass_name.startswith("hir_list_rank_"):
         return "hir.family_compaction"
     if pass_name.startswith(("hir_string_", "parser_hir_literal", "parser_hir_string")):
         return "hir.literals_and_strings"
-    if pass_name.startswith(("hir_struct_", "hir_array_", "hir_enum_")):
+    if pass_name == "hir_mark_enum_rows" or pass_name.startswith(("hir_struct_", "hir_array_", "hir_enum_")):
         return "hir.aggregate_relations"
-    if pass_name.startswith(
+    if pass_name == "hir_mark_match_rows" or pass_name.startswith(
         (
             "hir_expr_",
             "hir_binary_",

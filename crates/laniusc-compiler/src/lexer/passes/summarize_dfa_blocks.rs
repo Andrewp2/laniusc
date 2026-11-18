@@ -6,19 +6,19 @@ use crate::{
 };
 
 /// First DFA pass: scans byte transitions inside each block.
-pub struct Dfa01ScanInblockPass {
+pub struct SummarizeDfaBlocksPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Dfa01ScanInblockPass,
-    label: "dfa_01_scan_inblock",
-    entry: "dfa_01_scan_inblock",
+    SummarizeDfaBlocksPass,
+    label: "summarize_dfa_blocks",
+    entry: "summarize_dfa_blocks",
     shader: "lexer/summarize_dfa_blocks"
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblockPass {
-    const NAME: &'static str = "dfa_01_scan_inblock";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SummarizeDfaBlocksPass {
+    const NAME: &'static str = "summarize_dfa_blocks";
     const DIM: DispatchDim = DispatchDim::D2;
 
     fn data(&self) -> &PassData {
@@ -45,7 +45,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
                 b.source_file_start_flags.as_entire_binding(),
             ),
             ("next_u8".into(), b.next_u8.as_entire_binding()),
-            ("block_summaries".into(), b.dfa_02_ping.as_entire_binding()),
+            ("block_summaries".into(), b.dfa_ping.as_entire_binding()),
             (
                 "chunk_summary_out".into(),
                 b.dfa_chunk_summaries.as_entire_binding(),

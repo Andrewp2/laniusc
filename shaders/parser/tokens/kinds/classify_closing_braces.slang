@@ -1,7 +1,7 @@
 // Gives every raw `}` the semantic kind of the `{` it closes.
 //
 // A raw `}` has brace match depth equal to its depth before minus one, which
-// is exactly the brace query that tokens_delimiter_match_03_enclosing_opens
+// is exactly the brace query that find_enclosing_delimiters
 // publishes, so token_enclosing_open[close].y is the opener it closes. No
 // hierarchy search runs here.
 

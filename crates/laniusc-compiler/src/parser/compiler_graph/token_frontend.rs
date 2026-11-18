@@ -9,19 +9,23 @@ use crate::{
     parser::{compiler_graph::ParserGraphCapacity, passes::tokens::TokenFrontendPasses},
 };
 
-pub(in crate::parser) const DELIMITER_DEPTH_SCAN: &str = "parser.tokens.delimiters.depth_scan";
+pub(in crate::parser) const DELIMITER_DEPTH_SCAN: &str =
+    "parser.tokens.delimiter_depths.scan_delimiter_depth_blocks";
 pub(in crate::parser) const DELIMITER_OWNER_HEADER_SCAN: &str =
-    "parser.tokens.delimiters.owner_header_scan";
-pub(in crate::parser) const DELIMITER_OWNER_SCAN: &str = "parser.tokens.delimiters.owner_scan";
-pub(in crate::parser) const GENERIC_SHR_RAW_SCAN: &str = "parser.tokens.generic_shr.raw_scan";
-pub(in crate::parser) const GENERIC_SHR_SCAN: &str = "parser.tokens.generic_shr.scan";
+    "parser.tokens.brace_owner_headers.scan_delimiter_depth_blocks";
+pub(in crate::parser) const DELIMITER_OWNER_SCAN: &str =
+    "parser.tokens.brace_owners.scan_delimiter_depth_blocks";
+pub(in crate::parser) const GENERIC_SHR_RAW_SCAN: &str =
+    "parser.tokens.raw_angles.scan_generic_angle_effect_blocks";
+pub(in crate::parser) const GENERIC_SHR_SCAN: &str =
+    "parser.tokens.generic_angles.scan_generic_angle_effect_blocks";
 pub(in crate::parser) const IMPL_HEADER_KIND_CLEAR: &str = "parser.tokens.impl_header_kind.clear";
 pub(in crate::parser) const FEATURE_FLAGS_CLEAR: &str = "parser.tokens.feature_flags.clear";
 
-pub(in crate::parser) const ENCLOSING_OPENS: &str = "parser.tokens.enclosing_opens";
+pub(in crate::parser) const ENCLOSING_OPENS: &str = "parser.tokens.find_enclosing_delimiters";
 pub(in crate::parser) const ANGLE_KINDS: &str = "parser.tokens_to_angle_kinds.pass";
 
-const MIN_TREE_BUILD: &str = "parser.tokens.delimiter_match.build_min_tree";
+const MIN_TREE_BUILD: &str = "parser.tokens.build_delimiter_min_trees";
 
 pub(super) fn register_resources(
     graph: &mut CompilerGraphBuilder,
@@ -182,7 +186,7 @@ fn delimiter_scan(
     scan(
         graph,
         name,
-        &passes.token_delimiters_02_scan,
+        &passes.scan_delimiter_depth_blocks,
         &[],
         &[
             "block_prefix_brace",
@@ -209,7 +213,7 @@ fn generic_scan(
     scan(
         graph,
         name,
-        &passes.tokens_generic_shr_02_scan,
+        &passes.scan_generic_angle_effect_blocks,
         ALIASES,
         &["block_prefix_sum", "block_prefix_min"],
     )
@@ -230,8 +234,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.delimiters.local",
-        &passes.token_delimiters_01,
+        "parser.tokens.scan_delimiter_depths_in_blocks",
+        &passes.scan_delimiter_depths_in_blocks,
         &[
             (
                 "depth_brace_inblock",
@@ -290,8 +294,8 @@ pub(super) fn register_schedule(
     // terminators using the completed raw bracket-depth relation.
     pass(
         graph,
-        "parser.tokens.impl_header.local",
-        &passes.tokens_impl_header_01_local,
+        "parser.tokens.summarize_impl_headers",
+        &passes.summarize_impl_headers,
         &[(
             "statement_event_block",
             "statement_event_block",
@@ -300,8 +304,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.impl_header.apply",
-        &passes.tokens_impl_header_02_apply,
+        "parser.tokens.apply_impl_headers",
+        &passes.apply_impl_headers,
         &[(
             "token_impl_context_event",
             "token_impl_context_event",
@@ -310,8 +314,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.generic_shr.raw_local",
-        &passes.tokens_generic_shr_00_raw_local,
+        "parser.tokens.scan_raw_angle_depths_in_blocks",
+        &passes.scan_raw_angle_depths_in_blocks,
         &[
             (
                 "block_sum",
@@ -328,8 +332,8 @@ pub(super) fn register_schedule(
     generic_scan(graph, GENERIC_SHR_RAW_SCAN, passes)?;
     pass(
         graph,
-        "parser.tokens.generic_shr.raw_apply",
-        &passes.tokens_generic_shr_00_raw_apply,
+        "parser.tokens.apply_raw_angle_depths",
+        &passes.apply_raw_angle_depths,
         &[
             ("block_prefix_sum", "generic_shr_block_prefix_sum", None),
             ("block_prefix_min", "generic_shr_block_prefix_min", None),
@@ -337,8 +341,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.delimiter_match.depth_blocks",
-        &passes.tokens_delimiter_match_01_depth_blocks,
+        "parser.tokens.build_delimiter_match_heaps",
+        &passes.build_delimiter_match_heaps,
         &[
             (
                 "paren_match_depth",
@@ -405,7 +409,7 @@ pub(super) fn register_schedule(
     pass(
         graph,
         MIN_TREE_BUILD,
-        &passes.tokens_delimiter_match_02_build_min_tree,
+        &passes.build_delimiter_min_trees,
         &[],
     )?;
     graph.mark_pass_bindings_initialize(
@@ -429,7 +433,7 @@ pub(super) fn register_schedule(
     pass(
         graph,
         ENCLOSING_OPENS,
-        &passes.tokens_delimiter_match_03_enclosing_opens,
+        &passes.find_enclosing_delimiters,
         &[
             (
                 "token_enclosing_open",
@@ -450,15 +454,15 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.delimiters.owner_local",
-        &passes.token_delimiters_03_owner_local,
+        "parser.tokens.summarize_brace_owner_headers",
+        &passes.summarize_brace_owner_headers,
         &[],
     )?;
     delimiter_scan(graph, DELIMITER_OWNER_HEADER_SCAN, passes)?;
     pass(
         graph,
-        "parser.tokens.delimiters.owner_apply",
-        &passes.token_delimiters_04_owner_apply,
+        "parser.tokens.apply_brace_owner_headers",
+        &passes.apply_brace_owner_headers,
         &[
             (
                 "top_brace_owner_block",
@@ -490,20 +494,20 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.statement_phase.local",
-        &passes.tokens_statement_phase_01_local,
+        "parser.tokens.summarize_statement_phases",
+        &passes.summarize_statement_phases,
         &[],
     )?;
     pass(
         graph,
-        "parser.tokens.statement_phase.apply",
-        &passes.tokens_statement_phase_02_apply,
+        "parser.tokens.apply_statement_phases",
+        &passes.apply_statement_phases,
         &[],
     )?;
     pass(
         graph,
-        "parser.tokens.bracket.kinds",
-        &passes.tokens_bracket_01_kinds,
+        "parser.tokens.classify_bracket_roles",
+        &passes.classify_bracket_roles,
         &[(
             "bracket_semantic_kind",
             "bracket_semantic_kind",
@@ -512,14 +516,14 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.brace_match.pair_pse",
-        &passes.tokens_brace_match_03_pair_pse,
+        "parser.tokens.classify_closing_braces",
+        &passes.classify_closing_braces,
         &[],
     )?;
     pass(
         graph,
-        "parser.tokens.bracket_match.pair_pse",
-        &passes.tokens_bracket_match_03_pair_pse,
+        "parser.tokens.classify_square_brackets",
+        &passes.classify_square_brackets,
         &[],
     )?;
 
@@ -527,8 +531,8 @@ pub(super) fn register_schedule(
     // at the same row and replaces it with the event before the token.
     pass(
         graph,
-        "parser.tokens.match_pattern.local",
-        &passes.tokens_match_pattern_01_local,
+        "parser.tokens.summarize_match_patterns",
+        &passes.summarize_match_patterns,
         &[(
             "token_match_pattern_context_event",
             "token_match_pattern_context_event",
@@ -537,8 +541,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.match_pattern.apply",
-        &passes.tokens_match_pattern_02_apply,
+        "parser.tokens.apply_match_patterns",
+        &passes.apply_match_patterns,
         &[(
             "token_match_pattern_context_event",
             "token_match_pattern_context_event",
@@ -547,14 +551,14 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.where_clause.local",
-        &passes.tokens_where_clause_01_local,
+        "parser.tokens.summarize_where_clauses",
+        &passes.summarize_where_clauses,
         &[],
     )?;
     pass(
         graph,
-        "parser.tokens.where_clause.apply",
-        &passes.tokens_where_clause_02_apply,
+        "parser.tokens.apply_where_clauses",
+        &passes.apply_where_clauses,
         &[(
             "token_where_context_event",
             "token_where_context_event",
@@ -594,14 +598,14 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.type_path_context.local",
-        &passes.tokens_type_path_context_01_local,
+        "parser.tokens.summarize_type_path_contexts",
+        &passes.summarize_type_path_contexts,
         &[("semantic_token_kinds", "token_kinds", None)],
     )?;
     pass(
         graph,
-        "parser.tokens.type_path_context.apply",
-        &passes.tokens_type_path_context_02_apply,
+        "parser.tokens.apply_type_path_contexts",
+        &passes.apply_type_path_contexts,
         &[
             ("semantic_token_kinds", "token_kinds", None),
             (
@@ -619,8 +623,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.generic_shr.local",
-        &passes.tokens_generic_shr_01_local,
+        "parser.tokens.summarize_generic_angle_effects",
+        &passes.summarize_generic_angle_effects,
         &[
             ("semantic_token_kinds", "token_kinds", None),
             (
@@ -638,8 +642,8 @@ pub(super) fn register_schedule(
     generic_scan(graph, GENERIC_SHR_SCAN, passes)?;
     pass(
         graph,
-        "parser.tokens.generic_shr.apply",
-        &passes.tokens_generic_shr_03_apply,
+        "parser.tokens.mark_generic_shift_splits",
+        &passes.mark_generic_shift_splits,
         &[
             ("block_prefix_sum", "generic_shr_block_prefix_sum", None),
             ("block_prefix_min", "generic_shr_block_prefix_min", None),
@@ -648,8 +652,8 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
-        "parser.tokens.generic_shr.close_kinds",
-        &passes.tokens_generic_shr_04_close_kinds,
+        "parser.tokens.classify_split_shift_closers",
+        &passes.classify_split_shift_closers,
         &[("semantic_token_kinds", "token_kinds", None)],
     )?;
     Ok(())

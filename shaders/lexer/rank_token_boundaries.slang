@@ -34,9 +34,9 @@ bool block_prefix_is_ping(uint block_count)
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void pair_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
-                                uint3 gid: SV_DispatchThreadID,
-                                uint3 ggrp: SV_GroupID)
+void rank_token_boundaries(uint3 tid: SV_GroupThreadID,
+                           uint3 gid: SV_DispatchThreadID,
+                           uint3 ggrp: SV_GroupID)
 {
     const uint block = ggrp.y * MAX_GROUPS_X + ggrp.x;
     const uint base = block * WORKGROUP_SIZE;

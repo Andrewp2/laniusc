@@ -51,7 +51,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
             // Write ALL end_positions into the tok_types buffer to reuse memory
             ("end_positions".into(), b.tok_types.as_entire_binding()),
             // Sink ALL count into an unused buffer to preserve KEPT's token_count for tokens_build
-            ("token_count".into(), b.dfa_02_pong.as_entire_binding()),
+            ("token_count".into(), b.dfa_pong.as_entire_binding()),
         ])
     }
 
@@ -74,9 +74,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
         dbg.gpu.token_count_all.set_from_copy(
             device,
             encoder,
-            &b.dfa_02_pong,
+            &b.dfa_pong,
             "dbg.token_count_all",
-            b.dfa_02_pong.byte_size,
+            b.dfa_pong.byte_size,
         );
     }
 }

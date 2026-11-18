@@ -1,4 +1,4 @@
-// shaders/parser/brackets_03_apply_prefix.slang
+// shaders/parser/brackets/apply_bracket_block_prefix.slang
 // Apply block_prefix to exscan_inblock and publish the bracket layer, and each
 // 256-row block's local minimum heap over the layers. pse_04_pair_by_layer
 // searches those heaps (blocked_search_tree.slang); 04_build_min_tree builds

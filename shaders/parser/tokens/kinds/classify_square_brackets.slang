@@ -3,7 +3,7 @@
 //
 // Every delimiter relation is read from token_enclosing_open (x paren, y
 // brace, z bracket, w angle) and token_angle_close, published once per token
-// by tokens_delimiter_match_03_enclosing_opens, so this pass does no
+// by find_enclosing_delimiters, so this pass does no
 // hierarchy searches and keeps no per-thread arrays.
 //
 // For a token t with class depth D before it, token_enclosing_open[t] is the

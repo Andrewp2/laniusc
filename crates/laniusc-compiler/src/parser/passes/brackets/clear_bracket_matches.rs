@@ -19,12 +19,12 @@ pub struct BracketsClearMatchesPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     BracketsClearMatchesPass,
-    label: "brackets_04_clear_matches",
+    label: "brackets_clear_bracket_matches",
     shader: "parser/brackets/clear_bracket_matches"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsClearMatchesPass {
-    const NAME: &'static str = "brackets_04_clear_matches";
+    const NAME: &'static str = "brackets_clear_bracket_matches";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

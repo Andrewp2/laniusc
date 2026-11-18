@@ -37,7 +37,7 @@ pub struct TreePrefixMaxBuildPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     TreePrefixMaxBuildPass,
-    label: "tree_prefix_04_build_max_tree",
+    label: "tree_build_deficit_max_tree",
     shader: "parser/tree/build_deficit_max_tree"
 );
 
@@ -76,7 +76,7 @@ impl TreePrefixMaxBuildPass {
                 buffers.tree_prefix_block_max_tree.as_entire_binding(),
             ),
         ]);
-        let operation = "tree_prefix_04_build_max_tree";
+        let operation = "tree_build_deficit_max_tree";
         let invocation = format!("{operation}.{index}");
         let bind_group = cache
             .reflected_for_graph_invocation(
@@ -109,7 +109,7 @@ impl TreePrefixMaxBuildPass {
 }
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreePrefixMaxBuildPass {
-    const NAME: &'static str = "tree_prefix_04_build_max_tree";
+    const NAME: &'static str = "tree_build_deficit_max_tree";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

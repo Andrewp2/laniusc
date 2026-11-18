@@ -14,7 +14,7 @@ pub struct BracketsMinTreePass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     BracketsMinTreePass,
-    label: "brackets_04_build_min_tree",
+    label: "brackets_build_bracket_min_tree",
     shader: "parser/brackets/build_bracket_min_tree"
 );
 
@@ -53,7 +53,7 @@ impl BracketsMinTreePass {
             ),
             ("min_tree".into(), buffers.b_min_tree.as_entire_binding()),
         ]);
-        let operation = "brackets_04_build_min_tree";
+        let operation = "brackets_build_bracket_min_tree";
         let invocation = format!("{operation}.{index}");
         let bind_group = cache
             .reflected_for_graph_invocation(

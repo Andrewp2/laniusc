@@ -115,9 +115,9 @@ bool block_prefix_is_pong(uint block_count)
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
-                               uint3 /*gid*/: SV_DispatchThreadID,
-                               uint3 ggrp: SV_GroupID)
+void mark_token_boundaries(uint3 tid: SV_GroupThreadID,
+                           uint3 /*gid*/: SV_DispatchThreadID,
+                           uint3 ggrp: SV_GroupID)
 {
     const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
     const uint groupsX = (nb < 65535u) ? nb : 65535u;

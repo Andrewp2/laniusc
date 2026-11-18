@@ -1,4 +1,4 @@
-// shaders/parser/brackets_01_scan_inblock.slang
+// shaders/parser/brackets/scan_bracket_depths_in_blocks.slang
 // Per-workgroup exclusive scan of +1/-1 deltas. Writes in-block exscan and block summaries.
 
 import shared.buffers.gpu_index;

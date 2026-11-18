@@ -1,4 +1,4 @@
-// shaders/lexer/dfa_02_scan_block_summaries.slang
+// shaders/lexer/scan_dfa_block_summaries.slang
 // Multi-round inclusive scan over per-block function vectors.
 // Result after last round is inclusive prefix for each block.
 
@@ -27,9 +27,9 @@ RWStructuredBuffer<uint> block_pong; // nb * N_STATES
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void dfa_02_scan_block_summaries(uint3 local_id: SV_GroupThreadID,
-                                 uint3 global_id: SV_DispatchThreadID,
-                                 uint3 group_id: SV_GroupID)
+void scan_dfa_block_summaries(uint3 local_id: SV_GroupThreadID,
+                              uint3 global_id: SV_DispatchThreadID,
+                              uint3 group_id: SV_GroupID)
 {
     const uint nb = (gParams.n + (BLOCK_WIDTH - 1u)) / BLOCK_WIDTH;
 

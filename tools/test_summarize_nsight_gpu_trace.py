@@ -20,6 +20,7 @@ class NsightCompilerStageTests(unittest.TestCase):
         self.assertEqual(compiler_phase("lir.x86.emit"), "x86_codegen")
         self.assertEqual(compiler_phase("artifact.x86.object.bytes"), "x86_codegen")
         self.assertEqual(compiler_phase("lir.wasm.emit"), "wasm_codegen")
+        self.assertEqual(compiler_phase("scan_dfa_block_summaries"), "lexer")
         self.assertEqual(compiler_phase("parser_hir_literal_values"), "parser_hir")
         self.assertEqual(compiler_phase("source_file_token_end"), "parser_hir")
         self.assertEqual(compiler_phase("codegen/lir/semantics/instructions/project_semantic_values"), "semantic_lir")
@@ -43,18 +44,23 @@ class NsightCompilerStageTests(unittest.TestCase):
     def test_parser_pipeline_has_distinct_stages(self) -> None:
         expected = {
             "parser.tokens_to_kinds.pass": "parser.token_classification",
-            "brackets_01_scan_inblock": "parser.delimiter_matching",
+            "brackets_scan_bracket_depths_in_blocks": "parser.delimiter_matching",
+            "parser.tokens.classify_square_brackets": "parser.delimiter_matching",
             "parser.tokens.type_path_context.scan": "parser.syntax_contexts",
             "pack_varlen": "parser.production_parsing_and_packing",
             "tree_depth_traverse": "parser.raw_tree_recovery",
             "parser.semantic-nav.batch": "hir.semantic_navigation_batch",
             "hir_semantic_parent_traverse": "hir.semantic_parents",
+            "hir_mark_semantic_rows": "hir.semantic_compaction",
+            "hir_semantic.scan_blocks": "hir.semantic_compaction",
             "hir_semantic_child_index_traverse": "hir.semantic_child_indices",
             "hir_type_root_owner_step": "hir.declaration_and_type_relations",
             "hir_match_arm_owner_step": "hir.expression_and_control_relations",
             "hir_struct_field_links": "hir.aggregate_relations",
             "hir_canonical_predicate_relations_step": "hir.canonical_relationships",
             "hir_canonical_core": "hir.canonical_core_compaction",
+            "hir_canonical.scan_blocks": "hir.canonical_core_compaction",
+            "hir_canonical_prefix_01_blocks": "hir.canonical_core_compaction",
             "hir_canonical_param_scatter": "hir.canonical_side_tables",
         }
         self.assertEqual({name: parser_hir_stage(name) for name in expected}, expected)

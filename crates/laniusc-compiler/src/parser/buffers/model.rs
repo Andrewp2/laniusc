@@ -641,12 +641,17 @@ pub struct ParserBuffers {
     pub out_emit_pos: LaniusBuffer<u32>,
 
     // -------- Brackets (parallel) --------
-    pub b01_params: LaniusBuffer<crate::parser::passes::brackets::scan_bracket_depths_in_blocks::Params>,
-    pub b02_params: LaniusBuffer<crate::parser::passes::brackets::scan_bracket_blocks::Params>,
-    pub b02_scan_plan: TokenBlockScanPlan,
-    pub b03_params: LaniusBuffer<crate::parser::passes::brackets::apply_bracket_block_prefix::Params>,
-    pub b07_params: LaniusBuffer<crate::parser::passes::brackets::pair_brackets_by_layer::Params>, // PSE-style pair-by-layer
-    pub b_clear_matches_params: LaniusBuffer<crate::parser::passes::brackets::clear_bracket_matches::Params>,
+    pub bracket_depth_params:
+        LaniusBuffer<crate::parser::passes::brackets::scan_bracket_depths_in_blocks::Params>,
+    pub bracket_scan_params:
+        LaniusBuffer<crate::parser::passes::brackets::scan_bracket_blocks::Params>,
+    pub bracket_scan_plan: TokenBlockScanPlan,
+    pub bracket_prefix_params:
+        LaniusBuffer<crate::parser::passes::brackets::apply_bracket_block_prefix::Params>,
+    pub bracket_pair_params:
+        LaniusBuffer<crate::parser::passes::brackets::pair_brackets_by_layer::Params>, // PSE-style pair-by-layer
+    pub b_clear_matches_params:
+        LaniusBuffer<crate::parser::passes::brackets::clear_bracket_matches::Params>,
     pub emit_stack_matches: bool,
     pub b_min_tree_base: u32,
     pub b_min_tree: LaniusBuffer<i32>,

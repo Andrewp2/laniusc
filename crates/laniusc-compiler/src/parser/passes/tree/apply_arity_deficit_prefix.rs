@@ -12,12 +12,12 @@ pub struct TreePrefixApplyPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     TreePrefixApplyPass,
-    label: "tree_prefix_03_apply",
+    label: "tree_apply_arity_deficit_prefix",
     shader: "parser/tree/apply_arity_deficit_prefix"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreePrefixApplyPass {
-    const NAME: &'static str = "tree_prefix_03_apply";
+    const NAME: &'static str = "tree_apply_arity_deficit_prefix";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

@@ -6,19 +6,19 @@ use crate::{
 };
 
 /// Third pair pass: applies boundary prefixes and writes compact ranks.
-pub struct Pair03ApplyBlockPrefixPass {
+pub struct RankTokenBoundariesPass {
     data: PassData,
 }
 
 crate::gpu::passes_core::impl_static_shader_pass!(
-    Pair03ApplyBlockPrefixPass,
-    label: "pair_03_apply_block_prefix",
-    entry: "pair_03_apply_block_prefix",
+    RankTokenBoundariesPass,
+    label: "rank_token_boundaries",
+    entry: "rank_token_boundaries",
     shader: "lexer/rank_token_boundaries"
 );
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlockPrefixPass {
-    const NAME: &'static str = "pair_03_apply_block_prefix";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for RankTokenBoundariesPass {
+    const NAME: &'static str = "rank_token_boundaries";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -42,11 +42,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             (
                 "block_prefix_pair_ping".into(),
-                b.dfa_02_ping.as_entire_binding(),
+                b.dfa_ping.as_entire_binding(),
             ),
             (
                 "block_prefix_pair_pong".into(),
-                b.dfa_02_pong.as_entire_binding(),
+                b.dfa_pong.as_entire_binding(),
             ),
             ("s_all_final".into(), b.s_all_final.as_entire_binding()),
             ("s_keep_final".into(), b.s_keep_final.as_entire_binding()),
@@ -77,9 +77,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
 
         let last =
             if super::token_boundary_scan_steps::block_total_scan_last_writer_is_ping(b.nb_sum) {
-                &b.dfa_02_ping
+                &b.dfa_ping
             } else {
-                &b.dfa_02_pong
+                &b.dfa_pong
             };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

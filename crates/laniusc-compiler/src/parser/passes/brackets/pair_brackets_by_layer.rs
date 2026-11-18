@@ -25,12 +25,12 @@ pub struct BracketsPsePairPass {
 
 crate::gpu::passes_core::impl_static_shader_pass!(
     BracketsPsePairPass,
-    label: "brackets_pse_04_pair_by_layer",
+    label: "brackets_pair_brackets_by_layer",
     shader: "parser/brackets/pair_brackets_by_layer"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairPass {
-    const NAME: &'static str = "brackets_pse_04_pair_by_layer";
+    const NAME: &'static str = "brackets_pair_brackets_by_layer";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
@@ -45,7 +45,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for BracketsPsePairP
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
-            ("gParams".into(), b.b07_params.as_entire_binding()),
+            ("gParams".into(), b.bracket_pair_params.as_entire_binding()),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
             (
                 "partial_parse_status".into(),

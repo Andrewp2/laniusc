@@ -1,10 +1,10 @@
 use crate::gpu::scan::{PingPongScanStep, ScanFinalize, ping_pong_scan_steps};
 
-/// Pair scan block totals are already seeded into the ping buffer by `pair_01`.
+/// Pair scan block totals are already seeded into the ping buffer by `count_token_boundaries_in_blocks`.
 ///
 /// The shared scan planner includes a seed/copy step at `scan_step == 0` for
 /// pipelines with a separate block-sum buffer. The lexer pair path reuses the
-/// ping buffer as both block totals and scan prefix storage, so `pair_02` starts
+/// ping buffer as both block totals and scan prefix storage, so `scan_token_boundary_counts` starts
 /// at the first real stride step.
 pub(crate) fn block_total_scan_steps(n_blocks: u32) -> Vec<PingPongScanStep> {
     ping_pong_scan_steps(n_blocks, ScanFinalize::None)
