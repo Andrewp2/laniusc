@@ -6,7 +6,7 @@
 
 mod executable;
 pub(super) use executable::WasmExecutablePageGraph;
-mod paged;
+mod paged_input;
 mod symbol_partitions;
 mod symbol_resolution;
 use std::path::PathBuf;

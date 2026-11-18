@@ -11,7 +11,7 @@ use encase::ShaderType;
 use super::job_sized::JobSized;
 
 /// A finished x86 object: on the host, or parked in the GPU link store with
-/// its text and rodata left there (`codegen/x86/link/resident.rs`).
+/// its text and rodata left there (`codegen/x86/link/resident_linking.rs`).
 pub(crate) enum GpuX86FinishedObject {
     Host(GpuX86RelocatableObject),
     Parked(super::x86::GpuX86FileObject),

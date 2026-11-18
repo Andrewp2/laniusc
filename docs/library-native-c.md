@@ -239,7 +239,7 @@ of the executable:
 
 A native build that compiles its objects in memory links them on the GPU from
 the buffers the lowering wrote. The host does not read or upload object bytes
-for the link. `codegen/x86/link/resident.rs` runs the link:
+for the link. `codegen/x86/link/resident_linking.rs` runs the link:
 
 1. Lowering copies each object's metadata, relocation rows, symbol rows, text
    and rodata into a store the linker keeps. The original-call rewrite in

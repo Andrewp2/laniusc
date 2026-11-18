@@ -27,7 +27,7 @@ Two uint4 per instance, indexed by **rank**. Ranks are dense, `0..count`,
 and are the final deterministic order (declaration keys, then structural
 environment order). Rank is the native instance symbol:
 `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_INSTANCE, rank)`
-(`codegen/x86/finalize.rs`).
+(`codegen/x86/symbol_finalization.rs`).
 
 | Word | Contents |
 | --- | --- |

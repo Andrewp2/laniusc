@@ -14,8 +14,8 @@ under crates/laniusc-compiler/src ending in `.rs`. `#` starts a comment.
 
 The tool runs `git mv` for every entry, then rewrites:
   * shader keys, source paths and generated artifact paths in tracked text
-    files, with only explicit shader source paths rewritten in docs/ and no
-    edits to benchmark_artifacts/ or the root README;
+    files, with only path-qualified keys and source paths rewritten in docs/
+    and no edits to benchmark_artifacts/ or the root README;
   * Slang `import` and `#include` paths, resolved the way the shader build
     resolves them, and `module` names of moved files;
   * `X.slang` mentions in shaders that shared the moved file's old folder;
@@ -301,19 +301,25 @@ class RustRewriter:
             if self.module(old) != self.module(old, moved=True)
         }
         self.parent_globs: dict[tuple[str, ...], set[tuple[str, ...]]] = {}
+        self.module_imports: dict[tuple[str, ...], dict[str, list[str]]] = {}
         if rust_map:
             for f in self.files:
                 text = (CRATE_SRC / f).read_text()
-                if "super::" not in text:
-                    continue
                 base = self.module(f)
                 spans = self.inline_modules(text)
                 for m in USE_RE.finditer(text):
                     scope = tuple(self.module_at(base, spans, m.start()))
-                    for segs, _ in parse_use_tree(m.group(2)) or []:
+                    bindings = self.module_imports.setdefault(scope, {})
+                    for segs, alias in parse_use_tree(m.group(2)) or []:
                         levels = len(segs) - 1
                         if 0 < levels < len(scope) and segs == ["super"] * levels + ["*"]:
                             self.parent_globs.setdefault(scope, set()).add(scope[:-levels])
+                        if segs[-1] == "*":
+                            continue
+                        path = segs[:-1] if segs[-1] == "self" else segs
+                        found = self.absolute(path, list(scope), bindings)
+                        if found and "::".join(found[0]) in self.old_modules:
+                            bindings[alias or path[-1]] = found[0]
 
     def module(self, file: str, moved: bool = False) -> list[str]:
         if file in self.path_modules:
@@ -346,19 +352,21 @@ class RustRewriter:
             return module + segs, "relative"
         if head in bindings:
             return bindings[head] + segs[1:], "binding"
-        # A parent glob can expose the parent's module names, including
-        # names the parent itself imported through another parent glob.
+        # A parent glob can expose declared modules and module imports,
+        # including bindings reached through another parent glob.
         pending = list(self.parent_globs.get(tuple(module), ()))
         candidates = set()
         while pending:
             parent = pending.pop()
             if "::".join((*parent, head)) in self.old_modules:
-                candidates.add(parent)
+                candidates.add((*parent, head))
+            elif imported := self.module_imports.get(parent, {}).get(head):
+                candidates.add(tuple(imported))
             else:
                 pending.extend(self.parent_globs.get(parent, ()))
         if len(candidates) == 1:
-            (parent,) = candidates
-            return [*parent, *segs], "glob"
+            (target,) = candidates
+            return [*target, *segs[1:]], "glob"
         return None
 
     def emit(self, new: list[str], style: str, new_module: list[str]) -> str:
@@ -775,10 +783,8 @@ def partial_paths(shader_map: dict[str, str]) -> dict[str, str]:
 def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: dict[str, str]) -> int:
     # Root modules have names such as `status` and `scatter`. A bare
     # occurrence can be a buffer name or label rather than a shader key.
-    shader_re = reference_pattern(
-        {k: v for k, v in shader_map.items() if "/" in k},
-        r"(?!\.(?!(?:slang|spv|reflect\.json)\b))",
-    )
+    qualified_keys = {k: v for k, v in shader_map.items() if "/" in k}
+    shader_re = reference_pattern(qualified_keys, r"(?!\.(?!(?:slang|spv|reflect\.json)\b))")
     explicit_shader_re = (
         re.compile(
             r"(?<=shaders/)("
@@ -825,13 +831,20 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
         if new != text:
             write(path, new)
             count += 1
-    if explicit_shader_re:
+    doc_shader_re = reference_pattern(qualified_keys, r"(?!\.(?!slang\b))")
+    if explicit_shader_re or rust_re:
         for rel in git("ls-files", "docs").splitlines():
             path = REPO / rel
             text = text_of(path)
             if text is None:
                 continue
-            new = explicit_shader_re.sub(lambda m: shader_map[m.group(1)], text)
+            new = text
+            if doc_shader_re:
+                new = doc_shader_re.sub(lambda m: shader_map[m.group(1)], new)
+            if explicit_shader_re:
+                new = explicit_shader_re.sub(lambda m: shader_map[m.group(1)], new)
+            if rust_re:
+                new = rust_re.sub(lambda m: rust_map[m.group(1)], new)
             if new != text:
                 write(path, new)
                 count += 1

@@ -68,7 +68,7 @@ use crate::{
     type_checker::{GpuCheckedCallArtifact, GpuSemanticArtifactView},
 };
 
-/// Native identity of instance objects and symbols (codegen/x86/finalize.rs).
+/// Native identity of instance objects and symbols (codegen/x86/symbol_finalization.rs).
 pub const NATIVE_LIBRARY: u32 = 0xffff_fffe;
 pub const NATIVE_NS_INSTANCE: u32 = 0xffff_0002;
 /// Route of a use that is not a call (a struct literal).

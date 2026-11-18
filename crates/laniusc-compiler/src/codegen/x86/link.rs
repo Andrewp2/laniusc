@@ -4,15 +4,16 @@
 //! arrays into upload buffers. Final section placement, symbol resolution,
 //! byte movement, and relocation application remain GPU work.
 
-mod dynamic;
-pub(crate) use dynamic::{X86DynamicImage, X86DynamicMain};
+mod call_splicing;
+mod dynamic_sections;
+mod paged_input;
+mod resident_linking;
+mod section_layout;
+pub(crate) use dynamic_sections::{X86DynamicImage, X86DynamicMain};
 mod executable;
 pub(super) use executable::X86ExecutablePageGraph;
-mod layout_chunks;
-pub(super) use layout_chunks::X86LayoutChunkGraph;
-mod paged;
-mod resident;
-pub(crate) use resident::{
+pub(super) use section_layout::X86LayoutChunkGraph;
+pub(crate) use resident_linking::{
     GpuX86LinkStore,
     ParkRegion,
     ParkSources,
@@ -24,7 +25,6 @@ pub(crate) use resident::{
     ResidentSections,
     park,
 };
-mod splice;
 mod symbol_partitions;
 mod symbol_resolution;
 use std::path::PathBuf;
@@ -396,7 +396,7 @@ impl GpuX86LinkInput {
     }
 
     /// The native C profile's dynamic link: Lanius objects read from their
-    /// private payload files, then the import object (`dynamic.rs`), whose
+    /// private payload files, then the import object (`dynamic_sections.rs`), whose
     /// stubs define each foreign identity in `imports` (identity, import
     /// index). A C entry loads the process vector that the CRT bridge maps,
     /// so the relocations only a raw executable applies are left out.
@@ -465,8 +465,8 @@ impl GpuX86LinkInput {
                 object_index: import_object,
                 identity,
                 section: GpuX86ObjectSection::Text as u32,
-                offset: dynamic::X86_DYNAMIC_START_BYTES + import * dynamic::X86_DYNAMIC_STUB_BYTES,
-                size: dynamic::X86_DYNAMIC_STUB_BYTES,
+                offset: dynamic_sections::X86_DYNAMIC_START_BYTES + import * dynamic_sections::X86_DYNAMIC_STUB_BYTES,
+                size: dynamic_sections::X86_DYNAMIC_STUB_BYTES,
                 flags: 0,
             });
         }
@@ -656,7 +656,7 @@ impl GpuX86LinkInput {
                 u32::from_le_bytes(identity[4..8].try_into().expect("four bytes")),
                 u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
             ];
-            if super::finalize::is_provisional_identity(identity) {
+            if super::symbol_finalization::is_provisional_identity(identity) {
                 return Err(format!(
                     "x86 link object {object_index} symbol {symbol_index} still names provisional use {}; GPU symbol finalization must publish it first",
                     identity[2]

@@ -882,7 +882,8 @@ fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
 fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
     let wasm_only = key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
     // Wasm object linking uses the x86 symbol finalizer too.
-    let x86_only = (key.starts_with("codegen/x86/") && !key.starts_with("codegen/x86/finalize/"))
+    let x86_only = (key.starts_with("codegen/x86/")
+        && !key.starts_with("codegen/x86/symbol_finalization/"))
         || key.starts_with("codegen/lir/x86/");
     !key.starts_with("tests/") && (backends.wasm || !wasm_only) && (backends.x86 || !x86_only)
 }

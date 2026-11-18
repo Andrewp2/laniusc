@@ -768,7 +768,7 @@ instruction relation.
 ### Object symbol finalization, 2026-11-14
 
 `GpuX86SymbolFinalizer` in
-[`finalize.rs`](../crates/laniusc-compiler/src/codegen/x86/finalize.rs)
+[`symbol_finalization.rs`](../crates/laniusc-compiler/src/codegen/x86/symbol_finalization.rs)
 implements the native x86 finalization boundary from section 6 of the design.
 General compilation does not call it yet.
 

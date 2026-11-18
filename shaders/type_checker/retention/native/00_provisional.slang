@@ -26,7 +26,7 @@ import shared.syntax.hir_expr_semantics;
 import shared.semantics.primitive_types;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
-import codegen.x86.finalize.symbol_identity;
+import codegen.x86.symbol_finalization.read_retained_symbol_identities;
 
 // (mode, lanes, generation, argument capacity, row count). The row count
 // is copied from the object's own total.

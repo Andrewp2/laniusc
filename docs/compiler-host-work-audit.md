@@ -82,9 +82,9 @@ Removal methods:
 | R14 | `retained_projection.readback`, second | same site | 1 | 4,476 B: projection rows | builds the instance inputs | data | kernel (T5) |
 | R15 | `lowering status readback`, instance | same site as R8 | 1 | 128 B: status and object metadata | sizes the R16 read | size | resident (T4) |
 | R16 | `x86 object payload readback`, instance | same site as R9 | 1 | 126,892 B: the instance object | parses it for the link | data | resident (T4) |
-| R17 | `codegen.x86.finalize.readback` | `codegen/x86/finalize.rs:761` | 1 | 285,536 B: finalize status, symbol records and identity words | checks demand against capacity and names symbols for the link | data | resident (T4) |
-| R18 | `codegen.x86.link.resident.plan` | `codegen/x86/link/resident.rs:1204`, `:1373` | 1 | 400 B: link status, C name status and image length | sizes the image copy | size | bound (T6) |
-| R19 | `codegen.x86.link.resident.image` | `codegen/x86/link/resident.rs:1425` | 1 | 5,866,080 B: the executable | writes the file | output | permanent |
+| R17 | `codegen.x86.finalize.readback` | `codegen/x86/symbol_finalization.rs:761` | 1 | 285,536 B: finalize status, symbol records and identity words | checks demand against capacity and names symbols for the link | data | resident (T4) |
+| R18 | `codegen.x86.link.resident.plan` | `codegen/x86/link/resident_linking.rs:1204`, `:1373` | 1 | 400 B: link status, C name status and image length | sizes the image copy | size | bound (T6) |
+| R19 | `codegen.x86.link.resident.image` | `codegen/x86/link/resident_linking.rs:1425` | 1 | 5,866,080 B: the executable | writes the file | output | permanent |
 
 ### Sites the settings build does not reach, reached by the CLI modes
 
@@ -97,9 +97,9 @@ Removal methods:
 | R24 | `retained catalog admission` | `compiler/gpu_compiler/trait_solver/dispatch/retained.rs:1431` | x86, native, 1 | 176 B: admission receipts | checks admission | status | gate (T7) |
 | R25 | `codegen.x86.link.symbol_partition.status` | `codegen/x86/link/symbol_resolution.rs:489` | x86, 1 | 16 B: partition status and count | sizes the R26 read | size | delete with the GPU-only x86 link (T7) |
 | R26 | `codegen.x86.link.symbol_partition.values` | `codegen/x86/link/symbol_resolution.rs:520` | x86, 1 | 92 B: resolved symbol values | lays out sections | data | delete (T7) |
-| R27 | `codegen.x86.link.layout_chunk` | `codegen/x86/link/layout_chunks.rs:432` | x86, 1 | 16 B: layout chunk rows | places sections | data | delete (T7) |
+| R27 | `codegen.x86.link.layout_chunk` | `codegen/x86/link/section_layout.rs:432` | x86, 1 | 16 B: layout chunk rows | places sections | data | delete (T7) |
 | R28 | `codegen.x86.link.page` | `codegen/x86/link/executable.rs:761` | x86, check, 1 | 65,568 B: the executable page | writes the file | output | permanent |
-| R29 | `codegen.x86.link.resident.sections` | `codegen/x86/link/resident.rs:288` | host link, 2 | 19,412 B: text and rodata | hands them to the host linker | output | permanent |
+| R29 | `codegen.x86.link.resident.sections` | `codegen/x86/link/resident_linking.rs:288` | host link, 2 | 19,412 B: text and rodata | hands them to the host linker | output | permanent |
 | R30 | `Wasm object metadata readback` | `codegen/wasm_object_artifact.rs:476` | WASM, 1 | 96 B: object status and lengths | sizes the R31 read | size | resident (T8) |
 | R31 | `Wasm object payload readback` | `codegen/wasm_object_artifact.rs:562` | WASM, 1 | 128 B: the WASM object | parses it for the link | data | resident (T8) |
 | R32 | `codegen.wasm.link.resolve.status` | `codegen/wasm/link/symbol_resolution.rs:550` | WASM, 1 | 16 B: resolution status | checks it and sizes the target read | size | gate (T8) |
@@ -252,13 +252,13 @@ Times are from the settings job under `LANIUS_REPORT=host-timing`. "Orchestratio
 | H12 `finish.unit_facts` | `compiler/gpu_compiler/typecheck.rs:1211`, `type_checker/generic_calls.rs:2019` | 0.015 ms, elided on settings | decodes checked unit facts (U17 to U28) | compiler work | Other builds decode type and call facts on the host. |
 | H13 retention planning between submits | `compiler/gpu_compiler/retained_native.rs:692` | 2.938 ms (`tail.after_projection`) | reads R11 to R14 and builds each next stage's inputs | compiler work | It plans instances from counts and rows on the host. |
 | H14 `tail.instance.finish_object` | `compiler/gpu_compiler/retained_projection.rs:125` | 0.218 ms | parses the instance object from R15 and R16 | compiler work | Same as H10. |
-| H15 `tail.finalize` | `compiler/gpu_compiler/retained_native.rs:704`, `codegen/x86/finalize.rs:740` | 0.249 ms | checks symbol demand and reads symbol records from R17 | compiler work | The link reads the symbol records, and they can stay on the GPU. |
+| H15 `tail.finalize` | `compiler/gpu_compiler/retained_native.rs:704`, `codegen/x86/symbol_finalization.rs:740` | 0.249 ms | checks symbol demand and reads symbol records from R17 | compiler work | The link reads the symbol records, and they can stay on the GPU. |
 | H16 `tail.native.resident.inputs` | `codegen/x86/native/resolve.rs:481`, `:303`, `:119` | 0.577 ms | finds libraries on disk, parses ELF symbol tables and archive indexes, and caches them by file stamp | compiler work | File reads are orchestration, but parsing symbol tables is linking. The cache keeps parsed results. |
-| H17 `tail.native.resident.record` | `codegen/x86/link/resident.rs:872` | 0.581 ms | maps parked objects to slots and records the link | orchestration | |
-| H18 link waits and image recording | `codegen/x86/link/resident.rs:1341`, `:1415`, `:548` | 0.466, 0.051, 0.669 ms | waits on R18 and R19 and records the image copy | orchestration | |
+| H17 `tail.native.resident.record` | `codegen/x86/link/resident_linking.rs:872` | 0.581 ms | maps parked objects to slots and records the link | orchestration | |
+| H18 link waits and image recording | `codegen/x86/link/resident_linking.rs:1341`, `:1415`, `:548` | 0.466, 0.051, 0.669 ms | waits on R18 and R19 and records the image copy | orchestration | |
 | H19 output write | `compiler/gpu_compiler/retained_native.rs:766`, `:780` | 2.115 ms, of which 0.998 ms is the file | writes the executable | orchestration | |
 | H20 diagnostics rendering | `compiler/diagnostics.rs:4256` | failed builds only | turns the token span from R35 into source text and a message | orchestration | It is the failed-build exception. |
-| H21 GPU-linker x86 layout | `codegen/x86/link/symbol_resolution.rs:489`, `codegen/x86/link/layout_chunks.rs:432` | CLI only | lays out sections from R25 to R27 | compiler work | The resident link does the same on the GPU. |
+| H21 GPU-linker x86 layout | `codegen/x86/link/symbol_resolution.rs:489`, `codegen/x86/link/section_layout.rs:432` | CLI only | lays out sections from R25 to R27 | compiler work | The resident link does the same on the GPU. |
 | H22 WASM object and link | `codegen/wasm_object_artifact.rs:476`, `codegen/wasm/link/symbol_resolution.rs:550` | WASM only | parses the WASM object and resolves symbols from R30 to R32 | compiler work | Same pattern as H10 and H21. |
 | H23 check mode codegen | `cli/compile/entry.rs:68` | CLI only | `check` lowers, retains, finalizes and links an executable it discards | compiler work | A check needs only the frontend status. |
 
