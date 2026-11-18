@@ -34,7 +34,7 @@ impl Arena {
     }
 
     /// An arena of `words` words whose contents the GPU writes before any
-    /// read (the retained catalog, dispatch/retained.rs). Reused physical
+    /// read (the retained catalog, dispatch/retained_catalog/mod.rs). Reused physical
     /// storage keeps old bytes: the writer clears it first.
     pub fn uninitialized(workspace: &WorkspaceLease, label: &str, words: u32) -> Result<Self> {
         let slot = workspace.reserve(label)?;

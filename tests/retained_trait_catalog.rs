@@ -95,7 +95,7 @@ const RT_KIND_CC_VALUE: u32 = 8;
 const SCALAR_I32: u32 = 3;
 const PRIVATE: u32 = 0x8000_0000;
 const USE_WORDS: usize = 12;
-// producer.slang failure codes.
+// retained_catalog_producer.slang failure codes.
 const E_NOT_READY: u32 = 1;
 const E_PARAM_OWNER: u32 = 4;
 const E_NOMINAL: u32 = 5;

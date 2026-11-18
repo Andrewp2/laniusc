@@ -21,8 +21,8 @@ import type_checker.checked_type_identity;
 import type_checker.checked_slots;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_subst;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_substitution;
 StructuredBuffer<uint> call_inference_state;
 RWStructuredBuffer<uint> status;
 

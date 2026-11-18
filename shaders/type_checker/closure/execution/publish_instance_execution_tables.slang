@@ -1,7 +1,7 @@
 // Execution side tables (instance_exec.slang): one lane per virtual slot,
 // for every side table whose virtual block reaches it. Each copied record
 // names the copy's rows, tokens and table indices. A parameter's checked
-// type is its type row's realized reference (as 00_project reads it); a
+// type is its type row's realized reference (as project_proof_implementation_application reads it); a
 // field keeps its declaration ordinal; a match arm's payload range moves
 // with the payload block.
 import hir_records;

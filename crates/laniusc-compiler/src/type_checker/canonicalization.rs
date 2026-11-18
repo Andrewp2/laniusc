@@ -298,7 +298,7 @@ pub(super) struct CanonicalCapacity {
     /// overflow retry of the job (`canonical_retry_scale`).
     pub scale: u32,
     /// Records and argument words of the substitution producers
-    /// (`substitution_passes::substitution_canonical_extra`), part of the
+    /// (`substitution::substitution_canonical_extra`), part of the
     /// scaled bounds.
     pub extra_records: u64,
     pub extra_argument_words: u64,

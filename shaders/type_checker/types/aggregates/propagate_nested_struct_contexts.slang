@@ -9,7 +9,7 @@ import semantic_interface_layout;
 // application over canonical IDs (ct_scoped_reference).
 import hir_records;
 import type_checker.mutable_checked_type_graph;
-import type_checker.substitution.ct_scoped;
+import type_checker.substitution.scoped_reference_substitution;
 import type_checker.types.aggregates.struct_field_lookup;
 import status;
 import type_checker.dependencies.record_fields;

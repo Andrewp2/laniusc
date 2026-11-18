@@ -9,10 +9,10 @@ import type_checker.checked_pattern_path;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
-import type_checker.substitution.source_slots;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
+import type_checker.substitution.source_slot_adapter;
 import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

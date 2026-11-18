@@ -1,5 +1,5 @@
 // Expected argument types are checked caller-side references: the declared
-// parameter type under the call's expected environment (call_env.slang),
+// parameter type under the call's expected environment (canonical_call_environments.slang),
 // substituted over canonical IDs and realized as a checked row. Each argument
 // owns one row; imported patterns are consumed only on their declaration
 // page. This relation provides context to expressions without replacing their
@@ -11,11 +11,11 @@ import dependency_method_index;
 import type_checker.argument_context;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_rows;
-import type_checker.substitution.ct_realize;
-import type_checker.substitution.source_slots;
-import type_checker.substitution.call_env;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_checked_type_rows;
+import type_checker.substitution.checked_row_realization;
+import type_checker.substitution.source_slot_adapter;
+import type_checker.substitution.canonical_call_environments;
 import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

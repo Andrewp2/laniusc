@@ -20,9 +20,25 @@ pub(super) use implementation_application::ProjectedImplApplication;
 #[cfg(test)]
 pub(super) use implementation_application::ImplProjectionLimits;
 mod proof;
-mod retained;
-pub(super) use retained::{check as retained_check, publish as retained_publish, record_count_follower as retained_count_follower};
-pub use retained::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+mod retained_catalog;
+pub(super) use retained_catalog::{
+    check as retained_check,
+    publish as retained_publish,
+    record_count_follower as retained_count_follower,
+};
+pub use retained_catalog::{
+    ClosedChainInputs,
+    ClosedTraitCheck,
+    ClosedTraitPublication,
+    RETAINED_POISON,
+    RetainedBufferRange,
+    RetainedTraitCheck,
+    RetainedTraitIdentity,
+    RetainedTraitOptions,
+    RetainedTraitPublication,
+    RetainedTraitStage,
+    RetainedTraitView,
+};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -303,7 +319,7 @@ impl GpuTraitSolver {
 
     /// Admission of `catalog` in `storage`. `fill` records, before the
     /// admission kernels and in the same submit, the writes that complete
-    /// the catalog rows (the retained producer, dispatch/retained.rs).
+    /// the catalog rows (the retained producer, dispatch/retained_catalog/mod.rs).
     fn admit_storage(
         workspace: WorkspaceLease,
         catalog: Arc<FrozenCatalog>,

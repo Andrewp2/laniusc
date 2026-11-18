@@ -1,7 +1,7 @@
 import semantic_interface_layout;
 import type_checker.mutable_checked_type_graph;
 import type_checker.checked_index_reference;
-import type_checker.substitution.ct_scoped;
+import type_checker.substitution.scoped_reference_substitution;
 // HIR member field result projection.
 //
 // The preceding member-receiver pass records the initial receiver type for

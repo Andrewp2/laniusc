@@ -24,7 +24,7 @@ public static const uint CT_NONE = 0xfffffffdu;
 // A constant projection whose closed value does not fit its target scalar
 // (ct_build_projection): a language error of the substitution that built
 // it, not an unsupported shape. Substitution returns it unchanged
-// (ct_subst.slang); producers that report fits elsewhere map it to
+// (canonical_substitution.slang); producers that report fits elsewhere map it to
 // CT_UNKNOWN.
 public static const uint CT_FIT_FAILED = 0xfffffffcu;
 // The smallest sentinel.
@@ -134,7 +134,7 @@ public static const uint CT_OVERFLOW_TABLE = 1u;
 public static const uint CT_OVERFLOW_RECORDS = 2u;
 public static const uint CT_OVERFLOW_ARGS = 4u;
 public static const uint CT_OVERFLOW_ROUNDS = 8u;
-// 16 is CT_OVERFLOW_SUBST_MEMO (substitution/ct_subst.slang).
+// 16 is CT_OVERFLOW_SUBST_MEMO (canonical_substitution.slang).
 // A round appended more pending candidates or nodes than a frontier list holds.
 public static const uint CT_OVERFLOW_FRONTIER = 32u;
 

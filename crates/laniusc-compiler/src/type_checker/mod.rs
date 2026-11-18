@@ -64,7 +64,7 @@ mod preflight;
 mod record;
 mod struct_literal_field_types;
 mod resident;
-mod substitution_passes;
+mod substitution;
 pub use interface::RecordedSemanticInterface;
 pub use interface::SemanticInterfaceExportFailure;
 /// Rows the type checker reserves for language symbols ahead of source names;

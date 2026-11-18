@@ -284,11 +284,11 @@ class RustRewriter:
             "::".join(module_of(old)): "::".join(module_of(new)) for old, new in rust_map.items()
         }
         self.rust_map = rust_map
-        self.parent_globs: dict[tuple[str, ...], set[tuple[str, ...]]] = {}
+        self.module_globs: dict[tuple[str, ...], set[tuple[str, ...]]] = {}
         if rust_map:
             for f in self.files:
                 text = (CRATE_SRC / f).read_text()
-                if "super::" not in text:
+                if "super::" not in text and "crate::" not in text:
                     continue
                 base = module_of(f)
                 spans = self.inline_modules(text)
@@ -296,8 +296,13 @@ class RustRewriter:
                     scope = tuple(self.module_at(base, spans, m.start()))
                     for segs, _ in parse_use_tree(m.group(2)) or []:
                         levels = len(segs) - 1
-                        if 0 < levels < len(scope) and segs == ["super"] * levels + ["*"]:
-                            self.parent_globs.setdefault(scope, set()).add(scope[:-levels])
+                        if segs[0] == "crate" and segs[-1] == "*":
+                            source = tuple(segs[:-1])
+                        elif 0 < levels < len(scope) and segs == ["super"] * levels + ["*"]:
+                            source = scope[:-levels]
+                        else:
+                            continue
+                        self.module_globs.setdefault(scope, set()).add(source)
 
     def map_path(self, segs: list[str]) -> list[str]:
         for n in range(len(segs), 1, -1):
@@ -324,19 +329,22 @@ class RustRewriter:
             return module + segs, "relative"
         if head in bindings:
             return bindings[head] + segs[1:], "binding"
-        # A parent glob can expose the parent's module names, including
-        # names the parent itself imported through another parent glob.
-        pending = list(self.parent_globs.get(tuple(module), ()))
+        # A glob can expose a module directly or through another glob.
+        pending = list(self.module_globs.get(tuple(module), ()))
+        visited = {tuple(module)}
         candidates = set()
         while pending:
-            parent = pending.pop()
-            if "::".join((*parent, head)) in self.old_modules:
-                candidates.add(parent)
+            source = pending.pop()
+            if source in visited:
+                continue
+            visited.add(source)
+            if "::".join((*source, head)) in self.old_modules:
+                candidates.add(source)
             else:
-                pending.extend(self.parent_globs.get(parent, ()))
+                pending.extend(self.module_globs.get(source, ()))
         if len(candidates) == 1:
-            (parent,) = candidates
-            return [*parent, *segs], "glob"
+            (source,) = candidates
+            return [*source, *segs], "glob"
         return None
 
     def emit(self, new: list[str], style: str, new_module: list[str]) -> str:

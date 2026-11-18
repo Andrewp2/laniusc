@@ -1,5 +1,5 @@
 __exported import type_checker.retention.retention_store;
-__exported import type_checker.trait_solver.retained.route_abi;
+__exported import type_checker.trait_solver.retained_catalog.retained_route_abi;
 __exported import type_checker.retention.substitution.sb_consumer;
 // config: run, generation, requests, proof nodes, value parity, identity
 // epoch/arena/serial, flag round mod 3, unused.

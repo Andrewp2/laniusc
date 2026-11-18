@@ -339,7 +339,7 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/trait_solver/entries/54_walk_substitution_bindings"
             | "type_checker/trait_solver/entries/59_admit_assumption_proofs"
             | "type_checker/trait_solver/entries/64_publish_roots"
-            | "type_checker/trait_solver/native_layout/entries/05_materialize_proof_value"
+            | "type_checker/trait_solver/native_layout/materialize_proof_value"
     )
 }
 

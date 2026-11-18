@@ -1709,11 +1709,11 @@ fn proof_key_index(key: &str) -> Result<usize> {
 // Recipe roots are admitted with the catalog graph before this sidecar is
 // frozen. There is one load and one complete admission per program owner.
 const RECIPE_KEYS: [&str; 5] = [
-    "type_checker/trait_solver/native_layout/entries/00_initialize_recipes",
-    "type_checker/trait_solver/native_layout/entries/01_clear_recipe_map",
-    "type_checker/trait_solver/native_layout/entries/02_admit_recipes",
-    "type_checker/trait_solver/native_layout/entries/03_admit_recipe_groups",
-    "type_checker/trait_solver/native_layout/entries/04_freeze_recipes",
+    "type_checker/trait_solver/native_layout/initialize_recipes",
+    "type_checker/trait_solver/native_layout/clear_recipe_map",
+    "type_checker/trait_solver/native_layout/admit_native_layout_recipes",
+    "type_checker/trait_solver/native_layout/admit_native_layout_recipe_groups",
+    "type_checker/trait_solver/native_layout/freeze_native_layout_recipes",
 ];
 
 pub(super) struct RecipeKernels {
@@ -1757,7 +1757,7 @@ impl RecipeKernels {
 pub(super) struct NativeLayoutKernel { pass: PassData }
 impl NativeLayoutKernel {
     pub fn load(device: &wgpu::Device) -> Result<Self> {
-        let key = "type_checker/trait_solver/native_layout/entries/05_materialize_proof_value";
+        let key = "type_checker/trait_solver/native_layout/materialize_proof_value";
         Ok(Self { pass: passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS)? })
     }
     pub fn record(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder,
@@ -1774,7 +1774,7 @@ impl NativeLayoutKernel {
 pub(super) struct ImplementationApplicationKernel { pass: PassData }
 impl ImplementationApplicationKernel {
     pub fn load(device: &wgpu::Device) -> Result<Self> {
-        let key = "type_checker/trait_solver/implementation_application/entries/00_project";
+        let key = "type_checker/trait_solver/implementation_application/project_proof_implementation_application";
         Ok(Self { pass: passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(
             device, key, "main", key, &PARAMS_BLOCKS)? })
     }

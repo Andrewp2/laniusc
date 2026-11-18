@@ -48,7 +48,7 @@ public static const uint RT_USE_UNRESOLVED = 7u;
 uint call_token(uint call)
 {
     // A struct literal or path keys its environment by its first token
-    // (substitution/02_publish_call_envs.slang).
+    // (publish_canonical_call_environments.slang).
     uint kind = compact_hir_core[call].kind;
     if (kind != HIR_CALL_EXPR) return compact_hir_core[call].token_start;
     uint callee = compact_hir_payload[call].a;

@@ -5,7 +5,7 @@
 # `tools/local_memory_report.py --write-order`; a stale list costs device
 # memory, never correctness.
 type_checker/trait_solver/entries/59_admit_implementation_proofs  # 37700 B/thread
-type_checker/trait_solver/native_layout/entries/05_materialize_proof_value  # 34952 B/thread
+type_checker/trait_solver/native_layout/materialize_proof_value  # 34952 B/thread
 type_checker/trait_solver/entries/54_admit_substitutions  # 33262 B/thread
 type_checker/trait_solver/entries/53_select_work  # 32580 B/thread
 parser/tokens/kinds/classify_square_brackets  # 23825 B/thread

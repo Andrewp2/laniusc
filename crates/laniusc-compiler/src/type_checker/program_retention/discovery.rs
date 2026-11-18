@@ -40,7 +40,7 @@ const KERNELS: &[&str] = &[
 ];
 const STATUS_WORDS: usize = 32;
 /// Route header words 8-10 of a retained trait publication: status (1
-/// valid), route failures, first failure (route_abi.slang).
+/// valid), route failures, first failure (retained_route_abi.slang).
 const PUBLICATION_STATUS_WORD: u64 = 8;
 const PUBLICATION_STATUS_WORDS: usize = 3;
 /// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
@@ -60,7 +60,7 @@ const CLOSED_CHAIN_WAVES: u32 = 3;
 /// Bound of a chained wave's instances with closed predicates, unless the
 /// first wave has more (`chain_closed`).
 const CLOSED_CHAIN_SELECTED: u32 = 64;
-/// dg_wave word counting the chained closed solves that ran (09_plan).
+/// dg_wave word counting the chained closed solves that ran (plan_closed_obligation_dispatches).
 const WAVE_CLOSED_RAN: u32 = 4 + 2 * CHAIN_WAVES_MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -972,7 +972,7 @@ impl RetainedDiscovery {
     /// Each of the first `CLOSED_CHAIN_WAVES` waves records its closed
     /// solve before the host has read the wave before it
     /// (`RetainedTraitPublication::record_chained`): sized from the
-    /// capacities, gated by 09_plan, which skips it unless the wave has new
+    /// capacities, gated by plan_closed_obligation_dispatches, which skips it unless the wave has new
     /// instances with closed predicates. Its receipt check (05_publish mode
     /// 4) stops the chain with code 12 when a solve that ran did not place
     /// its batch or did not finish, and gates the wave's method and bound
@@ -1720,7 +1720,7 @@ impl RetainedDiscovery {
         Ok(data)
     }
 }
-/// Receipt word with the admitted proof node rows (route_abi.slang
+/// Receipt word with the admitted proof node rows (retained_route_abi.slang
 /// RP_H_PROOF_NODE_ROWS).
 const RECEIPT_PROOF_NODE_ROWS: usize = 24;
 /// A first method-route batch recorded into resolution's submit before the

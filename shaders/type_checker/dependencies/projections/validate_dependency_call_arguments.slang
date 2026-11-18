@@ -1,6 +1,6 @@
 import type_checker.constant_atoms_identity;
 // Validate dependency-call arguments over canonical IDs. The parameter's
-// declared type under the call's accepted environment (call_env.slang, the
+// declared type under the call's accepted environment (canonical_call_environments.slang, the
 // value environment) must be the argument's checked type, by ID. A declared
 // slice root also accepts an array of the same element (the root
 // array-to-slice borrowing conversion); nested elements and constants stay
@@ -18,9 +18,9 @@ import type_checker.checked_type_graph;
 import type_checker.concrete_type_closure;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.call_env;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_call_environments;
 import status;
 
 struct Params

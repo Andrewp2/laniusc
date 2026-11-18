@@ -252,12 +252,12 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             None
         },
         source_field_closure: if generic_param_record_passes_required(parser_feature_flags) {
-            Some(substitution_passes::FieldClosureOperations::new(
+            Some(crate::type_checker::substitution::FieldClosureOperations::new(
                 device,
                 graph,
                 resources,
                 passes,
-                &substitution_passes::SOURCE_FIELD_CLOSURE,
+                &crate::type_checker::substitution::SOURCE_FIELD_CLOSURE,
                 &token_dispatch_args,
             )?)
         } else {

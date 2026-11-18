@@ -13,7 +13,7 @@
 // Types compare by canonical ID (docs/canonical-type-ids.md). Rows written
 // during inference are interned on demand, from one site per lane. An
 // argument's declared parameter array is substituted under the call's value
-// environment (call_env.slang) and compared with the actual array as a whole:
+// environment (canonical_call_environments.slang) and compared with the actual array as a whole:
 // element and length count class.
 
 import hir_records;
@@ -26,9 +26,9 @@ import type_checker.calls.checked_call_environment;
 import type_checker.calls.checked_constant_environment;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_checked;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.call_env;
+import type_checker.substitution.checked_operand_ids;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.canonical_call_environments;
 
 struct Params
 {

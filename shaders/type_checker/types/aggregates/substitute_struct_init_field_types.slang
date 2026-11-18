@@ -3,9 +3,9 @@
 // The preceding HIR pass publishes declaration-side field refs and context
 // instance tokens. This pass is token-indexed: each field's declared type is
 // substituted under its context application over canonical IDs and realized
-// as a checked row (ct_scoped.slang).
+// as a checked row (scoped_reference_substitution.slang).
 import type_checker.mutable_checked_type_graph;
-import type_checker.substitution.ct_scoped;
+import type_checker.substitution.scoped_reference_substitution;
 import status;
 
 struct Params

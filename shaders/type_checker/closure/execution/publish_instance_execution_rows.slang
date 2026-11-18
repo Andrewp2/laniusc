@@ -5,7 +5,7 @@
 //
 // The facts an environment changes come from the instance table: the row's
 // realized expression reference, and, derived from it as the artifact
-// projection derives them (00_project, project_checked_expression_references), the aggregate
+// projection derives them (project_proof_implementation_application, project_checked_expression_references), the aggregate
 // declaration and width, the scalar machine type and the legacy value type.
 // A call keeps the template's checked record with the realized result and
 // its callee's realized receiver; its callee is the template's or a table
@@ -310,7 +310,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint aggregate_words = semantic_aggregate_word_count_by_hir[source];
     if (changed)
     {
-        // 00_project: a checked scalar, an array of scalars and a reference
+        // project_proof_implementation_application: a checked scalar, an array of scalars and a reference
         // override the legacy value type.
         if (reference.x == TYPE_REF_SCALAR) value_type = reference.y;
         else if (reference.x == TYPE_REF_INSTANCE && valid_instance(reference.y))

@@ -1,7 +1,7 @@
 // The ICtSlots adapter of kernels that bind the source parameter tables
-// through the read-only checked graph (source_slots.slang is the mutable
+// through the read-only checked graph (source_slot_adapter.slang is the mutable
 // graph's).
-import type_checker.substitution.ct_spare;
+import type_checker.substitution.substitution_scratch;
 import type_checker.checked_type_graph;
 import type_checker.constant_parameter_slots;
 import constant_value;

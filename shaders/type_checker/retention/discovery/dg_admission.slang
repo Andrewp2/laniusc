@@ -1,5 +1,5 @@
 __exported import type_checker.retention.discovery.dg_common;
-import type_checker.trait_solver.retained.route_abi;
+import type_checker.trait_solver.retained_catalog.retained_route_abi;
 
 public StructuredBuffer<uint> dg_proofs;
 // enabled, epoch lo/hi, arena lo/hi, serial, generation, reserved.

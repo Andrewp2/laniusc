@@ -8,7 +8,7 @@
 // row without a kind owns nothing (live_type_rows.slang).
 //
 // The imported field and layout pools are not cleared. Their totals and every
-// row's range are zeroed here, 07_project_imported_fields writes each slot it
+// row's range are zeroed here, project_imported_field_types writes each slot it
 // allocates from the totals, and readers reach a slot only through a row's
 // range. Slot 0 is written so that this pass stays the pools' producer in the
 // graph: declaring them as a logical write instead changed the workspace

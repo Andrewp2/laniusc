@@ -5,7 +5,7 @@
 // application is the environment, so an alias keeps its own environment.
 //
 // Each page contributes the targets of its own declarations, published as
-// (ALIAS_TARGET_PENDING, ID) until substitution/08 realizes them as checked
+// (ALIAS_TARGET_PENDING, ID) until realize_imported_alias_targets realizes them as checked
 // rows after the last page; a later normalization then follows nested alias targets without
 // depending on dependency page order. Normalization rewrites rows interned
 // here, so the early stage re-arms them (CT_COUNT_EARLY_REARM).
@@ -15,8 +15,8 @@ import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
 import type_checker.canonicalization.canonical_checked_rows;
-import type_checker.substitution.ct_subst;
-import type_checker.substitution.ct_checked;
+import type_checker.substitution.canonical_substitution;
+import type_checker.substitution.checked_operand_ids;
 import type_checker.checked_slots;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -35,7 +35,7 @@ RWStructuredBuffer<uint2> imported_type_alias_target;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
-// The tag of a target that substitution/08 has not realized yet; no reader
+// The tag of a target that realize_imported_alias_targets has not realized yet; no reader
 // runs in between, and validate_dependency_call_results leaves none behind.
 static const uint ALIAS_TARGET_PENDING = 0xfffffffeu;
 // Failure details: the leaf has no canonical ID, the signature has none,

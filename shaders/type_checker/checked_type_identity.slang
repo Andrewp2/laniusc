@@ -6,7 +6,7 @@
 // entry, a constant its canonical_atom or canonical_projection entry. The
 // operands must therefore be interned: the late canonical stage interns
 // every row and constant, and inference-time readers intern theirs on demand
-// (substitution/ct_checked.slang).
+// (checked_operand_ids.slang).
 //
 // checked_types_equal keeps the top-level admission of the walkers it
 // replaces, scoped_type_refs_equal (`scoped`) and concrete_type_refs_equal
@@ -20,7 +20,7 @@
 // - parameter slots come from the kernel's ICtSlots adapter (CheckedSlots
 //   or SourceSlots), so this module binds no graph table.
 import type_checker.canonicalization.canonical_api;
-import type_checker.substitution.ct_spare;
+import type_checker.substitution.substitution_scratch;
 
 static const uint CHECKED_IDENTITY_INVALID = 0xffffffffu;
 

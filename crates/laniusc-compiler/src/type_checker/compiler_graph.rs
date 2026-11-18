@@ -306,7 +306,7 @@ pub(super) const SEMANTIC_STRUCT_LITERAL_REFS_EARLY_PROJECT_PASS: &str =
 /// replayed match passes.
 pub(super) const BODY_SPECIALIZATION_CANONICAL_REARM_PASS: &str =
     "type_check.body_specialization.canonical_rearm";
-/// The late re-seed of `ct_row_of` (substitution/01_seed_rows), after the
+/// The late re-seed of `ct_row_of` (seed_canonical_substitution_rows), after the
 /// late canonical stage.
 pub(super) const SUBSTITUTION_LATE_SEED_PASS: &str = "type_check.substitution.late_seed";
 pub(super) const SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS: &str =
@@ -334,7 +334,7 @@ pub(super) const TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS: &str =
 /// Imported field projection over canonical IDs, outside body specialization
 /// (whose rewritten rows keep stale IDs until the late canonical stage).
 pub(super) const IMPORTED_FIELDS_KERNEL: &str =
-    "type_checker/substitution/07_project_imported_fields";
+    "type_checker/substitution/project_imported_field_types";
 pub(super) const TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS: &str =
     "type_check.type_instances.project_imported_fields";
 pub(super) const CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS: &str =
@@ -391,7 +391,7 @@ pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/call
 pub(super) const CALLS_CALL_ROOTS_COUNT_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_count";
 pub(super) const CALLS_CALL_ROOTS_ARGS_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_args";
 pub(super) const CALLS_CALL_ROOTS_LIST_PASS: &str = "type_check.substitution.call_roots.list";
-pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/04a_list_call_roots";
+pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/list_call_field_closure_roots";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_KERNEL: &str =
     "type_checker/calls/inference/list_inference_blocks";
@@ -414,7 +414,7 @@ pub(super) const LISTED_TOKEN_INFERENCE_PASSES: &[&str] = &[TYPE_INSTANCES_MEMBE
 pub(super) const LISTED_APPLICATION_INDEX_KERNEL: &str =
     "type_checker/types/instances/index_closed_applications";
 pub(super) const LISTED_IMPORTED_FIELDS_KERNEL: &str =
-    "type_checker/substitution/07b_project_listed_imported_fields";
+    "type_checker/substitution/project_listed_imported_field_types";
 pub(super) const CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS: &str =
     "type_check.calls.array_literal_elements";
 pub(super) const CALLS_MATERIALIZE_ARRAY_LITERALS_PASS: &str = "type_check.calls.array_literals";
@@ -592,7 +592,7 @@ pub(super) const BODY_SPECIALIZATION_CONSTANT_CLAIMS_KERNEL: &str =
 /// specialization pass: the body passes after it read the specialized
 /// rows' IDs.
 pub(super) const BODY_CANONICAL_AFTER_PASS: &str = "type_check.body_specialization.bindings";
-/// The body field closure (`substitution_passes::BODY_FIELD_CLOSURE`)
+/// The body field closure (`crate::type_checker::substitution::BODY_FIELD_CLOSURE`)
 /// follows this body specialization pass.
 pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
     "type_check.body_specialization.index_applications";
@@ -3189,7 +3189,7 @@ fn build_graph(
         _inference_hir_list_args as "inference_hir_list_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_token_list_args as "inference_token_list_args" in DispatchArguments [StorageIndirect] => 12;
         // The locations of the call field closure's roots
-        // (substitution/04a_list_call_roots.slang): two per HIR row at most.
+        // (list_call_field_closure_roots.slang): two per HIR row at most.
         _call_root_list as "call_root_list" in HirNodes => (2 * hir_rows).max(1) * 16;
         call_root_count as "call_root_count" in Calls => 4;
         call_root_args as "call_root_args" in DispatchArguments [StorageIndirect] => 12;
@@ -4684,7 +4684,7 @@ fn build_graph(
     // Canonical identities start ahead of the dependency pages, which intern
     // their signature types while each page is resident.
     let (substitution_records, substitution_argument_words) =
-        super::substitution_passes::substitution_canonical_extra(hir_rows, type_rows);
+        super::substitution::substitution_canonical_extra(hir_rows, type_rows);
     let (closure_records, closure_argument_words) =
         super::closure::closure_canonical_extra(hir_rows);
     let (dependency_closure_records, dependency_closure_argument_words) =
@@ -4709,7 +4709,7 @@ fn build_graph(
     )?;
     // Substitution state, cleared ahead of the dependency pages: imported
     // alias targets substitute before the early stage.
-    super::substitution_passes::register_substitution_state(
+    super::substitution::register_substitution_state(
         &mut graph,
         kernels,
         token_rows,
@@ -4937,7 +4937,7 @@ fn build_graph(
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_ALIAS_TARGETS_MATERIALIZE.name, "path_dispatch_args")?;
-    super::substitution_passes::register_alias_target_passes(
+    super::substitution::register_alias_target_passes(
         &mut graph,
         kernels,
         reflected_bindings![
@@ -5364,7 +5364,7 @@ fn build_graph(
     // the decl refs and ahead of the closed application index.
     super::canonicalization::register_canonical_early_passes(&mut graph, kernels)?;
     // Substitution starts from the interned source rows.
-    super::substitution_passes::register_substitution_seed(&mut graph, kernels)?;
+    super::substitution::register_substitution_seed(&mut graph, kernels)?;
     super::struct_literal_field_types::register_match_storage(&mut graph, token_rows)?;
     TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     if generic_param_record_passes_required(parser_feature_flags) {
@@ -5380,10 +5380,10 @@ fn build_graph(
             TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
             "token_active_dispatch_args",
         )?;
-        super::substitution_passes::register_field_closure_passes(
+        super::substitution::register_field_closure_passes(
             &mut graph,
             kernels,
-            &super::substitution_passes::SOURCE_FIELD_CLOSURE,
+            &super::substitution::SOURCE_FIELD_CLOSURE,
             ResourceDomain::Tokens,
             "token_active_dispatch_args",
             reflected_bindings![
@@ -6093,14 +6093,14 @@ fn build_graph(
         ),
     ] {
         if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
-            super::substitution_passes::register_call_env_pass(&mut graph, kernels)?;
+            super::substitution::register_call_env_pass(&mut graph, kernels)?;
         }
         if name == CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS {
             // The field closure of the return types and argument contexts.
-            super::substitution_passes::register_field_closure_passes(
+            super::substitution::register_field_closure_passes(
                 &mut graph,
                 kernels,
-                &super::substitution_passes::CALL_FIELD_CLOSURE,
+                &super::substitution::CALL_FIELD_CLOSURE,
                 ResourceDomain::HirNodes,
                 "call_root_args",
                 &application_bindings[..],
@@ -6702,13 +6702,13 @@ fn build_graph(
         if name == BODY_CANONICAL_AFTER_PASS {
             super::closure::register_inplace_rearm_pass(&mut graph, kernels, 0)?;
             super::canonicalization::register_canonical_body_passes(&mut graph, kernels)?;
-            super::substitution_passes::register_substitution_body_passes(&mut graph, kernels)?;
+            super::substitution::register_substitution_body_passes(&mut graph, kernels)?;
         }
         if name == BODY_FIELD_CLOSURE_AFTER_PASS {
-            super::substitution_passes::register_field_closure_passes(
+            super::substitution::register_field_closure_passes(
                 &mut graph,
                 kernels,
-                &super::substitution_passes::BODY_FIELD_CLOSURE,
+                &super::substitution::BODY_FIELD_CLOSURE,
                 ResourceDomain::Tokens,
                 "token_active_dispatch_args",
                 &application_bindings[..],
@@ -6770,7 +6770,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Types,
         kernels,
-        super::substitution_passes::SUBSTITUTION_SEED_KERNEL,
+        super::substitution::SUBSTITUTION_SEED_KERNEL,
         &[],
     )?;
     graph.add_pass(PassDesc {

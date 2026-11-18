@@ -317,17 +317,17 @@ const DEBUG: &[(&str, &str, &str)] = &[
         "the lowering capture tool",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained batch directory",
         "opt-in row assertions (`read_rows`)",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained rows",
         "opt-in row assertions (`read_rows`)",
     ),
     (
-        "compiler/gpu_compiler/trait_solver/dispatch/retained.rs",
+        "compiler/gpu_compiler/trait_solver/dispatch/retained_catalog/mod.rs",
         "retained routes",
         "test oracle `read_routes_for_test`",
     ),
