@@ -419,47 +419,22 @@ pub(crate) struct GpuX86SymbolFinalizer {
 #[cfg_attr(not(test), allow(dead_code))]
 impl GpuX86SymbolFinalizer {
     pub(crate) fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
+        // By shader key, so the build reuses the pipeline a daemon prepared
+        // before readiness (gpu::kernels::prepare_remaining_kernels). Loading
+        // the artifact files directly created seven pipelines in its first job.
         macro_rules! load {
-            ($label:literal, $spv:literal, $reflection:literal) => {
-                make_main_pass!(&gpu.device, $label, artifacts: ($spv, $reflection))?
+            ($label:literal, $shader:literal) => {
+                make_main_pass!(&gpu.device, $label, shader: $shader)?
             };
         }
         Ok(Self {
-            clear: load!(
-                "codegen_x86_finalize_clear",
-                "codegen/x86/finalize/clear.spv",
-                "codegen/x86/finalize/clear.reflect.json"
-            ),
-            objects: load!(
-                "codegen_x86_finalize_objects",
-                "codegen/x86/finalize/objects.spv",
-                "codegen/x86/finalize/objects.reflect.json"
-            ),
-            routes: load!(
-                "codegen_x86_finalize_routes",
-                "codegen/x86/finalize/routes.spv",
-                "codegen/x86/finalize/routes.reflect.json"
-            ),
-            classify: load!(
-                "codegen_x86_finalize_classify",
-                "codegen/x86/finalize/classify.spv",
-                "codegen/x86/finalize/classify.reflect.json"
-            ),
-            check: load!(
-                "codegen_x86_finalize_check",
-                "codegen/x86/finalize/check.spv",
-                "codegen/x86/finalize/check.reflect.json"
-            ),
-            emit_symbols: load!(
-                "codegen_x86_finalize_emit_symbols",
-                "codegen/x86/finalize/emit_symbols.spv",
-                "codegen/x86/finalize/emit_symbols.reflect.json"
-            ),
-            emit_identity: load!(
-                "codegen_x86_finalize_emit_identity",
-                "codegen/x86/finalize/emit_identity.spv",
-                "codegen/x86/finalize/emit_identity.reflect.json"
-            ),
+            clear: load!("codegen_x86_finalize_clear", "codegen/x86/finalize/clear"),
+            objects: load!("codegen_x86_finalize_objects", "codegen/x86/finalize/objects"),
+            routes: load!("codegen_x86_finalize_routes", "codegen/x86/finalize/routes"),
+            classify: load!("codegen_x86_finalize_classify", "codegen/x86/finalize/classify"),
+            check: load!("codegen_x86_finalize_check", "codegen/x86/finalize/check"),
+            emit_symbols: load!("codegen_x86_finalize_emit_symbols", "codegen/x86/finalize/emit_symbols"),
+            emit_identity: load!("codegen_x86_finalize_emit_identity", "codegen/x86/finalize/emit_identity"),
             buffers: CapacityBufferCache::default(),
             graph: Mutex::new(None),
             output: Mutex::new(OutputCapacity {

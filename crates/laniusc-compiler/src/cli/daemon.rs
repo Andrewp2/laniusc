@@ -869,7 +869,11 @@ fn parse_backend(value: String) -> Result<BackendSelection, CliError> {
 /// Whether a resident daemon for `backends` can load the kernel `key`.
 fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
     let wasm_only = key.starts_with("codegen/wasm/") || key.starts_with("codegen/lir/wasm/");
-    let x86_only = key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/");
+    // The retained build's symbol finalizer (`codegen/x86/finalize.rs`) runs
+    // for Wasm programs too, so its kernels belong to both backends.
+    let shared = key.starts_with("codegen/x86/finalize/");
+    let x86_only =
+        !shared && (key.starts_with("codegen/x86/") || key.starts_with("codegen/lir/x86/"));
     !key.starts_with("tests/") && (backends.wasm || !wasm_only) && (backends.x86 || !x86_only)
 }
 

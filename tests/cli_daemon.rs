@@ -148,7 +148,10 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
             response["ok"], true,
             "capacity-stable job failed: {response}"
         );
-        assert_eq!(response["workspace_request_kind"], "retained_capacity");
+        assert_eq!(
+            response["workspace_request_kind"], "retained_capacity",
+            "capacity-stable job created resources: {response}"
+        );
         assert_eq!(response["resources_created_during_job"]["buffers"], 0);
         assert_eq!(response["resources_created_during_job"]["bind_groups"], 0);
         assert_eq!(

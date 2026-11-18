@@ -2154,27 +2154,71 @@ impl GpuTypeChecker {
                 artifact.unit_id,
             ));
         }
-        artifact.resident_bytes = retain_resident_bytes(device, queue, &recorded._artifact_words, byte_len);
+        artifact.resident_bytes = retain_resident_bytes(
+            device,
+            queue,
+            (artifact.library_id, artifact.unit_id),
+            &recorded._artifact_words,
+            byte_len,
+        );
         Ok(artifact)
     }
 }
 
+/// The buffers of [`retain_resident_bytes`], one per device and unit
+/// identity. An entry no interface holds (the `Arc` count is 1) is free.
+type ResidentByteBuffers =
+    std::collections::HashMap<(wgpu::Device, u32, u32), std::sync::Arc<wgpu::Buffer>>;
+
+static RESIDENT_BYTE_BUFFERS: std::sync::LazyLock<std::sync::Mutex<ResidentByteBuffers>> =
+    std::sync::LazyLock::new(Default::default);
+
 /// Copies an exported interface's bytes out of the export output, which the
 /// next export reuses, into a buffer of their own. Dependents of the unit
 /// pack their dependency pages from it on the GPU (`dependency_pack`).
+///
+/// A unit exported again reuses its earlier buffer once no interface holds
+/// it, so a warm daemon job that exports the same unit creates no buffer
+/// (`cli_daemon` tests count raw wgpu buffers). Sizes are powers of two so
+/// a small edit still fits.
 fn retain_resident_bytes(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    (library_id, unit_id): (u32, u32),
     artifact_words: &LaniusBuffer<u32>,
     byte_len: usize,
 ) -> crate::compiler::ResidentInterfaceBytes {
     let copy_len = byte_len.next_multiple_of(4) as u64;
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("semantic_interface.resident_bytes"),
-        size: copy_len.max(4),
-        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+    let buffer = {
+        let mut buffers = RESIDENT_BYTE_BUFFERS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = buffers.entry((device.clone(), library_id, unit_id));
+        match entry {
+            std::collections::hash_map::Entry::Occupied(slot)
+                if std::sync::Arc::strong_count(slot.get()) == 1 && slot.get().size() >= copy_len.max(4) =>
+            {
+                slot.get().clone()
+            }
+            entry => {
+                let buffer = std::sync::Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("semantic_interface.resident_bytes"),
+                    size: copy_len.max(4).next_power_of_two(),
+                    usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+                // An entry still held keeps its buffer with its interface;
+                // the slot takes the new one.
+                match entry {
+                    std::collections::hash_map::Entry::Occupied(mut slot) => {
+                        slot.insert(buffer.clone());
+                    }
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(buffer.clone());
+                    }
+                }
+                buffer
+            }
+        }
+    };
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("semantic_interface.resident_bytes"),
     });
@@ -2191,6 +2235,15 @@ fn retain_resident_bytes(
         encoder.finish(),
     );
     crate::compiler::ResidentInterfaceBytes::new(buffer, byte_len)
+}
+
+/// Drops the copies of [`retain_resident_bytes`] that no interface holds.
+/// The daemon calls this at its idle trim.
+pub(crate) fn release_free_resident_byte_buffers() {
+    RESIDENT_BYTE_BUFFERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .retain(|_, buffer| std::sync::Arc::strong_count(buffer) > 1);
 }
 
 /// The byte length of each unit's last exported artifact, by library and

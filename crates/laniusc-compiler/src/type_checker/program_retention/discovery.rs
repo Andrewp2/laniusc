@@ -161,7 +161,9 @@ pub struct RetainedDiscovery {
     /// (instances, edges, uses, requests) they hold: a warm build with the
     /// same capacities binds the same buffers, so its bind groups are the
     /// cached ones.
-    published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
+    /// The publication's buffers for a capacity key, wrapped once so a warm
+    /// build reuses them without registering a new allocation.
+    published: Option<([u32; 4], ProjectionInputs, LaniusBuffer<u32>, LaniusBuffer<u32>, SubstitutionRequests)>,
     /// See [`Self::defer_final_status`].
     defer_final_status: bool,
     /// Dispatches recorded but not yet in the encoder: kernel, bind group
@@ -286,8 +288,12 @@ impl RetainedDiscovery {
                 self.published = Some((
                     key,
                     ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges),
-                    self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
-                    self.buffer("dg_root_readiness", 16)?,
+                    LaniusBuffer::new_labeled(
+                        (self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?, uses.max(1) as u64 * 16),
+                        uses.max(1) as usize * 4,
+                        "dg_root_routes",
+                    ),
+                    LaniusBuffer::new_labeled((self.buffer("dg_root_readiness", 16)?, 16), 4, "dg_root_readiness"),
                     SubstitutionRequests::new_with_device(&self.device, self.capacity.requests),
                 ));
             }
@@ -295,8 +301,8 @@ impl RetainedDiscovery {
                 self.published.clone().ok_or_else(|| anyhow!("discovery buffers are not allocated"))?;
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([
-                ("dg_root_routes", &root_routes),
-                ("dg_root_readiness", &root_readiness),
+                ("dg_root_routes", &root_routes.buffer),
+                ("dg_root_readiness", &root_readiness.buffer),
             ]);
             extra.extend(requests.buffers());
             let mut config = [0u32; 16];
@@ -314,9 +320,9 @@ impl RetainedDiscovery {
                 encoder.clear_buffer_counted(buffer, 0, None);
             }
             self.flush(&mut encoder);
-            encoder.clear_buffer_counted(&root_routes, 0, None);
+            encoder.clear_buffer_counted(&root_routes.buffer, 0, None);
             self.flush(&mut encoder);
-            encoder.clear_buffer_counted(&root_readiness, 0, None);
+            encoder.clear_buffer_counted(&root_readiness.buffer, 0, None);
             self.flush(&mut encoder);
             encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
@@ -726,11 +732,8 @@ impl RetainedDiscovery {
             let root_route_capacity = uses.max(1);
             return Ok(DiscoveryOutcome::Published(DiscoveryPublication {
                 inputs,
-                root_routes: LaniusBuffer::new(
-                    (root_routes, root_route_capacity as u64 * 16),
-                    root_route_capacity as usize * 4,
-                ),
-                root_readiness: LaniusBuffer::new((root_readiness, 16), 4),
+                root_routes,
+                root_readiness,
                 root_route_capacity,
                 generation,
                 report,
@@ -1345,8 +1348,13 @@ impl RetainedDiscovery {
         mut config: [u32; 16],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
-        self.ensure("dg_term_rank", terms.max(1) as u64 * 4)?;
-        self.ensure("dg_term_order", terms.max(1) as u64 * 8)?;
+        // Sized from the store's term capacity, not from `terms`: the live
+        // count differs between identical builds (GPU interning order), and
+        // a buffer grown for one build would make the next warm daemon job
+        // create its bind groups again.
+        let term_capacity = store.store.lock().unwrap().capacity.arenas[super::A_TERMS].max(terms);
+        self.ensure("dg_term_rank", term_capacity.max(1) as u64 * 4)?;
+        self.ensure("dg_term_order", term_capacity.max(1) as u64 * 8)?;
         let levels = match levels {
             Some(levels) => levels,
             None => {

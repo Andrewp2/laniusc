@@ -369,16 +369,19 @@ pub struct GpuSemanticInterfaceArtifact {
 /// part of the interface: equality ignores it, and interfaces read from
 /// disk have none.
 #[derive(Clone, Default)]
-pub(crate) struct ResidentInterfaceBytes(Option<(wgpu::Buffer, usize)>);
+pub(crate) struct ResidentInterfaceBytes(Option<(std::sync::Arc<wgpu::Buffer>, usize)>);
 
 impl ResidentInterfaceBytes {
-    pub(crate) fn new(buffer: wgpu::Buffer, byte_len: usize) -> Self {
+    /// `buffer` is shared with the pool of copies (see
+    /// `type_checker::semantic_interface::retain_resident_bytes`), which
+    /// reuses it once no interface holds it.
+    pub(crate) fn new(buffer: std::sync::Arc<wgpu::Buffer>, byte_len: usize) -> Self {
         Self(Some((buffer, byte_len)))
     }
 
     /// The buffer and the encoded byte length at its start.
     pub(crate) fn get(&self) -> Option<(&wgpu::Buffer, usize)> {
-        self.0.as_ref().map(|(buffer, byte_len)| (buffer, *byte_len))
+        self.0.as_ref().map(|(buffer, byte_len)| (&**buffer, *byte_len))
     }
 }
 

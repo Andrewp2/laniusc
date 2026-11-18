@@ -67,6 +67,7 @@ mod substitution_passes;
 mod semantic_interface;
 pub use semantic_interface::RecordedSemanticInterface;
 pub use semantic_interface::SemanticInterfaceExportFailure;
+pub(crate) use semantic_interface::release_free_resident_byte_buffers;
 /// Rows the type checker reserves for language symbols ahead of source names;
 /// capacity estimates outside the crate read it from here.
 pub const LANGUAGE_SYMBOL_COUNT: u32 = params::LANGUAGE_SYMBOL_COUNT;

@@ -21,6 +21,8 @@ struct PhysicalWorkspace {
     buffers: CapacityBufferCache,
     next_slots: HashMap<String, u64>,
     params: ParamsRing,
+    /// MAP_READ staging pages by label (see [`WorkspaceLease::readback_staging`]).
+    staging: HashMap<String, LaniusBuffer<u8>>,
     /// Row capacities of every proof-store table at the end of earlier
     /// solves: a shape hint for the next solve's first attempt, never a
     /// result. The solve still runs every wave, and a table it outgrows
@@ -213,6 +215,25 @@ impl WorkspaceLease {
         self.queue().write_buffer_counted(&ring.pages[page], offset, &bytes);
         ring.next += 1;
         Ok((ring.pages[page].clone(), u32::try_from(offset)?))
+    }
+
+    /// A readback staging page of at least `bytes` that the pool keeps
+    /// across sessions. A warm build's readbacks then reuse it instead of
+    /// creating a buffer per job. One session uses a label's page at a time.
+    pub(super) fn readback_staging(&self, label: &str, bytes: usize) -> LaniusBuffer<u8> {
+        let device = self.device().clone();
+        let mut owner = self.owner.workspace.lock().expect("evidence workspace poisoned");
+        let staging = &mut owner.as_mut().expect("live evidence workspace lease").staging;
+        let bytes = bytes.max(4).next_multiple_of(4);
+        staging
+            .entry(label.to_owned())
+            .and_modify(|page| {
+                if page.byte_size < bytes {
+                    *page = crate::gpu::buffers::readback_bytes(&device, label, bytes, bytes);
+                }
+            })
+            .or_insert_with(|| crate::gpu::buffers::readback_bytes(&device, label, bytes, bytes))
+            .clone()
     }
 
     /// The proof-store row capacities earlier solves of this pool ended

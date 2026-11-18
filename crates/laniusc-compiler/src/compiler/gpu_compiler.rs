@@ -206,7 +206,14 @@ fn initialize_pipeline_families(
                 .stack_size(PIPELINE_INIT_STACK_BYTES)
                 .spawn_scoped(scope, || {
                     let start = std::time::Instant::now();
+                    // A retained Wasm program runs the trait solver too; its
+                    // dynamic-uniform pipelines are not among the kernels the
+                    // daemon prepares by shader key.
                     let linker = wasm::GpuWasmLinker::new_with_device(gpu)
+                        .and_then(|linker| {
+                            trait_solver::prepare_solver_kernels(&gpu.device)?;
+                            Ok(linker)
+                        })
                         .map(Box::new)
                         .map_err(|err| err.to_string());
                     let lowering = Ok(Box::new(GpuLoweringWorkspaceCache::new(
@@ -648,6 +655,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             linker.release_job_buffers();
         }
         crate::gpu::passes_core::release_reflected_bind_group_caches();
+        crate::type_checker::release_free_resident_byte_buffers();
         let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         GpuResidentJobBufferTrim
     }

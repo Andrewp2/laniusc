@@ -1327,6 +1327,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             // (and the type-check workspace) again.
             self.parser.release_lexer_bindings();
             self.lexer.release_current_resident_buffers();
+            crate::gpu::passes_core::prune_bind_groups_of_released_buffers();
         }
         // For parser-only growth, retain the cache entry until the parser's
         // allocator replaces it. That allocator computes a monotonic
@@ -1345,7 +1346,12 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Ok(cache) = &self.x86_lowering {
             cache.release();
         }
-        crate::gpu::passes_core::release_reflected_bind_group_caches();
+        // The replaced workspace is already dropped here, so this drops the
+        // bind groups that bind its buffers. Bind groups of buffers that are
+        // still live stay: a daemon job can replace the workspace after an
+        // earlier stage (the dependency pack) made its bind groups, and
+        // clearing those would make the next warm job create them again.
+        crate::gpu::passes_core::prune_bind_groups_of_released_buffers();
     }
 
     #[allow(clippy::too_many_arguments)]

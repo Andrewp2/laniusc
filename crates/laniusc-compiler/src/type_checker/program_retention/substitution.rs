@@ -472,6 +472,9 @@ pub struct RetainedSubstitution {
     /// Run numbers of a chain (`begin_chain`), copied into `sb_config` in
     /// encoder order.
     chain_runs: Option<wgpu::Buffer>,
+    /// The MAP_READ page of the round counts' readback, kept across runs so
+    /// a warm daemon job creates no buffer for it.
+    read_page: Option<wgpu::Buffer>,
 }
 
 impl RetainedSubstitution {
@@ -497,6 +500,7 @@ impl RetainedSubstitution {
             hash_mask: u32::MAX,
             published: None,
             chain_runs: None,
+            read_page: None,
         })
     }
 
@@ -638,7 +642,13 @@ impl RetainedSubstitution {
             if consumed {
                 parts.extend_from_slice(extra);
             }
-            let mut counts = read_many(&self.device, &self.queue, &parts)?;
+            let mut counts = read_many_into(
+                &self.device,
+                &self.queue,
+                &mut self.read_page,
+                &parts,
+                crate::readback_label!("retained_substitution.readback"),
+            )?;
             let consumer_words = counts.split_off(words::COUNT);
             let mut consumer_final = consumed && counts[words::PHASE] == words::PHASE_FINAL;
             while counts[words::PHASE] != words::PHASE_FINAL {
@@ -1020,6 +1030,19 @@ pub(super) fn read_many_labeled(
     parts: &[(&wgpu::Buffer, usize)],
     label: crate::gpu::passes_core::ReadbackLabel,
 ) -> Result<Vec<u32>> {
+    read_many_into(device, queue, &mut None, parts, label)
+}
+
+/// `read_many_labeled` through `page`, a MAP_READ buffer the caller keeps
+/// between reads. It is created or grown (to a power of two) when the read
+/// does not fit.
+fn read_many_into(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    page: &mut Option<wgpu::Buffer>,
+    parts: &[(&wgpu::Buffer, usize)],
+    label: crate::gpu::passes_core::ReadbackLabel,
+) -> Result<Vec<u32>> {
     let sizes: Vec<u64> = parts
         .iter()
         .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
@@ -1028,12 +1051,15 @@ pub(super) fn read_many_labeled(
     if bytes == 0 {
         return Ok(Vec::new());
     }
-    let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label.as_str()),
-        size: bytes,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    if page.as_ref().is_none_or(|page| page.size() < bytes) {
+        *page = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label.as_str()),
+            size: bytes.next_power_of_two(),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        }));
+    }
+    let readback = page.as_ref().expect("readback page");
     let mut encoder = device.create_command_encoder(&Default::default());
     let mut at = 0;
     for ((buffer, _), size) in parts.iter().zip(&sizes) {
@@ -1041,7 +1067,7 @@ pub(super) fn read_many_labeled(
         at += size;
     }
     queue.submit(Some(encoder.finish()));
-    let slice = readback.slice(..);
+    let slice = readback.slice(..bytes);
     map_readback_blocking(device, &slice, label)?;
     let out = slice
         .get_mapped_range()
