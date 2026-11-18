@@ -1421,7 +1421,7 @@ impl GpuTraitSolver {
     /// publication header, where publish_finish requires it to be DONE.
     fn copy_solve_stop(&self, encoder: &mut wgpu::CommandEncoder, routes: &LaniusBuffer<u32>) -> Result<()> {
         let state = self.last_wave_state.lock().unwrap().clone().ok_or_else(|| anyhow!("the publication's solve has no wave state"))?;
-        state.copy_to(encoder, super::kernels::wave::STOP as u64 * 4, routes, RP_H_SOLVE_STOP * 4, 4);
+        state.copy_to(encoder, super::solver_kernels::wave::STOP as u64 * 4, routes, RP_H_SOLVE_STOP * 4, 4);
         Ok(())
     }
 
@@ -1506,10 +1506,10 @@ impl GpuTraitSolver {
             "retained packet belongs to another solver"
         );
         if self.batch_kernels.is_none() {
-            self.batch_kernels = Some(super::kernels::BatchKernels::load(&self.device)?);
+            self.batch_kernels = Some(super::solver_kernels::BatchKernels::load(&self.device)?);
         }
         if self.proof_kernels.is_none() {
-            self.proof_kernels = Some(super::kernels::ProofKernels::load(&self.device)?);
+            self.proof_kernels = Some(super::solver_kernels::ProofKernels::load(&self.device)?);
         }
         // A retained packet is single-use.
         packet.poisoned = true;

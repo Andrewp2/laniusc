@@ -1,9 +1,9 @@
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.native_layout.recipe_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.graph_admission;
+import type_checker.trait_solver.catalog_admission.graph_admission;
 
 // These are the parser HIR item kinds retained in SourceLocal binder identity.
 // Declaration start (binder.w) and declaration name (nominal.z) are distinct.

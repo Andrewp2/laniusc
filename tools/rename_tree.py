@@ -19,7 +19,8 @@ The tool runs `git mv` for every entry, then rewrites:
     resolves them, and `module` names of moved files;
   * `X.slang` mentions in shaders that shared the moved file's old folder;
   * bare numbered shader names and path tails in source line comments;
-  * Rust module paths in `use` trees and in code, and Rust file path strings;
+  * Rust module paths in `use` trees and in code, Rust file path strings,
+    and numbered shader basenames in Rust `.ends_with("...")` checks;
   * `mod` declarations: dangling ones are removed, new children are declared,
     and declaration-only `mod.rs` files of emptied folders are deleted.
 Emptied folders are removed. Rust files are not reformatted. The tool ends by
@@ -742,6 +743,15 @@ def partial_paths(shader_map: dict[str, str]) -> dict[str, str]:
     return out
 
 
+SHADER_SUFFIX_RE = re.compile(r'(\.ends_with\(\s*")([0-9]\w*)("\s*\))')
+
+
+def replace_shader_suffixes(text: str, basenames: dict[str, str]) -> str:
+    return SHADER_SUFFIX_RE.sub(
+        lambda m: m[1] + basenames.get(m[2], m[2]) + m[3], text
+    )
+
+
 def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: dict[str, str]) -> int:
     shader_re = reference_pattern(shader_map, r"(?!\.(?!slang\b))")
     rust_re = reference_pattern(rust_map, "")
@@ -772,6 +782,8 @@ def replace_references(shader_map, rust_map, basenames: dict[str, str], tails: d
             new = tail_re.sub(lambda m: tails[m.group(1)] + ".slang", new)
         if name_re:
             new = name_re.sub(lambda m: basenames[m.group(1)] + ".slang", new)
+        if basenames and path.suffix == ".rs":
+            new = replace_shader_suffixes(new, basenames)
         if comment_re and path.suffix in {".rs", ".slang"}:
             new = LINE_COMMENT_RE.sub(
                 lambda line: comment_re.sub(lambda m: comment_names[m.group(1)], line.group(0)),

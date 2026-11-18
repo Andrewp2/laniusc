@@ -2,7 +2,7 @@
 // counting and emission. This sink never writes. It validates the unpublished
 // reservation, including every child and reserved field, before any normalized
 // root can participate in goal equality or support a proof.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_normalization;

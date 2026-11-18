@@ -38,7 +38,7 @@
 // what breaks this, each record independent of lane order: the lowest owner
 // whose own rows are invalid, the lowest row of each table with two owners,
 // and the rows claimed in each table.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
 
 public RWStructuredBuffer<uint> trait_solver_commit_audit;

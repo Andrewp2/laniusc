@@ -1,10 +1,10 @@
 // A Work owns one complete normalization allocation. Counting, emission,
 // exact source replay, candidate validation, and publication are separated by
 // dispatch barriers. Only the committing threads publish admitted prefixes.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.batch_io;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_store_lifecycle;

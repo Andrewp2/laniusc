@@ -1,8 +1,8 @@
 // Counts the rows phase 41 will reserve for the original Works just admitted
 // (proof_demand.slang).
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_normalization_stages;
 import type_checker.trait_solver.proof_demand;

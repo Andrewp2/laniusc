@@ -5,7 +5,7 @@ import constant_value;
 // compute-pass barrier. Node/edge rows and all directory counts stay frozen
 // until the entire wave passes validation. This view never advances admission.
 // Ordinary graph, matcher and proof-child consumers remain admitted-only.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_normalization;

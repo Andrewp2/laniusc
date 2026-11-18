@@ -1,4 +1,4 @@
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.packed_graph;

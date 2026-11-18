@@ -1,11 +1,11 @@
 // A goal is one accepted predicate or concrete implementation, evaluated under
 // its exact environment. Admission precedes candidate equality; hashing is not
 // evidence. Each ordered operand has an independent graph-work budget.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.checked_graph_operations;
-import type_checker.trait_solver.graph_admission;
+import type_checker.trait_solver.catalog_admission.graph_admission;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_scratch;

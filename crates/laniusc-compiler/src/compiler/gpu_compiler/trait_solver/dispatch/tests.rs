@@ -525,7 +525,7 @@ fn gpu_catalog_admission_rejects_malformed_input_directories_and_recovers() {
     let device = &compiler.gpu.device;
     let queue = &compiler.gpu.queue;
     let workspace = compiler.trait_solver_workspace.checkout();
-    let kernels = kernels::CatalogKernels::load(device).expect("catalog kernels");
+    let kernels = crate::compiler::gpu_compiler::trait_solver::dispatch::solver_kernels::CatalogKernels::load(device).expect("catalog kernels");
     let storage = Arena::from_words(&workspace, "directory_test.catalog", &catalog.words).unwrap();
     let (mut pristine, empty_output) = catalog_bootstrap(&catalog).unwrap();
     // Physical padding permits valid unused reservation and overlapping suffix

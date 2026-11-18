@@ -1,8 +1,8 @@
 // Serial lifecycle transitions. Dispatch barriers separate initialization,
 // frozen-wave validation, admitted-prefix publication, and final acceptance.
 // A reserved row and a successful allocation are never proof authority.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 
 public void pps_store_failure(SolverStatus status)

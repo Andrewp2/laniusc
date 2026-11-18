@@ -2,8 +2,8 @@ import type_checker.trait_solver.constant_atoms;
 // Exact selected-header ownership for generic trait selection. Inherent method
 // resolution keeps its own contract; this adapter is used only by the program
 // implementation catalog and proof checker after definition row admission.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import type_checker.owned_type_constraint_contract;

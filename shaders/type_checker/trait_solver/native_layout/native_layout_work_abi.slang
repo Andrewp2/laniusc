@@ -1,4 +1,4 @@
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 // One exclusive, unpublished layout job. This arena never authorizes a method
 // call or a proof: its eventual result is bound to the exact owned term input.
 import type_checker.trait_solver.native_layout.recipe_abi;

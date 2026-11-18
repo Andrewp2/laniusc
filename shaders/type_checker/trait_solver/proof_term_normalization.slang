@@ -4,7 +4,7 @@ import type_checker.trait_solver.constant_atoms;
 // nodes, typed literal nodes, and pending count projections all acquire this
 // store's namespace. Parameter identities remain exact immutable catalog atoms.
 // A substitution crosses to ReplacementGraph exactly once.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import constant_value;

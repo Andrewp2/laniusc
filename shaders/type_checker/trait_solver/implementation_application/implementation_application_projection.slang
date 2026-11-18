@@ -1,7 +1,7 @@
 // Project a selected application from an already accepted, frozen proof arena.
 // No matching, normalization, proof construction, or proof-store writes occur.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.implementation_application.implementation_application_work_abi;

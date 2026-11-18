@@ -3,7 +3,7 @@ import constant_value;
 import type_checker.trait_solver.constant_atoms;
 // Binding-owned prefixes are private until the complete substitution wave is
 // checked. Its exact source is reconstructed from the admitted goal match.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_normalization;

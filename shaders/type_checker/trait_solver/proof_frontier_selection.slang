@@ -1,7 +1,7 @@
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
-import type_checker.trait_solver.catalog_index;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
+import type_checker.trait_solver.catalog.catalog_index;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_work;
 import type_checker.trait_solver.proof_goal_equality;

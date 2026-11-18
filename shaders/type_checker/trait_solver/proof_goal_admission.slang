@@ -1,9 +1,9 @@
 // Shared semantic admission for normalized terms and a validator's own goal.
 // Referenced terms and argument roots remain admitted-only throughout.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.batch_io;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;

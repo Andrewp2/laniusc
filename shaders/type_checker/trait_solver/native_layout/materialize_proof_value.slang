@@ -1,4 +1,4 @@
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.native_layout.native_layout_work_abi;
 import type_checker.trait_solver.native_layout.proof_value_layout_materialization;
 import thread_scratch;

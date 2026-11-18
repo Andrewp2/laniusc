@@ -1,6 +1,6 @@
 // Solver wave planning on the GPU. The host records many solver rounds per
 // submit instead of reading the row counters back after every step
-// (dispatch/kernels.rs, SolverWave). At each point where the host loop read
+// (dispatch/solver_kernels.rs, SolverWave). At each point where the host loop read
 // the counters (dispatch/mod.rs, run_solver_attempt), one thread computes the
 // row spans of the next steps from the proof-store directory and the batch
 // receipt, exactly as the host computed them from a counter readback
@@ -12,9 +12,9 @@
 // roots and the batch receipt there, and otherwise the host records more
 // rounds. So a solve that ends within its recorded rounds takes one submit
 // and one readback.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_demand;
 import type_checker.trait_solver.proof_store_lifecycle;
@@ -120,7 +120,7 @@ public static const uint PSW_POINT_LATER_ROUND = 9u;
 // first work and the finish point.
 public static const uint PSW_POINT_NO_WORK = 10u;
 
-// Spans (dispatch/kernels.rs, WaveSpan).
+// Spans (dispatch/solver_kernels.rs, WaveSpan).
 public static const uint PSW_SPAN_FIRST_WORK = 0u;
 public static const uint PSW_SPAN_FIRST_ONE = 1u;
 public static const uint PSW_SPAN_WORK = 2u;

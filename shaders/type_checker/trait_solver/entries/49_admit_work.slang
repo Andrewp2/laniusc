@@ -1,4 +1,4 @@
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_frontier_stages;
 

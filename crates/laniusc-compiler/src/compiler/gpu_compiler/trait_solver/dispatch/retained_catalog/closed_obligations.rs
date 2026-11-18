@@ -6,7 +6,7 @@ use super::*;
 /// Receipt words after the route header: a deferred solve's wave state and
 /// its batch receipt row.
 const SOLVER_WORDS: usize = wave::READ_WORDS as usize + 8;
-use crate::compiler::gpu_compiler::trait_solver::dispatch::kernels::wave;
+use crate::compiler::gpu_compiler::trait_solver::dispatch::solver_kernels::wave;
 
 /// cw_config words: the host's bound of each batch table count (+ table),
 /// which publish_closed_obligation_batch_counts checks.

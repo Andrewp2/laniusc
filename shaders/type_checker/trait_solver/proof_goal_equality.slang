@@ -1,9 +1,9 @@
 // Cross-store comparison preserves the original input graph namespace and the
 // independently admitted solver graph namespace. Hashes only reject candidates;
 // every matching root still receives structural equality with exact rigid atoms.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.goal_operations;
 import type_checker.trait_solver.proof_store_abi;

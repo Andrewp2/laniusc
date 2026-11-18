@@ -1,7 +1,7 @@
 // Owned solver storage. This is separate from appendable input Node5 IDs and
 // from the source-obligation-sized output directory. Every logical table is a
 // slice of one packet-owned RW arena; there is no allocation per table or root.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 
 public static const uint PPS_MAGIC = 0x50505332u;
 public static const uint PPS_VERSION = 4u;

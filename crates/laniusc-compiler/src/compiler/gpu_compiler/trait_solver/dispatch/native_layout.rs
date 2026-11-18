@@ -13,7 +13,7 @@ use super::super::{
         NativeLayoutWorkPlan,
     },
 };
-use super::{Arena, GpuPacket, GpuTraitSolver, kernels, one_status, words};
+use super::{Arena, GpuPacket, GpuTraitSolver, one_status, solver_kernels, words};
 use crate::{
     constant_value::CheckedConstantValue,
     gpu::{passes_core, readback::ReadbackRegion},
@@ -114,7 +114,7 @@ impl GpuTraitSolver {
             "device cannot bind native layout/proof arenas"
         );
         if self.layout_kernel.is_none() {
-            self.layout_kernel = Some(kernels::NativeLayoutKernel::load(&self.device)?);
+            self.layout_kernel = Some(solver_kernels::NativeLayoutKernel::load(&self.device)?);
             crate::gpu::device::persist_created_pipelines_for_device(&self.device);
         }
         let kernel = self.layout_kernel.as_ref().expect("loaded layout kernel");
@@ -153,7 +153,7 @@ impl GpuTraitSolver {
                 &self.storage,
                 &packet.input,
                 &packet.output,
-                kernels::ProofResources {
+                solver_kernels::ProofResources {
                     storage: &packet.proof,
                     epoch: self.catalog.epoch,
                     arena_id,

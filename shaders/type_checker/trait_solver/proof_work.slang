@@ -1,9 +1,9 @@
 // Transient frontier records never become retained proof identities. They may
 // be updated only by their owning stage; every stage transition is separated by
 // a dispatch barrier. Persistent proof readers cannot read these records.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.batch_io;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.batches.batch_io;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.scoped_type_hash;

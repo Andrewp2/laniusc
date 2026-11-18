@@ -1,7 +1,7 @@
 // Solver-only matching connects the admitted catalog pattern graph to the
 // retained proof-term graph. Catalog admission must not acquire proof resources.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_store_abi;

@@ -5,17 +5,17 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
+    Arena,
+    GpuPacket,
+    GpuTraitSolver,
+    one_status,
+    solver_kernels,
     super::{
         abi::ROOT_VISITS,
         catalog::FrozenCatalog,
         native_layout_work::NativeLayoutWorkLimits,
         packet::{ImplApplicationRequest, ProgramPacket},
     },
-    Arena,
-    GpuPacket,
-    GpuTraitSolver,
-    kernels,
-    one_status,
     words,
 };
 use crate::gpu::{passes_core, readback::ReadbackRegion};
@@ -263,7 +263,7 @@ impl GpuTraitSolver {
         let plan = ProjectionPlan::new(self.catalog.epoch, arena, serial, descriptors, limits)?;
         if self.implementation_application_kernel.is_none() {
             self.implementation_application_kernel = Some(
-                kernels::ImplementationApplicationKernel::load(&self.device)?,
+                solver_kernels::ImplementationApplicationKernel::load(&self.device)?,
             );
             crate::gpu::device::persist_created_pipelines_for_device(&self.device);
         }
@@ -293,7 +293,7 @@ impl GpuTraitSolver {
                 &self.storage,
                 &packet.input,
                 &packet.output,
-                kernels::ProofResources {
+                solver_kernels::ProofResources {
                     storage: &packet.proof,
                     epoch: self.catalog.epoch,
                     arena_id: arena,

@@ -1,8 +1,8 @@
 // One exclusive projection job. Only the successful, exact-current receipt
 // authorizes its selected rows; this arena never publishes proof-store rows.
-import type_checker.trait_solver.abi;
-import type_checker.trait_solver.catalog_io;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.solver_abi;
+import type_checker.trait_solver.catalog.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 
 public static const uint IAP_MAGIC = 0x49415031u;

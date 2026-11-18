@@ -2,7 +2,7 @@ import type_checker.trait_solver.constant_atoms;
 // Reverse ownership checks cover every pending Binding and ProofEdge, including
 // rows unreachable from successful roots. Owning substitutions/proofs receive
 // their complete semantic validators in the same frozen wave before commit.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;

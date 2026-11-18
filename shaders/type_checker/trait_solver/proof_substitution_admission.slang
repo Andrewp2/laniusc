@@ -2,9 +2,9 @@
 // their declared projection-node spans may be pending. The conclusion goal
 // and exact request leaves remain admitted-only. This validator reads frozen rows and publishes no
 // count, proof, or substitution authority on its own.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.batch_io;
+import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_normalization;

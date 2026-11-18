@@ -1,7 +1,7 @@
 // Static source capabilities keep original-call and prerequisite normalization
 // in separate shader entry call graphs. The common stage has no runtime branch
 // into both complete structural walkers.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_normalization;
 import type_checker.trait_solver.proof_normalization_admission;

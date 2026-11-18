@@ -1,17 +1,17 @@
 // Validate a completed implementation-application node independently of frontier
 // search. Child proofs must already be admitted and precede the parent. Work
 // goals, unresolved matches and frontier IDs never enter this retained format.
-import type_checker.trait_solver.abi;
+import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.batch_io;
-import type_checker.trait_solver.catalog_io;
+import type_checker.trait_solver.batches.batch_io;
+import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_term_normalization;
 import type_checker.trait_solver.proof_goal_admission;
 import type_checker.trait_solver.proof_goal_equality;
-import type_checker.trait_solver.replay_validation;
+import type_checker.trait_solver.batches.replay_validation;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.implementation_goal_matching;
 import type_checker.owned_type_constraint_contract;
