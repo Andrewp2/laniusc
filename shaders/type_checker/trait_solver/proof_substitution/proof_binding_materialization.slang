@@ -9,7 +9,7 @@ import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.normalization.proof_term_normalization;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_frontier.proof_goal_admission;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_contract;
 
 public bool pps_binding_node_span(uint4 allocation, bool pending)
 {

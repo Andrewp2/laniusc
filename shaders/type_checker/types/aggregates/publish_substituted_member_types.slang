@@ -1,7 +1,7 @@
 // Publish the visible type of each already-substituted member field.
 // The chain pass applies receiver environments exactly once. Symbolic leaves
 // that remain belong to the enclosing generic body and await specialization.
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import shared.buffers.status;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

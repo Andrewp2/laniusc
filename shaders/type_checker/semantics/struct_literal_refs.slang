@@ -6,7 +6,7 @@
 
 import shared.buffers.gpu_index;
 import shared.syntax.hir_records;
-import type_checker.shared_bindings;
+import type_checker.semantics.shared_bindings;
 import shared.semantics.external_type_identity;
 
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
@@ -39,7 +39,7 @@ bool valid_instance(uint instance)
     return instance < capacity;
 }
 
-#include "../checked_record_constructor_reference.slang"
+#include "../checked_types/checked_record_constructor_reference.slang"
 
 // One dense HIR row of the struct-literal reference projection.
 public void struct_literal_ref_lane(uint3 dtid)

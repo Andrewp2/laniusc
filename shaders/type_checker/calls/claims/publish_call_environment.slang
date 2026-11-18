@@ -6,9 +6,9 @@
 // each (callee, slot) chain group validates the group and stores the outcome
 // in its own row, which is the row every reader reaches first.
 import type_checker.calls.claim_lookup;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 
 StructuredBuffer<uint> call_const_claim_count_out;
 StructuredBuffer<uint> call_const_claim_callee;

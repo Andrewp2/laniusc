@@ -1,11 +1,11 @@
 // Publish stable full expression references before dependent generic matching.
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
-import type_checker.checked_index_reference;
-import type_checker.checked_scoped_types;
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_hash;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_scoped_types;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_hash;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -24,7 +24,7 @@ StructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> call_inference_result_tag;
 RWStructuredBuffer<uint> call_inference_result_payload;
 RWStructuredBuffer<uint> call_inference_state;
-#include "../../inference_expression_reference.slang"
+#include "../../expression_contexts/inference_expression_reference.slang"
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)

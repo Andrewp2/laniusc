@@ -1,6 +1,6 @@
 import shared.semantics.primitive_types;
 import shared.semantics.constant_value;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Complete atom/node/edge/root row admission precedes this walk; lexical
 // owners/parameters are admitted frozen catalog rows. This preflight proves
 // the remaining contextual graph properties before shared hash/equality.
@@ -11,7 +11,7 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.packed_graph;
 import shared.buffers.thread_scratch;
-import type_checker.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
 
 static const uint TS_GRAPH_CONSTANT = 0x80000000u;
 

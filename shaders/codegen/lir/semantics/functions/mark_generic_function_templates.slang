@@ -1,7 +1,7 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
-import type_checker.concrete_type_closure;
+import type_checker.concrete_types.concrete_type_closure;
 import shared.semantics.checked_semantic_artifact;
 import codegen.lir.lowering_ir;
 

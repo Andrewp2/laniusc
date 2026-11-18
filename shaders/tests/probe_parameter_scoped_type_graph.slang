@@ -1,8 +1,8 @@
 import shared.semantics.primitive_types;
 // Direct probe of the production walkers. This adapter intentionally implements
 // only the identity-aware capability, without the legacy slot/environment API.
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_hash;
 
 struct Params
 {

@@ -7013,7 +7013,7 @@ fn build_graph(
 }
 
 /// Checked outputs that lowering binds read-write. Their canonical shader
-/// declaration (shaders/type_checker/constant_atoms.slang) is a
+/// declaration (shaders/type_checker/constants/constant_atoms.slang) is a
 /// RWStructuredBuffer, so every reader binds them writable.
 pub(crate) const OUTPUTS_LOWERING_BINDS_WRITABLE: &[&str] =
     &["checked_constant_atoms", "checked_constant_projections"];

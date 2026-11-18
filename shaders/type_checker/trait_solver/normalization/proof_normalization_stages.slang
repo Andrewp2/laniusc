@@ -15,8 +15,8 @@ import type_checker.trait_solver.normalization.proof_term_candidate;
 import type_checker.trait_solver.normalization.proof_normalization_sources;
 import type_checker.trait_solver.proof_frontier.proof_goal_admission;
 import type_checker.trait_solver.proof_commit_audit;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_scratch;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.trait_solver.scoped_type_scratch;
 
 // Zero-sized allocation spans have canonical first=0. Nonempty spans must be
 // wholly in this wave's reserved suffix, never in an immutable admitted prefix.

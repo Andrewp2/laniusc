@@ -3,10 +3,10 @@ import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.owned_implementation_graph;
-import type_checker.owned_type_constraint_contract;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_scratch;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
 
 public uint ts_atom_hash(uint row)
 {

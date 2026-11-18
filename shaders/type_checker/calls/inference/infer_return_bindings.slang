@@ -13,9 +13,9 @@ import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.semantics.primitive_types;
 import shared.semantics.dependency_interface;
-import type_checker.checked_type_graph;
-import type_checker.checked_type_identity;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_type_identity;
+import type_checker.checked_types.checked_slots;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 // Shares the candidate keys' decl_id_by_name_token binding.

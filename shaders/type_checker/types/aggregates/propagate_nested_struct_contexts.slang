@@ -8,7 +8,7 @@ import shared.semantics.semantic_interface_layout;
 // whose value is the child. A field type is substituted under the parent's
 // application over canonical IDs (ct_scoped_reference).
 import shared.syntax.hir_records;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.substitution.scoped_reference_substitution;
 import type_checker.types.aggregates.struct_field_lookup;
 import shared.buffers.status;

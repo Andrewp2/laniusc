@@ -3,13 +3,13 @@
 // annotation and an inner operand cannot race to relabel the same literal.
 #include "../array_literal_context_inputs.slang"
 import shared.semantics.primitive_types;
-import type_checker.owned_literal_context;
-import type_checker.literal_symbolic_context;
+import type_checker.expression_rules.owned_literal_context;
+import type_checker.expression_rules.literal_symbolic_context;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.checked_operand_ids;
 import type_checker.substitution.canonical_substitution;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_slots;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;

@@ -1,11 +1,11 @@
-import type_checker.constant_atoms;
+import type_checker.constants.constant_atoms;
 // Dense-HIR method contract lookup and compact signature comparison helpers.
 // Consumers operate on method HIR ids and compact parameter rows exclusively.
 
 import shared.syntax.hir_records;
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_stackless;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.predicates.scoped_type_stackless;
 import shared.search.compact_method_lookup;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.predicates.trait_reference;

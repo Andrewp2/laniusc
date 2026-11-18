@@ -9,9 +9,9 @@ import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.buffers.gpu_index;
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.calls.contextual_call_environment;
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_mutable_rows;
@@ -83,7 +83,7 @@ static const uint HIR_ITEM_KIND_TRAIT = 10u;
 #include "../../methods/local_required_member.slang"
 uint checked_type_capacity() { return mutable_type_capacity(); }
 #define CANONICAL_FIELD_EXPECTATION
-#include "../../result_expression_context.slang"
+#include "../../expression_contexts/result_expression_context.slang"
 
 uint callee_token(uint call)
 {

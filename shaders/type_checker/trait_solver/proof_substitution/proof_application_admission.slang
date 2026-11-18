@@ -14,10 +14,10 @@ import type_checker.trait_solver.normalization.proof_goal_equality;
 import type_checker.trait_solver.batches.replay_validation;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.proof_frontier.implementation_goal_matching;
-import type_checker.owned_type_constraint_contract;
-import type_checker.owned_type_constraint_engine;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_hash;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_hash;
 
 // The roots of a prerequisite predicate to recheck against the finished head
 // state; ts_match_roots then unifies them without inferring bindings.

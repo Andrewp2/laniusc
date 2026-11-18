@@ -5,7 +5,7 @@ import shared.semantics.semantic_interface_layout;
 // closed; this does not specialize a generic function body.
 import shared.semantics.dependency_interface;
 import shared.syntax.hir_records;
-import type_checker.local_struct_layout;
+import type_checker.concrete_types.local_struct_layout;
 import shared.native_interfaces.native_value_layout;
 
 public interface IInstanceNativeWords { static uint words(uint instance); }

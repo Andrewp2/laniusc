@@ -6,7 +6,7 @@
 // the instance row last pushed from it, 0). One lane per HIR row and per
 // argument row; call_root_count and call_root_args were cleared before.
 import shared.syntax.hir_records;
-import type_checker.argument_context;
+import type_checker.expression_contexts.argument_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

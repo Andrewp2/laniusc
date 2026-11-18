@@ -1,8 +1,8 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 // Published claim provenance authorizes an evidence merge, never a change to
 // ordinary typed constant identity. Source refs keep their original fit graph.
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 
 public bool checked_constant_claim_descriptor(uint2 reference, uint identity_mode,
     uint tokens, out ConstantReferenceDescriptor descriptor, out uint scalar)

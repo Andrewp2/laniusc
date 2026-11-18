@@ -6,13 +6,13 @@ import type_checker.trait_solver.native_layout.recipe_abi;
 import type_checker.trait_solver.native_layout.native_layout_work_abi;
 import type_checker.trait_solver.normalization.proof_term_normalization;
 import type_checker.trait_solver.proof_term_graph;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_scratch;
-import type_checker.concrete_value_layout_scratch;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
+import type_checker.trait_solver.native_layout.concrete_value_layout_scratch;
 import shared.buffers.thread_scratch;
 import shared.native_interfaces.native_value_layout;
 import shared.semantics.primitive_types;
-import type_checker.concrete_value_layout;
+import type_checker.concrete_types.concrete_value_layout;
 import type_checker.trait_solver.native_layout.native_layout_work_graph;
 
 // Expands nominal `node` by its recipe: its groups, then each group's roots

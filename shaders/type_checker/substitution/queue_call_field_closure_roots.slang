@@ -4,7 +4,7 @@
 // rounds, once per resident page, over the entries list_call_field_closure_roots listed.
 import shared.buffers.status;
 import shared.semantics.dependency_interface;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_mutable_rows;
 import type_checker.substitution.checked_operand_ids;

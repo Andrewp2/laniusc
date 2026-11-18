@@ -11,13 +11,13 @@
 // here, so the early stage re-arms them (CT_COUNT_EARLY_REARM).
 import shared.semantics.dependency_interface;
 import shared.buffers.status;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
 import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.canonical_substitution;
 import type_checker.substitution.checked_operand_ids;
-import type_checker.checked_slots;
+import type_checker.checked_types.checked_slots;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

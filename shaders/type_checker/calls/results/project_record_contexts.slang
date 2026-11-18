@@ -6,17 +6,17 @@
 // accepts an array value (the root coercion, per field).
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
-import type_checker.mutable_checked_type_graph;
-import type_checker.constant_atoms_identity;
-import type_checker.concrete_type_closure;
-import type_checker.checked_index_reference;
-import type_checker.argument_context;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.constants.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_closure;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.expression_contexts.argument_context;
 import type_checker.calls.contextual_call_environment;
 import type_checker.types.aggregates.struct_field_lookup;
 import shared.semantics.semantic_interface_layout;
 import shared.semantics.dependency_interface;
 import shared.buffers.status;
-import type_checker.local_struct_layout;
+import type_checker.concrete_types.local_struct_layout;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_mutable_rows;
@@ -119,9 +119,9 @@ RWStructuredBuffer<uint> status;
 
 #define CANONICAL_FIELD_EXPECTATION
 #define INFERENCE_INDEX_GRAPH MutableCheckedTypeGraph
-#include "../../checked_record_constructor_reference.slang"
-#include "../../result_expression_context.slang"
-#include "../../inference_expression_reference.slang"
+#include "../../checked_types/checked_record_constructor_reference.slang"
+#include "../../expression_contexts/result_expression_context.slang"
+#include "../../expression_contexts/inference_expression_reference.slang"
 
 uint record_field_type_token(uint node)
 {

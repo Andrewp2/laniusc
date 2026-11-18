@@ -1,4 +1,4 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 import shared.native_interfaces.native_value_layout;
 // Checks every enum variant against the widths compute_semantic_aggregate_widths.slang
 // published. One lane recomputes one variant's tagged-union width from the
@@ -10,7 +10,7 @@ import shared.native_interfaces.native_value_layout;
 import shared.syntax.hir_records;
 import codegen.lir.lowering_ir;
 import shared.buffers.gpu_index;
-import type_checker.concrete_type_closure;
+import type_checker.concrete_types.concrete_type_closure;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
 

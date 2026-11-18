@@ -7,8 +7,8 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.normalization.proof_term_normalization;
-import type_checker.owned_type_constraint_contract;
-import type_checker.scoped_type_equality;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.scoped_types.scoped_type_equality;
 
 // Row decoders read their row once and combine pure field tests without
 // short-circuit branches (a failed read leaves an all-INVALID row).

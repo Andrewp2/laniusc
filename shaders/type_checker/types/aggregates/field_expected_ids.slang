@@ -5,7 +5,7 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_mutable_rows;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.substitution.substitution_scratch;
 import type_checker.substitution.checked_operand_ids;
 import type_checker.substitution.canonical_substitution;

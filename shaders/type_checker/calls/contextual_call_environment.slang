@@ -1,5 +1,5 @@
-import type_checker.scoped_type_equality;
-import type_checker.constant_publication;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.constants.constant_publication;
 // Accepted result constraints, owned by one call HIR row. Token aliases only
 // select that owner; ordered parameter references remain in caller scope.
 public RWStructuredBuffer<uint> call_context_owner_by_token;

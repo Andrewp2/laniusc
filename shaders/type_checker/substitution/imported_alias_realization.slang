@@ -5,7 +5,7 @@
 // (08); the final dispatch (finalize_imported_alias_realization) reports it instead. Included by both
 // entry files: the shader build compiles only files with an entry point.
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_substitution;
 import type_checker.substitution.canonical_checked_type_rows;

@@ -2,7 +2,7 @@ import shared.numbers.integer_words;
 import shared.semantics.primitive_types;
 import shared.native_interfaces.native_value_layout;
 import shared.semantics.checked_semantic_artifact;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import shared.syntax.hir_records;
 import codegen.lir.semantics.instructions.semantic_instruction_recipes;
 import codegen.lir.semantics.instructions.match_recipe;

@@ -1,7 +1,7 @@
 // Fixture storage only. Every decision under test is made by a production
 // canonical/scoped walker; malformed bindings deliberately reach that boundary.
 import shared.semantics.primitive_types;
-import type_checker.scoped_type_equality;
+import type_checker.scoped_types.scoped_type_equality;
 import type_checker.dependencies.canonical_field_types;
 
 public struct BoundaryParams

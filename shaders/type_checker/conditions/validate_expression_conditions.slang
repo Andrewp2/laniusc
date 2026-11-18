@@ -8,11 +8,11 @@ import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.buffers.gpu_index;
 import shared.buffers.status;
-import type_checker.checked_index_reference;
-import type_checker.argument_context;
-import type_checker.float_literal_selection;
-import type_checker.owned_literal_context;
-import type_checker.operator_operand_rules;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.expression_contexts.argument_context;
+import type_checker.expression_rules.float_literal_selection;
+import type_checker.expression_rules.owned_literal_context;
+import type_checker.expression_rules.operator_operand_rules;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 

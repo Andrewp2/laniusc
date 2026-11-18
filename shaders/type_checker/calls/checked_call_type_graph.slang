@@ -1,8 +1,8 @@
-import type_checker.constant_atoms;
+import type_checker.constants.constant_atoms;
 import type_checker.calls.checked_constant_environment;
 // Complete checked call types for validators that only read accepted facts.
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_equality;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.scoped_types.scoped_type_equality;
 import type_checker.calls.checked_call_environment;
 import type_checker.calls.contextual_call_environment;
 

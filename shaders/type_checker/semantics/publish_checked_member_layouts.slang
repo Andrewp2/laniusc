@@ -7,10 +7,10 @@ import shared.semantics.semantic_interface_layout;
 import shared.syntax.hir_records;
 import shared.buffers.gpu_index;
 import type_checker.dependencies.record_fields;
-import type_checker.checked_canonical;
-import type_checker.checked_type_graph;
-import type_checker.local_struct_layout;
-import type_checker.native_nominal_identity;
+import type_checker.checked_types.checked_canonical;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.local_struct_layout;
+import type_checker.concrete_types.native_nominal_identity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

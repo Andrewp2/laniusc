@@ -8,7 +8,7 @@
 import shared.buffers.thread_scratch;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_contract;
 
 static const uint PPS_HANDOFF_CONSUMED = 0u;
 

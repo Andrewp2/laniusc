@@ -1,6 +1,6 @@
 // Candidate-key row reads from the read-only checked type graph.
 import type_checker.canonicalization.canonical_candidates;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 
 public struct CtCheckedRows : ICtRowReader
 {

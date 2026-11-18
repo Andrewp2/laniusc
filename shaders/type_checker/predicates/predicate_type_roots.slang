@@ -1,12 +1,12 @@
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 // Included by predicate collectors and validators. Syntax supplies ordered HIR
 // roots; checked references supply type identity. Diagnostic token caches are
 // never used as semantic keys.
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_stackless;
-import type_checker.checked_type_graph;
-import type_checker.concrete_type_closure;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.predicates.scoped_type_stackless;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.concrete_type_closure;
 
 uint predicate_argument_node(uint root, uint ordinal)
 {

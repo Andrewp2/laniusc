@@ -1,7 +1,7 @@
-import type_checker.constant_parameter_slots;
+import type_checker.constants.constant_parameter_slots;
 import shared.semantics.semantic_interface_layout;
 import shared.semantics.constant_value;
-import type_checker.constant_atoms;
+import type_checker.constants.constant_atoms;
 import type_checker.interface.scalar_leaves;
 // Scatter declaration generic parameters before ordinary members.
 import shared.syntax.hir_records;

@@ -1,9 +1,9 @@
 // Checked references own exported shape. HIR identifies declaration roots only.
 import shared.syntax.hir_records;
 import shared.buffers.atomics;
-import type_checker.checked_type_graph;
-import type_checker.constant_parameter_slots;
-import type_checker.constant_atoms;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.constants.constant_atoms;
 import shared.semantics.constant_value;
 import shared.semantics.primitive_types;
 import type_checker.types.parameters.generic_param_lookup;

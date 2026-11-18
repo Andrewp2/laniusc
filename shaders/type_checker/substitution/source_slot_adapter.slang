@@ -1,8 +1,8 @@
 // The ICtSlots adapter of kernels that bind the source parameter tables
 // through the mutable checked graph.
 import type_checker.substitution.substitution_scratch;
-import type_checker.mutable_checked_type_graph;
-import type_checker.constant_parameter_slots;
+import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.constants.constant_parameter_slots;
 import shared.semantics.constant_value;
 
 public struct SourceSlots : ICtSlots

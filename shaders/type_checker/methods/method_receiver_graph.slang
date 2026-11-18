@@ -1,6 +1,6 @@
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
-import type_checker.scoped_type_equality;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.scoped_types.scoped_type_equality;
 // Read-only adapter over the including pass's checked metadata views. No
 // substitution is performed here: method applicability infers a fresh local
 // environment, and accepted call inference owns its later publication.

@@ -6,9 +6,9 @@ import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_scratch;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
 
 public static const uint PPS_WORK_REQUEST = 0u;
 public static const uint PPS_WORK_NORMALIZED = 1u;

@@ -11,7 +11,7 @@
 // rounds do not intern the millions of empty slots of the capacity-sized
 // tables.
 import type_checker.canonicalization.canonical_api;
-import type_checker.constant_atoms;
+import type_checker.constants.constant_atoms;
 
 public StructuredBuffer<uint> type_instance_kind;
 // The allocation counters that bound a later sweep (canonical_live_rearm).

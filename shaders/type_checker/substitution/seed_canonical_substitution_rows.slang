@@ -3,7 +3,7 @@
 // per job, after the early canonical stage.
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.canonical_checked_type_rows;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

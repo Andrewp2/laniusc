@@ -1,9 +1,9 @@
-import type_checker.checked_canonical;
+import type_checker.checked_types.checked_canonical;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_api;
-import type_checker.checked_type_graph;
-import type_checker.checked_index_reference;
-import type_checker.checked_pattern_path;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_pattern_path;
 import shared.syntax.hir_expr_semantics;
 import shared.syntax.hir_records;
 import shared.semantics.primitive_types;
@@ -186,8 +186,8 @@ bool instance_arg_ref(uint instance_i, uint slot, out uint tag, out uint payload
 // caller, or INVALID.
 static uint inference_deferred_closure = 0xffffffffu;
 #define INFERENCE_DEFERRED_CLOSURE 1
-#include "../inference_expression_reference.slang"
-#include "../checked_referent.slang"
+#include "../expression_contexts/inference_expression_reference.slang"
+#include "../checked_types/checked_referent.slang"
 
 // The checked reference of match `match_node`'s scrutinee, through
 // references.

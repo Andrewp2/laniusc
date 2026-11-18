@@ -11,9 +11,9 @@
 // published (type_const_param_value_by_token), the same table the host reads
 // for a bare parameter, so a fold is per replay entry wherever that table is.
 import shared.semantics.constant_value;
-import type_checker.constant_atoms;
-import type_checker.constant_atoms_identity;
-import type_checker.constant_publication;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_atoms_identity;
+import type_checker.constants.constant_publication;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

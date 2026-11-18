@@ -5,8 +5,8 @@ import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.owned_implementation_graph;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.proof_store_abi;
-import type_checker.owned_type_constraint_contract;
-import type_checker.owned_type_constraint_engine;
+import type_checker.trait_solver.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
 
 // Goal8: trait atom, subject tag/payload, argument Root2 span(first,count),
 // structural hash, closed flag, reserved. Context belongs to Work/Proof, not to

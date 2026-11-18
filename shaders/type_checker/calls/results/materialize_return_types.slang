@@ -10,7 +10,7 @@ import shared.semantics.dependency_interface;
 import shared.semantics.dependency_method_index;
 import shared.semantics.semantic_interface_layout;
 import shared.syntax.hir_match_patterns;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_call_environment;
 import type_checker.calls.checked_constant_environment;

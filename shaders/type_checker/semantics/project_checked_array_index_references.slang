@@ -1,6 +1,6 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
-import type_checker.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.constants.constant_atoms_identity;
 // Project checked array/slice references into dense semantic HIR.
 //
 // The earlier index-result pass establishes that the index expression has a
@@ -10,15 +10,15 @@ import type_checker.constant_atoms_identity;
 
 import shared.syntax.hir_records;
 import shared.buffers.status;
-import type_checker.checked_array_counts;
-import type_checker.checked_index_reference;
-import type_checker.checked_canonical;
-import type_checker.checked_type_graph;
-import type_checker.native_nominal_identity;
+import type_checker.checked_types.checked_array_counts;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_canonical;
+import type_checker.checked_types.checked_type_graph;
+import type_checker.concrete_types.native_nominal_identity;
 import shared.buffers.gpu_index;
 import shared.semantics.checked_semantic_artifact;
-import type_checker.argument_context;
-import type_checker.array_extent_literal;
+import type_checker.expression_contexts.argument_context;
+import type_checker.expression_rules.array_extent_literal;
 import shared.syntax.hir_expr_semantics;
 
 bool valid_instance(uint instance)
@@ -250,7 +250,7 @@ void publish_array_literal_element_decl(uint node)
 }
 
 #define DECLARED_CONTEXT_CANONICAL LateIds
-#include "../array_literal_expected.slang"
+#include "../expression_contexts/array_literal_expected.slang"
 
 uint contextual_array_instance(uint node)
 {

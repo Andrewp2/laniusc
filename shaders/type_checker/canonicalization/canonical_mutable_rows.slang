@@ -1,7 +1,7 @@
 // Candidate-key row reads from the mutable checked type graph, for kernels
 // that rewrite rows and intern them on demand (through ct_intern_spare).
 import type_checker.canonicalization.canonical_candidates;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 
 public struct CtMutableRows : ICtRowReader
 {

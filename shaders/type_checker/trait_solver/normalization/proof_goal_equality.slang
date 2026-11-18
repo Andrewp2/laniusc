@@ -8,8 +8,8 @@ import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.goal_operations;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
-import type_checker.scoped_type_equality;
-import type_checker.scoped_type_scratch;
+import type_checker.scoped_types.scoped_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
 
 // A proof used by replay must belong to a prior fully accepted submission. An
 // admitted row in the current unfinished frontier does not authorize replay.

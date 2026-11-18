@@ -2,9 +2,9 @@
 // of an applying owner passes the checked constant descriptor. Environment
 // binding readers load this admission instead of inspecting the reference at
 // every substitution step; a present but inadmissible binding still rejects.
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
-import type_checker.constant_atoms_identity;
+import type_checker.constants.constant_atoms_identity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

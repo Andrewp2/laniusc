@@ -1,6 +1,6 @@
-import type_checker.constant_atoms;
-import type_checker.constant_parameter_slots;
-import type_checker.concrete_type_equality;
+import type_checker.constants.constant_atoms;
+import type_checker.constants.constant_parameter_slots;
+import type_checker.concrete_types.concrete_type_equality;
 // HIR predicate record collection shared by generic bounds, where clauses, and
 // trait/inherent impl headers.
 //
@@ -31,9 +31,9 @@ import type_checker.predicates.trait_reference;
     (PREDICATE_BOUND_DECL_RESOLUTION || PREDICATE_BOUND_ARGUMENT_VALIDATION)
 
 #if PREDICATE_BOUND_ARGUMENT_VALIDATION || PREDICATE_COLLECT_IMPL_RECORDS
-import type_checker.checked_type_graph;
-import type_checker.scoped_type_stackless;
-#include "../scoped_type_path.slang"
+import type_checker.checked_types.checked_type_graph;
+import type_checker.predicates.scoped_type_stackless;
+#include "scoped_type_path.slang"
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 #endif
 

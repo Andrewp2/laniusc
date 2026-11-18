@@ -8,8 +8,8 @@ import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.normalization.proof_term_normalization;
-import type_checker.scoped_type_hash;
-import type_checker.scoped_type_scratch;
+import type_checker.scoped_types.scoped_type_hash;
+import type_checker.trait_solver.scoped_type_scratch;
 
 public SolverStatus pps_admit_term(uint2 reference, uint owner, uint domain,
     bool require_closed, out bool closed)

@@ -4,11 +4,11 @@ import shared.semantics.primitive_types;
 import shared.syntax.hir_records;
 import shared.syntax.hir_expr_semantics;
 import shared.buffers.status;
-import type_checker.checked_index_reference;
-import type_checker.checked_canonical;
+import type_checker.checked_types.checked_index_reference;
+import type_checker.checked_types.checked_canonical;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_api;
-import type_checker.checked_type_graph;
+import type_checker.checked_types.checked_type_graph;
 import type_checker.calls.inference_activity;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -56,7 +56,7 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 // caller, or INVALID.
 static uint inference_deferred_closure = 0xffffffffu;
 #define INFERENCE_DEFERRED_CLOSURE 1
-#include "../inference_expression_reference.slang"
+#include "../expression_contexts/inference_expression_reference.slang"
 uint enum_variant_type_for_node(uint node)
 {
     if (!valid_hir(node))

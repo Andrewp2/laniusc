@@ -1,4 +1,4 @@
-import type_checker.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
 // Validate complete constant references only after expression inference closes.
 

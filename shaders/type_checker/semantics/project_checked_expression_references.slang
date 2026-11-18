@@ -78,7 +78,7 @@ uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u])
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
-#include "../named_expression_reference.slang"
+#include "../expression_contexts/named_expression_reference.slang"
 void name_token_ref(uint token, out uint tag, out uint payload)
 {
     named_expression_reference(token, tag, payload);

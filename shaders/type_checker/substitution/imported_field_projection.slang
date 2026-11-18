@@ -12,7 +12,7 @@ import shared.semantics.semantic_interface_layout;
 import shared.semantics.dependency_interface;
 import shared.buffers.atomics;
 import shared.buffers.status;
-import type_checker.mutable_checked_type_graph;
+import type_checker.checked_types.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
 import type_checker.canonicalization.canonical_mutable_rows;

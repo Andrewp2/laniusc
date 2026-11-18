@@ -2,8 +2,8 @@ import type_checker.dependencies.constant_view;
 #include "../../types/instances/materialize_application_inputs.slang"
 StructuredBuffer<uint> compact_type_alias_target;
 StructuredBuffer<uint2> imported_type_alias_target;
-import type_checker.constant_materialization;
-import type_checker.checked_array_counts;
+import type_checker.modules.paths.constant_materialization;
+import type_checker.checked_types.checked_array_counts;
 #include "../../types/instances/allocate_application.slang"
 
 // Source rows and declaration targets are immutable for this dispatch. Each

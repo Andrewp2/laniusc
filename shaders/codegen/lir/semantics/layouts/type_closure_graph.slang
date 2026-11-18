@@ -1,9 +1,9 @@
 // Included after the native artifact buffers and params are declared. Closure
 // needs checked structure only; declaration identity and native width are not
 // inputs to deciding whether a type still contains symbolic parameters.
-import type_checker.instance_arguments;
-import type_checker.concrete_type_equality;
-import type_checker.concrete_type_closure;
+import type_checker.concrete_types.instance_arguments;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.concrete_types.concrete_type_closure;
 
 struct NativeTypeStructureGraph : ITypeStructureGraph
 {

@@ -1,8 +1,8 @@
 import shared.semantics.primitive_types;
-import type_checker.concrete_type_equality;
-import type_checker.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.constants.constant_atoms_identity;
 import shared.syntax.hir_records;
-import type_checker.checked_array_counts;
+import type_checker.checked_types.checked_array_counts;
 import shared.semantics.checked_semantic_artifact;
 import codegen.lir.semantics.instructions.semantic_instruction_recipes;
 import codegen.lir.lowering_ir;

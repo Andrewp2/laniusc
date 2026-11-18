@@ -2,7 +2,7 @@ import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.goal_operations;
-import type_checker.scoped_type_hash;
+import type_checker.scoped_types.scoped_type_hash;
 
 uint ts_assumption_bucket_hash(uint context, uint goal_hash)
 { return scoped_type_hash_mix(goal_hash, context); }

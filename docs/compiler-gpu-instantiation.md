@@ -188,7 +188,7 @@ GPU passes now correct the selected path without demoting any body:
 | [`06c_table_operands`](../shaders/type_checker/closure/06c_table_operands.slang) | One lane per virtual row checks the instance's realized types: literal kind, range and float status; binary operators, unary minus, `if`/`while` conditions, logical operands and indexing; returned, declared and assigned values. Errors are LNC0006, LNC0069 or LNC0070 at the template row's first token. |
 
 `compact_expr` and `06c` use one rule set,
-[`operator_operand_rules`](../shaders/type_checker/operator_operand_rules.slang),
+[`operator_operand_rules`](../shaders/type_checker/expression_rules/operator_operand_rules.slang),
 which classifies a resolved struct, enum, array or slice operand instead of
 treating it as unknown. This also rejects, outside generics, `-b` for a
 `bool`, `ptr` or `char`, `s + s` and `-s` for a struct, `a + a` and `a == a`

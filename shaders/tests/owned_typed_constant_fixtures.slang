@@ -1,7 +1,7 @@
 import shared.semantics.primitive_types;
 // Focused synthetic typed-constant graphs; no source parser or host evaluator.
-import type_checker.owned_type_constraint_engine;
-import type_checker.owned_type_constraint_contract;
+import type_checker.trait_solver.owned_type_constraint_engine;
+import type_checker.trait_solver.owned_type_constraint_contract;
 import shared.buffers.thread_scratch;
 RWStructuredBuffer<uint4> results;
 static const uint INVALID = 0xffffffffu;
