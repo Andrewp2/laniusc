@@ -1455,7 +1455,7 @@ front end's cases can write the desugaring as the expected reading.
 `for x in a { body }`, with `a` a local of type `[T; n]` (grammar
 `for_iter_path`), is read as `let i: usize = 0; while (i < n) { let x: T =
 a[i]; i = i + 1; body }` (`for_array`, `StmtR.forArray`). This is
-laniusc's array loop (shaders/codegen/lir/semantic/loop_recipe.slang,
+laniusc's array loop (shaders/codegen/lir/semantics/instructions/loop_recipe.slang,
 `SEMANTIC_LOOP_RECIPE_ARRAY`): the index starts at 0 and is compared with
 the type's constant length; `x` is set from `a[i]`, which reads the array
 local again at each step, before the body; the index steps after the
@@ -2318,9 +2318,9 @@ its value. The inner match is read again, nested or not.
 
 laniusc reads a payload pattern whose name resolves to a variant as a check
 of that payload, not a binder: `match_payload_binding`
-(`shaders/codegen/lir/semantic/local_mark.slang`) binds a payload pattern
+(`shaders/codegen/lir/semantics/places/mark_semantic_locals.slang`) binds a payload pattern
 only when its resolved declaration is no variant, and
-`shaders/codegen/lir/semantic/match_reference.slang` lowers one that names a
+`shaders/codegen/lir/semantics/instructions/match_reference.slang` lowers one that names a
 variant as a check of the payload's discriminant. So with `import
 core::option;`, `Some(None) -> 1` matches only `Some(None)` (laniusc runs
 `Some(Some(7))` past it). The front end once bound such a name: a payload
@@ -2346,7 +2346,7 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
 `reject_index_call`, `module_traits_only`):
 
 - A write to a range loop's variable. laniusc's loop variable is the
-  counter itself (shaders/codegen/lir/semantic/loop_recipe.slang: the
+  counter itself (shaders/codegen/lir/semantics/instructions/loop_recipe.slang: the
   binding is set to the start and incremented), so `for i in 0..n { i = i +
   1; ... }` runs about n/2 times there and n times in a reading with `x` a
   copy of the counter. `for_range` does not read a body that writes `x`
@@ -2357,7 +2357,7 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
   host service (`effActs`; a field projection only reads). Core checks `i`
   against the length before it evaluates the value ("Traps in compiled
   code"); laniusc's store is one operation after its operands, so its bound
-  guard runs after the value (shaders/codegen/x86/safety_emit.slang). With
+  guard runs after the value (shaders/codegen/lir/x86/emission/native_safety_check_encoding.slang). With
   `i` out of bounds, laniusc runs the call's effects (output, a loop that
   never ends) before it traps, and the reading traps first. Such a store is
   not read (`AssignTargetR.indexEval`); a value without calls traps or not
@@ -3194,10 +3194,10 @@ Borrowed slices of a caller's array still hold only `i32` and `u8`.
 laniusc's x86 runtime now ends a process with Linux syscall 231,
 `exit_group`, instead of 60, `exit`. This covers the `exit` service
 (`std::process::exit`) and allocation failure
-(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+(`shaders/codegen/lir/x86/runtime/native_runtime_abi.slang`), the inline exits of failed
 safety guards such as bounds checks, status 101 (`emit_exit` in
-`safety_emit.slang`), and the static entry wrapper's exit after `main`
-(`emit.slang`).
+`native_safety_check_encoding.slang`), and the static entry wrapper's exit after `main`
+(`emit_x86_artifact_bytes.slang`).
 With `std::pthread`, `exit` ended only the calling thread. A worker that
 failed a bounds check vanished, `pthread_join` returned, and `main` went on
 to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).

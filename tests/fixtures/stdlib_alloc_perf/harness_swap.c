@@ -1,5 +1,5 @@
 // Raw CPU harness for the runtime allocator (docs/runtime-allocator.md): maps
-// the assembled alloc array (as --64 shaders/codegen/lir/x86/runtime_raw_width.s;
+// the assembled alloc array (as --64 shaders/codegen/lir/x86/runtime/runtime_raw_width.s;
 // objcopy -O binary -j .text.alloc_bytes) and drives alloc/dealloc/realloc with
 // 200,000 tagged random operations, raw mode (R15 = a private argc/argv
 // vector). The fixed seed is the sequence that hit the 11-01 corruption;

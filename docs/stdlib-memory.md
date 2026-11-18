@@ -93,7 +93,7 @@ byte stride. Indexing first checks the logical index, then addresses element
 element's first logical value word, which need not be its lowest address.
 Compound value words descend in memory. This representation is recorded in
 [`native_value_layout.slang`](../shaders/shared/native_interfaces/native_value_layout.slang) and
-[`storage_layout.slang`](../shaders/codegen/lir/x86/storage_layout.slang).
+[`storage_layout.slang`](../shaders/codegen/lir/x86/allocation/native_place_storage_layout.slang).
 
 An array borrowed as a slice retains its **actual backing stride**. Checked
 element type alone does not select that stride:

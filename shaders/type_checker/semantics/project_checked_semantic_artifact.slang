@@ -126,7 +126,7 @@ RWStructuredBuffer<uint> semantic_type_external_library_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_unit_id_by_hir;
 RWStructuredBuffer<uint> semantic_type_external_local_index_by_hir;
 
-#include "../../codegen/lir/semantic/function_method.slang"
+#include "../../codegen/lir/semantics/functions/compact_method_functions.slang"
 #include "../types/parameters/lexical_parameter_lookup.slang"
 
 static const uint INVALID = 0xffffffffu;

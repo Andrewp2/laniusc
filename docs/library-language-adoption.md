@@ -89,7 +89,7 @@ and requires matching release. Synthetic high-address/foreign-site/flag/size
 mutations are CPU controls, not native allocation claims.
 
 The changed emitter is
-[`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime_abi.slang#L169).
+[`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime/native_runtime_abi.slang#L169).
 CPU checks pass with 41 TempFile oracle controls, 34 scale-ledger controls and
 two focused Atomic-profile rejection controls (both final and live checkpoint).
 Their receipts were direct tool output, not saved logfiles. The first two

@@ -213,7 +213,7 @@ where
         source_bytes: u32,
         tokens: u32,
         rows: u32,
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
         last: bool,
     ) -> anyhow::Result<Self::Recorded> {
@@ -229,7 +229,7 @@ where
     fn finish(
         &mut self,
         (recorded, last): Self::Recorded,
-        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        hir: crate::codegen::lir::semantics::GpuSemanticHirInputs<'_>,
         semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
     ) -> anyhow::Result<CompiledSourcePackObject> {
         let (keys, event) = (&self.instance_keys, &mut self.event);

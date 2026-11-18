@@ -21,7 +21,7 @@ def check(condition, message):
 
 # The first 12 bytes of the native runtime's out-of-line safety traps
 # (X86_RUNTIME_TRAP_BOUNDS_OFFSET, X86_RUNTIME_TRAP_SHIFT_OFFSET and
-# X86_RUNTIME_TRAP_DIVIDE_OFFSET in shaders/codegen/lir/x86/runtime_abi.slang;
+# X86_RUNTIME_TRAP_DIVIDE_OFFSET in shaders/codegen/lir/x86/runtime/native_runtime_abi.slang;
 # source in runtime_traps.s). The bounds and shift traps start with
 # `mov $101|$102,%edi; lea message(%rip),%rsi` and the divide trap with
 # `lea message(%rip),%rsi; mov $length,%edx`. A guard in any function

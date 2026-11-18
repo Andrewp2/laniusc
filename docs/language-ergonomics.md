@@ -51,7 +51,7 @@ Implementation:
 - `type_checker/calls/03f_infer_return_bindings` gives the expression the
   operand's payload type and checks it against the enclosing function's
   result type.
-- Codegen lowers it to 13 rows in `codegen/lir/semantic/try_rows`: test the
+- Codegen lowers it to 13 rows in `codegen/lir/semantics/instructions/write_semantic_try_rows`: test the
   tag, build the function's `Err(e)` or `None` and return it, else load the
   payload. Each `?` takes one aggregate element from its own segment in
   `aggregate_elements`. A slice payload is loaded as a slice descriptor, so
@@ -283,7 +283,7 @@ if (n < 0) {
 production `else_if` makes the nested statement the else arm of the enclosing
 one (`grammar/lanius.bnf`). Both statements end on the same `}`, so lowering
 closes the statement that starts later first
-(`shaders/codegen/lir/semantic/materialize.slang`). Fixture:
+(`shaders/codegen/lir/semantics/instructions/materialize_semantic_operations.slang`). Fixture:
 `tests/fixtures/language/else_if.lani`, run on x86_64 and Wasm.
 
 Decision: `if` is still a statement. There is no `if` expression, and `match`
@@ -310,8 +310,8 @@ standard error that names the reason:
 - Wasm modules trap without a message.
 
 The stubs follow the print helpers in the runtime block
-(`shaders/codegen/lir/x86/runtime_abi.slang`, `trap_bytes`). Their assembly
-source is `shaders/codegen/lir/x86/runtime_traps.s`. Each guard jumps to its
+(`shaders/codegen/lir/x86/runtime/native_runtime_abi.slang`, `trap_bytes`). Their assembly
+source is `shaders/codegen/lir/x86/runtime/runtime_traps.s`. Each guard jumps to its
 stub, so a guard is no longer than before. Fixtures:
 `tests/fixtures/language/trap_*.lani`.
 

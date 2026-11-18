@@ -42,11 +42,16 @@ use super::{
     words_bytes,
 };
 use crate::{
-    codegen::{lowering::GpuSemanticHirInputs, x86::GpuX86RelocatableObject},
+    codegen::{lir::semantics::GpuSemanticHirInputs, x86::GpuX86RelocatableObject},
     compiler::GpuCompiler,
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
+        passes_core::{
+            self,
+            PassData,
+            make_pass_data_from_shader_key,
+            map_readback_blocking,
+        },
     },
     parser::buffers::{
         HirArrayElement,

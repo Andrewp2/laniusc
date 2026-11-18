@@ -22,9 +22,9 @@ class NsightCompilerStageTests(unittest.TestCase):
         self.assertEqual(compiler_phase("lir.wasm.emit"), "wasm_codegen")
         self.assertEqual(compiler_phase("parser_hir_literal_values"), "parser_hir")
         self.assertEqual(compiler_phase("source_file_token_end"), "parser_hir")
-        self.assertEqual(compiler_phase("codegen/lir/semantic/project"), "semantic_lir")
-        self.assertEqual(compiler_phase("codegen/lir/schedule/scatter"), "target_lir")
-        self.assertEqual(compiler_phase("codegen/lir/x86/emit"), "x86_codegen")
+        self.assertEqual(compiler_phase("codegen/lir/semantics/instructions/project_semantic_values"), "semantic_lir")
+        self.assertEqual(compiler_phase("codegen/lir/scheduling/scatter_target_schedule_rows"), "target_lir")
+        self.assertEqual(compiler_phase("codegen/lir/x86/emission/emit_x86_artifact_bytes"), "x86_codegen")
 
     def test_x86_pipeline_has_distinct_stages(self) -> None:
         expected = {

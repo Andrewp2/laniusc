@@ -1,6 +1,6 @@
 import codegen.wasm.link.wasm_link_symbol_tables;
-import codegen.lir.wasm.host_abi;
-import codegen.lir.wasm.module_sections;
+import codegen.lir.wasm.instructions.wasm_host_abi;
+import codegen.lir.wasm.modules.plan_wasm_module_sections;
 StructuredBuffer<LinkRelocation> link_relocation;
 RWStructuredBuffer<uint> out_words;
 void write_byte(uint pos, uint value)

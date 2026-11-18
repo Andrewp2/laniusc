@@ -20,7 +20,8 @@ The tool runs `git mv` for every entry, then rewrites:
     resolves them, and `module` names of moved files;
   * `X.slang` mentions in shaders that shared the moved file's old folder;
   * bare numbered shader names and path tails in source line comments;
-  * Rust module paths in `use` trees and in code, and Rust file path strings;
+  * Rust module paths in `use` trees and in code, and file paths in Rust
+    path attributes and literal include macros;
   * `mod` declarations: dangling ones are removed, new children are declared,
     and declaration-only `mod.rs` files of emptied folders are deleted.
 Emptied folders are removed. Rust files are not reformatted. The tool ends by
@@ -277,6 +278,28 @@ PATH_RE = re.compile(r"(?<![\w:])(?:[A-Za-z_]\w*::)+[A-Za-z_]\w*")
 USE_RE = re.compile(r"(?m)^([ \t]*(?:pub(?:\([^)]*\))?\s+)?use\s+)([^;]*);")
 PATH_ATTR_RE = re.compile(r'(#\[path\s*=\s*")([^"]+)("\])')
 PATH_MOD_RE = re.compile(PATH_ATTR_RE.pattern + r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
+RUST_INCLUDE_RE = re.compile(r'(\binclude(?:_str|_bytes)?!\(\s*")([^"\n]+)("\s*\))')
+
+
+def rebase_rust_file_paths(
+    text: str, pattern: re.Pattern, old_file: str, new_file: str, rust_map: dict[str, str]
+) -> str:
+    old_dir = CRATE_SRC / os.path.dirname(old_file)
+    new_dir = CRATE_SRC / os.path.dirname(new_file)
+
+    def rebase(m: re.Match) -> str:
+        if os.path.isabs(m.group(2)):
+            return m.group(0)
+        old_target = Path(os.path.normpath(old_dir / m.group(2)))
+        new_target = old_target
+        if old_target.is_relative_to(CRATE_SRC):
+            target = str(old_target.relative_to(CRATE_SRC))
+            new_target = CRATE_SRC / rust_map.get(target, target)
+        if old_dir == new_dir and old_target == new_target:
+            return m.group(0)
+        return m.group(1) + os.path.relpath(new_target, new_dir) + m.group(3)
+
+    return pattern.sub(rebase, text)
 
 
 def path_modules(files: list[str]) -> dict[str, tuple[str, str]]:
@@ -477,15 +500,8 @@ class RustRewriter:
         if external:
             return text
 
-        def path_attr_sub(m: re.Match) -> str:
-            old_target = os.path.normpath(os.path.join(os.path.dirname(old_file), m.group(2)))
-            new_target = self.rust_map.get(old_target, old_target)
-            if old_file == new_file and old_target == new_target:
-                return m.group(0)
-            new_rel = os.path.relpath(new_target, os.path.dirname(new_file))
-            return m.group(1) + new_rel + m.group(3)
-
-        return PATH_ATTR_RE.sub(path_attr_sub, text)
+        text = rebase_rust_file_paths(text, PATH_ATTR_RE, old_file, new_file, self.rust_map)
+        return rebase_rust_file_paths(text, RUST_INCLUDE_RE, old_file, new_file, self.rust_map)
 
 
 def parse_use_tree(body: str):

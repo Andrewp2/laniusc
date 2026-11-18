@@ -1,0 +1,26 @@
+import codegen.lir.lowering_ir;
+import shared.buffers.gpu_index;
+import shared.semantics.primitive_types;
+
+struct Params { uint function_capacity; uint param_capacity; uint local_capacity; uint n_tokens; };
+ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> semantic_lir_local_total;
+StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
+RWStructuredBuffer<uint> wasm_local_width;
+StructuredBuffer<uint> semantic_lir_function_total;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+RWStructuredBuffer<LoweringStatus> lowering_status;
+
+static const uint TY_STRING = 7u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    if (row >= gParams.local_capacity) return;
+    uint count = min(semantic_lir_local_total[0u], gParams.local_capacity);
+    wasm_local_width[row] = row < count && semantic_lir_locals[row].type_id == TY_STRING ? 2u
+        : row < count ? 1u : 0u;
+}

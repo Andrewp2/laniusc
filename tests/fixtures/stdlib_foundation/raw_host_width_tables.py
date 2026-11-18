@@ -6,7 +6,7 @@ import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[3]
-runtime = root / "shaders/codegen/lir/x86/runtime_abi.slang"
+runtime = root / "shaders/codegen/lir/x86/runtime/native_runtime_abi.slang"
 assembly = runtime.with_name("runtime_raw_width.s")
 source = runtime.read_text()
 pattern = re.compile(r"static const uint (\w+)\[(\d+)\]\s*=\s*\{(.*?)\};", re.S)

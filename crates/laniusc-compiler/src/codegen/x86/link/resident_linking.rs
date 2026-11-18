@@ -7,7 +7,7 @@
 //! identities ([`ParkedSlot::record_identities`]). When the object is published
 //! (`GpuX86ObjectStage::finish`) its slot is committed under the object's
 //! `(library, unit)`. The link then runs in two submissions
-//! (`shaders/codegen/x86/link/resident/`):
+//! (`shaders/codegen/x86/link/resident_linking/`):
 //!
 //! 1. Before the host finalizes, in one submission: plan the text copies
 //!    and section bases, place every symbol (applying the discovery routes to

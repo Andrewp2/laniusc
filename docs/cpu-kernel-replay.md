@@ -208,7 +208,7 @@ on the main stack.
   `ComputePassBatch` and Pass helpers capture. These cover the
   type checker, compiler-graph operations, parser passes and x86
   codegen/link. Hand-rolled dispatches in `scans.rs`, `syntax.rs`, the lexer
-  passes, `lowering.rs` and `control.rs` do not. A capture of one of those
+  passes, `codegen/lir/semantics.rs` and `control.rs` do not. A capture of one of those
   ends with "no dispatch captured (0 dispatches ...)".
 - Bindings whose buffer lacks COPY_SRC are skipped with a warning. The replay
   then needs `--zero` for them.

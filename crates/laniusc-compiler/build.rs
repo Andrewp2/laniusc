@@ -128,11 +128,11 @@ fn generate_primitive_type_constants(workspace_root: &Path) {
 }
 
 fn generate_lowering_ir_opcodes(workspace_root: &Path) {
-    let source = workspace_root.join("shaders/codegen/lowering_ir.slang");
+    let source = workspace_root.join("shaders/codegen/lir/lowering_ir.slang");
     println!("cargo:rerun-if-changed={}", source.display());
     let text = fs::read_to_string(&source)
         .unwrap_or_else(|err| panic!("read lowering IR schema {}: {err}", source.display()));
-    let mut generated = String::from("// Generated from shaders/codegen/lowering_ir.slang.\n");
+    let mut generated = String::from("// Generated from shaders/codegen/lir/lowering_ir.slang.\n");
     let lines = text.lines().map(str::trim).collect::<Vec<_>>();
     let mut marked = false;
     let mut count = 0usize;

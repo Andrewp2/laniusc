@@ -215,7 +215,7 @@ public bool is_trait_row(uint row)
 }
 
 // Canonical method rows are compacted in increasing dense HIR order
-// (codegen/lir/semantic/function_method.slang).
+// (codegen/lir/semantics/functions/compact_method_functions.slang).
 public uint method_row(uint row)
 {
     uint count = min(compact_method_count[0u], hir_count());
@@ -230,7 +230,7 @@ public uint method_row(uint row)
 }
 
 // The native callable identity lowering gives function row `row`
-// (function_method.slang), so a caller in another unit names it with the
+// (compact_method_functions.slang), so a caller in another unit names it with the
 // same (library, unit, local) triple. A required trait member uses the
 // interface method identity even when private.
 public uint callable_local(uint row)

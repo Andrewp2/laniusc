@@ -79,7 +79,7 @@ payload checks or treating a signal as normal success.
 
 ## Lowering lead, not a proven fix
 
-`shaders/codegen/lir/semantic/try_rows.slang` emits row 12 as a FIELD LOAD at
+`shaders/codegen/lir/semantics/instructions/write_semantic_try_rows.slang` emits row 12 as a FIELD LOAD at
 payload word 1, using the extracted value's aggregate layout. The debugger's
 word load followed by a null dereference is consistent with loading an inline
 aggregate's first word instead of preserving its address. Compare this path

@@ -203,7 +203,7 @@ by value, took 29 ns. Small values now copy through registers:
 - A copy of one to three words loads every word into RCX, RSI and RDI
   before any store, which is overlap-safe without the direction test the
   `rep movsq` body needs (`plan_memmove_tail` in
-  `shaders/codegen/lir/x86/instruction_plan.slang`).
+  `shaders/codegen/lir/x86/emission/native_instruction_encoding_plan.slang`).
 - A native parameter of up to eight words moves into its fresh frame cell
   word by word through RAX (`safety_emit.slang`; `parameter_values.slang`
   sizes it).

@@ -74,8 +74,8 @@ review. The compiler owner implemented the repair. The original paths were:
   shared `concrete_value_layout_walk.slang` reject zero groups as missing or
   unsupported layout. That rejection remains correct for unknown metadata.
 - The existing enum ABI reserves one discriminant word, even without variants:
-  LIR `semantic/function_layout_collect.slang` initializes every enum to one;
-  `function_scatter.slang::local_enum_word_count` returns one plus maximum
+  LIR `index_semantic_aggregate_declarations.slang` initializes every enum to one;
+  `scatter_semantic_functions.slang::local_enum_word_count` returns one plus maximum
   payload; `shaders/shared/semantics/dependency_return_layout.slang` initializes enum width one.
   This is storage layout, not a legal discriminant or an inhabitable value.
 - `dependencies/enum_instance_layout.slang` instead initialized its computed

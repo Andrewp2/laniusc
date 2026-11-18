@@ -948,7 +948,7 @@ mod compute_pass_counting_tests {
         // behind a graph operation or deliberately reviewing this boundary.
         let allowed_maximums = BTreeMap::from([
             ("codegen/x86/link.rs", 6usize),
-            ("codegen/x86_runtime_dispatch_tests.rs", 2),
+            ("codegen/lir/x86/runtime_dispatch_tests.rs", 2),
             ("compiler/diagnostics.rs", 1),
             ("compiler/gpu_compiler/typecheck.rs", 2),
             ("gpu/buffers.rs", 2),

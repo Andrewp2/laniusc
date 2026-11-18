@@ -73,8 +73,8 @@ Removal methods:
 | R5 | `type_check.call_inference` | `type_checker/resident.rs:2185`, `:2805` | 1 | 264 B: call inference counters | checks inference completion | status | gate (T1) |
 | R6 | `type_check.canonical.counts` | `type_checker/resident.rs:2757`, `:2840`, `:2858` | 1 | 64 B: canonical type counters | decides whether to record canonical rounds again | size | bound (T2) |
 | R7 | `type_check.status` | `type_checker/resident.rs:2843`, `:2861` | 1 | 16 B: type check status | checks for a type error | status | gate (T1) |
-| R8 | `lowering status readback` | `codegen/lowering_pipeline.rs:1520` | 1 | 128 B: lowering status and x86 object metadata | sizes the R9 read | size | resident (T4) |
-| R9 | `x86 object payload readback` | `codegen/x86_object_artifact.rs:873` | 1 | 455,400 B: object sections, relocations and call rows | parses the object for retention and the link | data | resident (T4) |
+| R8 | `lowering status readback` | `codegen/lir/pipeline.rs:1520` | 1 | 128 B: lowering status and x86 object metadata | sizes the R9 read | size | resident (T4) |
+| R9 | `x86 object payload readback` | `codegen/lir/x86/objects.rs:873` | 1 | 455,400 B: object sections, relocations and call rows | parses the object for retention and the link | data | resident (T4) |
 | R10 | `program_retention.readback` | `type_checker/program_retention.rs:1470` | 0 since `cad995188` | export status of a build with no x86 or WASM object, such as `check` (`finish_export_now`) | checks the export commit | status | gate (T7). The settings build reads the commit status words with R9. |
 | R11 | `retained_substitution.readback` | `type_checker/program_retention/substitution.rs:1013` | 1 | 5,132 B: substitution status and counts | sizes discovery | size | bound (T5) |
 | R12 | `discovery.status` | `type_checker/program_retention/discovery.rs:1690` | 1 | 5,524 B: discovery status and counts | sizes the projection | size | bound (T5) |
@@ -100,8 +100,8 @@ Removal methods:
 | R27 | `codegen.x86.link.layout_chunk` | `codegen/x86/link/section_layout.rs:432` | x86, 1 | 16 B: layout chunk rows | places sections | data | delete (T7) |
 | R28 | `codegen.x86.link.page` | `codegen/x86/link/executable.rs:761` | x86, check, 1 | 65,568 B: the executable page | writes the file | output | permanent |
 | R29 | `codegen.x86.link.resident.sections` | `codegen/x86/link/resident_linking.rs:288` | host link, 2 | 19,412 B: text and rodata | hands them to the host linker | output | permanent |
-| R30 | `Wasm object metadata readback` | `codegen/wasm_object_artifact.rs:476` | WASM, 1 | 96 B: object status and lengths | sizes the R31 read | size | resident (T8) |
-| R31 | `Wasm object payload readback` | `codegen/wasm_object_artifact.rs:562` | WASM, 1 | 128 B: the WASM object | parses it for the link | data | resident (T8) |
+| R30 | `Wasm object metadata readback` | `codegen/lir/wasm/objects.rs:476` | WASM, 1 | 96 B: object status and lengths | sizes the R31 read | size | resident (T8) |
+| R31 | `Wasm object payload readback` | `codegen/lir/wasm/objects.rs:562` | WASM, 1 | 128 B: the WASM object | parses it for the link | data | resident (T8) |
 | R32 | `codegen.wasm.link.resolve.status` | `codegen/wasm/link/symbol_resolution.rs:550` | WASM, 1 | 16 B: resolution status | checks it and sizes the target read | size | gate (T8) |
 | R33 | `codegen.wasm.link.page.output` | `codegen/wasm/link/executable.rs:500` | WASM, 1 | 65,536 B: the module page | writes the file | output | permanent |
 | R34 | `codegen.wasm.link.page.status` | `codegen/wasm/link/executable.rs:506` | WASM, 1 | 16 B: link status | checks it beside the output | status | merge into R33 (T8) |
@@ -156,10 +156,10 @@ These compile and are called from the compile path, but none of the probes reach
 | U39 | `implementation projection receipt` | `compiler/gpu_compiler/trait_solver/dispatch/implementation_application.rs:324` | status and counts | size | bound (T7) |
 | U40 | `implementation application rows` | `compiler/gpu_compiler/trait_solver/dispatch/implementation_application.rs:355` | implementation rows | data | kernel (T7) |
 | U41 | `semantic-interface validation` | `compiler/semantic_interface/gpu_validation.rs:209` | validation status of stored interfaces | status | gate (T3) |
-| U42 | `x86 artifact length readback` | `codegen/x86_artifact.rs:489` | unlinked x86 artifact length | size | delete, or bound if the path stays (T12) |
-| U43 | `x86 artifact byte readback` | `codegen/x86_artifact.rs:506` | unlinked x86 artifact | output | delete, or permanent if the path stays (T12) |
-| U44 | `Wasm artifact length readback` | `codegen/wasm_lowering.rs:839` | unlinked WASM artifact length | size | delete, or bound (T12) |
-| U45 | `Wasm artifact byte readback` | `codegen/wasm_lowering.rs:857` | unlinked WASM artifact | output | delete, or permanent (T12) |
+| U42 | `x86 artifact length readback` | `codegen/lir/x86/emission.rs:489` | unlinked x86 artifact length | size | delete, or bound if the path stays (T12) |
+| U43 | `x86 artifact byte readback` | `codegen/lir/x86/emission.rs:506` | unlinked x86 artifact | output | delete, or permanent if the path stays (T12) |
+| U44 | `Wasm artifact length readback` | `codegen/lir/wasm/instructions.rs:839` | unlinked WASM artifact length | size | delete, or bound (T12) |
+| U45 | `Wasm artifact byte readback` | `codegen/lir/wasm/instructions.rs:857` | unlinked WASM artifact | output | delete, or permanent (T12) |
 | U46 | `codegen.wasm.link.resolve.targets` | `codegen/wasm/link/symbol_resolution.rs:570` | WASM symbol targets | data | resident (T8) |
 
 ### Readbacks outside the compile path
@@ -169,7 +169,7 @@ The test holds these to their files with `debug_readback_label!`. A normal build
 | File | Labels | Why |
 |---|---|---|
 | `bin/shader_dispatch_replay.rs` | `replay` | the shader replay tool |
-| `codegen/lowering_capture.rs` | `lowering capture` | the lowering capture tool |
+| `codegen/lir/input_capture.rs` | `lowering capture` | the lowering capture tool |
 | `gpu/dispatch_capture.rs` | `lanius-debug-capture` | the dispatch capture tool |
 | `gpu/passes_core.rs` | `lanius-debug-dump` | the buffer dump tool |
 | `gpu/timer.rs` | `gpu.timer.readback` | GPU timestamps under a timing report |
@@ -247,7 +247,7 @@ Times are from the settings job under `LANIUS_REPORT=host-timing`. "Orchestratio
 | H7 `finish.typecheck_status` | `compiler/gpu_compiler/typecheck.rs:1004` | 0.083 ms | checks R5 to R7 | orchestration | |
 | H8 `finish.semantic_interface` | `compiler/gpu_compiler/typecheck.rs:1062` | 0.040 ms | keeps the R2 bytes on the host for dependents | compiler work | Dependents could read the interface on the GPU. |
 | H9 `finish.target_artifact` | `compiler/gpu_compiler/typecheck.rs:1093` | 0.012 ms | takes the target artifact handle | orchestration | |
-| H10 `finish.native_object` | `compiler/gpu_compiler/typecheck.rs:1155`, `codegen/x86_object_artifact.rs:742`, `:812` | 0.485 ms | parses the object metadata and payload from R8 and R9 | compiler work | The host decodes sections, relocations and call rows that the link and retention use on the GPU. |
+| H10 `finish.native_object` | `compiler/gpu_compiler/typecheck.rs:1155`, `codegen/lir/x86/objects.rs:742`, `:812` | 0.485 ms | parses the object metadata and payload from R8 and R9 | compiler work | The host decodes sections, relocations and call rows that the link and retention use on the GPU. |
 | H11 `finish.program_retention` | `compiler/gpu_compiler/typecheck.rs:1185` | 0.015–0.029 ms since `cad995188`, 2.073 ms before | checks the commit status words read with R9. The export and the call rewrite run in kernels. | orchestration | Removed as compiler work. The store is sized from the source byte count, and an overflow rolls back on the GPU (`export/19_uncommit`) and reruns. |
 | H12 `finish.unit_facts` | `compiler/gpu_compiler/typecheck.rs:1211`, `type_checker/generic_calls.rs:2019` | 0.015 ms, elided on settings | decodes checked unit facts (U17 to U28) | compiler work | Other builds decode type and call facts on the host. |
 | H13 retention planning between submits | `compiler/gpu_compiler/retained_native.rs:692` | 2.938 ms (`tail.after_projection`) | reads R11 to R14 and builds each next stage's inputs | compiler work | It plans instances from counts and rows on the host. |
@@ -259,7 +259,7 @@ Times are from the settings job under `LANIUS_REPORT=host-timing`. "Orchestratio
 | H19 output write | `compiler/gpu_compiler/retained_native.rs:766`, `:780` | 2.115 ms, of which 0.998 ms is the file | writes the executable | orchestration | |
 | H20 diagnostics rendering | `compiler/diagnostics.rs:4256` | failed builds only | turns the token span from R35 into source text and a message | orchestration | It is the failed-build exception. |
 | H21 GPU-linker x86 layout | `codegen/x86/link/symbol_resolution.rs:489`, `codegen/x86/link/section_layout.rs:432` | CLI only | lays out sections from R25 to R27 | compiler work | The resident link does the same on the GPU. |
-| H22 WASM object and link | `codegen/wasm_object_artifact.rs:476`, `codegen/wasm/link/symbol_resolution.rs:550` | WASM only | parses the WASM object and resolves symbols from R30 to R32 | compiler work | Same pattern as H10 and H21. |
+| H22 WASM object and link | `codegen/lir/wasm/objects.rs:476`, `codegen/wasm/link/symbol_resolution.rs:550` | WASM only | parses the WASM object and resolves symbols from R30 to R32 | compiler work | Same pattern as H10 and H21. |
 | H23 check mode codegen | `cli/compile/entry.rs:68` | CLI only | `check` lowers, retains, finalizes and links an executable it discards | compiler work | A check needs only the frontend status. |
 
 Host step counts at the audit: 9 orchestration rows and 14 compiler-work rows. H11 has since moved to orchestration.

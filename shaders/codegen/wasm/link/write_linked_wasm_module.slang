@@ -1,6 +1,6 @@
 import shared.buffers.byte_packing;
-import codegen.lir.wasm.host_abi;
-import codegen.lir.wasm.module_sections;
+import codegen.lir.wasm.instructions.wasm_host_abi;
+import codegen.lir.wasm.modules.plan_wasm_module_sections;
 struct LinkParams
 {
     uint function_count;

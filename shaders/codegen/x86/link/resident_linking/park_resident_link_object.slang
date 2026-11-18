@@ -59,7 +59,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint lane = tid.x;
     uint stride = gPK.lanes;
-    // Metadata words (x86_object_artifact.rs `park_meta`, resident_link_layout.slang
+    // Metadata words (codegen/lir/x86/objects.rs `park_meta`, resident_link_layout.slang
     // `object_geometry`): 1 relocations, 2 undefined symbols, 3 definitions,
     // 4 body bytes, 9..10 the wrapper's range, 13 runtime bytes, 15 rodata
     // bytes, 16 runtime relocations. A wrapper range that runs backwards is

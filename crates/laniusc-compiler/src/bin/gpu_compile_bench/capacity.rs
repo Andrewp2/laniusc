@@ -1,6 +1,6 @@
 use laniusc_compiler::{
     codegen::{
-        lowering_ir::{LoweringCapacities, LoweringTarget, lowering_compiler_graph},
+        lir::lowering_ir::{LoweringCapacities, LoweringTarget, lowering_compiler_graph},
         unit::{
             CompilationUnitLimits,
             SourcePackArtifactTarget,

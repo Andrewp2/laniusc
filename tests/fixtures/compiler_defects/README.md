@@ -23,7 +23,7 @@ one should become a passing regression test once its defect is fixed.
 | `bound_trait_open_param.lani` | the same through `I: core::iter::Iterator<T>` in a generic caller | exit 3 | exit 3 since the fix (was LNC0006) |
 | `bound_trait_open_forms.lani` | `let r = f.try_apply(2, 3 as u8)` where `F: core::iter::TryFolder<i32, u8, bool>` | exit 6 | exit 6 since the fix (was LNC0006) |
 | `bound_trait_open_argument.lani` | the untyped `Option` from `it.next()` passed to a nongeneric parameter | exit 12 | **fixed 2026-10-31**: compiled before, then died with SIGILL (exit 132) |
-| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10 in 0.12 s with no memory operand in the loop. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations became register-eligible (0.31 s), then temporaries got a per-function linear-scan allocator over r8-r11, rbx and r12-r14 (`allocation_words.slang`), `>> 32` became an immediate shift and `j < n` a fused compare-branch. Left: register-to-register move chains and dead constant loads (`mov $0x20,%ebx`) |
+| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10 in 0.12 s with no memory operand in the loop. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations became register-eligible (0.31 s), then temporaries got a per-function linear-scan allocator over r8-r11, rbx and r12-r14 (`allocate_x86_registers_and_spill_words.slang`), `>> 32` became an immediate shift and `j < n` a fused compare-branch. Left: register-to-register move chains and dead constant loads (`mov $0x20,%ebx`) |
 | `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 0.29 s (2.9 ns per limb, was 1.34 s). Slice parameters are now read in place (no descriptor copies), temporaries stay in registers and the loop test is a fused `cmp; jge`: about 60 instructions per limb. Left: `factor` reloads from its slot each pass, each access still bounds-checks and multiplies by the runtime stride (`imul` plus a stride==1 branch, even for 4-byte elements), and move chains. The asm excerpt is in the file |
 | `candidate_nested_generic_match.lani` | reported: LNC0047 "type-check execution failed" on a nested match on a generic enum bound in an outer arm | compiles, exit 4 | **not reproduced**: compiles and exits 4 |
 | `check_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | `laniusc check` accepts; compiles, exit 1 | **fixed 2026-10-31**: real in `laniusc check` only, which rejected it at `slice.lani:899`; builds were never affected. See [check and generic impls](#check-and-generic-impls) |
@@ -57,7 +57,7 @@ with the failing program.
 
 ## Immediate stack stores
 
-`x86_put_imm32_to_location` (`shaders/codegen/lir/x86/encoding.slang`) wrote an
+`x86_put_imm32_to_location` (`shaders/codegen/lir/x86/emission/native_instruction_encoding.slang`) wrote an
 integer or pointer immediate to a stack slot with a 32-bit
 `mov [rbp+d], eax`. Readers of a pointer or 64-bit value load the slot's
 whole eight-byte word. Since the linear-scan allocator (d4453f42b) moved more

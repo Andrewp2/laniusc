@@ -82,7 +82,7 @@ valid; the raw API has no general pointer validator.
 ## Byte tables and evidence
 
 Readable assembly for the changed thunks is
-`shaders/codegen/lir/x86/runtime_raw_width.s`. The matching arrays remain in
+`shaders/codegen/lir/x86/runtime/runtime_raw_width.s`. The matching arrays remain in
 `runtime_abi.slang`; `raw_host_width_tables.py` assembles and compares them,
 checks contiguous offsets/total size, and independently assembles the unchanged
 path and Linux syscall blocks, including every embedded path entry symbol.

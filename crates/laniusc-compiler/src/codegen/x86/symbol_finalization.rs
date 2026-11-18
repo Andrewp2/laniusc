@@ -21,7 +21,7 @@
 //! comparison itself belongs to admission; this stage consumes its bit and does
 //! not replace it with a host flag.
 //!
-//! Kernels: `shaders/codegen/x86/finalize/`. The constants here mirror
+//! Kernels: `shaders/codegen/x86/symbol_finalization/`. The constants here mirror
 //! `symbol_finalization_layout.slang`.
 
 use std::{num::NonZeroU32, path::Path, sync::Mutex};

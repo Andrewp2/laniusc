@@ -462,7 +462,7 @@ Those stable numbers were measured before a code generation fix. The
 slowdown was user time: 18–19 s of CPU against 11.7 s forked. It came from
 the direction of record copies, not from contention. laniusc copies a
 multi-word value with `rep movsq` (`plan_memmove_tail` in
-`shaders/codegen/lir/x86/instruction_plan.slang`). It used to run the copy
+`shaders/codegen/lir/x86/emission/native_instruction_encoding_plan.slang`). It used to run the copy
 backward, with DF=1, whenever the destination address was above the
 source. On this machine's Zen 3, a DF=1 `rep movsq` is a slow microcoded
 loop. Every element store `b[i] = x` copies from a stack temporary into the

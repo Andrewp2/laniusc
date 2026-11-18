@@ -4,27 +4,10 @@
 //! planning. `x86` and `wasm` own target backend recorders that consume parser
 //! HIR plus retained type-check metadata after frontend status success.
 
-pub(crate) mod functions;
-pub(crate) mod job_sized;
 mod link_byte_source;
 pub(crate) mod link_layout;
-pub(crate) mod lowering;
-#[doc(hidden)]
-pub mod lowering_capture;
-/// GPU-resident target-independent and target-specific lowering contracts.
-pub mod lowering_ir;
-pub(crate) mod lowering_pipeline;
-pub(crate) mod optimization;
-pub(crate) mod optimization_ir;
-pub(crate) mod scan;
-pub(crate) mod schedule;
-pub(crate) mod target_pages;
-pub(crate) mod wasm_lowering;
-pub(crate) mod wasm_module;
-pub(crate) mod wasm_object_artifact;
-pub(crate) mod x86_artifact;
-pub(crate) mod x86_lowering;
-pub(crate) mod x86_object_artifact;
+/// GPU lowering, optimization, and target emission.
+pub mod lir;
 pub(crate) use link_byte_source::{GpuLinkByteSource, retained_column_with_capacity};
 
 /// Target-independent source-pack unit, job, artifact, and shard planning.

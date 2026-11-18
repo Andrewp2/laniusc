@@ -126,9 +126,9 @@ Runtime loading with `dlopen`/`dlsym`, callbacks and foreign thread entry remain
 
 The source boundaries are [grammar/lanius.bnf](../grammar/lanius.bnf),
 [native objects](../crates/laniusc-compiler/src/codegen/x86/object.rs),
-[lowering calls](../crates/laniusc-compiler/src/codegen/lowering_ir.rs),
-[native argument layout](../shaders/codegen/lir/x86/common.slang) and
-[call effects](../shaders/codegen/optimization_ir.slang).
+[lowering calls](../crates/laniusc-compiler/src/codegen/lir/lowering_ir.rs),
+[native argument layout](../shaders/codegen/lir/x86/instructions/native_instruction_lowering.slang) and
+[call effects](../shaders/codegen/lir/optimization_ir.slang).
 The [declaration contract tests](../tests/native_c_contract.rs) pass four
 groups and the [native C execution tests](../tests/native_c_execution.rs) pass
 eight, including imported calls, generic replay, 32 mixed arguments and CRT
@@ -168,8 +168,8 @@ Required contracts are:
   wrapper also retains the original argument stack in R15. A thread runtime
   must define and preserve those process-context and termination contracts.
 
-The relevant runtime code is [entry emission](../shaders/codegen/lir/x86/emit.slang)
-and [native runtime bindings](../shaders/codegen/lir/x86/runtime_abi.slang).
+The relevant runtime code is [entry emission](../shaders/codegen/lir/x86/emission/emit_x86_artifact_bytes.slang)
+and [native runtime bindings](../shaders/codegen/lir/x86/runtime/native_runtime_abi.slang).
 
 ## Atomics, allocation and thread local storage
 

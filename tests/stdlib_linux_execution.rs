@@ -8,7 +8,7 @@ use std::{
 };
 
 use laniusc_compiler::{
-    codegen::lowering_ir::HostService,
+    codegen::lir::lowering_ir::HostService,
     compiler::compile_source_to_wasm_with_gpu_codegen,
 };
 

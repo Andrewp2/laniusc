@@ -285,7 +285,7 @@ and `retained_native_resident_emit_retries_after_a_capacity_failure` in
 `tests/retained_native.rs` force each path and compare the executable with
 an unforced build.
 
-The shaders are in `shaders/codegen/x86/link/resident/`. Every check the host
+The shaders are in `shaders/codegen/x86/link/resident_linking/`. Every check the host
 link makes has a GPU error bit. Any error, a C driver link, or a store that
 does not hold the build's objects falls back to the host link, which reports
 the exact diagnostic.

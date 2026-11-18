@@ -15,13 +15,13 @@ instruction, so it could not create that missing function. A required trait
 declaration ending in `;` correctly had no body, but an empty implementation
 incorrectly reached the same native outcome.
 
-The [count producer](../shaders/codegen/lir/semantic/count.slang) now admits one
+The [count producer](../shaders/codegen/lir/semantics/instructions/count_semantic_instructions.slang) now admits one
 existing bare RETURN row for unit-function fallthrough and the entrypoint's
-default exit. Its [predicate](../shaders/codegen/lir/semantic/body_return.slang)
+default exit. Its [predicate](../shaders/codegen/lir/semantics/instructions/implicit_function_returns.slang)
 requires an actual body block, its direct function parent, and the exact admitted
 function identity. Bodyless declarations and deferred bodies gain no row.
 
-The [scatter consumer](../shaders/codegen/lir/semantic/scatter.slang) schedules
+The [scatter consumer](../shaders/codegen/lir/semantics/instructions/scatter_semantic_instructions.slang) schedules
 that row at the body's close with void type, no value words and no operand.
 Ordinary blocks publish zero rows; the count producer is the authority for this
 synthetic block row. Nested empty blocks therefore work too, without scanning
@@ -51,10 +51,10 @@ The helper itself remained admitted while the required declaration correctly
 had no definition. Removing generic forwarding calls or the nested-empty call
 did not alter this failure.
 
-[Template admission](../shaders/codegen/lir/semantic/function_templates.slang)
+[Template admission](../shaders/codegen/lir/semantics/functions/mark_generic_function_templates.slang)
 now withholds an original generic body when a local static target still names a
 trait requirement. It checks the enclosing generic environment before doing the
-target lookup. [Shared function identity lookup](../shaders/codegen/lir/semantic/function_generic_environment.slang)
+target lookup. [Shared function identity lookup](../shaders/codegen/lir/semantics/functions/function_generic_environments.slang)
 preserves the existing exact start-token policy used by call projection.
 Concrete replay retains its implementation-selection authority. The repair
 never manufactures a native body for a required declaration and does not

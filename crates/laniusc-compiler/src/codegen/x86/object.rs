@@ -293,7 +293,7 @@ pub enum GpuX86RelocationKind {
     Abs32 = 3,
     /// A `Rel32` that only the raw executable link applies. A native link
     /// leaves the zero in the object's bytes. It is the jump over the load of
-    /// the process vector in a C entry (`instruction_plan.slang`,
+    /// the process vector in a C entry (`native_instruction_encoding_plan.slang`,
     /// `plan_c_entry`): a raw executable has no vector and no C callers.
     RawRel32 = 4,
 }

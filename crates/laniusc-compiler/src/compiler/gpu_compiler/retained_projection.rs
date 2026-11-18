@@ -6,8 +6,10 @@
 
 use super::*;
 use crate::codegen::{
-    lowering::{GpuSemanticHirInputs, LoweringJobBounds, ObjectFunctions},
-    lowering_ir::LoweringArtifactKind,
+    lir::{
+        lowering_ir::LoweringArtifactKind,
+        semantics::{GpuSemanticHirInputs, LoweringJobBounds, ObjectFunctions},
+    },
     x86::{self, GpuX86RelocatableObject},
 };
 
@@ -170,7 +172,7 @@ impl GpuCompiler<'_> {
 /// A projected batch's lowering, submitted and not yet read back
 /// ([`GpuCompiler::record_projected_batch`]).
 pub(super) struct RecordedProjectedBatch {
-    pipeline: Option<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>>,
+    pipeline: Option<std::sync::Arc<crate::codegen::lir::pipeline::GpuLoweringPipeline>>,
     target: SourcePackArtifactTarget,
     lowering_target: LoweringTarget,
     source_bytes: u32,

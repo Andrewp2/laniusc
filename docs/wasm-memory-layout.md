@@ -85,7 +85,7 @@ LIR rows translate nearly 1:1:
 - `[v; n]` stores one element, then doubles the filled range.
 
 Count and scatter replay the same plan (`wasm_plan_rows` in
-`codegen/lir/wasm/common.slang`), so the two passes cannot disagree on row
+`codegen/lir/wasm/instructions/wasm_instruction_lowering.slang`), so the two passes cannot disagree on row
 counts.
 
 ## Array call ABI

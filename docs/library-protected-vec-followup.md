@@ -37,9 +37,9 @@ The [first heap-construction call](../stdlib/std/vec.lani#L419) passes
    `parent*2+1 = 2147483649`, exceeding `i32::MAX` before it can determine
    that the parent is a leaf.
 
-The recorded [integer semantic reference](../crates/laniusc-compiler/src/codegen/lowering_ir.rs#L11237)
+The recorded [integer semantic reference](../crates/laniusc-compiler/src/codegen/lir/lowering_ir.rs#L11237)
 uses wrapping addition/multiplication. The
-[x86 binary32 emitter](../shaders/codegen/lir/x86/encoding.slang#L220) emits
+[x86 binary32 emitter](../shaders/codegen/lir/x86/emission/native_instruction_encoding.slang#L220) emits
 32-bit operations. Under those semantics the guard expression becomes
 `-2147483647`, which compares less than the positive count; following that
 source path would then attempt a negative child index. This is a source-based
@@ -66,5 +66,5 @@ These SHA-256 identities fix the line-linked review scope:
 | --- | --- |
 | `stdlib/std/vec.lani` | `47ae5b83ff36e9c04dca819ff5bc881be58b32c3c5526b7d0e42b3ab382829fa` |
 | `stdlib/core/mem.lani` | `b77a16ddc79cf9f9a1e10a45d1c9f0282addec24af8634f88f835a8877d678b3` |
-| `crates/laniusc-compiler/src/codegen/lowering_ir.rs` | `b3d567ec792a16b68f6fc53368336bb3e03638b5daa1ed06f5b2d11273942f3e` |
-| `shaders/codegen/lir/x86/encoding.slang` | `2ef287820a423e6fc3bb7e8c55073a953d7388171931a339d1645d4a2244c1f6` |
+| `crates/laniusc-compiler/src/codegen/lir/lowering_ir.rs` | `b3d567ec792a16b68f6fc53368336bb3e03638b5daa1ed06f5b2d11273942f3e` |
+| `shaders/codegen/lir/x86/emission/native_instruction_encoding.slang` | `2ef287820a423e6fc3bb7e8c55073a953d7388171931a339d1645d4a2244c1f6` |

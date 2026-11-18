@@ -152,7 +152,7 @@ void reject(uint entry)
 // Whether lowering can lay out a literal of local struct instance
 // `instance` that this environment realized. Lowering resolves each
 // field's declared type under the instance to an existing type row
-// (aggregate_elements.slang); a field whose declared type is an
+// (write_semantic_aggregate_elements.slang); a field whose declared type is an
 // application, such as the `[T]` of `View<T>`, may substitute to one that
 // no row of the job names (`[u32]`), so such a literal replays.
 bool literal_fields_resolve(uint instance)

@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 ELF = load("native_source_linked_elf_validator", HERE / "validate_linked_elf.py")
 RUNTIME = load("native_source_historical_opcode_definition", HERE.parent / "stdlib_foundation/resolve/allocation_sites.py")
 TABLES = HERE.parent / "stdlib_foundation/raw_host_width_tables.py"
-SHADER = HERE.parents[2] / "shaders/codegen/lir/x86/runtime_abi.slang"
+SHADER = HERE.parents[2] / "shaders/codegen/lir/x86/runtime/native_runtime_abi.slang"
 
 
 def literal_arrays(path):
