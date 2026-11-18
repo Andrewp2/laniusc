@@ -2566,10 +2566,7 @@ fn main() -> i32 {
     );
 
     assert_x86_64_elf_header(&bytes);
-    assert!(
-        !bytes.windows(2).any(|window| window == [0x0f, 0x45]),
-        "a potentially trapping arm must remain control-dependent"
-    );
+    common::x86_jumps::assert_main_callees_have_no_cmov(&bytes, &["choose"]);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 trapping scalar assignment diamond",
@@ -2665,12 +2662,9 @@ fn main() -> i32 {
     );
 
     assert_x86_64_elf_header(&bytes);
-    assert!(
-        // SELECT_STORE emits a 32-bit register CMOV (0f 4x, ModRM >= c0);
-        // the runtime's own are REX.W.
-        !bytes.windows(4).any(|w| w[0] & 0xf8 != 0x48 && w[1] == 0x0f &&
-            (0x40..=0x4f).contains(&w[2]) && w[3] >= 0xc0),
-        "an && / || that only steers a branch should not compute its value with a CMOV"
+    common::x86_jumps::assert_main_callees_have_no_cmov(
+        &bytes,
+        &["outside", "inside", "three", "count", "unflagged"],
     );
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(

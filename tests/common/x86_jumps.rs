@@ -447,6 +447,60 @@ fn disassemble(segment: &CodeSegment<'_>) -> Result<HashMap<u64, Instruction>, S
     result
 }
 
+/// Inspect the bodies of direct callees in the fixture's main function.
+/// The static ELF has no symbols. Distinct call targets in instruction
+/// order identify the fixture functions, and each body stops at its returns.
+pub fn assert_main_callees_have_no_cmov(elf: &[u8], callee_names: &[&str]) {
+    let segment = code_segment(elf).expect("read the executable segment");
+    let instructions = disassemble(&segment).expect("disassemble the executable");
+    let runtime = runtime_ranges(&segment);
+    let body = |start| {
+        let mut addresses = BTreeSet::new();
+        let mut work = vec![start];
+        while let Some(address) = work.pop() {
+            if runtime.iter().any(|&(low, high)| (low..high).contains(&address))
+                || !addresses.insert(address)
+            {
+                continue;
+            }
+            let instruction = &instructions[&address];
+            if matches!(instruction.flow, Flow::Next | Flow::Branch | Flow::Call) {
+                work.push(address + instruction.length);
+            }
+            if matches!(instruction.flow, Flow::Jump | Flow::Branch) {
+                work.extend(instruction.target);
+            }
+        }
+        addresses.into_iter().map(|address| &instructions[&address])
+    };
+    let mut cursor = segment.entry;
+    let main = loop {
+        let instruction = &instructions[&cursor];
+        if instruction.flow == Flow::Call {
+            break instruction.target.expect("entry wrapper calls main directly");
+        }
+        assert_eq!(instruction.flow, Flow::Next, "entry wrapper calls main");
+        cursor += instruction.length;
+    };
+    let mut callees = Vec::new();
+    for call in body(main).filter(|instruction| instruction.flow == Flow::Call) {
+        let target = call.target.expect("fixture calls directly");
+        if !callees.contains(&target) {
+            callees.push(target);
+        }
+    }
+    assert_eq!(callees.len(), callee_names.len(), "fixture callees");
+    for (callee, name) in callees.into_iter().zip(callee_names) {
+        for instruction in body(callee) {
+            assert!(
+                !instruction.text.starts_with("cmov"),
+                "{name} should stay branch-based, found `{}`",
+                instruction.text
+            );
+        }
+    }
+}
+
 /// Checks every reachable direct jump in `elf`. Returns `Ok(None)` when
 /// `elf` is not an x86-64 executable.
 pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
