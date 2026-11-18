@@ -368,8 +368,8 @@ fn collect_examples() -> Vec<PathBuf> {
     }
 
     let dir = std::env::var("FUZZ_EX_DIR").unwrap_or_else(|_| {
-        warn!("FUZZ_EX_DIR is unset; using default lexer_tests");
-        "lexer_tests".into()
+        warn!("FUZZ_EX_DIR is unset; using default tests/fixtures/lexer_fuzz");
+        "tests/fixtures/lexer_fuzz".into()
     });
     let p = Path::new(&dir);
     if !p.exists() {

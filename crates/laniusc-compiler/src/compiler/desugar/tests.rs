@@ -693,15 +693,16 @@ fn library_sources_start_no_closure() {
 }
 
 /// A closure becomes a literal of a struct of its captures where it stands,
-/// and the struct and its impls after the last token of its file, which
-/// imports `core::function` after its module line.
+/// and the struct and its impls after the last token of its file. The file
+/// imports nothing: the type checker resolves `core::function` as a
+/// language item.
 #[test]
 fn a_closure_becomes_a_struct_and_impls() {
     let _one = one_at_a_time();
     let source = "module app::main;\nfn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n";
     let id = format!("{:010}", source.find("|x").unwrap());
     let expected = format!(
-        "module app::main;import core::function;\nfn main() -> i32 {{\n    let f: i32 = 2;\n    return call(__lanius_closure_{id}{{f:f,}}.borrow());\n}}\n\
+        "module app::main;\nfn main() -> i32 {{\n    let f: i32 = 2;\n    return call(__lanius_closure_{id}{{f:f,}}.borrow());\n}}\n\
          struct __lanius_closure_{id}{{f:i32,}}\nimpl __lanius_closure_{id}{{fn borrow(&self)->&__lanius_closure_{id}{{return self;}}}}\n\
          pub impl<__lanius_r> core::function::Mapper<i32,__lanius_r > for __lanius_closure_{id}\
          {{pub fn apply(&self,x:i32)->__lanius_r{{let f:i32 =self.f;return x * f;}}}}\n"

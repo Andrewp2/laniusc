@@ -576,7 +576,7 @@ fn main() -> i32 {
 - A closure reads the locals of its function. It copies each one when the
   closure is created. Such a local needs a declared type: `let step: i32`.
 - A closure is passed where a function asks for a callback. The traits are in
-  `core::function`:
+  `core::function`, which any file can name without importing it:
 
   | Closure | Trait | Call |
   | --- | --- | --- |

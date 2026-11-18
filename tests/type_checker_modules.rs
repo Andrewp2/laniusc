@@ -3672,7 +3672,9 @@ fn main() {
         &stdlib_root,
     )
     .expect("source-root path manifest should prefer user module before stdlib fallback");
-    assert_eq!(manifest.files.len(), 2);
+    // The entry and the user's core::i32, plus the language-item module
+    // core::function and its import core::mem from the stdlib root.
+    assert_eq!(manifest.files.len(), 4);
     assert!(
         manifest
             .files

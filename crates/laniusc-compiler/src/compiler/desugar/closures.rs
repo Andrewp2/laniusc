@@ -4,8 +4,9 @@
 //! `borrow` method and an impl of `core::function::Mapper` (or `Producer`
 //! for `|| body`, `Consumer` and `Runnable` for a block body without a
 //! result type). The site becomes a literal of that struct, borrowed; the
-//! struct and its impls go after the last token of the closure's file, and
-//! the file imports `core::function`.
+//! struct and its impls go after the last token of the closure's file. The
+//! file imports nothing: the type checker resolves `core::function` as a
+//! language item (shaders/type_checker/modules/10c_resolve_qualified_paths).
 //!
 //! The round runs first, so its kernels (shaders/closures) read the lexer's
 //! own tokens. A prefix sum of the bracket depth and the closure starts
@@ -32,7 +33,7 @@ use crate::{gpu::buffers::LaniusBuffer, lexer::tables::tokens::TokenKind};
 /// shaders/closures/closure_common.slang.
 /// A string that follows a copied type starts with a space, so a type that
 /// ends in `>` does not join it into `>=` or `>>`.
-const CONSTANTS: [&str; 40] = [
+const CONSTANTS: [&str; 39] = [
     "__lanius_closure_",
     "{",
     ":",
@@ -56,7 +57,6 @@ const CONSTANTS: [&str; 40] = [
     "return ",
     ";}}\n",
     "}}\n",
-    "import core::function;",
     "}",
     " core::function::Consumer<",
     " core::function::Runnable",
