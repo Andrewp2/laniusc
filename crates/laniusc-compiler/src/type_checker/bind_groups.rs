@@ -446,7 +446,7 @@ impl GpuTypeChecker {
             &typecheck_graph,
             &resources,
             compiler_graph::HIR_ACTIVE_DISPATCH_PASS,
-            &passes.kernel("type_checker/hir_active_dispatch_args"),
+            &passes.kernel("type_checker/semantics/write_active_dispatch_args"),
             1,
         )?;
         let semantic_features = SemanticFeaturesOperation::new(

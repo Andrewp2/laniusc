@@ -4220,7 +4220,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/hir_active_dispatch_args",
+        "type_checker/semantics/write_active_dispatch_args",
     )?;
     graph.add_pass(PassDesc {
         name: FEATURES_CLEAR_PASS,

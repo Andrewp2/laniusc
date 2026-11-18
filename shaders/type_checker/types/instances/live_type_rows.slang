@@ -25,7 +25,7 @@ uint live_type_row_count(uint tokens, uint source_rows, uint capacity, uint gene
 }
 
 // The lanes a pass strides by: one per active token, as
-// token_active_dispatch_args launches (hir_active_dispatch_args.slang), from
+// token_active_dispatch_args launches (write_active_dispatch_args.slang), from
 // `tokens` (gParams.n_tokens, the workspace's token capacity) and
 // `active_tokens` (token_count[0]). A warm job can keep a capacity above its
 // token count; striding by the capacity then skipped every live row past the
