@@ -1,4 +1,7 @@
 // Publish pointer-jumped call-argument owners and ordinals.
+//
+// The pass runs over the call argument list (hir_list_rank_node) that the
+// argument links pass marked; other rows are not read or written.
 
 import atomics;
 
@@ -14,6 +17,8 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_call_arg_owner_a;
 StructuredBuffer<uint> hir_call_arg_rank_a;
+StructuredBuffer<uint> hir_list_rank_node;
+StructuredBuffer<uint> hir_list_rank_count;
 
 RWStructuredBuffer<uint> hir_call_arg_parent_call;
 RWStructuredBuffer<uint> hir_call_arg_ordinal;
@@ -44,8 +49,11 @@ bool valid_node(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirCall.n || !valid_node(node) || hir_kind[node] != HIR_EXPR)
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_list_rank_count[0u])
+        return;
+    uint node = hir_list_rank_node[row];
+    if (!valid_node(node))
         return;
 
     uint call_node = hir_call_arg_owner_a[node];

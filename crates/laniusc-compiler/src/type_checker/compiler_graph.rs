@@ -599,36 +599,55 @@ pub(super) const BODY_FIELD_CLOSURE_AFTER_PASS: &str =
 // Accepted value facts and application edges share one lexical substitution.
 // Keep function/parameter signature columns symbolic: sibling calls have their
 // own accepted environments, even when they target the body being replayed.
-pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &[
+/// The rows a body reference specialization pass visits
+/// (00g_specialize_checked_references.slang, gReferenceExtent): every row,
+/// or the rows below a GPU-written allocation count, strided over
+/// BODY_REFERENCE_LANES lanes.
+pub(super) const BODY_REFERENCE_EXTENT_ALL: u32 = 0;
+pub(super) const BODY_REFERENCE_EXTENT_TYPE_ARGUMENTS: u32 = 1;
+pub(super) const BODY_REFERENCE_EXTENT_CLAIMS: u32 = 2;
+pub(super) const BODY_REFERENCE_EXTENT_CALL_CONTEXTS: u32 = 3;
+pub(super) const BODY_REFERENCE_EXTENT_EXPLICIT_BINDINGS: u32 = 4;
+pub(super) const BODY_REFERENCE_EXTENT_IMPORTED_FIELDS: u32 = 5;
+/// Lanes of a bounded body reference pass and of the constant-claim fold
+/// (00g2_fold_body_constant_claims.slang, LANES).
+pub(super) const BODY_REFERENCE_LANES: u32 = 1 << 18;
+pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str, u32)] = &[
     (
         "type_check.body_specialization.argument_edges",
         "type_instance_arg_ref_tag",
         "type_instance_arg_ref_payload",
+        BODY_REFERENCE_EXTENT_TYPE_ARGUMENTS,
     ),
     (
         "type_check.body_specialization.source_argument_edges",
         "type_instance_arg_row_ref_tag",
         "type_instance_arg_row_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.element_edges",
         "type_instance_elem_ref_tag",
         "type_instance_elem_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_declarations",
         "decl_type_ref_tag",
         "decl_type_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_expressions",
         "call_inference_result_tag",
         "call_inference_result_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_claims",
         "call_generic_claim_ref_tag",
         "call_generic_claim_ref_payload",
+        BODY_REFERENCE_EXTENT_CLAIMS,
     ),
     // Per-call receiver facts: bound-member routing and native receiver
     // passing need the selected body's concrete receiver, not `P`.
@@ -636,51 +655,61 @@ pub(super) const BODY_REFERENCE_SPECIALIZATION_PASSES: &[(&str, &str, &str)] = &
         "type_check.body_specialization.method_receivers",
         "method_call_receiver_ref_tag",
         "method_call_receiver_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.method_parameters",
         "method_call_parameter_ref_tag",
         "method_call_parameter_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.explicit_bindings",
         "call_explicit_binding_tag",
         "call_explicit_binding_payload",
+        BODY_REFERENCE_EXTENT_EXPLICIT_BINDINGS,
     ),
     (
         "type_check.body_specialization.accepted_contexts",
         "call_context_ref_tag",
         "call_context_ref_payload",
+        BODY_REFERENCE_EXTENT_CALL_CONTEXTS,
     ),
     (
         "type_check.body_specialization.expected_arguments",
         "argument_expected_ref_tag",
         "argument_expected_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.imported_match_payloads",
         "imported_match_payload_ref_tag",
         "imported_match_payload_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_members",
         "member_result_ref_tag",
         "member_result_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_member_roots",
         "member_chain_root_ref_tag",
         "member_chain_root_ref_payload",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
     (
         "type_check.body_specialization.accepted_imported_fields",
         "imported_field_ref_tag",
         "imported_field_ref_payload",
+        BODY_REFERENCE_EXTENT_IMPORTED_FIELDS,
     ),
     (
         "type_check.body_specialization.accepted_literal_results",
         "semantic_expr_ref_tag_by_hir",
         "semantic_expr_ref_payload_by_hir",
+        BODY_REFERENCE_EXTENT_ALL,
     ),
 ];
 
@@ -6514,7 +6543,7 @@ fn build_graph(
         "type_checker/type/instances/00f_apply_body_specialization",
         &[],
     )?;
-    for &(name, tag_column, payload_column) in BODY_REFERENCE_SPECIALIZATION_PASSES {
+    for &(name, tag_column, payload_column, _) in BODY_REFERENCE_SPECIALIZATION_PASSES {
         let tag = graph
             .resource_id(tag_column)
             .expect("accepted type tag column");

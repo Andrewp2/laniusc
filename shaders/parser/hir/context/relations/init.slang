@@ -8,6 +8,7 @@
 // consumers.
 
 import generated_parse_production_ids;
+import hir_family_rows;
 
 struct Params
 {
@@ -185,6 +186,18 @@ bool loop_node(uint node)
     return kind == HIR_WHILE_STMT || kind == HIR_FOR_STMT;
 }
 
+// Array element arrays are defined on array element rows only.
+bool array_element_node(uint node)
+{
+    if (!valid_original_node(node))
+        return false;
+    uint container = parent[node];
+    if (!valid_original_node(container) ||
+        !hir_array_element_row(hir_kind[node], node_kind[container]))
+        return false;
+    return valid_original_node(hir_array_element_parent_lit[node]);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -216,5 +229,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_nearest_fn_value_a[row] =
         function_node(node) ? node : INVALID;
     hir_nearest_array_element_value_a[row] =
-        valid_original_node(hir_array_element_parent_lit[node]) ? node : INVALID;
+        array_element_node(node) ? node : INVALID;
 }

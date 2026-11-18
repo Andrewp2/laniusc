@@ -113,7 +113,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &count_slice,
-            "parser.semantic_token_kinds.current.count",
+            crate::debug_readback_label!("parser.semantic_token_kinds.current.count"),
         )?;
         let count_mapped = count_slice.get_mapped_range();
         let count_words = read_u32_words(&count_mapped, 1)?;
@@ -127,7 +127,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &kinds_slice,
-            "parser.semantic_token_kinds.current",
+            crate::debug_readback_label!("parser.semantic_token_kinds.current"),
         )?;
         let kinds_mapped = kinds_slice.get_mapped_range();
         let words = read_u32_words(&kinds_mapped, read_count)?;
@@ -201,7 +201,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &count_slice,
-            "parser.semantic_token_kinds.count",
+            crate::debug_readback_label!("parser.semantic_token_kinds.count"),
         )?;
         let count_mapped = count_slice.get_mapped_range();
         let count_words = read_u32_words(&count_mapped, 1)?;
@@ -215,7 +215,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &kinds_slice,
-            "parser.semantic_token_kinds",
+            crate::debug_readback_label!("parser.semantic_token_kinds"),
         )?;
         let kinds_mapped = kinds_slice.get_mapped_range();
         let words = read_u32_words(&kinds_mapped, read_count)?;
@@ -276,7 +276,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &flags_slice,
-            "parser.token_feature_flags",
+            crate::debug_readback_label!("parser.token_feature_flags"),
         )?;
         let flags_mapped = flags_slice.get_mapped_range();
         let words = read_u32_words(&flags_mapped, 1)?;

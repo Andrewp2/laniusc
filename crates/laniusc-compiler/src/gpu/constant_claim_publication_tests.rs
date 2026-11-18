@@ -754,7 +754,7 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         );
         gpu.queue.submit(Some(encoder.finish()));
         let slice = readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "claim_publication.readback").unwrap();
+        map_readback_blocking(&gpu.device, &slice, "claim_publication.readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let words: Vec<_> = mapped
             .chunks_exact(4)

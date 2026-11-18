@@ -751,7 +751,8 @@ impl PhaseResetPlan {
                 let mut offset = 0;
                 while offset < size {
                     let chunk = bytes.min(size - offset);
-                    encoder.copy_buffer_to_buffer(
+                    crate::gpu::copies::CountedCommands::copy_buffer_counted(
+                        encoder,
                         &source,
                         0,
                         &tail.buffer,

@@ -1223,7 +1223,7 @@ impl RetainedProjection {
             at += size;
         }
         self.queue.submit(Some(encoder.finish()));
-        let map = passes_core::begin_readback_map(&staging.slice(..bytes), "retained_projection.readback");
+        let map = passes_core::begin_readback_map(&staging.slice(..bytes), crate::readback_label!("retained_projection.readback"));
         PendingRead { staging, sizes, bytes, map }
     }
 
@@ -2168,7 +2168,7 @@ pub fn read_test_buffer(buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>>
     encoder.copy_buffer_counted(buffer, 0, &readback, 0, bytes);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "retained_projection.test_readback")?;
+    map_readback_blocking(&gpu.device, &slice, crate::debug_readback_label!("retained_projection.test_readback"))?;
     let out = slice
         .get_mapped_range()
         .chunks_exact(4)

@@ -293,7 +293,7 @@ fn read_words(
         encoder.finish(),
     );
     let slice = staging.slice(..);
-    crate::gpu::passes_core::map_readback_blocking(device.device, &slice, "desugar.readback")?;
+    crate::gpu::passes_core::map_readback_blocking(device.device, &slice, crate::readback_label!("desugar.readback"))?;
     let mapped = slice.get_mapped_range();
     let mut out = Vec::with_capacity(reads.len());
     let mut at = 0usize;

@@ -403,7 +403,7 @@ fn physical_gpu_integer_words_match_native_width_oracles() {
     results.copy_to(&mut encoder, 0, &readback, 0, byte_count as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "integer_probe.readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "integer_probe.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words: Vec<_> = mapped
         .chunks_exact(4)

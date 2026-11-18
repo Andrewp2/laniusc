@@ -249,6 +249,34 @@ impl ComputeOperation {
         )
     }
 
+    /// Builds a direct operation that binds `params` to the uniform
+    /// `binding` in place of the shared one.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn direct_with_named_uniform<T>(
+        device: &wgpu::Device,
+        graph: &impl ComputeGraph,
+        resources: &ResourceMap<'_>,
+        name: &'static str,
+        pass: &PassData,
+        binding: &'static str,
+        params: &LaniusBuffer<T>,
+        elements: u32,
+    ) -> Result<Self> {
+        let mut resources = ResourceOverlay::new(resources);
+        resources.buffer(binding, params);
+        Self::new_with_overlay(
+            device,
+            graph,
+            resources,
+            name,
+            pass,
+            Dispatch::Direct {
+                elements,
+                dynamic_offsets: Vec::new(),
+            },
+        )
+    }
+
     /// Builds an indirect operation that binds `params` to the uniform
     /// `binding` in place of the shared one.
     pub(crate) fn indirect_with_uniform<T>(

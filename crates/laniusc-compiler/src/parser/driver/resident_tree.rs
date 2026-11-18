@@ -56,7 +56,10 @@ impl U32Readback {
     }
 
     fn map(&self) {
-        crate::gpu::passes_core::map_readback_for_progress(&self.buffer.slice(..), self.label);
+        crate::gpu::passes_core::map_readback_for_progress(
+            &self.buffer.slice(..),
+            crate::readback_label!("parser.resident-tree"),
+        );
     }
 
     fn read_words(&self, count: usize) -> Result<Vec<u32>> {
@@ -2086,7 +2089,7 @@ impl ResidentTreeReadbacks {
         let hir_item_kind = self.hir_item_kind.read_words(tree_len)?;
         let hir_item_decl_token =
             crate::parser::readback::project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
-        let result = ResidentParseResult {
+        let mut result = ResidentParseResult {
             ll1: Ll1AcceptResult {
                 accepted: ll1_words[0] != 0,
                 error_pos: ll1_words[1],
@@ -2356,6 +2359,35 @@ impl ResidentTreeReadbacks {
             hir_compact_predicate_bound,
             hir_compact_predicate_metadata,
         };
+        crate::parser::readback::reset_hir_enum_rows_outside_family(
+            &result.node_kind,
+            &result.hir_kind,
+            [
+                &mut result.hir_variant_parent_enum,
+                &mut result.hir_variant_ordinal,
+                &mut result.hir_variant_payload_start,
+            ],
+            [&mut result.hir_variant_payload_count],
+            &mut result.hir_variant_payload_node,
+        );
+        crate::parser::readback::reset_hir_match_rows_outside_family(
+            &result.node_kind,
+            [
+                &mut result.hir_match_scrutinee_node,
+                &mut result.hir_match_arm_start,
+                &mut result.hir_match_arm_next,
+                &mut result.hir_match_arm_pattern_node,
+                &mut result.hir_match_arm_payload_start,
+                &mut result.hir_match_arm_result_node,
+                &mut result.hir_match_payload_owner_arm,
+                &mut result.hir_match_payload_match_node,
+                &mut result.hir_match_payload_ordinal,
+            ],
+            [
+                &mut result.hir_match_arm_count,
+                &mut result.hir_match_arm_payload_count,
+            ],
+        );
         validate_hir_source_address_records(
             &result.hir_kind,
             &result.hir_token_pos,
@@ -2480,7 +2512,7 @@ impl GpuParser {
         readbacks.map_all();
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "parser.resident-tree",
+            crate::readback_label!("parser.resident-tree"),
             wgpu::PollType::wait_indefinitely(),
         );
         readbacks.decode(bufs)

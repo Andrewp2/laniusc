@@ -344,11 +344,11 @@ impl GpuLexer {
 
             crate::gpu::passes_core::map_readback_for_progress(
                 &readback_tokens_count.slice(..),
-                "lex.count",
+                crate::readback_label!("lex.count"),
             );
             crate::gpu::passes_core::wait_for_map_progress(
                 &self.device,
-                "lex.count",
+                crate::readback_label!("lex.count"),
                 wgpu::PollType::wait_indefinitely(),
             );
             let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
@@ -403,11 +403,11 @@ impl GpuLexer {
 
         crate::gpu::passes_core::map_readback_for_progress(
             &readback_tokens_buffer.slice(0..need_bytes),
-            "lex.tokens",
+            crate::readback_label!("lex.tokens"),
         );
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "lex.tokens",
+            crate::readback_label!("lex.tokens"),
             wgpu::PollType::wait_indefinitely(),
         );
 
@@ -479,7 +479,7 @@ impl GpuLexer {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &slice,
-            "lexer.parser_feature_flags.debug",
+            crate::debug_readback_label!("lexer.parser_feature_flags.debug"),
         )?;
         let mapped = slice.get_mapped_range();
         let value = u32_from_first_4(&mapped);
@@ -1010,11 +1010,11 @@ impl GpuLexer {
         let count_slice = token_count_readback.slice(..);
         crate::gpu::passes_core::map_readback_for_progress(
             &count_slice,
-            "lex.source-pack.resident.count",
+            crate::readback_label!("lex.source-pack.resident.count"),
         );
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "lex.source-pack.resident.count",
+            crate::readback_label!("lex.source-pack.resident.count"),
             wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();
@@ -1332,10 +1332,10 @@ impl GpuLexer {
         );
 
         let count_slice = token_count_readback.slice(..);
-        crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
+        crate::gpu::passes_core::map_readback_for_progress(&count_slice, crate::readback_label!("lex.resident.count"));
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "lex.resident.count",
+            crate::readback_label!("lex.resident.count"),
             wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();
@@ -1515,10 +1515,10 @@ impl GpuLexer {
         );
 
         let count_slice = token_count_readback.slice(..);
-        crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
+        crate::gpu::passes_core::map_readback_for_progress(&count_slice, crate::readback_label!("lex.resident.count"));
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "lex.resident.count",
+            crate::readback_label!("lex.resident.count"),
             wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();
@@ -1704,10 +1704,10 @@ impl GpuLexer {
         );
 
         let count_slice = token_count_readback.slice(..);
-        crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
+        crate::gpu::passes_core::map_readback_for_progress(&count_slice, crate::readback_label!("lex.resident.count"));
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "lex.resident.count",
+            crate::readback_label!("lex.resident.count"),
             wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();

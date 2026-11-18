@@ -308,7 +308,7 @@ mod tests {
         gpu.queue.submit(Some(encoder.finish()));
 
         let slice = readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "test context scan readback").unwrap();
+        map_readback_blocking(&gpu.device, &slice, "test context scan readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let actual = mapped
             .chunks_exact(4)
@@ -420,7 +420,7 @@ mod tests {
         gpu.queue.submit(Some(encoder.finish()));
 
         let slice = readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "test delimiter scan readback").unwrap();
+        map_readback_blocking(&gpu.device, &slice, "test delimiter scan readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let actual_depth = mapped[..count * 4]
             .chunks_exact(4)

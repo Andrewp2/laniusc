@@ -17,7 +17,7 @@ fn contents(
             &arena.buffer,
             0,
             arena.logical_words as usize * 4,
-            "workspace test contents",
+            "workspace test contents".into(),
         )
         .unwrap()
         .chunks_exact(4)

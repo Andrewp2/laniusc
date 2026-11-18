@@ -1315,7 +1315,7 @@ impl ProgramRetention {
         }
         self.queue.submit(Some(encoder.finish()));
         let slice = readback.slice(..);
-        map_readback_blocking(&self.device, &slice, "program_retention.readback")?;
+        map_readback_blocking(&self.device, &slice, crate::readback_label!("program_retention.readback"))?;
         let words = slice
             .get_mapped_range()
             .chunks_exact(4)

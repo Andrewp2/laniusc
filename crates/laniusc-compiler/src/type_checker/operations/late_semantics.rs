@@ -263,7 +263,7 @@ impl SemanticProjectionOperations {
                     compiler_graph::BODY_REFERENCE_SPECIALIZATION_PASSES
                         .iter()
                         .filter(move |_| name == "type_check.body_specialization.apply")
-                        .map(|&(name, _, _)| {
+                        .map(|&(name, _, _, _)| {
                             (name, compiler_graph::BODY_REFERENCE_SPECIALIZATION_KERNEL)
                         }),
                 )
@@ -292,29 +292,43 @@ impl SemanticProjectionOperations {
                 } else {
                     0
                 };
-                let capacity = if let Some(&(_, tag_column, _)) =
-                    compiler_graph::BODY_REFERENCE_SPECIALIZATION_PASSES
-                        .iter()
-                        .find(|&&(pass, _, _)| pass == name)
+                let reference_pass = compiler_graph::BODY_REFERENCE_SPECIALIZATION_PASSES
+                    .iter()
+                    .find(|&&(pass, _, _, _)| pass == name);
+                if let Some(&(_, _, _, mode)) = reference_pass
+                    && mode != compiler_graph::BODY_REFERENCE_EXTENT_ALL
                 {
+                    let extent = uniform_from_val(
+                        device,
+                        name,
+                        &ReferenceExtentParams {
+                            mode,
+                            lanes: compiler_graph::BODY_REFERENCE_LANES,
+                            reserved0: 0,
+                            reserved1: 0,
+                        },
+                    );
+                    return ComputeOperation::direct_with_named_uniform(
+                        device,
+                        graph,
+                        resources,
+                        name,
+                        &passes.kernel(kernel),
+                        "gReferenceExtent",
+                        &extent,
+                        compiler_graph::BODY_REFERENCE_LANES,
+                    )
+                    .map(|operation| (required_feature, operation));
+                }
+                let capacity = if let Some(&(_, tag_column, _, _)) = reference_pass {
                     let tags: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, tag_column)?;
                     u32::try_from(tags.byte_size / 4)?
                 } else if name == compiler_graph::BODY_SPECIALIZATION_CANONICAL_REARM_PASS {
-                    let words = |name| -> Result<u32> {
-                        Ok(u32::try_from(
-                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
-                        )?)
-                    };
-                    words("canonical_row")? + words("canonical_atom")? + words("canonical_projection")?
+                    canonical_passes::CANONICAL_REARM_LANES
                 } else if name == compiler_graph::BODY_SPECIALIZATION_CONSTANT_CLAIMS_PASS {
-                    // A lane per constant claim, then one per contextual slot.
-                    let words = |name| -> Result<u32> {
-                        Ok(u32::try_from(
-                            typed_buffer_from_resources::<u32>(resources, name)?.byte_size / 4,
-                        )?)
-                    };
-                    words("call_const_claim_ref_kind")? + words("call_context_constant_kind")?
+                    // Strides the live constant claims, then the live calls.
+                    compiler_graph::BODY_REFERENCE_LANES
 
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
@@ -609,16 +623,17 @@ impl CanonicalTypeOperations {
                 .max(canonical_passes::CANONICAL_VALIDATION_WORDS as u32),
         )?;
         // The early stage's re-arm visits every candidate; the body and late
-        // stages' visit the allocated ones (03c_rearm_live_list).
+        // stages' visit the allocated ones (03c_rearm_live_list). Each
+        // strides its candidates over a fixed grid.
         let rearm = direct(
             canonical_passes::CANONICAL_REARM_PASS,
             canonical_passes::CANONICAL_REARM_LIVE_LIST_KERNEL,
-            candidates,
+            canonical_passes::CANONICAL_REARM_LANES,
         )?;
         let early_rearm = direct(
             canonical_passes::CANONICAL_EARLY_REARM_PASS,
             canonical_passes::CANONICAL_REARM_LIST_KERNEL,
-            candidates,
+            canonical_passes::CANONICAL_REARM_LANES,
         )?;
         let rearm_args = direct(
             canonical_passes::CANONICAL_REARM_ARGS_PASS,

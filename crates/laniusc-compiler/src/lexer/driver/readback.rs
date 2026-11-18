@@ -43,10 +43,10 @@ pub(super) fn read_resident_tokens(
     );
 
     let count_slice = count_readback.slice(..);
-    crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.source-pack.count");
+    crate::gpu::passes_core::map_readback_for_progress(&count_slice, crate::readback_label!("lex.source-pack.count"));
     crate::gpu::passes_core::wait_for_map_progress(
         device,
-        "lex.source-pack.count",
+        crate::readback_label!("lex.source-pack.count"),
         wgpu::PollType::wait_indefinitely(),
     );
     let count_bytes = count_slice.get_mapped_range();
@@ -88,10 +88,10 @@ pub(super) fn read_resident_tokens(
     );
 
     let tokens_slice = tokens_readback.slice(0..need_bytes);
-    crate::gpu::passes_core::map_readback_for_progress(&tokens_slice, "lex.source-pack.tokens");
+    crate::gpu::passes_core::map_readback_for_progress(&tokens_slice, crate::readback_label!("lex.source-pack.tokens"));
     crate::gpu::passes_core::wait_for_map_progress(
         device,
-        "lex.source-pack.tokens",
+        crate::readback_label!("lex.source-pack.tokens"),
         wgpu::PollType::wait_indefinitely(),
     );
     let mapped = tokens_slice.get_mapped_range();

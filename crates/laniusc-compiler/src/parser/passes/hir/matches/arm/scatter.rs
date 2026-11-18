@@ -47,6 +47,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchArmScatt
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             (
+                "hir_match_rank_node".into(),
+                b.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_count".into(),
+                b.hir_match_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_owner_a".into(),
                 b.hir_match_arm_owner_a.as_entire_binding(),
             ),
@@ -245,7 +253,7 @@ mod tests {
                     }
                     gpu.queue.submit(Some(encoder.finish()));
                     let slice = readback.slice(..);
-                    map_readback_blocking(&gpu.device, &slice, "match payload ownership").unwrap();
+                    map_readback_blocking(&gpu.device, &slice, "match payload ownership".into()).unwrap();
                     let mapped = slice.get_mapped_range();
                     let words: Vec<u32> = mapped
                         .chunks_exact(4)

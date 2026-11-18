@@ -203,19 +203,111 @@ const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
 // compares this copy with the generated table.
 const PROD_BOUND_TYPE_IDENT: u32 = 243;
 
+// The match family's productions: the rows the match kernels visit. Match
+// arrays hold defined words only on these rows.
+const HIR_MATCH_FAMILY_PRODUCTIONS: [(&str, u32); 10] = [
+    ("PROD_MATCH_EXPR", 189),
+    ("PROD_MATCH_ARM", 192),
+    ("PROD_PATTERN_IDENT", 197),
+    ("PROD_PATTERN_INT", 198),
+    ("PROD_PATTERN_TRUE", 199),
+    ("PROD_PATTERN_FALSE", 200),
+    ("PROD_PATTERN_TUPLE", 202),
+    ("PROD_PATTERNS_SOME", 204),
+    ("PROD_PATTERNS_MORE", 205),
+    ("PROD_PATTERNS_AFTER_COMMA_MORE", 207),
+];
+
+/// Family kernels write only their own family's rows, so the other rows of a
+/// family array hold whatever an earlier job left there. This puts the
+/// defaults (`INVALID` for links, 0 for counts) back on those rows before a
+/// readback is validated or returned.
+fn reset_rows_outside_family(
+    in_family: impl Fn(usize) -> bool,
+    links: &mut [&mut Vec<u32>],
+    counts: &mut [&mut Vec<u32>],
+) {
+    let reset = |words: &mut Vec<u32>, default: u32| {
+        for (node, word) in words.iter_mut().enumerate() {
+            if !in_family(node) {
+                *word = default;
+            }
+        }
+    };
+    for words in links.iter_mut() {
+        reset(words, INVALID);
+    }
+    for words in counts.iter_mut() {
+        reset(words, 0);
+    }
+}
+
+/// Resets the match arrays outside the match family's rows.
+pub(crate) fn reset_hir_match_rows_outside_family(
+    node_kind: &[u32],
+    mut links: [&mut Vec<u32>; 9],
+    mut counts: [&mut Vec<u32>; 2],
+) {
+    reset_rows_outside_family(
+        |node| {
+            let kind = node_kind.get(node).copied().unwrap_or(INVALID);
+            HIR_MATCH_FAMILY_PRODUCTIONS.iter().any(|&(_, id)| id == kind)
+        },
+        &mut links,
+        &mut counts,
+    );
+}
+
+// The enum family: enum variants and type rows, as in
+// shaders/parser/hir/enum/rank/prefix_00_local.slang.
+const PROD_ENUM_VARIANT: u32 = 215;
+const HIR_KIND_TYPE: u32 = 5;
+
+/// Resets the variant arrays outside the enum family's rows. The payload
+/// node array holds `HIR_VARIANT_PAYLOAD_SLOT_STRIDE` words per row.
+pub(crate) fn reset_hir_enum_rows_outside_family(
+    node_kind: &[u32],
+    hir_kind: &[u32],
+    mut links: [&mut Vec<u32>; 3],
+    mut counts: [&mut Vec<u32>; 1],
+    payload_node: &mut [u32],
+) {
+    let in_family = |node: usize| {
+        node_kind.get(node) == Some(&PROD_ENUM_VARIANT) || hir_kind.get(node) == Some(&HIR_KIND_TYPE)
+    };
+    reset_rows_outside_family(in_family, &mut links, &mut counts);
+    for (slot, word) in payload_node.iter_mut().enumerate() {
+        if !in_family(slot / HIR_VARIANT_PAYLOAD_SLOT_STRIDE as usize) {
+            *word = INVALID;
+        }
+    }
+}
+
 #[cfg(test)]
 mod production_id_tests {
+    const GENERATED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../shaders/parser/generated_parse_production_ids.slang"
+    ));
+
     #[test]
     fn bound_type_ident_matches_the_generated_production_table() {
-        let generated = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../shaders/parser/generated_parse_production_ids.slang"
-        ));
         let line = format!(
             "static const uint PROD_BOUND_TYPE_IDENT = {}u;",
             super::PROD_BOUND_TYPE_IDENT
         );
-        assert!(generated.contains(&line), "expected `{line}` in the generated table");
+        assert!(GENERATED.contains(&line), "expected `{line}` in the generated table");
+    }
+
+    #[test]
+    fn family_productions_match_the_generated_production_table() {
+        for (name, id) in super::HIR_MATCH_FAMILY_PRODUCTIONS
+            .into_iter()
+            .chain([("PROD_ENUM_VARIANT", super::PROD_ENUM_VARIANT)])
+        {
+            let line = format!("static const uint {name} = {id}u;");
+            assert!(GENERATED.contains(&line), "expected `{line}` in the generated table");
+        }
     }
 }
 
@@ -1473,10 +1565,10 @@ impl DecodedParserReadbacks {
         rb: ParserReadbacks,
     ) -> Result<Self> {
         // Map all
-        let map = |name: &str, b: &wgpu::Buffer| {
+        let map = |_name: &str, b: &wgpu::Buffer| {
             crate::gpu::passes_core::map_readback_for_progress(
                 &b.slice(..),
-                &format!("parser.readback.{name}"),
+                crate::readback_label!("parser.readback"),
             );
         };
         map("headers", &rb.headers);
@@ -1613,7 +1705,7 @@ impl DecodedParserReadbacks {
 
         crate::gpu::passes_core::wait_for_map_progress(
             device,
-            "parser.readback",
+            crate::readback_label!("parser.readback"),
             wgpu::PollType::wait_indefinitely(),
         );
 
@@ -1747,7 +1839,7 @@ impl DecodedParserReadbacks {
         let hir_struct_lit_field_value_node = decode_tree_vec(&rb.hir_struct_lit_field_value_node);
         let hir_struct_lit_field_next = decode_tree_vec(&rb.hir_struct_lit_field_next);
 
-        let decoded = Self {
+        let mut decoded = Self {
             ll1_status,
             headers,
             sc_stream,
@@ -1843,6 +1935,35 @@ impl DecodedParserReadbacks {
             hir_struct_lit_field_value_node,
             hir_struct_lit_field_next,
         };
+        reset_hir_enum_rows_outside_family(
+            &decoded.node_kind,
+            &decoded.hir_kind,
+            [
+                &mut decoded.hir_variant_parent_enum,
+                &mut decoded.hir_variant_ordinal,
+                &mut decoded.hir_variant_payload_start,
+            ],
+            [&mut decoded.hir_variant_payload_count],
+            &mut decoded.hir_variant_payload_node,
+        );
+        reset_hir_match_rows_outside_family(
+            &decoded.node_kind,
+            [
+                &mut decoded.hir_match_scrutinee_node,
+                &mut decoded.hir_match_arm_start,
+                &mut decoded.hir_match_arm_next,
+                &mut decoded.hir_match_arm_pattern_node,
+                &mut decoded.hir_match_arm_payload_start,
+                &mut decoded.hir_match_arm_result_node,
+                &mut decoded.hir_match_payload_owner_arm,
+                &mut decoded.hir_match_payload_match_node,
+                &mut decoded.hir_match_payload_ordinal,
+            ],
+            [
+                &mut decoded.hir_match_arm_count,
+                &mut decoded.hir_match_arm_payload_count,
+            ],
+        );
         validate_hir_semantic_tree_records(
             &decoded.hir_kind,
             &decoded.subtree_end,

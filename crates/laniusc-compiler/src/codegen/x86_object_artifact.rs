@@ -870,7 +870,7 @@ impl GpuX86ObjectStage {
                 device,
                 queue,
                 &self.payload_regions(payload_bytes)?,
-                "x86 object payload readback",
+                crate::readback_label!("x86 object payload readback"),
             )?
             .try_into()
             .map_err(|_| anyhow::anyhow!("x86 object payload readback shape changed"))?;

@@ -1,4 +1,7 @@
 // Publish pointer-jumped enum variant owners, ordinals, and payload counts.
+//
+// The pass runs over the enum family's rows (hir_enum_rank_node); other rows
+// are not read or written.
 
 import atomics;
 import generated_parse_production_ids;
@@ -19,6 +22,9 @@ StructuredBuffer<uint> hir_variant_owner_a;
 StructuredBuffer<uint> hir_variant_rank_a;
 StructuredBuffer<uint> hir_variant_payload_owner_a;
 StructuredBuffer<uint> hir_variant_payload_rank_a;
+
+StructuredBuffer<uint> hir_enum_rank_node;
+StructuredBuffer<uint> hir_enum_rank_count;
 
 RWStructuredBuffer<uint> hir_token_end;
 RWStructuredBuffer<uint> hir_variant_parent_enum;
@@ -84,8 +90,11 @@ void publish_payload_type(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if ((gHirEnum.family_flags & 1u) == 0u || node >= gHirEnum.n || !valid_node(node))
+    uint row = linear_thread_id(dtid);
+    if ((gHirEnum.family_flags & 1u) == 0u || row >= hir_enum_rank_count[0u])
+        return;
+    uint node = hir_enum_rank_node[row];
+    if (node >= gHirEnum.n || !valid_node(node))
         return;
 
     if (node_kind[node] == PROD_ENUM_VARIANT)

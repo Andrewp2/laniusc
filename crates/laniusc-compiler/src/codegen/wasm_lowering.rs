@@ -836,7 +836,7 @@ impl GpuWasmLirStage {
         queue: &wgpu::Queue,
     ) -> Result<Vec<u8>> {
         let length_slice = self.artifact_length_readback.slice(..);
-        map_readback_blocking(device, &length_slice, "Wasm artifact length readback")?;
+        map_readback_blocking(device, &length_slice, crate::readback_label!("Wasm artifact length readback"))?;
         let mapped_length = length_slice.get_mapped_range();
         let length = u32::from_le_bytes(mapped_length[0..4].try_into().unwrap()) as usize;
         drop(mapped_length);
@@ -854,7 +854,7 @@ impl GpuWasmLirStage {
             artifact.words,
             0,
             length,
-            "Wasm artifact byte readback",
+            crate::readback_label!("Wasm artifact byte readback"),
         )
     }
 
@@ -1057,7 +1057,7 @@ mod tests {
 
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
-        map_readback_blocking(device, &slice, "Wasm LIR readback").unwrap();
+        map_readback_blocking(device, &slice, "Wasm LIR readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let result = mapped
             .chunks_exact(4)

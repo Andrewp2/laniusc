@@ -285,7 +285,7 @@ impl ResidentSections {
             store.queue.submit(Some(encoder.finish()));
         }
         let slice = readback.slice(..);
-        crate::gpu::passes_core::map_readback_blocking(&store.device, &slice, "codegen.x86.link.resident.sections")
+        crate::gpu::passes_core::map_readback_blocking(&store.device, &slice, crate::readback_label!("codegen.x86.link.resident.sections"))
             .map_err(|error| format!("read parked native object sections: {error:#}"))?;
         let mapped = slice.get_mapped_range();
         let mut bytes = Vec::with_capacity((text + rodata) as usize);
@@ -1201,7 +1201,7 @@ impl GpuX86Linker {
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.plan", encoder.finish());
         let map = crate::gpu::passes_core::begin_readback_map(
             &readback.buffer.slice(..read_bytes),
-            "codegen.x86.link.resident.plan",
+            crate::readback_label!("codegen.x86.link.resident.plan"),
         );
         Ok(Some(ResidentPlan {
             device: device.clone(),
@@ -1370,7 +1370,7 @@ impl GpuX86Linker {
             crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.retry", encoder.finish());
             plan.map = Some(crate::gpu::passes_core::begin_readback_map(
                 &plan.readback.buffer.slice(..plan.read_bytes),
-                "codegen.x86.link.resident.plan",
+                crate::readback_label!("codegen.x86.link.resident.plan"),
             ));
             words = plan.read()?;
         }
@@ -1422,7 +1422,7 @@ impl GpuX86Linker {
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
         let map = crate::gpu::passes_core::begin_readback_map(
             &readback.buffer.slice(..image_bytes),
-            "codegen.x86.link.resident.image",
+            crate::readback_label!("codegen.x86.link.resident.image"),
         );
         drop(span);
         // The caller waits (`ResidentImage::finish`) after it prepares the

@@ -251,7 +251,7 @@ fn physical_gpu_typed_constant_atoms_preserve_complete_values_and_checked_counts
     results.copy_to(&mut encoder, 0, &readback, 0, byte_count as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "constant_probe.readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "constant_probe.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words = mapped
         .chunks_exact(4)

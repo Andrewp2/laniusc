@@ -136,13 +136,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_method_impl_receiver_type_node[node] = INVALID;
     }
 
-    hir_expr_result_root_scratch_node[node] = INVALID;
-    hir_stmt_record[slot(node, 0u)] = STMT_RECORD_KIND_NONE;
-    hir_stmt_record[slot(node, 1u)] = INVALID;
-    hir_stmt_record[slot(node, 2u)] = INVALID;
-    hir_stmt_record[slot(node, 3u)] = INVALID;
+    // The compile path reads raw statement records only on semantic rows,
+    // which hir_stmt_fields clears itself, and the result-root walk's first
+    // round writes its scratch buffer for every active row before any round
+    // reads it. Debug readbacks read every row.
     if (gClear.retain_debug_rows != 0u)
     {
+        hir_expr_result_root_scratch_node[node] = INVALID;
+        hir_stmt_record[slot(node, 0u)] = STMT_RECORD_KIND_NONE;
+        hir_stmt_record[slot(node, 1u)] = INVALID;
+        hir_stmt_record[slot(node, 2u)] = INVALID;
+        hir_stmt_record[slot(node, 3u)] = INVALID;
         hir_stmt_scope_end[node] = INVALID;
         hir_nearest_stmt_node[node] = INVALID;
         hir_nearest_block_node[node] = INVALID;

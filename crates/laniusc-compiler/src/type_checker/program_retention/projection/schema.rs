@@ -320,7 +320,7 @@ impl SchemaProjection {
             &self.kernels.device,
             &self.kernels.queue,
             &[(&self.kernels.buffers["ps_status"], STATUS_WORDS)],
-            "retained_schema.status",
+            crate::readback_label!("retained_schema.status"),
         )
     }
 

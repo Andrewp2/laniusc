@@ -543,7 +543,7 @@ impl RecordedResidentLl1HirCheck {
     pub(crate) fn begin_status_and_feature_flags_read(&self) -> PendingResidentLl1HirStatus {
         let slice = self.status_readback.slice(..);
         let map =
-            crate::gpu::passes_core::begin_readback_map(&slice, "parser.recorded-ll1-hir.status");
+            crate::gpu::passes_core::begin_readback_map(&slice, crate::readback_label!("parser.recorded-ll1-hir.status"));
         PendingResidentLl1HirStatus {
             status_readback: self.status_readback.clone(),
             map,

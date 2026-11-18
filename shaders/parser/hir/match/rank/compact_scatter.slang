@@ -1,5 +1,5 @@
-// Scatter match arm/pattern-payload nodes into a dense rank worklist and
-// publish indirect dispatch args for the pointer-jump rank pass.
+// Scatter the match family's rows (prefix_00_local.slang) into a dense
+// worklist and publish the indirect dispatch args every family kernel uses.
 
 import prefix_scan;
 

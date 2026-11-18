@@ -952,6 +952,9 @@ mod compute_pass_counting_tests {
             ("compiler/diagnostics.rs", 1),
             ("compiler/gpu_compiler/typecheck.rs", 2),
             ("gpu/buffers.rs", 2),
+            // The counted boundary every encoder copy and clear goes through
+            // (`CountedCommands`).
+            ("gpu/copies.rs", 4),
             ("gpu/canonical_intern_stress_tests.rs", 6),
             ("gpu/ct_match_tests.rs", 1),
             ("gpu/debug.rs", 1),
@@ -966,11 +969,13 @@ mod compute_pass_counting_tests {
             ("lexer/driver/readback.rs", 3),
             ("lexer/passes/dfa/scan_block_summaries.rs", 1),
             ("lexer/passes/pair/scan_block_totals.rs", 1),
+            // The fill of `LANIUS_CHECK=parser-poison`, a validation mode.
+            ("parser/buffers.rs", 1),
             ("parser/buffers/scans.rs", 3),
             ("parser/driver/debug.rs", 5),
             ("parser/driver/resident_tree.rs", 1),
             ("parser/readback.rs", 90),
-            ("parser/readback/hir_item_readbacks.rs", 99),
+            ("parser/readback/hir_item_readbacks.rs", 100),
             (
                 "parser/readback/hir_item_readbacks/function_return_readbacks.rs",
                 13,
@@ -2247,24 +2252,77 @@ pub(crate) fn submit_with_progress(
     SubmitTiming { gpu_anchor: end }
 }
 
-/// Queues a readback map request and records progress/trace events.
-pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &str) {
-    trace_gpu_progress(&format!("map.start :: {label}"));
-    slice.map_async(wgpu::MapMode::Read, |_| {});
+/// The name of one readback site in the compiler.
+///
+/// Only [`readback_label!`] (a site in the compile path) and
+/// [`debug_readback_label!`] (a debugging or profiling tool) make one, from a
+/// string literal. Every map of a buffer for reading goes through
+/// [`begin_readback_map`], which takes a label, so
+/// `readback_limit_tests` finds every readback site by reading the source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ReadbackLabel(&'static str);
+
+impl ReadbackLabel {
+    #[doc(hidden)]
+    pub const fn __site(label: &'static str) -> Self {
+        Self(label)
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ReadbackLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+/// Test code names its readbacks with plain strings.
+#[cfg(test)]
+impl From<&'static str> for ReadbackLabel {
+    fn from(label: &'static str) -> Self {
+        Self(label)
+    }
+}
+
+/// A readback site of the compile path. `readback_limit_tests` lists every
+/// label; a new one needs an entry there.
+#[macro_export]
+macro_rules! readback_label {
+    ($label:literal) => {
+        $crate::gpu::passes_core::ReadbackLabel::__site($label)
+    };
+}
+
+/// A readback of a debugging or profiling tool that a normal build does not
+/// run (`readback_limit_tests` lists the files that may use it).
+#[macro_export]
+macro_rules! debug_readback_label {
+    ($label:literal) => {
+        $crate::gpu::passes_core::ReadbackLabel::__site($label)
+    };
+}
+
+/// Queues the map of one buffer of a batch that [`wait_for_map_progress`]
+/// waits for in one poll.
+pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: ReadbackLabel) {
+    drop(begin_readback_map(slice, label));
     crate::gpu::trace::record_instant(
         "host.readback",
         &format!("{label}.map_queued"),
         Instant::now(),
     );
-    trace_gpu_progress(&format!("map.queued :: {label}"));
 }
 
-/// Polls a device while emitting progress messages for a pending map.
-pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_type: wgpu::PollType) {
+/// Polls a device once for the maps [`map_readback_for_progress`] queued:
+/// one round trip.
+pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: ReadbackLabel, poll_type: wgpu::PollType) {
     trace_gpu_progress(&format!("poll.start :: {label}"));
     let started = Instant::now();
     let _ = device.poll(poll_type);
-    record_readback_round_trip(label, started.elapsed());
+    record_readback_round_trip(label.as_str(), started.elapsed());
     trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
@@ -2272,7 +2330,7 @@ pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_typ
 pub fn map_readback_blocking(
     device: &wgpu::Device,
     slice: &wgpu::BufferSlice<'_>,
-    label: &str,
+    label: ReadbackLabel,
 ) -> Result<()> {
     wait_for_readback_map(device, slice, label, readback_timeout())
 }
@@ -2285,7 +2343,7 @@ fn readback_timeout() -> Duration {
 pub(crate) fn wait_for_readback_map(
     device: &wgpu::Device,
     slice: &wgpu::BufferSlice<'_>,
-    label: &str,
+    label: ReadbackLabel,
     timeout: Duration,
 ) -> Result<()> {
     let pending = begin_readback_map(slice, label);
@@ -2303,20 +2361,26 @@ pub(crate) fn finish_readback_map_blocking(
 /// Pending asynchronous readback map whose wait may be overlapped with host work.
 pub(crate) struct PendingReadbackMap {
     receiver: mpsc::Receiver<std::result::Result<(), wgpu::BufferAsyncError>>,
-    label: String,
+    label: ReadbackLabel,
     started: Instant,
 }
 
-/// Queues a readback map callback without polling the device.
-pub(crate) fn begin_readback_map(slice: &wgpu::BufferSlice<'_>, label: &str) -> PendingReadbackMap {
-    let label = label.to_string();
-    let cb_label = label.clone();
+/// Queues a readback map callback without polling the device. The one place
+/// that maps a buffer for reading.
+pub(crate) fn begin_readback_map(slice: &wgpu::BufferSlice<'_>, label: ReadbackLabel) -> PendingReadbackMap {
+    let cb_label = label;
     let (tx, rx) = mpsc::channel();
     trace_gpu_progress(&format!("map.start :: {label}"));
+    if host_timing_enabled() {
+        eprintln!(
+            "[gpu_compile_host_timer] readback.map: label={label} bytes={}",
+            slice.size().get()
+        );
+    }
     slice.map_async(wgpu::MapMode::Read, move |result| {
-        if let Err(err) = tx.send(result) {
-            warn!("failed to dispatch readback status for {cb_label}: {err}");
-        }
+        // A batch map (`map_readback_for_progress`) drops the receiver and
+        // learns of completion from its poll.
+        let _ = (tx.send(result), cb_label);
     });
     trace_gpu_progress(&format!("map.queued :: {label}"));
     PendingReadbackMap {
@@ -2345,8 +2409,8 @@ pub(crate) fn finish_readback_map(
         match receiver.try_recv() {
             Ok(Ok(())) => {
                 let done = Instant::now();
-                record_readback_round_trip(&label, done.duration_since(started));
-                crate::gpu::trace::record_host_span("host.readback", &label, started, done);
+                record_readback_round_trip(label.as_str(), done.duration_since(started));
+                crate::gpu::trace::record_host_span("host.readback", label.as_str(), started, done);
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
                     started.elapsed().as_millis()
@@ -2868,7 +2932,7 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
         encoder.copy_buffer_to_buffer(buffer, offset, &staging, 0, bytes);
         queue.submit(Some(encoder.finish()));
         let slice = staging.slice(..);
-        if let Err(err) = map_readback_blocking(device, &slice, "lanius-debug-dump") {
+        if let Err(err) = map_readback_blocking(device, &slice, crate::debug_readback_label!("lanius-debug-dump")) {
             eprintln!("[lanius-dump] {stage} {wanted}: {err:#}");
             continue;
         }

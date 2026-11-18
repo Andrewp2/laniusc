@@ -774,6 +774,121 @@ mod tests {
             .expect("lowering job reset check panicked");
     }
 
+    #[test]
+    fn physical_gpu_parser_poison_keeps_small_jobs_after_a_big_one() {
+        std::thread::Builder::new()
+            .name("parser poison".into())
+            .stack_size(64 * 1024 * 1024)
+            .spawn(run_parser_poison_equivalence)
+            .expect("spawn parser poison check")
+            .join()
+            .expect("parser poison check panicked");
+    }
+
+    // A parser job reads only rows it wrote or rows of zero-initialized
+    // resources. Rows past its tree keep an earlier, bigger job's words, which
+    // a reader over the whole tree capacity would take as its own (the
+    // call-argument scatter, 784ad63c5, and the string offset scatter). A big
+    // job with every parser family runs before each small one, first with
+    // the big job's words left in the parser workspace and then with every
+    // resettable parser buffer poisoned before each job
+    // (`LANIUS_CHECK=parser-poison`). Each small job must give the artifact a
+    // fresh compiler gives.
+    fn run_parser_poison_equivalence() {
+        use crate::parser::buffers::set_parser_poison_for_tests;
+
+        struct PoisonGuard;
+        impl Drop for PoisonGuard {
+            fn drop(&mut self) {
+                set_parser_poison_for_tests(false);
+            }
+        }
+        let _guard = PoisonGuard;
+        let gpu = crate::gpu::device::global();
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            gpu,
+            GpuCompilerBackends::all(),
+        ))
+        .expect("initialize compiler");
+        let cases = [
+            ("constant", "fn main() -> i32 { return 42; }"),
+            (
+                "calls",
+                "fn add(a: i32, b: i32) -> i32 { return a + b; } fn twice(x: i32) -> i32 { return add(x, x); } fn main() -> i32 { return add(twice(10), add(1, 1)); }",
+            ),
+            (
+                "arrays_and_structs",
+                "struct A { x: i32, y: i32, } struct B { a: A, values: [i32; 3], } fn main() -> i32 { let b: B = B { a: A { x: 1, y: 2 }, values: [3, 4, 33] }; return b.values[2] + b.a.y + b.a.x * 7; }",
+            ),
+            (
+                "enums_and_matches",
+                "enum Leaf { Missing, Value(i32) } fn leaf(value: Leaf) -> i32 { return match (value) { Value(number) -> number, Missing -> 0, }; } fn main() -> i32 { return leaf(Value(40)) + leaf(Missing) + 2; }",
+            ),
+            (
+                "generics_and_type_paths",
+                "struct Point { x: i32, y: i32 } enum Maybe<T> { Nothing, Just(T) } fn wrap<T>(v: T) -> Maybe<T> { return Just(v); } fn main() -> i32 { let m: Maybe<Point> = wrap(Point { x: 40, y: 2 }); return match (m) { Nothing => 1, Just(p) => p.x + p.y }; }",
+            ),
+        ];
+        let big: String = (0..2_000)
+            .map(|index| {
+                format!(
+                    "fn f{index}(x: i32, y: i32) -> i32 {{ let a: [i32; 2] = [x, {index}]; return a[1] + y; }}"
+                )
+            })
+            .chain(cases.iter().skip(1).enumerate().map(|(index, (_, source))| {
+                source.replace("fn main()", &format!("fn main{index}()"))
+            }))
+            .chain(["fn main() -> i32 { return f7(35, 0); }".to_string()])
+            .collect::<Vec<_>>()
+            .join(" ");
+        let x86 = |source: &str| {
+            pollster::block_on(compiler.compile_source_to_x86_64(source))
+                .unwrap_or_else(|error| panic!("x86 compile: {error}"))
+        };
+        let release = || pollster::block_on(compiler.release_resident_job_buffers());
+        // A source pack with sixteen string literals in its first tokens. A
+        // stale string row once moved a literal's data offset
+        // (hir_string_offset_scatter).
+        let pack = [
+            "module app::main; import alloc::allocator; import std::fs; fn open(path: str) -> i32 { let input: std::fs::FileHandle = std::fs::open_read_path(path); if (input < 0) { return 0; } let closed: i32 = std::fs::close(input); return 1 + closed - closed; } fn main() -> i32 { return open(\"a.bin\") + open(\"bb.bin\") + open(\"ccc.bin\") + open(\"dddd.bin\") + open(\"e.txt\") + open(\"ff.txt\") + open(\"ggg.txt\") + open(\"hhhh.txt\") + open(\"i\") + open(\"jj\") + open(\"kkk\") + open(\"llll\") + open(\"m/n\") + open(\"o/pp\") + open(\"q/rrr\") + open(\"fs_raw_input.bin\"); }",
+            include_str!("../../../../stdlib/alloc/allocator.lani"),
+            include_str!("../../../../stdlib/std/fs.lani"),
+        ];
+        let x86_pack = || {
+            pollster::block_on(compiler.compile_source_pack_to_x86_64(&pack))
+                .unwrap_or_else(|error| panic!("x86 source-pack compile: {error}"))
+        };
+        let fresh = cases.map(|(_, source)| {
+            release();
+            x86(source)
+        });
+        release();
+        let fresh_pack = x86_pack();
+        release();
+        let fresh_big = x86(&big);
+        for poison in [false, true] {
+            set_parser_poison_for_tests(poison);
+            for (index, (case, source)) in cases.iter().enumerate() {
+                assert!(
+                    x86(&big) == fresh_big,
+                    "big job before {case} (poison {poison})"
+                );
+                assert!(
+                    x86(source) == fresh[index],
+                    "{case} after the big job (poison {poison})"
+                );
+            }
+            assert!(
+                x86(&big) == fresh_big,
+                "big job before the pack (poison {poison})"
+            );
+            assert!(
+                x86_pack() == fresh_pack,
+                "source pack after the big job (poison {poison})"
+            );
+        }
+    }
+
     // A small job in a lowering workspace retained from a big one resets only
     // the imported bytes its own zero-initialized resources can address, and
     // its x86 analysis and artifact clears cover only its rows
@@ -1495,7 +1610,7 @@ mod tests {
         buffer: &crate::gpu::buffers::LaniusBuffer<u8>,
     ) -> Vec<u32> {
         let slice = buffer.slice(..);
-        map_readback_blocking(device, &slice, "checked control-depth readback")
+        map_readback_blocking(device, &slice, "checked control-depth readback".into())
             .expect("map checked control-depth readback");
         let mapped = slice.get_mapped_range();
         let words = mapped

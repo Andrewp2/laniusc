@@ -2097,7 +2097,7 @@ impl GpuTypeChecker {
         crate::gpu::passes_core::map_readback_blocking(
             device,
             &metadata_slice,
-            "semantic-interface artifact metadata",
+            crate::readback_label!("semantic-interface artifact metadata"),
         )?;
         let mapped = metadata_slice.get_mapped_range();
         let metadata = read_u32_words::<6>(&mapped, "semantic-interface artifact metadata")?;
@@ -2139,7 +2139,7 @@ impl GpuTypeChecker {
             &recorded._artifact_words,
             0,
             byte_len,
-            "semantic-interface artifact",
+            crate::readback_label!("semantic-interface artifact"),
         )?;
         let mut artifact = GpuSemanticInterfaceArtifact::from_gpu_validated_bytes(&bytes)
             .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;

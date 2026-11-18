@@ -429,7 +429,7 @@ impl GpuX86Linker {
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
                 &slice,
-                "codegen.x86.link.layout_chunk",
+                crate::readback_label!("codegen.x86.link.layout_chunk"),
                 std::time::Duration::from_secs(30),
             )?;
             let mapped = slice.get_mapped_range();

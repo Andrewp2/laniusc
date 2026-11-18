@@ -1687,7 +1687,7 @@ impl RetainedDiscovery {
         }
         self.queue.submit(Some(encoder.finish()));
         let slice = rb.slice(..);
-        map_readback_blocking(&self.device, &slice, "discovery.status")?;
+        map_readback_blocking(&self.device, &slice, crate::readback_label!("discovery.status"))?;
         let data = slice
             .get_mapped_range()
             .chunks_exact(4)

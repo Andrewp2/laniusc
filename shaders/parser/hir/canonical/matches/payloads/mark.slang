@@ -5,6 +5,8 @@ ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> hir_match_rank_node;
+StructuredBuffer<uint> hir_match_rank_count;
 StructuredBuffer<uint> payload_owner_arm;
 StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> candidate_raw_by_anchor;
@@ -22,7 +24,11 @@ bool is_pattern_production(uint prod)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = tid(dtid);
+    // The match family's rows (hir/match/rank), which hold every arm and
+    // pattern.
+    uint row = tid(dtid);
+    if (row >= hir_match_rank_count[0u]) return;
+    uint raw = hir_match_rank_node[row];
     if (raw >= gCanonical.raw_capacity) return;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_MATCHES))
         return;
