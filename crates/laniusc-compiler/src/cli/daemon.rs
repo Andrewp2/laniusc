@@ -488,14 +488,17 @@ fn cached_compile_input(
     path_backed: bool,
     resident_limits: crate::codegen::unit::CompilationUnitLimits,
 ) -> Result<CachedCompileInput, crate::compiler::CompileError> {
-    let library_count = path_manifest
+    // Embedded core is immutable and can share a resident compilation with
+    // a single input library. Keep multi-library disk inputs path-backed.
+    let disk_library_count = path_manifest
         .files
         .iter()
+        .filter(|file| embedded_core_source(&file.path).is_none())
         .map(|file| file.library_id)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     if path_backed
-        || library_count > 1
+        || disk_library_count > 1
         || path_manifest.requires_bounded_compilation_with_limits(resident_limits)
     {
         Ok(CachedCompileInput::Bounded(path_manifest))
@@ -2512,15 +2515,14 @@ mod tests {
             "laniusc-daemon-load-cache-{}-{unique}",
             std::process::id()
         ));
-        let stdlib_root = root.join("stdlib");
         let entry = root.join("main.lani");
-        fs::create_dir_all(&stdlib_root).expect("create source cache stdlib fixture");
+        fs::create_dir_all(&root).expect("create source cache fixture");
         fs::write(&entry, "fn main() { return; }\n").expect("write cached entry fixture");
 
         let mut cache = SourcePackCache::default();
         let resident_limits = crate::codegen::unit::CompilationUnitLimits::default();
         let first = cache
-            .load(&entry, Some(&stdlib_root), &[], false, resident_limits)
+            .load(&entry, None, &[], false, resident_limits)
             .expect("load initial cached source pack");
         assert!(first.resident().is_some_and(|source_pack| {
             source_pack
@@ -2532,7 +2534,7 @@ mod tests {
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
-            .load(&entry, Some(&stdlib_root), &[], false, resident_limits)
+            .load(&entry, None, &[], false, resident_limits)
             .expect("reload changed source pack");
         assert!(second.resident().is_some_and(|source_pack| {
             source_pack
@@ -2583,18 +2585,20 @@ mod tests {
 
         let mut cache = SourcePackCache::default();
         let initial = texts(&mut cache);
-        assert_eq!(initial.len(), 2);
+        // The entry and its imported unit share the pack with embedded
+        // core::function and core::mem.
+        assert_eq!(initial.len(), 2 + 2);
 
         let edited = "module unit;\nfn unit() { print(123456); return; }\n";
         fs::write(&unit, edited).expect("edit resident cache unit");
         let refreshed = texts(&mut cache);
-        assert_eq!(refreshed.len(), 2);
+        assert_eq!(refreshed.len(), initial.len());
         assert!(refreshed.iter().any(|text| text == edited));
 
         fs::write(&entry, "import unit;\nimport other;\nfn main() { return; }\n")
             .expect("import other in resident cache entry");
         let rediscovered = texts(&mut cache);
-        assert_eq!(rediscovered.len(), 3);
+        assert_eq!(rediscovered.len(), initial.len() + 1);
         assert!(rediscovered.iter().any(|text| text.contains("fn other()")));
         assert!(rediscovered.iter().any(|text| text == edited));
 
