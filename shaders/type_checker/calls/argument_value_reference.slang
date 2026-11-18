@@ -26,7 +26,7 @@ uint expr_record_slot(uint node, uint slot)
     return payload.d;
 }
 
-// payload.a is kind-dependent (parser/hir/canonical/core.slang): a call row
+// payload.a is kind-dependent (parser/hir/canonical/build_canonical_rows.slang): a call row
 // stores its callee node and a match row its scrutinee there, and either ID
 // can equal a form tag. A call whose callee is node 11 (HIR_EXPR_LE) read as
 // a bool argument before its result was known.

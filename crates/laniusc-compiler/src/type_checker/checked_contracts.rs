@@ -21,7 +21,7 @@ use super::generic_calls::{
     read_type,
 };
 use crate::gpu::readback::PagedReadback;
-use crate::parser::passes::hir::item::fields::{HIR_ITEM_KIND_ENUM, HIR_ITEM_KIND_STRUCT};
+use crate::parser::passes::hir::items::extract_item_records::{HIR_ITEM_KIND_ENUM, HIR_ITEM_KIND_STRUCT};
 
 const INVALID: u32 = u32::MAX;
 const TRAIT_KIND: u32 = 10;

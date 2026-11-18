@@ -1,7 +1,7 @@
 use laniusc_compiler::parser::{
     hir_records::INVALID,
     passes::hir::{
-        item::fields::{
+        items::extract_item_records::{
             HIR_ITEM_IMPORT_TARGET_NONE,
             HIR_ITEM_IMPORT_TARGET_PATH,
             HIR_ITEM_KIND_ENUM,

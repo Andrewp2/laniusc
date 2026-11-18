@@ -97,7 +97,7 @@ impl LoweringJobBounds {
 
     /// Bounds the job's compact HIR by the token capacity its parse ran
     /// with. Canonical HIR keeps one row per elected source-token anchor
-    /// (parser/hir/canonical/local.slang), and anchors are positions in the
+    /// (parser/hir/canonical/count_canonical_rows_in_blocks.slang), and anchors are positions in the
     /// job's token stream, which has two more positions than its capacity.
     pub(crate) fn with_token_capacity(self, token_capacity: u32) -> Self {
         Self {

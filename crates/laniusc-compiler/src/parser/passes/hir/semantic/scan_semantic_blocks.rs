@@ -136,7 +136,7 @@ impl HirSemanticPrefixBlocksPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
-        invocation: crate::parser::passes::hir::list::rank::ListRankInvocation,
+        invocation: crate::parser::passes::hir::lists::ListRankInvocation,
     ) -> Result<()> {
         let label = invocation.scan_label();
         self.record_scan_inner(

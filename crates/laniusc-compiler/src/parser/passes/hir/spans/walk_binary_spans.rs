@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     gpu::passes_core::{BindGroupCache, PassData},
-    parser::{buffers::ParserBuffers, passes::hir::list::rank::step::list_rank_step_capacity},
+    parser::{buffers::ParserBuffers, passes::hir::lists::rank_list_rows::list_rank_step_capacity},
 };
 
 /// Bounded-walk pass that propagates binary-expression span starts over the

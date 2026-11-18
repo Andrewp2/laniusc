@@ -113,7 +113,7 @@ impl TreeRelationOperation {
                 [&buffers.hir_semantic_parent_value_a],
                 [&buffers.hir_semantic_parent_value_b],
             ),
-            crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+            crate::parser::passes::hir::lists::rank_list_rows::list_rank_step_capacity(
                 buffers.tree_capacity,
             ),
             &buffers.hir_list_rank_dispatch_args,

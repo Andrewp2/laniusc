@@ -38,7 +38,7 @@ use crate::{
         },
     },
     parser::passes::hir::{
-        item::fields::{
+        items::extract_item_records::{
             HIR_ITEM_KIND_ENUM,
             HIR_ITEM_KIND_EXTERN_FN,
             HIR_ITEM_KIND_FN,

@@ -1412,13 +1412,13 @@ fn build_graph(
     );
     // The canonical tables have one row per input token.
     let canonical_end_blocks = u64::from(
-        crate::parser::passes::hir::canonical::parent::block_count(capacity.token_capacity),
+        crate::parser::passes::hir::canonical::build_canonical_end_heaps::block_count(capacity.token_capacity),
     );
     let canonical_end_leaf_base = u64::from(
-        crate::parser::passes::hir::canonical::parent::leaf_base(capacity.token_capacity),
+        crate::parser::passes::hir::canonical::build_canonical_end_heaps::leaf_base(capacity.token_capacity),
     );
     let canonical_end_groups = u64::from(
-        crate::parser::passes::hir::canonical::parent::group_count(capacity.token_capacity),
+        crate::parser::passes::hir::canonical::build_canonical_end_heaps::group_count(capacity.token_capacity),
     );
 
     for (name, domain, bytes) in [
@@ -3802,11 +3802,11 @@ mod tests {
             "hir_type_root_owner_init",
             "hir_type_root_rank_prefix_01_blocks",
             "hir_type_root_rank_compact_scatter",
-            crate::parser::passes::hir::types::root::step::A_TO_B,
-            crate::parser::passes::hir::types::root::step::B_TO_A,
+            crate::parser::passes::hir::types::walk_type_roots::A_TO_B,
+            crate::parser::passes::hir::types::walk_type_roots::B_TO_A,
             "hir_enum_variant_links",
-            crate::parser::passes::hir::enums::variant::rank_step::A_TO_B,
-            crate::parser::passes::hir::enums::variant::rank_step::B_TO_A,
+            crate::parser::passes::hir::enums::rank_enum_variants::A_TO_B,
+            crate::parser::passes::hir::enums::rank_enum_variants::B_TO_A,
             "hir_enum_variant_scatter",
             "hir_item_fields",
             "hir_path_segment_root",
@@ -3817,8 +3817,8 @@ mod tests {
             "hir_path_segment_step.b_to_a",
             "hir_path_segment_scatter",
             "hir_type_alias_owner_init",
-            crate::parser::passes::hir::types::alias::owner::step::A_TO_B,
-            crate::parser::passes::hir::types::alias::owner::step::B_TO_A,
+            crate::parser::passes::hir::types::walk_type_alias_owners::A_TO_B,
+            crate::parser::passes::hir::types::walk_type_alias_owners::B_TO_A,
             "hir_type_alias_target",
             "hir_param_links",
             "hir_param_rank_prefix_00_local",
@@ -3891,8 +3891,8 @@ mod tests {
             "hir_struct_field_links",
             HIR_STRUCT_RANK_SCAN,
             "hir_struct_rank_compact_scatter",
-            crate::parser::passes::hir::structs::field::rank_step::A_TO_B,
-            crate::parser::passes::hir::structs::field::rank_step::B_TO_A,
+            crate::parser::passes::hir::structs::rank_struct_fields::A_TO_B,
+            crate::parser::passes::hir::structs::rank_struct_fields::B_TO_A,
             crate::parser::passes::tree::clear_previous_siblings::STRUCT_LITERAL_FIELD_NEXT_CLEAR,
             "hir_struct_field_scatter",
             "hir_canonical_field_mark",
@@ -3919,8 +3919,8 @@ mod tests {
             "hir_canonical_nav",
             "hir_canonical_expr_forest_edges",
             "hir_canonical_expr_forest_root_init",
-            crate::parser::passes::hir::canonical::expr_forest::root_step::A_TO_B,
-            crate::parser::passes::hir::canonical::expr_forest::root_step::B_TO_A,
+            crate::parser::passes::hir::canonical::walk_expr_forest_roots::A_TO_B,
+            crate::parser::passes::hir::canonical::walk_expr_forest_roots::B_TO_A,
             "hir_canonical_generic_param_candidate_mark",
             "hir_canonical_generic_param_finalize",
             "hir_canonical_generic_param_local",
@@ -4008,8 +4008,8 @@ mod tests {
             "hir_match_rank_prefix_00_local",
             HIR_MATCH_RANK_SCAN,
             "hir_match_rank_compact_scatter",
-            crate::parser::passes::hir::matches::arm::rank_step::A_TO_B,
-            crate::parser::passes::hir::matches::arm::rank_step::B_TO_A,
+            crate::parser::passes::hir::matches::rank_match_arms::A_TO_B,
+            crate::parser::passes::hir::matches::rank_match_arms::B_TO_A,
             "hir_match_arm_scatter",
             "hir_canonical_match_arm_mark",
             "hir_canonical_match_arm_local",

@@ -218,19 +218,17 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
         )
 }
 use crate::{
-    gpu::{
-        compiler_graph::{
-            AccessMode,
-            CompilerGraphBuilder,
-            CompilerPhase,
-            PassAccess,
-            PassDesc,
-            ResourceDomain,
-        },
+    gpu::compiler_graph::{
+        AccessMode,
+        CompilerGraphBuilder,
+        CompilerPhase,
+        PassAccess,
+        PassDesc,
+        ResourceDomain,
     },
     parser::{
         compiler_graph::ParserGraphCapacity,
-        passes::{ParserPasses, hir::list::rank::ListRankInvocation},
+        passes::{ParserPasses, hir::lists::ListRankInvocation},
     },
 };
 
@@ -1098,7 +1096,7 @@ fn register_list_rank_propagation(
     rank_b: &'static str,
 ) -> Result<(), String> {
     let (a_to_b, b_to_a) = invocation.step_labels();
-    let steps = crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+    let steps = crate::parser::passes::hir::lists::rank_list_rows::list_rank_step_capacity(
         capacity.tree_capacity,
     );
     register_ping_pong_walk(
@@ -1198,7 +1196,7 @@ fn register_type_root_owner(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    use crate::parser::passes::hir::types::root::step::{A_TO_B, B_TO_A};
+    use crate::parser::passes::hir::types::walk_type_roots::{A_TO_B, B_TO_A};
 
     static_pass(
         graph,
@@ -1228,7 +1226,7 @@ fn register_type_root_owner(
     // The owner init marks the type rows itself; the scan and the compact
     // scatter list them.
     register_list_rank_listing(graph, passes, ListRankInvocation::TypeRoots)?;
-    let steps = crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+    let steps = crate::parser::passes::hir::lists::rank_list_rows::list_rank_step_capacity(
         capacity.tree_capacity,
     );
     register_ping_pong_walk(
@@ -1266,12 +1264,7 @@ fn register_enum_ranking(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    use crate::parser::passes::hir::enums::variant::rank_step::{
-        A_TO_B,
-        A_TO_B_FINAL,
-        B_TO_A,
-        FINALIZE,
-    };
+    use crate::parser::passes::hir::enums::rank_enum_variants::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE};
 
     // The enum family's rows first: the links, the rank step and the scatter
     // run over them only.
@@ -1535,7 +1528,7 @@ fn register_item_paths_and_type_aliases(
         "hir_semantic_dispatch_args",
     )?;
 
-    use crate::parser::passes::hir::types::alias::owner::step::{
+    use crate::parser::passes::hir::types::walk_type_alias_owners::{
         A_TO_B as ALIAS_A_TO_B,
         A_TO_B_FINAL as ALIAS_A_TO_B_FINAL,
         B_TO_A as ALIAS_B_TO_A,
@@ -2140,7 +2133,7 @@ fn register_canonical_variants(
         CANONICAL_VARIANT_PAYLOAD_OWNER.finalize,
         "hir_list_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::list::rank::step::list_rank_step_capacity(
+        crate::parser::passes::hir::lists::rank_list_rows::list_rank_step_capacity(
             capacity.tree_capacity,
         ),
         &[("tree_count_status", "partial_parse_status", None)],
@@ -2500,7 +2493,7 @@ fn register_matches(
     use crate::parser::passes::{
         CanonicalConstruct,
         hir::{
-            matches::arm::rank_step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
+            matches::rank_match_arms::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
             semantic::walk_semantic_parents::{MATCH_ARM_OWNER, family_relation_steps},
         },
     };
@@ -2853,7 +2846,7 @@ fn register_struct_fields(
 ) -> Result<(), String> {
     use crate::parser::passes::{
         CanonicalConstruct,
-        hir::structs::field::rank_step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
+        hir::structs::rank_struct_fields::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
     };
 
     static_pass(
@@ -3264,7 +3257,7 @@ fn register_canonical_materialization(
 ) -> Result<(), String> {
     use crate::parser::passes::{
         CanonicalConstruct,
-        hir::canonical::expr_forest::root_step::{
+        hir::canonical::walk_expr_forest_roots::{
             A_TO_B as EXPR_A_TO_B,
             A_TO_B_FINAL as EXPR_A_TO_B_FINAL,
             B_TO_A as EXPR_B_TO_A,

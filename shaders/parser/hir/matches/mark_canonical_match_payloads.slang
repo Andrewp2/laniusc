@@ -1,0 +1,43 @@
+import token_features;
+import generated_parse_production_ids;
+struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
+ConstantBuffer<Params> gCanonical;
+StructuredBuffer<uint> tree_count_status;
+StructuredBuffer<uint> token_feature_flags;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> hir_match_rank_node;
+StructuredBuffer<uint> hir_match_rank_count;
+StructuredBuffer<uint> payload_owner_arm;
+StructuredBuffer<uint> hir_token_pos;
+RWStructuredBuffer<uint> candidate_raw_by_anchor;
+RWStructuredBuffer<uint> family_flag;
+static const uint INVALID = 0xffffffffu;
+static const uint MAX_GROUPS_X = 65535u;
+uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
+uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical.raw_capacity, tree_count_status[5u]) : gCanonical.raw_capacity; }
+bool is_pattern_production(uint prod)
+{
+    return prod == PROD_PATTERN_IDENT || prod == PROD_PATTERN_INT ||
+           prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE;
+}
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    // The match family's rows (hir/matches/list_match_rows), which hold every arm and
+    // pattern.
+    uint row = tid(dtid);
+    if (row >= hir_match_rank_count[0u]) return;
+    uint raw = hir_match_rank_node[row];
+    if (raw >= gCanonical.raw_capacity) return;
+    if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_MATCHES))
+        return;
+    uint owner = payload_owner_arm[raw];
+    bool valid_owner = owner < active_count() && node_kind[owner] == PROD_MATCH_ARM;
+    if (raw >= active_count() || !is_pattern_production(node_kind[raw]) || !valid_owner) return;
+    uint anchor = hir_token_pos[raw];
+    if (anchor >= gCanonical.canonical_capacity) return;
+    uint ignored;
+    InterlockedMax(candidate_raw_by_anchor[anchor], raw + 1u, ignored);
+    InterlockedMax(family_flag[anchor], 1u, ignored);
+}

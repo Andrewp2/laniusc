@@ -1,34 +1,27 @@
-/// Array literal record passes.
-pub mod array;
-/// Call expression and argument record passes.
-pub mod call;
+/// Item and method records, generic parameters and predicates.
+pub mod items;
+/// Ranked HIR lists: array elements, call arguments and type arguments.
+pub mod lists;
+/// Parameter records, ids and canonical rows.
+pub mod params;
+/// Path segment records and their canonical rows.
+pub mod paths;
+/// String literal offsets, decoding and canonical rows.
+pub mod strings;
 /// Final Pareas-style compact HIR phase boundary.
 pub mod canonical;
 /// Context relation passes for nearest statement, block, and control owners.
 pub mod context;
 /// Enum, variant, and match-related HIR passes.
 pub mod enums;
-/// Function signature and return-type passes.
-/// Item kind, declaration-token, namespace, visibility, and import passes.
-pub mod item;
-/// Generic list ranking helpers shared by HIR record families.
-pub mod list;
 /// HIR node classification and per-family record extraction.
 pub mod records;
 /// HIR source spans.
 pub mod spans;
 /// Match expression and arm record passes.
 pub mod matches;
-/// Method declaration and receiver record passes.
-pub mod method;
-/// Parameter linking, ranking, id, and field passes.
-pub mod param;
-/// Canonical path segment ownership and ordinal lowering passes.
-pub mod path;
 /// Dense semantic-HIR topology and navigation passes.
 pub mod semantic;
-/// Canonical decoded string literal lowering passes.
-pub mod string;
 /// Struct declaration, field, literal, and rank passes.
 pub mod structs;
 /// Type form, type-path, type-argument, and alias passes.

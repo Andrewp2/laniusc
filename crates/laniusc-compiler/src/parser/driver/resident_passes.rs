@@ -1,7 +1,7 @@
 // src/parser/driver/resident_passes.rs
 
 use super::*;
-use crate::parser::passes::hir::list::rank::ListRankInvocation;
+use crate::parser::passes::hir::lists::ListRankInvocation;
 
 impl GpuParser {
     /// Compacts the rows whose `owner_a` or `link_a` record is valid into

@@ -1089,7 +1089,7 @@ impl ParserBuffers {
         let hir_item_fields_params = uniform_from_val(
             device,
             "parser.hir_item_fields.params",
-            &super::passes::hir::item::fields::Params {
+            &super::passes::hir::items::extract_item_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1098,7 +1098,7 @@ impl ParserBuffers {
         let hir_param_fields_params = uniform_from_val(
             device,
             "parser.hir_param_fields.params",
-            &super::passes::hir::param::fields::Params {
+            &super::passes::hir::params::extract_param_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
@@ -1106,7 +1106,7 @@ impl ParserBuffers {
         let hir_method_fields_params = uniform_from_val(
             device,
             "parser.hir_method_fields.params",
-            &super::passes::hir::method::fields::Params {
+            &super::passes::hir::items::extract_method_records::Params {
                 n: tree_capacity,
                 uses_status_count: u32::from(tree_count_uses_status),
             },
@@ -1151,7 +1151,7 @@ impl ParserBuffers {
         let hir_array_fields_params = uniform_from_val(
             device,
             "parser.hir_array_fields.params",
-            &super::passes::hir::array::Params {
+            &super::passes::hir::lists::array_pass_params::Params {
                 n: family_capacities.arrays,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1174,7 +1174,7 @@ impl ParserBuffers {
         let hir_struct_fields_params = uniform_from_val(
             device,
             "parser.hir_struct_fields.params",
-            &super::passes::hir::structs::fields::Params {
+            &super::passes::hir::structs::struct_pass_params::Params {
                 n: family_capacities.structs,
                 uses_status_count: u32::from(tree_count_uses_status),
                 retain_debug_rows: u32::from(retain_debug_hir_buffers),
@@ -1477,7 +1477,7 @@ impl ParserBuffers {
         let hir_string_decode_params = uniform_from_val(
             device,
             "parser.hir_string_decode.params",
-            &super::passes::hir::string::decode::Params {
+            &super::passes::hir::strings::decode_strings::Params {
                 n: tree_capacity,
                 source_len: source_capacity,
                 pool_capacity: source_capacity,
@@ -1837,7 +1837,7 @@ impl ParserBuffers {
                     partial_parse_status => ll1_status,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::types::alias::owner::step::FINALIZE,
+                    crate::parser::passes::hir::types::walk_type_alias_owners::FINALIZE,
                     tree_bytes;
                     hir_type_alias_owner_link_b => hir_type_alias_owner_link_a,
                     hir_type_alias_owner_value_b => hir_type_alias_owner_value_a,
@@ -1854,7 +1854,7 @@ impl ParserBuffers {
                     hir_expr_result_root_scratch_node => hir_expr_result_root_node,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::canonical::expr_forest::root_step::FINALIZE,
+                    crate::parser::passes::hir::canonical::walk_expr_forest_roots::FINALIZE,
                     canonical_bytes;
                     hir_canonical_expr_root_scratch => hir_canonical_expr_root,
                 ),
@@ -1871,7 +1871,7 @@ impl ParserBuffers {
                     hir_nearest_array_element_value_b => hir_nearest_array_element_value_a,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::enums::variant::rank_step::FINALIZE,
+                    crate::parser::passes::hir::enums::rank_enum_variants::FINALIZE,
                     tree_bytes;
                     hir_variant_owner_b => hir_variant_owner_a,
                     hir_variant_link_b => hir_variant_link_a,
@@ -1881,7 +1881,7 @@ impl ParserBuffers {
                     hir_variant_payload_rank_b => hir_variant_payload_rank_a,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::matches::arm::rank_step::FINALIZE,
+                    crate::parser::passes::hir::matches::rank_match_arms::FINALIZE,
                     tree_bytes;
                     hir_match_arm_owner_b => hir_match_arm_owner_a,
                     hir_match_arm_link_b => hir_match_arm_link_a,
@@ -1892,7 +1892,7 @@ impl ParserBuffers {
                     hir_match_pattern_parent_b => hir_match_pattern_parent,
                 ),
                 finalizer!(
-                    crate::parser::passes::hir::structs::field::rank_step::FINALIZE,
+                    crate::parser::passes::hir::structs::rank_struct_fields::FINALIZE,
                     tree_bytes;
                     hir_struct_field_owner_b => hir_struct_field_owner_a,
                     hir_struct_field_link_b => hir_struct_field_link_a,

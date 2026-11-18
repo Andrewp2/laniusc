@@ -8,30 +8,30 @@ use super::{
     buffers::{ActionHeader, ParserBuffers},
     hir_records::INVALID,
     passes::hir::{
-        item::fields::{
-            HIR_ITEM_IMPORT_TARGET_NONE,
-            HIR_ITEM_IMPORT_TARGET_PATH,
-            HIR_ITEM_IMPORT_TARGET_STRING,
-            HIR_ITEM_KIND_CONST,
-            HIR_ITEM_KIND_ENUM,
-            HIR_ITEM_KIND_ENUM_VARIANT,
-            HIR_ITEM_KIND_EXTERN_FN,
-            HIR_ITEM_KIND_FN,
-            HIR_ITEM_KIND_IMPORT,
-            HIR_ITEM_KIND_MODULE,
-            HIR_ITEM_KIND_NONE,
-            HIR_ITEM_KIND_STRUCT,
-            HIR_ITEM_KIND_TRAIT,
-            HIR_ITEM_KIND_TYPE_ALIAS,
-            HIR_ITEM_NAMESPACE_MODULE,
-            HIR_ITEM_NAMESPACE_NONE,
-            HIR_ITEM_NAMESPACE_TYPE,
-            HIR_ITEM_NAMESPACE_VALUE,
-            HIR_ITEM_VIS_PRIVATE,
-            HIR_ITEM_VIS_PUBLIC,
-        },
-        method::{
-            fields::{
+        items::{
+            extract_item_records::{
+                HIR_ITEM_IMPORT_TARGET_NONE,
+                HIR_ITEM_IMPORT_TARGET_PATH,
+                HIR_ITEM_IMPORT_TARGET_STRING,
+                HIR_ITEM_KIND_CONST,
+                HIR_ITEM_KIND_ENUM,
+                HIR_ITEM_KIND_ENUM_VARIANT,
+                HIR_ITEM_KIND_EXTERN_FN,
+                HIR_ITEM_KIND_FN,
+                HIR_ITEM_KIND_IMPORT,
+                HIR_ITEM_KIND_MODULE,
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_STRUCT,
+                HIR_ITEM_KIND_TRAIT,
+                HIR_ITEM_KIND_TYPE_ALIAS,
+                HIR_ITEM_NAMESPACE_MODULE,
+                HIR_ITEM_NAMESPACE_NONE,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                HIR_ITEM_VIS_PUBLIC,
+            },
+            extract_method_records::{
                 HIR_METHOD_RECEIVER_EXPLICIT,
                 HIR_METHOD_RECEIVER_NONE,
                 HIR_METHOD_RECEIVER_REF_SELF,
@@ -39,7 +39,7 @@ use super::{
                 HIR_METHOD_VIS_PRIVATE,
                 HIR_METHOD_VIS_PUBLIC,
             },
-            signature_status::{
+            mark_method_signatures::{
                 HIR_METHOD_SIGNATURE_HAS_GENERICS,
                 HIR_METHOD_SIGNATURE_HAS_WHERE,
                 HIR_METHOD_SIGNATURE_INHERENT_IMPL,
@@ -261,7 +261,7 @@ pub(crate) fn reset_hir_match_rows_outside_family(
 }
 
 // The enum family: enum variants and type rows, as in
-// shaders/parser/hir/enum/rank/prefix_00_local.slang.
+// shaders/parser/hir/enums/mark_enum_rows.slang.
 const PROD_ENUM_VARIANT: u32 = 215;
 const HIR_KIND_TYPE: u32 = 5;
 

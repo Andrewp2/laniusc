@@ -706,25 +706,26 @@ def module_exists(path: str) -> bool:
 
 
 def leftovers(shader_map, rust_map, module_map) -> list[str]:
-    needles = [re.compile(r"(?<![\w.\-/])" + re.escape(k) + r"(?![\w/\-])") for k in shader_map]
-    needles += [
-        re.compile(re.escape(k[len("crate::") :]) + r"\b")
-        for k in module_map
-        if not module_exists(k)
-    ]
-    needles += [re.compile(re.escape(k)) for k in rust_map]
+    def alternation(words):
+        return "|".join(map(re.escape, sorted(words, key=len, reverse=True))) or "(?!)"
+
     remaining = {os.path.basename(k) for k in slang_files()}
     gone = {os.path.basename(k) for k in shader_map} - remaining
-    needles += [re.compile(r"(?<![\w.\-])" + re.escape(b) + r"\.slang\b") for b in sorted(gone)]
+    modules = [k[len("crate::") :] for k in module_map if not module_exists(k)]
+    needle = re.compile(
+        r"(?<![\w.\-/])(?:" + alternation(shader_map) + r")(?![\w/\-])"
+        + r"|(?:" + alternation(modules) + r")\b"
+        + r"|" + alternation(rust_map)
+        + r"|(?<![\w.\-])(?:" + alternation(gone) + r")\.slang\b"
+    )
     found = []
     for path in scanned_files():
         text = text_of(path)
         if text is None:
             continue
-        for needle in needles:
-            for m in needle.finditer(text):
-                line = text.count("\n", 0, m.start()) + 1
-                found.append(f"{path.relative_to(REPO)}:{line}: {m.group(0)}")
+        for m in needle.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            found.append(f"{path.relative_to(REPO)}:{line}: {m.group(0)}")
     return found
 
 
