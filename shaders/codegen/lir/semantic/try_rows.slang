@@ -17,14 +17,14 @@
 //
 // Row 8's one element is the try segment of aggregate_elements. tmp is the
 // node's synthetic local n_tokens + node (local_scatter), as for a match.
-import primitive_types;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
 import type_checker.checked_type_graph;
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lir.schedule.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

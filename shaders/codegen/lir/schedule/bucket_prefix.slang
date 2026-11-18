@@ -6,8 +6,8 @@
 // a row's destination is the exclusive scan of the bucket-major histogram,
 // as with a scan over the whole histogram.
 import codegen.lir.schedule.common;
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 // The bucket scan is the same for every digit, so it takes no digit row.
 struct Params { uint target_capacity; uint max_blocks; uint key_step; uint reserved; };

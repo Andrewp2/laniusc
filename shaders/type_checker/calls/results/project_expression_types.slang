@@ -1,6 +1,6 @@
 // Publish stable full expression references before dependent generic matching.
-import hir_records;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 import type_checker.checked_index_reference;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;

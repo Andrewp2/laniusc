@@ -7,9 +7,9 @@
 // capture, so the names the body declares itself still shadow them there.
 // The site evaluates each captured name where the closure stands, so a type
 // taken from the wrong declaration is a type error and never a wrong value.
-import gpu_index;
-import byte_packing;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.syntax.generated_token_ids;
 import closure_layout;
 
 struct TokenOut

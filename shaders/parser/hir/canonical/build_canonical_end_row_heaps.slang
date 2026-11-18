@@ -4,8 +4,8 @@
 // searches them for each canonical row's nearest canonical ancestor. One
 // workgroup owns one block of the canonical rows.
 
-import prefix_scan;
-import blocked_search_tree;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.semantic_end_heaps;
 
 struct Params

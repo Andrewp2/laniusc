@@ -2,8 +2,8 @@
 // local maximum heap over each group of 256 block maxima. One workgroup owns
 // one group.
 
-import prefix_scan;
-import blocked_search_tree;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.semantic_end_heaps;
 
 struct Params

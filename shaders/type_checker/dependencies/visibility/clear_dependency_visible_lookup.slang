@@ -1,6 +1,6 @@
 // Clear the reusable open-address table before rebuilding import visibility.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

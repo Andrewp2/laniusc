@@ -2,8 +2,8 @@
 // member segment.  This is separate from ordinary member counting so the
 // declaration rows are initialized before parallel method lanes add to them.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.interface.method_parameters;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };

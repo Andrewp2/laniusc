@@ -1,7 +1,7 @@
 // Per token the round keeps: its row at its place in the new stream, after
 // the generated tokens it owns. `splice_scan` is the inclusive prefix sum of
 // the splice rows: kept tokens in x, generated ones in y.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

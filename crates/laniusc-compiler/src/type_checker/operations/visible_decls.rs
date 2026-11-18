@@ -50,7 +50,7 @@ impl VisibleDeclSort {
                     graph,
                     resources,
                     compiler_graph::VISIBLE_RADIX_DISPATCH_PASS,
-                    &passes.kernel("radix/dispatch_args"),
+                    &passes.kernel("radix/write_radix_dispatch_args"),
                     dispatch_params,
                     1,
                 )

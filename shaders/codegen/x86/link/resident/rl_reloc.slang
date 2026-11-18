@@ -5,7 +5,7 @@
 
 import codegen.x86.link.resident.rl_common;
 import codegen.x86.link.resident.rl_splice;
-import byte_packing;
+import shared.buffers.byte_packing;
 
 static const uint RELOC_REL32 = 1u;
 static const uint RELOC_CALL_REL32 = 2u;

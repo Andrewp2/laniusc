@@ -1,14 +1,14 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 import type_checker.calls.explicit_constant_operand;
 // Attach imported generic type instances to their canonical external nominal
 // identity. Generic arguments remain in the ordinary local instance relation;
 // only the declaration identity lives in the external side table.
 
-import dependency_interface;
-import hir_records;
+import shared.semantics.dependency_interface;
+import shared.syntax.hir_records;
 import type_checker.local_struct_layout;
 import type_checker.dependencies.enum_instance_layout;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

@@ -1,5 +1,5 @@
-import atomics;
-import gpu_index;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
 
 struct SymbolPartitionParams
 {

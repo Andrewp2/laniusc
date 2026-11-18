@@ -3,7 +3,7 @@
 // by that factor per round (`pointer_jump_hop_pairs` in lowering_ir.rs).
 
 import codegen.lir.semantic.common;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint reserved0; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;

@@ -5,8 +5,8 @@
 // tie-breaker without spending radix passes on a redundant position field.
 
 import codegen.optimization_ir;
-import gpu_index;
-import radix;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
 
 struct Params
 {

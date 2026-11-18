@@ -2,7 +2,7 @@
 // the public partition, in local declaration order. Each 256-row block sums
 // the counts of the blocks before it (count_hidden_interface_declarations) and scans its own
 // flags, so every block publishes independently.
-import status;
+import shared.buffers.status;
 
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;

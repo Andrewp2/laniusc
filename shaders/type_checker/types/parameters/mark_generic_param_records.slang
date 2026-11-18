@@ -5,7 +5,7 @@
 // - Only nodes with actual compact generic-parameter rows seed the ownership
 //   relation; syntactically eligible wrappers are not declaration owners.
 
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params
 {

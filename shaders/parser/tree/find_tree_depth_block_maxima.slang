@@ -12,7 +12,7 @@
 // earlier node, otherwise the node is reported through tree_depth_status as a
 // malformed tree.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params { uint n; uint uses_status_count; uint n_prefix_blocks; uint max_tree_leaf_base; };
 ConstantBuffer<Params> gTree;

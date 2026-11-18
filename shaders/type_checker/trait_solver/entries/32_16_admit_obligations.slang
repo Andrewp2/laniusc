@@ -2,7 +2,7 @@ import type_checker.trait_solver.abi;
 import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.batch_admission_dispatch;
 import type_checker.trait_solver.batch_row_admission;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

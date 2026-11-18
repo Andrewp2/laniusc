@@ -1,5 +1,5 @@
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 import type_checker.symbols.language_symbol_count;
 
 // HIR-driven scalar/path type-reference collection.

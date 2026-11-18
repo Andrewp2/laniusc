@@ -4,7 +4,7 @@
 // that function at depth 1: its environment tagged with SUMMARY_TAG | the
 // function's summary row. expand_dependency_closure expands it through the function's edges.
 // mark_instance_closure_roots_and_edges keeps the job's local calls; a dependency callee is never one.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.source_slots;

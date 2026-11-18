@@ -6,13 +6,13 @@ import type_checker.constant_atoms_identity;
 // array-to-slice borrowing conversion); nested elements and constants stay
 // exact. Portable constant children do not align with source HIR ordinals.
 
-import dependency_interface;
-import dependency_method_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
 import type_checker.dependencies.method_receiver;
-import hir_records;
-import gpu_index;
-import hir_expr_semantics;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
 import type_checker.generic_result_type_origin;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_closure;
@@ -21,7 +21,7 @@ import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.call_env;
-import status;
+import shared.buffers.status;
 
 struct Params
 {

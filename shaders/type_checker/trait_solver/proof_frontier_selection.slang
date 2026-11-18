@@ -13,7 +13,7 @@ import type_checker.owned_type_constraint_contract;
 import type_checker.owned_type_constraint_engine;
 import type_checker.scoped_type_hash;
 import type_checker.trait_solver.proof_scratch_handoff;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 public static const uint PPS_WORK_SELECTED = 10u;
 public static const uint PPS_WORK_FAILED = 11u;

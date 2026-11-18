@@ -1,5 +1,5 @@
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 // GPU HIR enum constructor call consumer.
 //

@@ -1,6 +1,6 @@
-import atomics;
-import byte_packing;
-import prefix_scan;
+import shared.buffers.atomics;
+import shared.buffers.byte_packing;
+import shared.collectives.prefix_scan;
 
 /// Number of globally materialized buckets for one byte digit. Inactive lanes
 /// use a 257th key only inside the workgroup-local stable scatter; they never

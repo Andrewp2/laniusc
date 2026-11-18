@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Project compact HIR path segments into name-resolution storage.
 

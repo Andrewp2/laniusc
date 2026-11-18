@@ -1,7 +1,7 @@
 // Emit dense-HIR method and impl-owner validation rows from compact contracts.
 
 #include "method_validation_common.slang"
-import callable_identity;
+import shared.semantics.callable_identity;
 
 RWStructuredBuffer<uint> predicate_method_validation_owner_node;
 RWStructuredBuffer<uint> predicate_method_validation_peer_node;

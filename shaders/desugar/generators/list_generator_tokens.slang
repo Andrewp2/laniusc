@@ -1,7 +1,7 @@
 // Per token: writes the token into the two lists it is marked for, at its
 // ordinal. `scan` is the inclusive prefix sum of `marks`, so the ordinal of
 // a marked token is its sum minus one. The other two components are depths.
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct ListParams
 {

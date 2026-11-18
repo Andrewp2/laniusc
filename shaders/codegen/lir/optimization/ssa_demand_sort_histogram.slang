@@ -1,8 +1,8 @@
 // Capacity-derived stable ordering for sparse `(declaration, block)` demands.
 
 import codegen.optimization_ir;
-import gpu_index;
-import radix;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
 
 struct Params
 {

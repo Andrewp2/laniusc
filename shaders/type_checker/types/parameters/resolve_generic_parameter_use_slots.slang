@@ -4,8 +4,8 @@
 // replay. Each scope uses the exact (owner, name) parameter index; enclosing
 // scopes supply earlier slots in separate type and constant domains.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.types.parameters.generic_param_lookup;
 
 struct Params

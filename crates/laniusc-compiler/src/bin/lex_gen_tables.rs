@@ -62,7 +62,7 @@ fn main() -> std::io::Result<()> {
         out_path.display()
     );
 
-    write_generated_token_ids(Path::new("shaders/generated_token_ids.slang"))?;
+    write_generated_token_ids(Path::new("shaders/shared/syntax/generated_token_ids.slang"))?;
     Ok(())
 }
 

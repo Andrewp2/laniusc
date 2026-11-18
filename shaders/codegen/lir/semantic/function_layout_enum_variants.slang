@@ -1,5 +1,5 @@
 import type_checker.constant_atoms_identity;
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 // Checks every enum variant against the widths function_layout_words
 // published. One lane recomputes one variant's tagged-union width from the
 // published payload widths; a variant wider than its enum, or an invalid
@@ -7,9 +7,9 @@ import native_value_layout;
 // has no finite width, so the walk publishes it invalid and this pass
 // rejects it. Generic declarations keep an invalid width without an error.
 
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.concrete_type_closure;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };

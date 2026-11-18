@@ -1,8 +1,8 @@
 // Explicit source ABI classification shared by checked semantic projection and
 // hidden declaration retention. The parser owns declaration/name token spans;
 // this reads only that declaration's optional ABI literal on the GPU.
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 
 public struct NativeAbiToken { public uint kind; public uint start; public uint len; };
 public static const uint NATIVE_ABI_NONE = 0u;

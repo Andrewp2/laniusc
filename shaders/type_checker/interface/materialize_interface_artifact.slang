@@ -1,10 +1,10 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Materialize the exact persisted semantic-interface byte stream on the GPU.
 // Every lane copies one row from each compact table when that row is active;
 // the host reads only the byte length written by lane zero.
 
-import gpu_index;
-import atomics;
+import shared.buffers.gpu_index;
+import shared.buffers.atomics;
 
 struct Params
 {

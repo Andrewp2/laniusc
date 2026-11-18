@@ -1,7 +1,7 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
 ConstantBuffer<Params> gParams;

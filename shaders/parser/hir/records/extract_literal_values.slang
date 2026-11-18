@@ -6,8 +6,8 @@
 // backend passes do not parse source text.
 
 import utils;
-import integer_words;
-import atomics;
+import shared.numbers.integer_words;
+import shared.buffers.atomics;
 
 struct Params
 {

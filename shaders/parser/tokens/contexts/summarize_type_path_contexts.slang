@@ -1,6 +1,6 @@
 // Prefix-scanned qualified type-path context for identifier retagging.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

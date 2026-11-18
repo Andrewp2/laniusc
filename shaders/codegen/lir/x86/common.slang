@@ -1,5 +1,5 @@
-import primitive_types;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 

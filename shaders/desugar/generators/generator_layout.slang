@@ -5,7 +5,7 @@
 // written by a thread of its own.
 module generator_layout;
 
-import byte_packing;
+import shared.buffers.byte_packing;
 
 public static const uint GN_NONE = 0xffffffffu;
 

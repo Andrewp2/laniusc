@@ -6,8 +6,8 @@
 // one lane per argument pair and maps the row back to its request with a
 // logarithmic prefix search.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.checked_type_graph;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;

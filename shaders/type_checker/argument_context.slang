@@ -1,6 +1,6 @@
-import primitive_types;
-import hir_records;
-import hir_expr_semantics;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 
 // Contexts belong to expression roots. Forwarding HIR wrappers do not create
 // another expression or another owner of its expected type.

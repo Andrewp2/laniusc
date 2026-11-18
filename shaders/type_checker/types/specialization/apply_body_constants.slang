@@ -1,4 +1,4 @@
-import constant_value;
+import shared.semantics.constant_value;
 import type_checker.constant_atoms;
 import type_checker.constant_atoms_identity;
 import type_checker.constant_publication;

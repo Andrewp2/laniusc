@@ -1,6 +1,6 @@
 // Clear one canonical generic-arity row per dependency declaration.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

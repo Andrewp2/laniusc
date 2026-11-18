@@ -6,7 +6,7 @@
 // whose role depends on an opener (closers, separators, signs, a call after a
 // generic list) re-derives that opener's kind from the same tables.
 
-import atomics;
+import shared.buffers.atomics;
 import token_features;
 
 struct Params

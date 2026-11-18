@@ -1,11 +1,11 @@
-import hir_records;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 import type_checker.argument_context;
 import type_checker.checked_type_graph;
 import type_checker.checked_canonical;
 import type_checker.canonicalization.canonical_candidates;
-import hir_match_patterns;
-import status;
+import shared.syntax.hir_match_patterns;
+import shared.buffers.status;
 import type_checker.calls.inference_activity;
 
 // GPU HIR enum unit-variant consumer.

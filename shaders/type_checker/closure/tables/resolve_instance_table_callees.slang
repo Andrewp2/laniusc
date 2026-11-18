@@ -16,7 +16,7 @@
 // Every other row, a call of a nongeneric function and a variant constructor
 // keep the template's callee (IT_CALL_NONE). A call the table cannot name is IT_CALL_UNRESOLVED:
 // lowering an instance over the table needs every call named.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.source_slots;
@@ -24,7 +24,7 @@ import type_checker.substitution.call_env;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
 import type_checker.methods.method_lookup;
-import checked_semantic_artifact;
+import shared.semantics.checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

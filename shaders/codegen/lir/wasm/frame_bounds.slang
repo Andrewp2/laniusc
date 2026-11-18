@@ -1,8 +1,8 @@
 import codegen.lir.wasm.common;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import gpu_index;
-import native_value_layout;
+import shared.buffers.gpu_index;
+import shared.native_interfaces.native_value_layout;
 
 // Publishes each function's frame word range and each slot's word 0, after
 // the exclusive scan of wasm_frame_words. A header ADDRESS of a parameter

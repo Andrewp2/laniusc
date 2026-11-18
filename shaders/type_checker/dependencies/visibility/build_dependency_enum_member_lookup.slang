@@ -1,6 +1,6 @@
 #include "../normalized_member_lookup.slang"
-import atomics;
-import status;
+import shared.buffers.atomics;
+import shared.buffers.status;
 // Reuse visibility's table only after its consumers finish on this page.
 // Capacity is at least twice the dependency declaration count.
 RWStructuredBuffer<uint> dependency_visible_lookup;

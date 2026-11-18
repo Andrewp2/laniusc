@@ -1,7 +1,7 @@
 // Exact GPU index for compact struct fields keyed by `(owner HIR, name id)`.
 
-import atomics;
-import hir_records;
+import shared.buffers.atomics;
+import shared.syntax.hir_records;
 
 public static const uint STRUCT_FIELD_LOOKUP_EMPTY = 0u;
 public static const uint STRUCT_FIELD_LOOKUP_INVALID = 0xffffffffu;

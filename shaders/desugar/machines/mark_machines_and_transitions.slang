@@ -1,8 +1,8 @@
 // Per token: whether a machine, a state or a transition starts here, and the
 // change of bracket depth. The prefix sums of these rows number the machines,
 // states and transitions and give each token's depth.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 
 struct MarkParams

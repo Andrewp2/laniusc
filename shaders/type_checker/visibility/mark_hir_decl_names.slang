@@ -5,8 +5,8 @@
 // the same token-indexed descriptor table before one token-domain scan. That
 // makes the compact declaration table source ordered without sorting by token.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.symbols.language_symbol_count;
 
 struct Params

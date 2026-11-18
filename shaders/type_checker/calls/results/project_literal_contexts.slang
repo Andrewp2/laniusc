@@ -2,7 +2,7 @@
 // and checked sibling facts are immutable during this dispatch, so an outer
 // annotation and an inner operand cannot race to relabel the same literal.
 #include "../array_literal_context_inputs.slang"
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.owned_literal_context;
 import type_checker.literal_symbolic_context;
 import type_checker.canonicalization.canonical_api;

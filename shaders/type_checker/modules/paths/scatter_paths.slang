@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Materialize typechecker path metadata directly from compact HIR paths.
 

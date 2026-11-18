@@ -5,7 +5,7 @@
 #define WORKGROUP_SIZE 256
 
 import utils;
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

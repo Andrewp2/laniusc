@@ -3,7 +3,7 @@ import type_checker.trait_solver.catalog_io;
 import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_normalization_stages;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

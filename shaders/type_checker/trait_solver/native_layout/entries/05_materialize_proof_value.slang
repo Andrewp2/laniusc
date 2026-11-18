@@ -1,7 +1,7 @@
 import type_checker.trait_solver.abi;
 import type_checker.trait_solver.native_layout.work_abi;
 import type_checker.trait_solver.native_layout.materialize;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]

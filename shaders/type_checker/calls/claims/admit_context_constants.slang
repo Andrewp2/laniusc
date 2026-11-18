@@ -9,7 +9,7 @@ import type_checker.calls.constant_claim_identity;
 import type_checker.constant_atoms_identity;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

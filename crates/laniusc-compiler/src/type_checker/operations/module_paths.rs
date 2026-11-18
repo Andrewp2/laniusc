@@ -225,7 +225,7 @@ writes [
 pub(in crate::type_checker) const DECL_KEY_RADIX_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.decl_key_radix_dispatch_args",
     DispatchArguments,
-    "radix/dispatch_args"
+    "radix/write_radix_dispatch_args"
     ; resources [
         typecheck_resource!("name_count_in" => "decl_count_out", Read),
         typecheck_resource!("radix_dispatch_args" => "decl_key_radix_dispatch_args", Write),

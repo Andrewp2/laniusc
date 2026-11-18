@@ -1,4 +1,4 @@
-// Negative control for canonical_intern_stress: the same lookup-first small
+// Negative control for stress_canonical_interning.slang: the same lookup-first small
 // key protocol with plain (non-coherent) buffers and no fences. Duplicates
 // here show that the stress test can observe a broken publication order.
 struct Params

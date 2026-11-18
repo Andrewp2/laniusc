@@ -5,7 +5,7 @@
 // and its anchor: the byte a diagnostic at it names. A copied byte names the
 // byte it copies, which an earlier round may have generated; the host
 // follows such a chain to the source.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

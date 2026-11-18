@@ -1,7 +1,7 @@
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
-import semantic_interface_layout;
-import native_value_layout;
+import shared.semantics.semantic_interface_layout;
+import shared.native_interfaces.native_value_layout;
 import type_checker.calls.checked_constant_environment;
 // Validate dependency call results over canonical IDs. The declared result
 // pattern is matched against the receiving type (ct_match) and its bindings
@@ -9,17 +9,17 @@ import type_checker.calls.checked_constant_environment;
 // the receiving type under the call's claims. One parameter can stand for a
 // compound graph larger than its declaration-side spelling.
 
-import dependency_interface;
-import dependency_method_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
 import type_checker.concrete_type_equality;
 import type_checker.mutable_checked_type_graph;
 import type_checker.scoped_type_equality;
 import type_checker.instance_arguments;
 import type_checker.dependencies.canonical_field_types;
-import hir_records;
-import hir_expr_semantics;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.contextual_call_environment;
 import type_checker.canonicalization.canonical_api;

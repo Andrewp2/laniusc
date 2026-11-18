@@ -1,5 +1,5 @@
 import type_checker.retention.method_routes.common;
-import constant_value;
+import shared.semantics.constant_value;
 struct Children : IRtArgs
 {
     uint node; uint length; uint parity;

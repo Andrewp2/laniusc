@@ -1,8 +1,8 @@
 // Fully parallel scatter of flattened object section bytes into linked ELF sections.
 
-import atomics;
-import byte_packing;
-import gpu_index;
+import shared.buffers.atomics;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
 
 struct Params
 {

@@ -1,6 +1,6 @@
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint n_tokens; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;

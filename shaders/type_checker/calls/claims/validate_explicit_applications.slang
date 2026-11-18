@@ -6,10 +6,10 @@
 // canonical ID and types compare by ID (docs/canonical-type-ids.md). A lane
 // visits the explicit slots twice, first to validate and then to publish, so
 // it keeps no per-slot copies.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.constant_claim_identity;
 import type_checker.calls.explicit_application_owner;
-import status;
+import shared.buffers.status;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.contextual_call_environment;
 import type_checker.checked_type_graph;

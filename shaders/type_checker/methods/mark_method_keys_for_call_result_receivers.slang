@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
 import type_checker.calls.inference_activity;

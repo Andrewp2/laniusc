@@ -1,6 +1,6 @@
 // Follow bounded runs in the canonical-root relation.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

@@ -1,7 +1,7 @@
 // Per token of a round's stream, and one row for the end of the stream:
 // whether the token stays. The generated tokens a token owns go before it;
 // count_inserted_tokens.slang counts them into the same row.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

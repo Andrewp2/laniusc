@@ -1,9 +1,9 @@
 // Scatter dependency parameter rows from compact call-argument rows.
 
-import dependency_interface;
-import dependency_method_index;
-import hir_records;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 import type_checker.calls.inference_activity;
 
 struct Params

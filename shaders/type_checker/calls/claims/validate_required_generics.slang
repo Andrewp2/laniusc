@@ -5,8 +5,8 @@
 // inferred or at least touched by an unknown-typed argument. Missing slots get a
 // diagnostic at the call site.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;
 import type_checker.calls.explicit_call_environment;

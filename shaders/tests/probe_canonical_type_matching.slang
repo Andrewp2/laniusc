@@ -9,7 +9,7 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_spare;
 import type_checker.matches.checked_match_types;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 RWStructuredBuffer<uint> match_errors;
 RWStructuredBuffer<uint> match_ids;

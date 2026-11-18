@@ -1,5 +1,5 @@
-import primitive_types;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
@@ -10,7 +10,7 @@ import codegen.lir.x86.frame_layout;
 import codegen.lir.x86.parameter_values;
 import codegen.lir.x86.encoding;
 import codegen.lir.x86.instruction_plan;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

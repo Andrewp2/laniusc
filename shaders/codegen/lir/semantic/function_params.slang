@@ -1,8 +1,8 @@
-import primitive_types;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 bool valid_instance(uint instance)
 {

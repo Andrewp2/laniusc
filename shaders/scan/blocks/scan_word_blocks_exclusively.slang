@@ -1,4 +1,4 @@
-import prefix_scan;
+import shared.collectives.prefix_scan;
 struct Params { uint item_count; };
 ConstantBuffer<Params> gScan;
 StructuredBuffer<uint> input;

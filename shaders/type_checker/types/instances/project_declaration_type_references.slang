@@ -1,7 +1,7 @@
-import primitive_types;
-import hir_records;
-import status;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.constant_value;
 
 // HIR declaration type-reference projection.
 //

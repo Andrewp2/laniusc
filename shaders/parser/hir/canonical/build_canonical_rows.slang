@@ -1,6 +1,6 @@
-import hir_records;
+import shared.syntax.hir_records;
 import generated_parse_production_ids;
-import blocked_search_tree;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.semantic_end_heaps;
 
 struct Params {

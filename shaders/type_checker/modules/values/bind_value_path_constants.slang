@@ -1,5 +1,5 @@
-import primitive_types;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 // GPU HIR-qualified constant value consumer.
 //
 // Scheduling contract:

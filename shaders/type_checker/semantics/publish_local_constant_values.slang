@@ -2,7 +2,7 @@
 // resolve_local_constant_references become present, and outside function bodies their parents fold
 // (type_checker.semantics.const_fold).
 import type_checker.semantics.const_fold;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
 ConstantBuffer<Params> gParams;

@@ -1,5 +1,5 @@
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint local_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> semantic_lir_param_total;

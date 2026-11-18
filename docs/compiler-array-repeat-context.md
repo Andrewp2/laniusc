@@ -16,7 +16,7 @@ The [literal-context projection](../shaders/type_checker/calls/03k1_project_lite
 already visits each literal's expression owner. Three added lines recognize
 the count using the existing repeat tag and exact `payload.b` operand identity,
 then select `SCALAR_U32`. Other children continue through the existing element
-context path. The [HIR contract](../shaders/hir_records.slang#L141) records that
+context path. The [HIR contract](../shaders/shared/syntax/hir_records.slang#L141) records that
 role and separately rejects high-word counts and the reserved `0xffffffff`
 sentinel. Unary element expressions and nested arrays keep their own contexts.
 

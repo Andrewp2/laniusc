@@ -1,6 +1,6 @@
 // Visibility has already selected the qualifier. Its checked target identity
 // owns members, including when an alias exposes a type from another module.
-import dependency_interface;
+import shared.semantics.dependency_interface;
 struct Params
 {
     uint declaration_count;

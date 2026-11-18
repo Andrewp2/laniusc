@@ -2,7 +2,7 @@
 // ordinal. `scan` is the inclusive prefix sum of `marks`, so the ordinal of
 // a marked token is its sum minus one. The fourth component is a list only
 // when `fourth` is set: in the first marks it is the bracket depth.
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct ListParams
 {

@@ -6,10 +6,10 @@
 // the environment, realizes each result's row and queues the result. Local
 // declarations read their fields from the HIR; imported ones from the
 // resident dependency page, or wait in the deferred list for their page.
-import hir_records;
-import status;
-import dependency_interface;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
+import shared.semantics.semantic_interface_layout;
 import type_checker.local_struct_layout;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;

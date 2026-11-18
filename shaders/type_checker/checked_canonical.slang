@@ -15,7 +15,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_subst;
 import type_checker.checked_type_graph;
 import type_checker.constant_parameter_slots;
-import constant_value;
+import shared.semantics.constant_value;
 
 // The canonical reference of a checked operand (tag, payload).
 public interface ICheckedIds

@@ -502,7 +502,7 @@ mod tests {
     fn generated_shader_token_ids_match_token_kind_discriminants() {
         let generated = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../shaders/generated_token_ids.slang"
+            "/../../shaders/shared/syntax/generated_token_ids.slang"
         ));
         assert_eq!(
             generated_uint_const(generated, "TOKEN_KIND_COUNT"),
@@ -529,7 +529,7 @@ mod tests {
     fn shader_token_id_constants_match_generated_ids() {
         let generated = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../shaders/generated_token_ids.slang"
+            "/../../shaders/shared/syntax/generated_token_ids.slang"
         ));
         let mut shader_paths = Vec::new();
         collect_slang_paths(

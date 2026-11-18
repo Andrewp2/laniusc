@@ -2,7 +2,7 @@
 // variant of an enum, or every integer through a last arm that accepts any.
 // It is reachable from the start state, and it has a `goto` to another state
 // unless it is `final`.
-import gpu_index;
+import shared.buffers.gpu_index;
 import machine_layout;
 
 struct StateParams

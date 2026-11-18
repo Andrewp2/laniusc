@@ -3,8 +3,8 @@
 // interns it first: CC_VALUE for a typed value with its count facts, and
 // CC_CAST for a symbolic count projection.
 import type_checker.canonicalization.canonical_api;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 
 // Key builders build a complete key, with its ct_extra facts, and return
 // CT_KEY_BUILT, or return the final reference (a sentinel) without a key.

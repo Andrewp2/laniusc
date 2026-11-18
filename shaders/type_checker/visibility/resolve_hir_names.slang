@@ -13,10 +13,10 @@
 //   by compact declaration-node records plus dense initializer spans, not by
 //   walking parser parent/root chains.
 
-import hir_records;
-import range_query;
-import segment_tree;
-import status;
+import shared.syntax.hir_records;
+import shared.search.range_query;
+import shared.search.segment_tree;
+import shared.buffers.status;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.symbols.language_symbol_count;
 

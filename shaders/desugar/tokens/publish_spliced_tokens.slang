@@ -1,6 +1,6 @@
 // Per token of the new stream: its row and file into the lexer's buffers,
 // where the next round and the parser read them.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

@@ -4,8 +4,8 @@
 // table used there only places exact pairs; therefore one canonical id denotes
 // one complete segment sequence without a path-depth bound or hash ambiguity.
 
-import gpu_index;
-import status;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.modules.module_lookup;
 
 struct Params

@@ -12,9 +12,9 @@
 //   takes precedence over module imports in the same module: their rows of
 //   that name are left invalid, so lookups never see them.
 
-import gpu_index;
-import range_query;
-import status;
+import shared.buffers.gpu_index;
+import shared.search.range_query;
+import shared.buffers.status;
 
 struct Params
 {

@@ -5,9 +5,9 @@
 // (docs/canonical-type-ids.md). The lane interns the rows it compares on
 // demand, from one site: first the receiver operands, then, after the
 // accepted parameter may have been allocated, the published ones.
-import gpu_index;
-import atomics;
-import status;
+import shared.buffers.gpu_index;
+import shared.buffers.atomics;
+import shared.buffers.status;
 import type_checker.methods.method_candidate;
 import type_checker.mutable_checked_type_graph;
 import type_checker.checked_type_identity;

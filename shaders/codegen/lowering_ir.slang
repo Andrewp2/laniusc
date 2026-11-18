@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Shared GPU lowering records and opcodes. Rust constants are generated from
 // the declarations marked `IR_OPCODE`; keep numeric ownership in this file.
 

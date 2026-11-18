@@ -7,8 +7,8 @@
 // Argument lookup and generic binding are handled by the row-dispatched call
 // argument passes after this pass publishes call_fn_index for qualified calls.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 struct Params
 {

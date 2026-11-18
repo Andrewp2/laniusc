@@ -5,8 +5,8 @@
 // wide argument lists require no raw-tree reconstruction and no contended
 // per-argument writes.
 
-import hir_records;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 
 struct Params
 {

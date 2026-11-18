@@ -16,8 +16,8 @@
 // environment (call_env.slang) and compared with the actual array as a whole:
 // element and length count class.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.checked_array_counts;
 import type_checker.checked_type_graph;
 import type_checker.checked_slots;

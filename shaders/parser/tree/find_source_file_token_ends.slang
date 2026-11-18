@@ -3,7 +3,7 @@
 // This is one thread per source token. File rows in later HIR passes consume
 // this relation instead of rediscovering file bounds from parse-tree shape.
 
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

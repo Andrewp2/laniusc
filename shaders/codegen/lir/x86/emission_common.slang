@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.storage_layout;
@@ -7,7 +7,7 @@ import codegen.lir.x86.location_common;
 import codegen.lir.x86.frame_layout;
 import codegen.lir.x86.parameter_values;
 import codegen.lir.x86.safety;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

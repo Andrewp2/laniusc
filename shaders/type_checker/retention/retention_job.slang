@@ -6,9 +6,9 @@
 // through one of the translations below: a declaration row becomes a
 // DeclId, a parameter token a ParamId, a canonical ID a TermId, and a row,
 // token or side-table index inside a body becomes relative to that body.
-import primitive_types;
-import hir_records;
-import callable_identity;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.callable_identity;
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.row_classes;

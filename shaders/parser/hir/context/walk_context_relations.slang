@@ -1,7 +1,7 @@
 // Follow a bounded run of parser-owned context relations over semantic-HIR rows.
 // Rounds after the walk converges return at once (hir_walk_state).
 
-import hir_walk_state;
+import shared.syntax.hir_walk_state;
 
 struct Params
 {

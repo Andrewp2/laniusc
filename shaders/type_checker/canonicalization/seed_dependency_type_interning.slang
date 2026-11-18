@@ -2,7 +2,7 @@
 // the round-0 candidates of intern_dependency_types. The table, records and
 // overflow bits are kept.
 import type_checker.canonicalization.canonical_api;
-import dependency_interface;
+import shared.semantics.dependency_interface;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]

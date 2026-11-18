@@ -6,10 +6,10 @@
 // validity; debug/readback builds may additionally materialize the involutive
 // match table.
 
-import atomics;
-import blocked_search_tree;
-import gpu_index;
-import segment_tree;
+import shared.buffers.atomics;
+import shared.search.blocked_search_tree;
+import shared.buffers.gpu_index;
+import shared.search.segment_tree;
 
 struct Params
 {

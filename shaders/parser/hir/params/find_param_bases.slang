@@ -6,7 +6,7 @@
 // each resolved owner so the following pass can assign source-order segment
 // offsets without carrying ranks through the link jump.
 
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

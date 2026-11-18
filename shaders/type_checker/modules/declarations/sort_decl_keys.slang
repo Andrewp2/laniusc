@@ -11,8 +11,8 @@
 //   duplicates, perform lookup, scan source bytes, use hashes, or apply
 //   same-source shortcuts.
 
-import gpu_index;
-import radix;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
 
 struct Params
 {

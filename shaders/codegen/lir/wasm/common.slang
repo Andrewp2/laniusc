@@ -1,8 +1,8 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import primitive_types;
-import hir_records;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.native_interfaces.native_value_layout;
 
 static const uint WASM_LIR_INVALID = 0xffffffffu;
 static const uint TY_FLOAT = 5u;

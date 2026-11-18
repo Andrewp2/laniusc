@@ -1,4 +1,4 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 #ifndef PROJECT_DEPENDENCY_VALUES_ONLY
 #define PROJECT_DEPENDENCY_VALUES_ONLY 0
 #endif
@@ -7,9 +7,9 @@ import semantic_interface_layout;
 // paths retain compact metadata that survives replacement of the dependency
 // page.
 
-import dependency_interface;
-import constant_value;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.constant_value;
+import shared.buffers.gpu_index;
 
 struct Params
 {

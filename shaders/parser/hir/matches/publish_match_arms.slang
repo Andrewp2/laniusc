@@ -4,7 +4,7 @@
 // match-node/ordinal rows therefore also carry arm owner/rank for match-arm
 // nodes so later semantic passes can work per arm instead of walking arm lists.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params

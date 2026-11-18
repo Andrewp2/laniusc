@@ -7,9 +7,9 @@
 // of the machine's tokens in token order. The pieces of a machine go where
 // its item stood: their owner is the item's first token, and the counting
 // run marks the item's tokens to drop (desugaring_layout.slang).
-import gpu_index;
-import byte_packing;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 import desugar.tokens.desugaring_layout;
 

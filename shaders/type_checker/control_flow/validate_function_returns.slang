@@ -1,9 +1,9 @@
 // Validate that concrete non-void functions have compact-HIR return evidence.
 
-import hir_records;
-import status;
-import primitive_types;
-import fixed.compact_method;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.primitive_types;
+import shared.search.compact_method_lookup;
 
 struct Params
 {

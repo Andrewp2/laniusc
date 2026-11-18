@@ -1,12 +1,12 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 import type_checker.constant_atoms_identity;
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.checked_array_counts;
-import checked_semantic_artifact;
+import shared.semantics.checked_semantic_artifact;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_call_args; uint n_hir_nodes; uint lir_capacity; uint reserved; };
 

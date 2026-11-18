@@ -1,5 +1,5 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.trait_solver.constant_atoms;
 // The normalized store has its own compound-node namespace. Leaf atoms remain
 // the exact catalog/batch atoms; no parameter slot or page-local token is copied.

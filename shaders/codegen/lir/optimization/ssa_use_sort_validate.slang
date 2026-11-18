@@ -1,7 +1,7 @@
 // Independently proves value ordering, stable tie order, and uniqueness.
 
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

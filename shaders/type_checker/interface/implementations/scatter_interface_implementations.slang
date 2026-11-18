@@ -1,7 +1,7 @@
 // Persist implementation identity and independently checked canonical roots.
-import hir_records;
-import atomics;
-import semantic_interface_layout;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
+import shared.semantics.semantic_interface_layout;
 import type_checker.predicates.trait_reference;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

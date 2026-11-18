@@ -103,10 +103,10 @@ fn generate_embedded_core(workspace_root: &Path) {
 }
 
 fn generate_primitive_type_constants(workspace_root: &Path) {
-    let source = workspace_root.join("shaders/primitive_types.slang");
+    let source = workspace_root.join("shaders/shared/semantics/primitive_types.slang");
     println!("cargo:rerun-if-changed={}", source.display());
     let text = fs::read_to_string(&source).expect("read primitive type schema");
-    let mut generated = String::from("// Generated from shaders/primitive_types.slang.\n");
+    let mut generated = String::from("// Generated from shaders/shared/semantics/primitive_types.slang.\n");
     let mut marked = false;
     let mut count = 0;
     for line in text.lines().map(str::trim) {

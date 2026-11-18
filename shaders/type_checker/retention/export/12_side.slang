@@ -10,7 +10,7 @@
 //   elements     (array, value, ordinal, file)          0
 //   strings      (node, byte word base, length, file)   0; bytes in rt_seg_bytes
 //   params       (owner, name token, type row, ordinal) (declared term, 0, 0, 0)
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

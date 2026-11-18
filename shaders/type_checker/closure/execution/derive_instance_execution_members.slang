@@ -12,9 +12,9 @@
 // native width (view_stride_resolves). A method call's callee member names
 // no field and needs no layout. Every other row is marked INVALID: its copy
 // keeps the template's member facts.
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.dependencies.record_fields;
 import type_checker.checked_canonical;
 import type_checker.checked_type_graph;

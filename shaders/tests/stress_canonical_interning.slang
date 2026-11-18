@@ -3,7 +3,7 @@
 // with other lanes, building each parent from the IDs returned for its
 // children. mode 1: validate uniqueness, structure and published facts.
 import type_checker.canonicalization.canonical_api;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 struct Params
 {

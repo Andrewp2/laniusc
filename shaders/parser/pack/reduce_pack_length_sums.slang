@@ -1,4 +1,4 @@
-import reduce;
+import shared.collectives.reduce;
 
 struct Params
 {

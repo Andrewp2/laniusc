@@ -1,9 +1,9 @@
 // Shared exact-name hashing and open-addressed table helpers.
 
-import atomics;
-import byte_packing;
-import gpu_index;
-import status;
+import shared.buffers.atomics;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params
 {

@@ -4,10 +4,10 @@
 // bindings it shares with other kernels of the same dispatch come from
 // shared_bindings.slang.
 
-import gpu_index;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 import type_checker.shared_bindings;
-import external_type_identity;
+import shared.semantics.external_type_identity;
 
 StructuredBuffer<uint> type_decl_generic_param_count_by_owner_token;
 

@@ -1,9 +1,9 @@
-import integer_words;
-import primitive_types;
-import native_value_layout;
-import checked_semantic_artifact;
+import shared.numbers.integer_words;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.checked_type_graph;
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lir.semantic.match_recipe;
 import codegen.lir.semantic.loop_recipe;

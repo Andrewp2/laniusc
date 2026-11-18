@@ -1,6 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.wasm.host_abi;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 static const uint WASM_MODULE_I32 = 0x7fu;
 static const uint WASM_MODULE_I64 = 0x7eu;

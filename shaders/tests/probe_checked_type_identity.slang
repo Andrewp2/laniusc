@@ -12,7 +12,7 @@ import type_checker.canonicalization.canonical_constants;
 import type_checker.checked_type_identity;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_subst;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 RWStructuredBuffer<uint> identity_errors;
 

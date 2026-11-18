@@ -12,7 +12,7 @@ import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import codegen.lir.x86.liveness_dependencies;
 import codegen.lir.x86.liveness_walk;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

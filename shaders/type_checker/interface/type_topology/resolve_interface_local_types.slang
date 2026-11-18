@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Resolve each HIR type node to the local declaration row selected by the
 // module resolver. Named generic instances use their checked instance binding

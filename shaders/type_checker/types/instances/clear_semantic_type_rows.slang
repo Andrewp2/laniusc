@@ -1,7 +1,7 @@
 // Clear the token-to-semantic-row map and type-row scan flags. The following
 // mark pass projects parser-owned dense semantic preorder into this relation.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

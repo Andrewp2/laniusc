@@ -6,7 +6,7 @@
 // - This pass resolves still-unresolved one-segment HIR path expressions
 //   against the exact imported-public declaration index for the owner module.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.import_visible_lookup;
 
 struct Params

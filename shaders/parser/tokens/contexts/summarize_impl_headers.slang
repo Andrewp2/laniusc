@@ -4,7 +4,7 @@
 // reset by item/statement boundaries. A later prefix-scan/apply pass lets
 // token classifiers consume impl-header context without walking source tokens.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

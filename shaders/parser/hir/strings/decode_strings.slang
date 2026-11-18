@@ -1,6 +1,6 @@
 // Decode compact string literals with a workgroup-parallel two-state DFA scan.
-import atomics;
-import byte_packing;
+import shared.buffers.atomics;
+import shared.buffers.byte_packing;
 
 struct Params {
     uint n;

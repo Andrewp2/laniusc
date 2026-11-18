@@ -1,5 +1,5 @@
 import type_checker.constant_parameter_slots;
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.concrete_type_equality;
 import type_checker.calls.explicit_constant_operand;
 

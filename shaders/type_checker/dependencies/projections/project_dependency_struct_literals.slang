@@ -1,10 +1,10 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Check imported record constructors while their immutable interface page is
 // active. Only stable checked references and field ordinals survive the page.
-import dependency_interface;
-import hir_records;
-import gpu_index;
-import status;
+import shared.semantics.dependency_interface;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_checked_rows;

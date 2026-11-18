@@ -4,7 +4,7 @@
 // Element and length refs are filled in a later pass after all child type refs
 // have been materialized.
 
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params
 {

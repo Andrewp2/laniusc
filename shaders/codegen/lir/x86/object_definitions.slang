@@ -1,5 +1,5 @@
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct ObjectIdentity { uint library_id; uint unit_id; uint reserved0; uint reserved1; };
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };

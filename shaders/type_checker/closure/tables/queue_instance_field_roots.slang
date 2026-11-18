@@ -4,8 +4,8 @@
 // again for the execution rows: a realized Node<i32, i32> reaches its field
 // Entry<i32, i32>, which no row of the job named before the table. One lane
 // per table row; a lenient root reports only capacity and limit failures.
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.substitution.ct_expand;

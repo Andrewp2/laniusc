@@ -1,5 +1,5 @@
 import codegen.x86.link.symbol_partition_common;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

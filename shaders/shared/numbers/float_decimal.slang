@@ -8,7 +8,7 @@
 // active conversion. There is deliberately no private 768-element array.
 // Dispatch this exact path over compacted float jobs in bounded batches.
 import integer_words;
-import primitive_types;
+import shared.semantics.primitive_types;
 import float_decimal_tables;
 import float_decimal_pow5;
 

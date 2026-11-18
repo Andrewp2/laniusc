@@ -31,9 +31,9 @@
 // enum variant. No earlier pass reports a path that names another kind of
 // declaration there.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.checked_pattern_path;
-import status;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

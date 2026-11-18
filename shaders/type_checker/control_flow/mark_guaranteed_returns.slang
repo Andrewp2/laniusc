@@ -1,5 +1,5 @@
-import hir_records;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
 
 // Propagate guaranteed-return facts from explicit returns through enclosing
 // if/else controls.  Each if row is a two-bit atomic latch: the thread which

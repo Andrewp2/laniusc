@@ -1,6 +1,6 @@
 // First stage of two in-place counted exclusive u32 scans.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

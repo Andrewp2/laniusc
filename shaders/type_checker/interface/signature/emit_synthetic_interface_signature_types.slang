@@ -1,7 +1,7 @@
 // Emit synthetic function and nominal signature records after all HIR-backed
 // children and the shared primitive leaves.
 
-import atomics;
+import shared.buffers.atomics;
 import type_checker.interface.scalar_leaves;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

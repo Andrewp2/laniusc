@@ -1,7 +1,7 @@
 // Follow a bounded run of nearest type-alias owner links per dispatch.
 // Rounds after the walk converges return at once (hir_walk_state).
 
-import hir_walk_state;
+import shared.syntax.hir_walk_state;
 
 struct Params
 {

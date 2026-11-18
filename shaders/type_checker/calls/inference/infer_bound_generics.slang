@@ -19,8 +19,8 @@
 // not consulted: they cannot add a candidate, and trait solver still
 // checks the selected implementation. Rounds repeat until nothing changes,
 // so a binding inferred here can feed the next call's argument claims.
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;

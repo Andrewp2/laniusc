@@ -2,8 +2,8 @@
 // prefix of generated names (`__lanius_`, R5): the first such token. The
 // lexer's token build sets DESUGAR_RESERVED by the same rule, and no round
 // of the desugaring runs then, so the tokens are the source's.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 
 struct ReservedParams

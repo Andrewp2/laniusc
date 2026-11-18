@@ -16,7 +16,7 @@
 //
 // The first lane to claim a function publishes its instance; a second
 // instance blocks the function. Readers run in later dispatches.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.closure.instance_closure;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

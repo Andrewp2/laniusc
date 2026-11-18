@@ -7,7 +7,7 @@
 // - Each lane scans a contiguous share of the active histogram blocks, so the
 //   operation has no fixed 4096-block correctness ceiling.
 
-import radix;
+import radix.radix_digits;
 
 struct Params
 {

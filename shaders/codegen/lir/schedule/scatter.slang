@@ -1,8 +1,8 @@
 import codegen.lir.schedule.common;
 import codegen.lowering_ir;
-import gpu_index;
-import stable_radix_scatter;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import radix.stable_radix_scatter;
+import shared.collectives.prefix_scan;
 
 struct Params { uint target_capacity; uint max_blocks; uint key_step; uint reserved; };
 ConstantBuffer<Params> gParams;

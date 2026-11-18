@@ -11,8 +11,8 @@
 //
 // A generator whose header or brackets do not match is not recorded; the
 // parser reports it.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import generator_layout;
 
 struct ReadParams

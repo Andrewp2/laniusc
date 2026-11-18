@@ -2,7 +2,7 @@
 // leaf-to-owner links for bound predicate paths.
 
 import generated_parse_production_ids;
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

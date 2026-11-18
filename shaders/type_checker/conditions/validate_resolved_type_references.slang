@@ -1,16 +1,16 @@
 import type_checker.concrete_type_equality;
 import type_checker.constant_atoms_identity;
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.constant_parameter_slots;
 // Validate resolved type references from dense compact HIR. Method-contract
 // generic failures are classified through the compact method family rather
 // than raw production IDs or raw ancestor links.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.explicit_call_environment;
-import fixed.compact_method;
-import gpu_index;
-import status;
+import shared.search.compact_method_lookup;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.checked_array_counts;
 import type_checker.array_extent_literal;
 

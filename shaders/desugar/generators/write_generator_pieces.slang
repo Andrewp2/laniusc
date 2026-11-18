@@ -15,8 +15,8 @@
 // are the replacements with ranges of the copied tokens between them. The
 // prefix sums of the replacement sizes give a run's piece count and the
 // token of a piece without a walk over the run.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import generator_layout;
 import desugar.tokens.desugaring_layout;
 

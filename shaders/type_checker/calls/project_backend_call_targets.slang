@@ -2,7 +2,7 @@
 // by code generators. Type checking keeps declaration-name tokens as semantic
 // identities; backends use source-span starts to index function body records.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

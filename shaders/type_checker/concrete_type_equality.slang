@@ -1,5 +1,5 @@
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 // Compare checked type references without collapsing compounds to a scalar
 // code or treating equal machine widths as equal types. Declaration fields
 // are not traversed: nominal identity and every type argument define a named

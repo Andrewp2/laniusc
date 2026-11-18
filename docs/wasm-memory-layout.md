@@ -1,7 +1,7 @@
 # Wasm memory layout
 
 Wasm uses the native value layout that x86_64 uses
-(`shaders/native_value_layout.slang`). Layout is decided once. Only the
+(`shaders/shared/native_interfaces/native_value_layout.slang`). Layout is decided once. Only the
 target's scalar widths differ. The Wasm backend has no private aggregate model.
 
 ## Per-target layout

@@ -1,8 +1,8 @@
 // shaders/parser/brackets_01_scan_inblock.slang
 // Per-workgroup exclusive scan of +1/-1 deltas. Writes in-block exscan and block summaries.
 
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

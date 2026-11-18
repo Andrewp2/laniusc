@@ -4,12 +4,12 @@
 // result constraints fill missing bindings. A receiving context must not
 // rewrite a known value and then feed that rewritten result back into its
 // caller's argument claims.
-import hir_records;
-import status;
-import dependency_interface;
-import dependency_method_index;
-import semantic_interface_layout;
-import hir_match_patterns;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
+import shared.semantics.semantic_interface_layout;
+import shared.syntax.hir_match_patterns;
 import type_checker.mutable_checked_type_graph;
 import type_checker.calls.explicit_call_environment;
 import type_checker.calls.checked_call_environment;

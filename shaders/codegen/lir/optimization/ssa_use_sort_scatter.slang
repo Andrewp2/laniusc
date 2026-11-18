@@ -1,9 +1,9 @@
 // Stable scatter for compact SSA uses ordered by dense value ID.
 
-import gpu_index;
-import radix;
-import scatter;
-import stable_radix_scatter;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
+import shared.collectives.scatter;
+import radix.stable_radix_scatter;
 
 struct Params
 {

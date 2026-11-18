@@ -1,8 +1,8 @@
 // Apply the GPU-selected single-instance environment after call validation.
 
-import hir_records;
-import constant_value;
-import status;
+import shared.syntax.hir_records;
+import shared.semantics.constant_value;
+import shared.buffers.status;
 import type_checker.types.parameters.generic_param_lookup;
 
 struct Params

@@ -4,7 +4,7 @@
 // inside a nongeneric function whose environment is complete and closed is
 // a root instance at depth 1. A bound-member call (closure_bound_call) is
 // an edge of its generic function too; 03c routes it.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.canonicalization.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.source_slots;

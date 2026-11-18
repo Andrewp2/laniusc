@@ -5,7 +5,7 @@
 // predicate validation does not scan method child lists to rediscover
 // unsupported signature metadata.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params

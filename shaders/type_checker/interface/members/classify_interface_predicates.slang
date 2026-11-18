@@ -1,11 +1,11 @@
 // Select accepted predicates owned by exported callables. Source-order scans
 // assign durable rows; names and GPU-local ids never cross the artifact boundary.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.interface.method_parameters;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.predicate_scalar_subject;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

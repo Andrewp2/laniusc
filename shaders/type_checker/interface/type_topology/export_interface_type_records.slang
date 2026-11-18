@@ -1,5 +1,5 @@
 #include "../checked_types.slang"
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 StructuredBuffer<uint> interface_type_reverse_flag;
 StructuredBuffer<uint> interface_type_reverse_prefix;
 StructuredBuffer<uint> interface_type_edge_prefix;

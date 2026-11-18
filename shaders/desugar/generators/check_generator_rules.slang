@@ -2,8 +2,8 @@
 // from. A `yield` reserves one slot per local in scope, a local one pair per
 // `yield` it is in scope of, and a `yield`, the `;` after it and a `return`
 // count the pieces that replace them in a copy of the body.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import generator_layout;
 
 struct CheckParams

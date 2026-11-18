@@ -1,4 +1,4 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
 ConstantBuffer<Params> gParams;

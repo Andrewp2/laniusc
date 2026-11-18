@@ -1,7 +1,7 @@
 // Follow bounded runs of enum variant and payload links.
 // Rounds after the walk converges return at once (hir_walk_state).
 
-import hir_walk_state;
+import shared.syntax.hir_walk_state;
 
 import token_features;
 

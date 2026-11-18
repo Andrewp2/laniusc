@@ -21,7 +21,7 @@ fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]
     let results = storage_rw_for_array::<u32>(&gpu.device, key, word_count);
     let pass = make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap();
     assert_eq!(pass.thread_group_size, [threads, 1, 1]);
-    // One thread-scratch slot per row (shaders/thread_scratch.slang).
+    // One thread-scratch slot per row (shaders/shared/buffers/thread_scratch.slang).
     let scratch = storage_rw_for_array::<u32>(&gpu.device, "typed_constants.thread_scratch",
         thread_scratch_words(rows));
     // A probe that reaches the trait-solver abi (through a module it

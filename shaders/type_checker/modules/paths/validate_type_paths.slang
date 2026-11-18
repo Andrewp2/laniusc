@@ -8,9 +8,9 @@
 //   status buffer. It does not inspect source bytes, token spelling, helper
 //   names, or function-body shapes.
 
-import gpu_index;
-import hir_records;
-import status;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 struct Params
 {

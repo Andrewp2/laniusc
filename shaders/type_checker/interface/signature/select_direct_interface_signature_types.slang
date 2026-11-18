@@ -1,6 +1,6 @@
 // Select compacted HIR roots for constants and aliases.
 
-import atomics;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> public_decl_count;

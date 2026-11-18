@@ -26,7 +26,7 @@ import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
 import type_checker.concrete_type_equality;
 import type_checker.scoped_type_equality;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 // The type capacity a bridged comparison passes to the walkers: the bridge
 // bounds checked rows itself.

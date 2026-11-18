@@ -1,8 +1,8 @@
 import codegen.lowering_ir;
-import primitive_types;
+import shared.semantics.primitive_types;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

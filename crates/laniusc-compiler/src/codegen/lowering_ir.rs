@@ -10854,7 +10854,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<WasmModuleLayout>(), 64);
         assert_eq!(std::mem::size_of::<X86ArtifactLayout>(), 48);
         // 22 uint fields, in the order of CheckedCallArtifact in
-        // shaders/checked_semantic_artifact.slang, ending with
+        // shaders/shared/semantics/checked_semantic_artifact.slang, ending with
         // symbolic_type_environment.
         assert_eq!(
             std::mem::size_of::<crate::type_checker::GpuCheckedCallArtifact>(),
@@ -11821,7 +11821,7 @@ mod tests {
                 "lir.opt.access.sort.histogram.a",
                 "codegen/lir/optimization/access_sort_histogram",
             ),
-            ("lir.opt.access.sort.prefix.a", "radix/bucket_prefix"),
+            ("lir.opt.access.sort.prefix.a", "radix/scan_radix_bucket_histograms"),
             (
                 "lir.opt.access.sort.scatter.a",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -11830,7 +11830,7 @@ mod tests {
                 "lir.opt.access.sort.histogram.b",
                 "codegen/lir/optimization/access_sort_histogram",
             ),
-            ("lir.opt.access.sort.prefix.b", "radix/bucket_prefix"),
+            ("lir.opt.access.sort.prefix.b", "radix/scan_radix_bucket_histograms"),
             (
                 "lir.opt.access.sort.scatter.b",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -11979,7 +11979,7 @@ mod tests {
                 "lir.opt.access.sort.histogram.a",
                 "codegen/lir/optimization/access_sort_histogram",
             ),
-            ("lir.opt.access.sort.prefix.a", "radix/bucket_prefix"),
+            ("lir.opt.access.sort.prefix.a", "radix/scan_radix_bucket_histograms"),
             (
                 "lir.opt.access.sort.scatter.a",
                 "codegen/lir/optimization/access_sort_scatter",
@@ -11988,7 +11988,7 @@ mod tests {
                 "lir.opt.access.sort.histogram.b",
                 "codegen/lir/optimization/access_sort_histogram",
             ),
-            ("lir.opt.access.sort.prefix.b", "radix/bucket_prefix"),
+            ("lir.opt.access.sort.prefix.b", "radix/scan_radix_bucket_histograms"),
             (
                 "lir.opt.access.sort.scatter.b",
                 "codegen/lir/optimization/access_sort_scatter",

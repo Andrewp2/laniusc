@@ -1,5 +1,5 @@
-import primitive_types;
-import constant_value;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.concrete_type_equality;
 // One structural constraint engine for one-way matching and two-sided head
 // overlap. Both use admitted immutable graphs and exact selected-owner atoms.
@@ -7,7 +7,7 @@ import type_checker.concrete_type_equality;
 // here. The caller retains one state across subject and all ordered operands.
 import type_checker.owned_type_constraint_contract;
 import type_checker.type_constraint_structure;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 // Side-indexed graph capabilities. The engine calls each capability from one
 // site with the term's graph side (0 = left/pattern, otherwise right/goal);

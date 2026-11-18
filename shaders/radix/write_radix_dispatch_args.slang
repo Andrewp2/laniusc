@@ -3,7 +3,7 @@
 // Histogram and scatter scale with the GPU-written active count, not with the
 // allocation capacity.
 
-import radix;
+import radix.radix_digits;
 
 struct Params
 {

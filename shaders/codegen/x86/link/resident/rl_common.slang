@@ -8,8 +8,8 @@
 // reads one status record (with the referenced C import names) and the
 // finished image.
 
-import gpu_index;
-__exported import atomics;
+import shared.buffers.gpu_index;
+__exported import shared.buffers.atomics;
 
 public struct RLParams
 {

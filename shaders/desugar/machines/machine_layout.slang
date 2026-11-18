@@ -4,7 +4,7 @@
 // text it stands for.
 module machine_layout;
 
-import byte_packing;
+import shared.buffers.byte_packing;
 
 public static const uint MC_NONE = 0xffffffffu;
 

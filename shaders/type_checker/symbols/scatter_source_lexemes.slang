@@ -6,9 +6,9 @@
 // - Literal payloads are not names. Canonical string lowering belongs to HIR
 //   construction and does not enter the declaration/path name table.
 
-import scatter;
-import status;
-import atomics;
+import shared.collectives.scatter;
+import shared.buffers.status;
+import shared.buffers.atomics;
 import type_checker.symbols.language_symbol_count;
 
 struct Params

@@ -4,7 +4,7 @@
 // and the original-call provisionalization
 // (type_checker/retention/native/00_provisional.slang) share them.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 

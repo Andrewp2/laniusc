@@ -3,7 +3,7 @@
 // before it wrote (desugaring_layout.slang). The host records each mode once
 // per round, in order, with the round's slices of `sizes`, `args` and
 // `blocks`.
-import generated_token_ids;
+import shared.syntax.generated_token_ids;
 import desugaring_layout;
 
 struct PlanParams

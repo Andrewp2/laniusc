@@ -1,7 +1,7 @@
 // Records, once per job before the inference rounds, the HIR rows and tokens
 // of each function (inference_block_layout.slang, inference_blocks.slang).
 // One lane per HIR row and token; inference_block_tables was cleared before.
-import hir_records;
+import shared.syntax.hir_records;
 #include "../inference_block_layout.slang"
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

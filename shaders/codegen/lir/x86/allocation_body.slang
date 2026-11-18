@@ -1,14 +1,14 @@
 // Shared declarations and per-row helpers of the x86 register allocator,
 // included by allocation_prepare.slang and allocation_words.slang.
-import native_value_layout;
-import primitive_types;
+import shared.native_interfaces.native_value_layout;
+import shared.semantics.primitive_types;
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.runtime_abi;
-import gpu_index;
+import shared.buffers.gpu_index;
 import codegen.lir.x86.aggregate_facts;
 
 struct Params

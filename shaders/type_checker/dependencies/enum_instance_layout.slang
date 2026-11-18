@@ -1,12 +1,12 @@
-import primitive_types;
-import semantic_interface_layout;
+import shared.semantics.primitive_types;
+import shared.semantics.semantic_interface_layout;
 // Derive imported enum instance widths from canonical variant signatures
 // and checked concrete arguments in the importing unit. Unknown layouts fail
 // closed; this does not specialize a generic function body.
-import dependency_interface;
-import hir_records;
+import shared.semantics.dependency_interface;
+import shared.syntax.hir_records;
 import type_checker.local_struct_layout;
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 
 public interface IInstanceNativeWords { static uint words(uint instance); }
 

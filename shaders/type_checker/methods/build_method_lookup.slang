@@ -1,6 +1,6 @@
-import atomics;
-import gpu_index;
-import hir_records;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 import type_checker.methods.method_lookup;
 import type_checker.instance_arguments;
 import type_checker.constant_parameter_slots;

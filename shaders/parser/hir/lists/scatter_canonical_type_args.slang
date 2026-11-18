@@ -1,5 +1,5 @@
-import hir_records;
-import prefix_scan;
+import shared.syntax.hir_records;
+import shared.collectives.prefix_scan;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;

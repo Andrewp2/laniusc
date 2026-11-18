@@ -1,6 +1,6 @@
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

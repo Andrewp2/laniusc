@@ -1,6 +1,6 @@
 // Per token: a local of a generator adds one to the count of its block, at
 // the block's `}`. A block's locals leave scope there.
-import gpu_index;
+import shared.buffers.gpu_index;
 import generator_layout;
 
 struct DirectParams

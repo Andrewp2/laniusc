@@ -1,12 +1,12 @@
 // Ordered after byte_count, before prefix scan, once per retained target page.
 // byte_count owns every instruction body (through the shared instruction plan)
 // and the prologue/footer. This pass adds the safety guard bytes.
-import primitive_types;
+import shared.semantics.primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.safety;
 import codegen.lir.x86.location_common;
-import gpu_index;
+import shared.buffers.gpu_index;
 struct Params
 {
     uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity;

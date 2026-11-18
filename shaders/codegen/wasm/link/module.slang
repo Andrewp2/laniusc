@@ -1,4 +1,4 @@
-import byte_packing;
+import shared.buffers.byte_packing;
 import codegen.lir.wasm.host_abi;
 import codegen.lir.wasm.module_sections;
 struct LinkParams

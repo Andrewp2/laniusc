@@ -1,8 +1,8 @@
 import type_checker.constant_parameter_slots;
 // Derive stable per-public-declaration generic counts from the same compacted
 // rows and slots consumed by member scatter.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_generic_param_count;

@@ -1,7 +1,7 @@
 // Shared by the body steps (11, 12): the body a row belongs to, as a
 // segment context, and the relative encodings of row, token and side-table
 // references inside it.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.side_tables;

@@ -5,7 +5,7 @@
 // the summary of every tile before it with the tile's own exclusive scan,
 // whose first lane starts from (0, 0).
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

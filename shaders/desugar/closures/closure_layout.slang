@@ -5,7 +5,7 @@
 // kernels read the lexer's tokens: the closure round runs first.
 module closure_layout;
 
-import generated_token_ids;
+import shared.syntax.generated_token_ids;
 
 public static const uint CL_INVALID = 0xffffffffu;
 

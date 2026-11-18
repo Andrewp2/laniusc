@@ -3,7 +3,7 @@
 // Blocks are scanned in tiles of 256, in order, each from the maximum of
 // the tiles before it.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

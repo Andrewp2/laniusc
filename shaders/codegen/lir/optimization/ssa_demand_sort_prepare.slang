@@ -1,6 +1,6 @@
 // Produces the indirect row-domain dispatch for canonical demand ordering.
 
-import radix;
+import radix.radix_digits;
 
 struct Params
 {

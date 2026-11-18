@@ -5,7 +5,7 @@
 //   1 fields          (key: owner row)       5 strings        (key: literal row)
 //   2 match arms      (key: match row)       6 parameters     (key: function row)
 //   3 match payloads  (key: pattern row)
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 

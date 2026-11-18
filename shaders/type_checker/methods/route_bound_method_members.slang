@@ -11,9 +11,9 @@
 //
 // One lane owns each call's context rows and method-callee reference.
 
-import gpu_index;
-import hir_records;
-import status;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.methods.method_lookup;
 import type_checker.methods.method_candidate;
 import type_checker.checked_type_graph;
@@ -23,7 +23,7 @@ import type_checker.canonicalization.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
-import callable_identity;
+import shared.semantics.callable_identity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

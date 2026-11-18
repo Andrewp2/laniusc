@@ -1,4 +1,4 @@
-import atomics;
+import shared.buffers.atomics;
 StructuredBuffer<uint> interface_declaration_member_total;
 StructuredBuffer<uint> interface_implementation_member_total;
 RWStructuredBuffer<uint> interface_member_total;

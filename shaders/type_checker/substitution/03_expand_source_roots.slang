@@ -3,7 +3,7 @@
 // following level rounds. Open applications are roots too: an unbound
 // parameter leaf keeps its declaration identity, as in the application
 // index.
-import status;
+import shared.buffers.status;
 import type_checker.canonicalization.canonical_api;
 import type_checker.checked_type_graph;
 import type_checker.substitution.ct_expand;

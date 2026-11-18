@@ -1,5 +1,5 @@
 // Zeroes the first `words` words of `target`.
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct ClearParams
 {

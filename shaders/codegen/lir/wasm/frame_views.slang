@@ -1,7 +1,7 @@
 import codegen.lir.wasm.common;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 // Points each fixed-array argument passed as a slice at its call argument.
 // frame_words revalidates the hint against the argument, so a stale entry

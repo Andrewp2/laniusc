@@ -1,10 +1,10 @@
 // Clear the reusable aggregate-comparison request relation before generic
 // claim validation publishes compound claim pairs into it.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.calls.inference_activity;
 import type_checker.calls.inference_blocks;
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params
 {

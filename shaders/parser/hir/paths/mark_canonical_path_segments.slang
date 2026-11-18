@@ -3,7 +3,7 @@
 // contains a nested path, so the scan is weighted by each raw owner's segment
 // count and the scatter appends owner-local ordinals to that base.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 import generated_parse_production_ids;
 
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; uint records_use_token_rows; };

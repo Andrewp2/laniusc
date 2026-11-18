@@ -2,7 +2,7 @@ import type_checker.trait_solver.abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_commit_audit;
 import type_checker.trait_solver.proof_frontier_stages;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 // One lane per pending Work row; the last workgroup reserves the goal index
 // (proof_commit_audit.slang).

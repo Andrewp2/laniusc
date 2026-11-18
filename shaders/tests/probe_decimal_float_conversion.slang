@@ -1,6 +1,6 @@
 // Direct probe of the shared exact decimal conversion. No shader float/double
 // operations or independent conversion implementation belong in this adapter.
-import float_decimal;
+import shared.numbers.float_decimal;
 
 struct Params
 {

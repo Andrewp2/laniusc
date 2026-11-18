@@ -5,8 +5,8 @@
 // number is one token. Two bytes of different pieces join when both are name
 // characters, as `__lanius_in_` and `Idle` make `__lanius_in_Idle`; two
 // tokens of one copied range never join.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

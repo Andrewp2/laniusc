@@ -1,8 +1,8 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Focused synthetic typed-constant graphs; no source parser or host evaluator.
 import type_checker.owned_type_constraint_engine;
 import type_checker.owned_type_constraint_contract;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 RWStructuredBuffer<uint4> results;
 static const uint INVALID = 0xffffffffu;
 static const uint C = OWNED_CONSTRAINT_CONSTANT;

@@ -1,5 +1,5 @@
-import segment_tree;
-import status;
+import shared.search.segment_tree;
+import shared.buffers.status;
 
 // Final syntax validation consumes the independently published delimiter and
 // context relations below; it does not reconstruct those relations locally.

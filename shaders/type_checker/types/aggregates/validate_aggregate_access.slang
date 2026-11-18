@@ -5,10 +5,10 @@
 // field selections from materialized relations instead of walking expression or
 // call subtrees in this consumer.
 
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
-import status;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
+import shared.buffers.status;
 import type_checker.types.aggregates.struct_field_lookup;
 import type_checker.checked_type_identity;
 import type_checker.local_struct_layout;

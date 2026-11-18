@@ -2,7 +2,7 @@
 // headers name their declared scalar even when no signature uses the parameter.
 
 import type_checker.interface.scalar_leaves;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;

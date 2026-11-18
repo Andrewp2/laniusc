@@ -1,11 +1,11 @@
 // Checked references own exported shape. HIR identifies declaration roots only.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.checked_type_graph;
 import type_checker.constant_parameter_slots;
 import type_checker.constant_atoms;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 import type_checker.types.parameters.generic_param_lookup;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; uint unit_id; };
 ConstantBuffer<Params> gParams;

@@ -11,7 +11,7 @@ import type_checker.concrete_type_equality;
 // contract shape so later validation can reject bad predicates without treating
 // bounds or impls as comments.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.decl_lookup;

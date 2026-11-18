@@ -1,7 +1,7 @@
 // Clear the method index of the dependency page slot before build_dependency_method_lookup rebuilds it
 // for the page loaded into the slot.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 RWStructuredBuffer<uint> dependency_method_lookup;
 

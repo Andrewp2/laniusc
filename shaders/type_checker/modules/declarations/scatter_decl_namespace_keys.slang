@@ -7,7 +7,7 @@
 // - It does not resolve imports, expand visibility, resolve type/value paths,
 //   read source bytes, or apply same-source shortcuts.
 
-import scatter;
+import shared.collectives.scatter;
 
 struct Params
 {

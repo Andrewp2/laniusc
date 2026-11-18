@@ -1,7 +1,7 @@
 // Capacity-derived stable ordering for compact SSA uses by dense value ID.
 
-import gpu_index;
-import radix;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
 
 struct Params
 {

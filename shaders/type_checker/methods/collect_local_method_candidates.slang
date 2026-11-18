@@ -8,8 +8,8 @@ import type_checker.constant_parameter_slots;
 // receiver's canonical ID is matched against each candidate's receiver
 // pattern ID (ct_match, no interning).
 
-import gpu_index;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 import type_checker.methods.method_lookup;
 import type_checker.methods.method_candidate;
 import type_checker.instance_arguments;

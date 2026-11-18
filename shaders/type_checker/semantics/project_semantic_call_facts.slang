@@ -7,9 +7,9 @@
 // after generic/method substitution. This pass is the only boundary that joins
 // those domains; downstream semantic passes consume the dense record directly.
 
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.methods.method_candidate;
 
 struct Params

@@ -3,7 +3,7 @@
 // Floats preserve exact IEEE bits, including signed zero and NaN payloads.
 // This contract transports values; it does not evaluate floating expressions.
 import primitive_types;
-import integer_words;
+import shared.numbers.integer_words;
 
 [ForceInline]
 public bool constant_scalar_is_supported(uint scalar)

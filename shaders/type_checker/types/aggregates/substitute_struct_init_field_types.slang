@@ -6,7 +6,7 @@
 // as a checked row (ct_scoped.slang).
 import type_checker.mutable_checked_type_graph;
 import type_checker.substitution.ct_scoped;
-import status;
+import shared.buffers.status;
 
 struct Params
 {

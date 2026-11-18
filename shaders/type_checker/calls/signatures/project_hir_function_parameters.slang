@@ -5,11 +5,11 @@
 // backend ABI projection. It does not inspect token spelling, source bytes,
 // source-level names or function bodies.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.types.parameters.generic_param_lookup;
-import atomics;
-import native_c_abi;
-import gpu_index;
+import shared.buffers.atomics;
+import shared.native_interfaces.native_c_abi;
+import shared.buffers.gpu_index;
 
 struct Params
 {

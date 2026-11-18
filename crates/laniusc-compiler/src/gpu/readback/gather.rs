@@ -41,13 +41,13 @@ use crate::gpu::{
     passes_core::{self, DispatchDim, InputElements, PassData},
 };
 
-const GATHER_SHADER: &str = "readback/gather_words";
+const GATHER_SHADER: &str = "shared/buffers/gather_readback_words";
 const GATHER_LABEL: &str = "readback.gather";
 const GATHER_PARAMS: &str = "gather_params";
 /// One `GatherParams` record: first region record, record count, two
 /// reserved words and the record ends of the eight source slots.
 const PARAMS_BYTES: usize = 48;
-/// Source buffers (`gather_source_N` in gather_words.slang) of one dispatch.
+/// Source buffers (`gather_source_N` in gather_readback_words.slang) of one dispatch.
 const GATHER_SOURCES: usize = 8;
 /// Words of one region record: output word, source word, word count.
 const RECORD_WORDS: usize = 3;

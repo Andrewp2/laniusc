@@ -1,6 +1,6 @@
 // Two independent counted exclusive scans evaluated as one uint2 scan.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

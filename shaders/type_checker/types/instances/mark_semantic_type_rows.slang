@@ -1,9 +1,9 @@
 // Mark compact-HIR type nodes and publish an inverse token-to-row map. A
 // counted scan turns these flags into stable compact type ordinals.
 
-import atomics;
-import gpu_index;
-import hir_records;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 
 struct Params
 {

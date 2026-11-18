@@ -21,9 +21,9 @@
 // the certification (projection/10_certify.slang): the accepted result term
 // and the translated term of every argument, as the caller's job checked
 // them.
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import codegen.x86.finalize.symbol_identity;

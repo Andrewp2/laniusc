@@ -1,6 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint function_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;

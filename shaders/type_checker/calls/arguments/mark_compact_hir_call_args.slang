@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Mark dense compact-HIR call argument segments for semantic rows.
 //

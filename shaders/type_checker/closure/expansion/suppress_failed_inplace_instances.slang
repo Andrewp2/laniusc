@@ -3,8 +3,8 @@
 // results. Lowering publishes a generic function's body only when none of
 // its calls has a symbolic environment, so one such call keeps the function
 // a template, and the replays instantiate it as they do every other.
-import hir_records;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.semantics.checked_semantic_artifact;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

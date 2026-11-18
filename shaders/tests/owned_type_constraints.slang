@@ -1,10 +1,10 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Shared bounded interpreter and exact graph fixtures for the static matcher
 // operation-family entries. This file has no entrypoint. The selected family's
 // operation method is its only route to production matcher APIs.
 import type_checker.owned_type_constraint_engine;
 import type_checker.owned_type_constraint_contract;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 RWStructuredBuffer<uint4> results;
 StructuredBuffer<uint2> fixture_ranges;

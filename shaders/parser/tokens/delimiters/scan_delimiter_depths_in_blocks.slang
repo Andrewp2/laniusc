@@ -3,7 +3,7 @@
 // This pass computes raw delimiter depth before each token. Later passes consume
 // the global block prefixes to record top-level brace owners and token contexts.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

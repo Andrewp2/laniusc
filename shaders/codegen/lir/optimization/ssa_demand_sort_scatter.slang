@@ -1,10 +1,10 @@
 // Stable scatter for sparse `(declaration, block)` demand ordering.
 
 import codegen.optimization_ir;
-import gpu_index;
-import radix;
-import scatter;
-import stable_radix_scatter;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
+import shared.collectives.scatter;
+import radix.stable_radix_scatter;
 
 struct Params
 {

@@ -1,7 +1,7 @@
 // Full integer values represented as (low32, high32). These compiler helpers
 // require only ordinary 32-bit GPU arithmetic; native values still occupy one
 // 64-bit machine word. Narrow values have zero unused bits, not sign-fill bits.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 // The small helpers below are branch-free and force-inlined: they are copied
 // into every constant reader, so each copy must stay straight-line code.

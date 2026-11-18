@@ -13,7 +13,7 @@
 #define CHUNK_COUNT 3
 #define CHUNK_WIDTH_CAP ((WORKGROUP_SIZE + CHUNK_COUNT - 1) / CHUNK_COUNT)
 
-import byte_packing;
+import shared.buffers.byte_packing;
 import utils;
 
 struct Params

@@ -9,9 +9,9 @@ import type_checker.trait_solver.proof_term_graph;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_scratch;
 import type_checker.concrete_value_layout_scratch;
-import thread_scratch;
-import native_value_layout;
-import primitive_types;
+import shared.buffers.thread_scratch;
+import shared.native_interfaces.native_value_layout;
+import shared.semantics.primitive_types;
 import type_checker.concrete_value_layout;
 import type_checker.trait_solver.native_layout.work_graph;
 

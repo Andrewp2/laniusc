@@ -1,6 +1,6 @@
 // Clears the path-prefix workspace before reusing it as the direct module table.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.module_lookup;
 
 struct Params

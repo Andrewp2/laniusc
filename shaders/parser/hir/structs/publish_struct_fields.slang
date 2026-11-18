@@ -1,6 +1,6 @@
 // Publish pointer-jumped struct field owners, ordinals, counts, and links.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params

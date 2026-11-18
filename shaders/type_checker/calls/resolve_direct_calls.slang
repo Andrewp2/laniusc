@@ -4,8 +4,8 @@
 // declaration visibility records. It does not inspect token kinds, token
 // neighborhoods, source bytes, helper names, or function bodies.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
 

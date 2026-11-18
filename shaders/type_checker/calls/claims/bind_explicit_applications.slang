@@ -1,7 +1,7 @@
 import type_checker.constant_parameter_slots;
 // Bind only the callable's own ordered header. Method lexical slots already
 // include the impl domain; the receiver producer owns those inherited bindings.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.explicit_application_owner;
 import type_checker.calls.explicit_binding_metadata;
 import type_checker.calls.explicit_constant_operand;

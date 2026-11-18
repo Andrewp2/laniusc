@@ -5,7 +5,7 @@
 // node's row is its block's prefix plus the marked nodes before it in the
 // block, counted from at most eight words.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

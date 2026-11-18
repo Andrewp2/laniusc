@@ -5,7 +5,7 @@
 // proof-store serial; every later dispatch checks the tag, so a slot that
 // the same chunk's first dispatch did not write (chunk-order coupling broke)
 // fails the batch with detail 191. The last dispatch consumes the slot.
-import thread_scratch;
+import shared.buffers.thread_scratch;
 import type_checker.trait_solver.abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.owned_type_constraint_contract;

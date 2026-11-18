@@ -3,7 +3,7 @@
 // a token that a gap separates from the one before it; every other piece is
 // copied and gets its length. `fpiece_scan.x` is the inclusive prefix sum of
 // the counts of the feature's pieces.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

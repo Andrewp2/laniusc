@@ -8,7 +8,7 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_bridge;
 import type_checker.concrete_type_equality;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 RWStructuredBuffer<uint> bridge_errors;
 

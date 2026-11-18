@@ -1,11 +1,11 @@
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 import type_checker.native_nominal_identity;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 import codegen.lir.semantic.concrete_struct_layout;
 
 struct Params

@@ -1,6 +1,6 @@
 // Publish one root index per exported annotation. Each checked subtree occupies
 // its own contiguous reverse-preorder interval.
-import atomics;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

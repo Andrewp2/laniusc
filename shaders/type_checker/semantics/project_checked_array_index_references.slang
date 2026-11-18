@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 import type_checker.constant_atoms_identity;
 // Project checked array/slice references into dense semantic HIR.
@@ -8,18 +8,18 @@ import type_checker.constant_atoms_identity;
 // projection is entirely dense-HIR keyed: no raw parser row survives into the
 // checked semantic artifact boundary.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.checked_array_counts;
 import type_checker.checked_index_reference;
 import type_checker.checked_canonical;
 import type_checker.checked_type_graph;
 import type_checker.native_nominal_identity;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.argument_context;
 import type_checker.array_extent_literal;
-import hir_expr_semantics;
+import shared.syntax.hir_expr_semantics;
 
 bool valid_instance(uint instance)
 {

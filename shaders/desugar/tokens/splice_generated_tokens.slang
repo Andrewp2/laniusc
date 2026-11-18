@@ -1,6 +1,6 @@
 // Per generated token: its row at its owner's place in the new stream,
 // before the owner itself.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

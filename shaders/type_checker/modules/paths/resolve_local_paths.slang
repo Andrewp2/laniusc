@@ -9,7 +9,7 @@
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.decl_lookup;
 
 struct Params

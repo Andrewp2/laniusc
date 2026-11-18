@@ -1,5 +1,5 @@
 import type_checker.types.aggregates.struct_field_lookup;
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

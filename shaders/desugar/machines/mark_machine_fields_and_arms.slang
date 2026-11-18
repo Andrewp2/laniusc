@@ -2,7 +2,7 @@
 // a variant of an enum starts here. A `match` inside a block arm has arms of its own, and a call
 // inside an argument has arguments of its own: the bracket depth tells them
 // from the state's arms and the transition's arguments.
-import gpu_index;
+import shared.buffers.gpu_index;
 import machine_layout;
 
 struct ContextParams

@@ -1,18 +1,18 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Preserve the accepted concrete type of a local generic result. The legacy
 // expression type code cannot represent a slice or an arbitrary nominal type.
 // Use the existing per-call claim index instead of the replayed callee's body
 // environment: different callers can instantiate the same declaration.
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.explicit_call_environment;
 import type_checker.concrete_type_equality;
 import type_checker.concrete_type_closure;
 import type_checker.constant_atoms_identity;
 import type_checker.types.parameters.generic_param_lookup;
-import status;
+import shared.buffers.status;
 
 struct Params
 {

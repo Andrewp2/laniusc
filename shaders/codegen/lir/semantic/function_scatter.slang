@@ -1,9 +1,9 @@
-import primitive_types;
-import native_value_layout;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint reserved; };
 

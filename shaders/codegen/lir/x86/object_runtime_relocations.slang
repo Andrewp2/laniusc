@@ -6,7 +6,7 @@
 // entry's own text.
 
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;

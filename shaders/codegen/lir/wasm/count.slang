@@ -1,8 +1,8 @@
 import codegen.lir.wasm.common;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import gpu_index;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.syntax.hir_records;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;

@@ -3,8 +3,8 @@
 // and against the slot's canonical (first concrete) claim. Operands compare
 // by canonical ID (docs/canonical-type-ids.md); rows written during
 // inference are interned on demand.
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;
 import type_checker.calls.explicit_call_environment;

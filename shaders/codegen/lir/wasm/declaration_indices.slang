@@ -1,5 +1,5 @@
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint function_capacity; uint param_capacity; uint local_capacity; uint n_tokens; };
 ConstantBuffer<Params> gParams;

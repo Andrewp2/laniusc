@@ -3,7 +3,7 @@
 // rounds are indirect over the frontier (write_canonical_round_dispatch_args closes each round).
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
-import dependency_interface;
+import shared.semantics.dependency_interface;
 
 // Two frontier lists of half the buffer each; round r reads list r & 1 and
 // appends to list (r + 1) & 1. An append past the end sets

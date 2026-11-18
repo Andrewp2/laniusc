@@ -1,5 +1,5 @@
 // Publish canonical string reservation offsets and total pool reservation.
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params {
     uint n;

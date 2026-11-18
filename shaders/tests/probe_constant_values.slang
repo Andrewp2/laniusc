@@ -1,5 +1,5 @@
 // Execute the production typed-value contract independently of parser/replay.
-import constant_value;
+import shared.semantics.constant_value;
 struct Params { uint query_count; uint reserved0; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> queries;

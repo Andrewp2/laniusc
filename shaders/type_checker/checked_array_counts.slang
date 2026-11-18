@@ -2,8 +2,8 @@
 // closed-count reader supplies executable extents; descriptor validity or
 // symbolic identity never proves that pending fits have been discharged.
 import type_checker.constant_atoms_identity;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 
 public bool checked_source_array_count(uint kind, uint payload, uint tokens, out uint count)

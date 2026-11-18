@@ -1,5 +1,5 @@
 import type_checker.constant_atoms_identity;
-import native_value_layout;
+import shared.native_interfaces.native_value_layout;
 // The by-value machine-word width of every struct and enum declaration. One
 // lane owns one HIR row; a struct or enum row walks the by-value expansion of
 // its declaration and publishes its width, and a struct also publishes the
@@ -16,9 +16,9 @@ import native_value_layout;
 // declaration that reaches itself by value has no finite width: the walk
 // rejects it as invalid, and function_layout_enum_variants reports it.
 
-import hir_records;
+import shared.syntax.hir_records;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.concrete_type_closure;
 import type_checker.checked_array_counts;
 import type_checker.native_nominal_identity;

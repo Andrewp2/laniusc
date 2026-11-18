@@ -3,7 +3,7 @@
 // The dynamic writer and the relocations patch these words afterwards.
 
 import codegen.x86.link.resident.rl_common;
-import byte_packing;
+import shared.buffers.byte_packing;
 
 uint section_byte(uint position, uint lanius_text, uint text_total, uint rodata_total)
 {

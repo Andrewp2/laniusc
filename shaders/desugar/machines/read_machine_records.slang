@@ -13,8 +13,8 @@
 // (grammar/lanius.bnf, M6 and `enum_item`). The thread reads it once to
 // check and once to write, so a malformed item leaves no records, and the
 // parser reports it.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 
 struct ReadParams

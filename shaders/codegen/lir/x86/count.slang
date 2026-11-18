@@ -1,14 +1,14 @@
-import native_value_layout;
-import primitive_types;
+import shared.native_interfaces.native_value_layout;
+import shared.semantics.primitive_types;
 import codegen.lir.x86.common;
 import codegen.lir.x86.c_entry;
 import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
-import gpu_index;
+import shared.buffers.gpu_index;
 import codegen.lir.x86.aggregate_facts;
-import hir_records;
+import shared.syntax.hir_records;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;

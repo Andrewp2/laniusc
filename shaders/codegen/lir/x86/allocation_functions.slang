@@ -2,7 +2,7 @@
 // Function invocations do not inspect function bodies.
 
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

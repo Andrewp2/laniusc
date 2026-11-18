@@ -5,7 +5,7 @@
 
 import generated_parse_production_ids;
 import parser.hir.records.postfix_sequence;
-import atomics;
+import shared.buffers.atomics;
 
 struct Params
 {

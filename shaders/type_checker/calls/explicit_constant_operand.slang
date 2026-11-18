@@ -2,9 +2,9 @@ import type_checker.constant_atoms;
 // Resolve source operands against the selected declaration's exact scalar contract.
 // Scoped names use the same lexical lookup and shadowing policy as declaration
 // uses and body replay. Concrete replay values replace symbolic parameters.
-import hir_records;
-import primitive_types;
-import constant_value;
+import shared.syntax.hir_records;
+import shared.semantics.primitive_types;
+import shared.semantics.constant_value;
 import type_checker.argument_context;
 import type_checker.float_literal_selection;
 import type_checker.constant_publication;

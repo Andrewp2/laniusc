@@ -1,4 +1,4 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 import type_checker.modules.decl_lookup;
 
 struct Params

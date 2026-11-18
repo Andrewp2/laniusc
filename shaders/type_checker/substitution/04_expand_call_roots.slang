@@ -2,8 +2,8 @@
 // (ct_expand.slang), and re-queue deferred imported IDs whose declaration
 // page is now resident. Runs at the start of each closure in the inference
 // rounds, once per resident page, over the entries 04a listed.
-import status;
-import dependency_interface;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_mutable_rows;

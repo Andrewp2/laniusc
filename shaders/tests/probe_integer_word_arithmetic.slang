@@ -1,7 +1,7 @@
 // Differential probe of the production integer helpers, using only u32 GPU
 // arithmetic. The host oracle uses native Rust integer operations.
-import integer_words;
-import primitive_types;
+import shared.numbers.integer_words;
+import shared.semantics.primitive_types;
 
 struct Params { uint query_count; uint reserved0; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;

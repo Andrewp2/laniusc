@@ -8,7 +8,7 @@
 // Generic field refs use the precomputed generic-parameter slot table instead
 // of scanning declaration subtrees.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.shared_bindings;
 import type_checker.types.aggregates.struct_field_lookup;
 import type_checker.calls.inference_activity;

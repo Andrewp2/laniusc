@@ -1,7 +1,7 @@
 // Seed public function parameter type roots from compact parameter rows.
 
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; };
 ConstantBuffer<Params> gParams;

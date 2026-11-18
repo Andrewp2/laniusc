@@ -1,4 +1,4 @@
-import callable_identity;
+import shared.semantics.callable_identity;
 
 // Canonical method rows are compacted in increasing dense HIR order.
 // Binary lookup avoids scanning every method at each local function call.

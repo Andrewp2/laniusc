@@ -1,6 +1,6 @@
 // Apply prefix-scanned qualified type-path context rows.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 import parser.tokens.contexts.token_context_before_block;
 
 struct Params

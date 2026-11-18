@@ -28,9 +28,9 @@
 // A lane writes only its own row, when it is still untyped. Operator lanes
 // read the references of leaves that are not literals, which no lane
 // writes, and a literal leaf's context, which this pass does not write.
-import hir_records;
-import hir_expr_semantics;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.gpu_index;
 import type_checker.literal_symbolic_context;
 import type_checker.inherited_expression_type;
 

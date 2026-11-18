@@ -6,8 +6,8 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import codegen.lir.x86.common;
-import primitive_types;
-import gpu_index;
+import shared.semantics.primitive_types;
+import shared.buffers.gpu_index;
 import codegen.lir.x86.liveness_dependencies;
 
 struct Params

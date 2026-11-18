@@ -1,11 +1,11 @@
 // Binder roles used by capture discovery. A parameter's nearest enclosing
 // bracket must be a parenthesis, not a struct or array literal. Searching
 // the existing depth scan's minimum heaps replaces a backward token walk.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import closure_layout;
-import blocked_search_tree;
-import segment_tree;
+import shared.search.blocked_search_tree;
+import shared.search.segment_tree;
 
 struct TokenOut
 {

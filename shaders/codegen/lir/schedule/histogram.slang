@@ -1,6 +1,6 @@
 import codegen.lir.schedule.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint target_capacity; uint max_blocks; uint key_step; uint reserved; };
 ConstantBuffer<Params> gParams;

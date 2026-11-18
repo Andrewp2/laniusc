@@ -1,13 +1,13 @@
-import primitive_types;
-import integer_words;
+import shared.semantics.primitive_types;
+import shared.numbers.integer_words;
 // Validate boolean control conditions and logical operands from dense compact
 // HIR after scalar expression types have reached their pointer-jump fixed
 // point. No raw parser node or token scan participates in this pass.
 
-import hir_records;
-import hir_expr_semantics;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 import type_checker.checked_index_reference;
 import type_checker.argument_context;
 import type_checker.float_literal_selection;

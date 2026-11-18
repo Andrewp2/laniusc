@@ -15,8 +15,8 @@
 // File roots count their unadjusted prefix end, so the counts describe the
 // prefix tree exactly.
 
-import segment_tree;
-import blocked_search_tree;
+import shared.search.segment_tree;
+import shared.search.blocked_search_tree;
 import generated_parse_production_ids;
 
 struct Params

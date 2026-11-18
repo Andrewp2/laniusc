@@ -1,5 +1,5 @@
-import primitive_types;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
 import codegen.lir.x86.emission_common;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
@@ -9,7 +9,7 @@ import codegen.lir.x86.safety;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.encoding;
 import codegen.lir.x86.instruction_plan;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 // Writes every target row's body and implicit footer (ordinary and
 // specialized alike) from the shared instruction plan, plus the ELF header,

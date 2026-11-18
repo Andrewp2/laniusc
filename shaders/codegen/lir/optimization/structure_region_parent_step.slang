@@ -1,7 +1,7 @@
 // One pointer-jump round for the previous enclosing interval relation.
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

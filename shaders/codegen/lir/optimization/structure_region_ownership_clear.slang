@@ -3,7 +3,7 @@
 // uses exactly twice the node capacity and does not require power-of-two
 // padding.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

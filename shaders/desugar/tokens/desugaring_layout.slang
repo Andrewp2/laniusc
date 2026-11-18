@@ -16,8 +16,8 @@
 // whose feature the pack does not use gets zero workgroups everywhere.
 module desugaring_layout;
 
-import generated_token_ids;
-import byte_packing;
+import shared.syntax.generated_token_ids;
+import shared.buffers.byte_packing;
 
 public static const uint DS_NONE = 0xffffffffu;
 

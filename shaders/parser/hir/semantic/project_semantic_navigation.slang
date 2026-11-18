@@ -12,7 +12,7 @@
 // reads only hir_semantic_parent, which navigation also only reads, and
 // writes only hir_semantic_child_local, which navigation never binds.
 
-import blocked_search_tree;
+import shared.search.blocked_search_tree;
 import parser.hir.semantic.child_index_heaps;
 
 struct Params

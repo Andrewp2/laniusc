@@ -16,7 +16,7 @@
 // field against the substituted struct schema, each constant parameter
 // value; and hashes the substituted rows and facts. Results go to
 // rt_test_out (RT_PROBE_WORDS per lane).
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_subst;
 import type_checker.retention.row_classes;

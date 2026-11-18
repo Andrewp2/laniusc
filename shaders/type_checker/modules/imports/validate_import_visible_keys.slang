@@ -4,7 +4,7 @@
 // and marks a key ambiguous when two imports expose different declarations.
 // Re-importing the same declaration remains valid.
 
-import atomics;
+import shared.buffers.atomics;
 import type_checker.modules.import_visible_lookup;
 
 struct Params

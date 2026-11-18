@@ -6,8 +6,8 @@
 // read-only tables, and a replay skips constant identities.
 //
 // INTERIM: the end state (P7) compares canonical type IDs instead.
-import constant_value;
-import dependency_interface;
+import shared.semantics.constant_value;
+import shared.semantics.dependency_interface;
 import type_checker.concrete_type_equality;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_stackless;

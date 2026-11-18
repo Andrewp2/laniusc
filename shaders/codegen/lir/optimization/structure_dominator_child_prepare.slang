@@ -2,7 +2,7 @@
 // column remains the compact range-start relation.
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

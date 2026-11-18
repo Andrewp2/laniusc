@@ -1,8 +1,8 @@
 import type_checker.constant_atoms_identity;
-import hir_records;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 import type_checker.concrete_type_closure;
-import checked_semantic_artifact;
+import shared.semantics.checked_semantic_artifact;
 import codegen.lowering_ir;
 
 bool valid_instance(uint instance)

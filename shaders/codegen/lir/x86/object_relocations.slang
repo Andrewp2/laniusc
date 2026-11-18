@@ -3,7 +3,7 @@ import codegen.optimization_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.frame_layout;
-import gpu_index;
+import shared.buffers.gpu_index;
 import codegen.lir.x86.c_entry;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };

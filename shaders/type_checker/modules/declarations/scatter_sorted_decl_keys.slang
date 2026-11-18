@@ -8,10 +8,10 @@
 // - It does not resolve imports, validate duplicates, perform lookup, scan
 //   source bytes, use hashes, or apply same-source shortcuts.
 
-import gpu_index;
-import radix;
-import scatter;
-import stable_radix_scatter;
+import shared.buffers.gpu_index;
+import radix.radix_digits;
+import shared.collectives.scatter;
+import radix.stable_radix_scatter;
 
 struct Params
 {

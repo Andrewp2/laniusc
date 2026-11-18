@@ -20,8 +20,8 @@
 // Dispatch after module paths have resolved and type instances have been
 // projected, and before the canonical early stage: canonical keys name a
 // local nominal by this index, and only hidden locals change, from INVALID.
-import hir_records;
-import native_c_abi;
+import shared.syntax.hir_records;
+import shared.native_interfaces.native_c_abi;
 
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;

@@ -1,8 +1,8 @@
 // Apply section-relative and symbol-targeted x86 relocations in parallel.
 
-import atomics;
-import byte_packing;
-import gpu_index;
+import shared.buffers.atomics;
+import shared.buffers.byte_packing;
+import shared.buffers.gpu_index;
 
 struct Params
 {

@@ -3,8 +3,8 @@
 // This pass fills the ELF and program headers. The encoder and relocation patch
 // stages already wrote `.text` bytes directly into the final output buffer.
 
-import gpu_index;
-import byte_packing;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
 struct Params
 {
     uint output_page_base;

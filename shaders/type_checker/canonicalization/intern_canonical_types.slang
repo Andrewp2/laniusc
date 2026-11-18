@@ -6,7 +6,7 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;
 import type_checker.canonicalization.canonical_checked_rows;
-import status;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

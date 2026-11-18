@@ -1,4 +1,4 @@
-import atomics;
+import shared.buffers.atomics;
 
 public interface IOpenAddressKeyOps<TKey>
 {

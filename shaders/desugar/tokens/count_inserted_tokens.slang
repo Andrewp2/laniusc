@@ -1,7 +1,7 @@
 // Per generated token that is the first of its owner: how many tokens the
 // owner gets and which comes first, in the owner's splice row. Owners do not
 // decrease along the generated tokens.
-import gpu_index;
+import shared.buffers.gpu_index;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

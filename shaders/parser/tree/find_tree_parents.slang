@@ -6,8 +6,8 @@
 // (blocked_search_tree.slang). It also zeroes the subtree close counts that
 // tree/spans accumulates next.
 
-import segment_tree;
-import blocked_search_tree;
+import shared.search.segment_tree;
+import shared.search.blocked_search_tree;
 import generated_parse_production_ids;
 
 struct Params

@@ -1,7 +1,7 @@
 // Final object section bases and ELF layout for an x86 multi-object link.
 
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

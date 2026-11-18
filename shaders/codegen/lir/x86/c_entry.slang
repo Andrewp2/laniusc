@@ -1,6 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import hir_records;
+import shared.syntax.hir_records;
 
 static const uint X86_C_ENTRY_BYTES = 63u;
 // lea(7), skip jump(2), then the stub's inner call displacement at +44.

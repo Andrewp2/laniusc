@@ -1,9 +1,9 @@
 import codegen.lir.wasm.common;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
-import gpu_index;
-import native_value_layout;
-import hir_records;
+import shared.buffers.gpu_index;
+import shared.native_interfaces.native_value_layout;
+import shared.syntax.hir_records;
 
 // Frame words each scheduled row owns in its function's shadow-stack frame
 // (docs/wasm-memory-layout.md). An exclusive scan of these words places every

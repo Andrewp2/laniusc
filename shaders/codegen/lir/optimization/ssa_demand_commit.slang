@@ -2,7 +2,7 @@
 // publication-order contents have been validated and are no longer needed.
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

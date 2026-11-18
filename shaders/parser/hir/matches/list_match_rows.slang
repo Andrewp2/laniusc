@@ -1,7 +1,7 @@
 // Scatter the match family's rows (mark_match_rows.slang) into a dense
 // worklist and publish the indirect dispatch args every family kernel uses.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

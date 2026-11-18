@@ -1,4 +1,4 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 struct Params { uint n_hir_nodes; uint n_tokens; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint4> semantic_place_storage_by_token;

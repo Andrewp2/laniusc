@@ -1,7 +1,7 @@
 // Scatter explicit return types, or the shared synthesized void leaf, as the
 // final edge of every function signature.
 
-import atomics;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> public_decl_count;

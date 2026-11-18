@@ -2,8 +2,8 @@
 // row. Its bytes are the text bytes in the region, its kind the kind its
 // first piece gives it, or a name when it joins pieces. Its file is that of
 // its piece's anchor token, its owner that of its first piece.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import desugaring_layout;
 
 StructuredBuffer<uint> sizes;

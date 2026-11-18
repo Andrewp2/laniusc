@@ -1,6 +1,6 @@
 // Per pair of a local and a `yield` it is in scope of: writes the local into
 // the yield's slots, at the local's position among the locals in scope.
-import gpu_index;
+import shared.buffers.gpu_index;
 import generator_layout;
 
 struct ScopeParams

@@ -2,8 +2,8 @@ import codegen.lir.semantic.common;
 import codegen.lir.semantic.materialize;
 import codegen.lir.schedule.common;
 import codegen.lowering_ir;
-import hir_records;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 
 // The first dispatch of `lir.semantic.scatter`: each semantic row's owner
 // and execution schedule. Scatter then materializes the row from its owner.

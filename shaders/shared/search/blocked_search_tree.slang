@@ -14,7 +14,7 @@
 // a value that never matches.
 
 import segment_tree;
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 public static const uint BLOCKED_SEARCH_ROWS = 256u;
 public static const uint BLOCKED_SEARCH_INVALID = 0xffffffffu;

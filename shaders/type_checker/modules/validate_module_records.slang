@@ -6,7 +6,7 @@
 // - This pass only validates module declarations. It does not resolve imports,
 //   perform declaration lookup, produce visibility, or use CPU path lookup.
 
-import status;
+import shared.buffers.status;
 import type_checker.modules.module_lookup;
 
 struct Params

@@ -1,7 +1,7 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Scatter compact parameters, fields, and enum variants by semantic ordinal.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 import type_checker.interface.method_parameters;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;

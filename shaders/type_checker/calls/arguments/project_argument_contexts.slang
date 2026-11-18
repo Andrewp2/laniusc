@@ -4,10 +4,10 @@
 // owns one row; imported patterns are consumed only on their declaration
 // page. This relation provides context to expressions without replacing their
 // accepted actual types or inferring a type from native storage width.
-import hir_records;
-import status;
-import dependency_interface;
-import dependency_method_index;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
+import shared.semantics.dependency_method_index;
 import type_checker.argument_context;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;

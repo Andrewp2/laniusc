@@ -1,5 +1,5 @@
-import prefix_scan;
-import scatter;
+import shared.collectives.prefix_scan;
+import shared.collectives.scatter;
 
 static const uint STABLE_RADIX_WG_SIZE = 256u;
 static const uint STABLE_RADIX_BUCKET_CAPACITY = 257u;

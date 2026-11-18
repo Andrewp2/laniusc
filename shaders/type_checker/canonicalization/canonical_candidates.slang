@@ -14,8 +14,8 @@ import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_constants;
 import type_checker.constant_atoms;
 import type_checker.constant_parameter_slots;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 
 // Stable nominal identity: local declarations use the job's (library, unit)
 // and their persisted interface index (or CT_PRIVATE_LOCAL_BIT | decl id), so

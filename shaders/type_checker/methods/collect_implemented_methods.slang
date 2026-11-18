@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Project compact implemented-method rows into token-keyed lookup metadata.
 // Required trait members have no impl node and no callable body: they publish

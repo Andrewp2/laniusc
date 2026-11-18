@@ -2,13 +2,13 @@
 // call environments. Concrete impl keys share the same graph equality/hash
 // contract as ordinary generic calls; up to 32 trait arguments are supported.
 
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.types.parameters.generic_param_lookup;
-import fixed.key;
-import fixed.compact_method;
-import hir_expr_semantics;
-import range_query;
-import status;
+import shared.search.fixed_row_keys;
+import shared.search.compact_method_lookup;
+import shared.syntax.hir_expr_semantics;
+import shared.search.range_query;
+import shared.buffers.status;
 import type_checker.predicates.predicate_owner_lookup;
 import type_checker.predicates.impl_lookup;
 import type_checker.predicates.trait_reference;

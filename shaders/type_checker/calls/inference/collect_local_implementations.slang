@@ -14,7 +14,7 @@
 //
 // A local trait's identity is (BOUND_LOCAL_IMPLEMENTATION, 0, declaration);
 // a local function's is (BOUND_LOCAL_IMPLEMENTATION, 1, HIR node).
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.checked_type_graph;
 import type_checker.predicates.trait_reference;

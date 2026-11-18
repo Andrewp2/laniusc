@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Exclusive references: reject a call whose `&mut` argument shares its root
 // with another reference argument of the same call, as in `swap(a, a)` with
 // `fn swap(x: &mut T, y: &T)`. `&mut T` and `&mut self` check and lower as
@@ -25,9 +25,9 @@ import primitive_types;
 // seeing such a write through a live shared reference. Copies of r into
 // other locals are not followed.
 
-import hir_records;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

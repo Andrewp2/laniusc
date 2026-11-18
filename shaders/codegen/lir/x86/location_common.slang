@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.storage_layout;

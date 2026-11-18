@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;

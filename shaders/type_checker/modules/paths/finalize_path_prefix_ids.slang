@@ -1,6 +1,6 @@
 // Places the dynamically selected final doubling result in prefix-id A.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint segment_capacity; uint round_count; uint reserved0; uint reserved1; };
 ConstantBuffer<Params> gParams;

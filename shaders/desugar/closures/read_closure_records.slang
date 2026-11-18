@@ -1,8 +1,8 @@
 // Per closure start: the parameter, its type, the optional result type and
 // the body, as token indices. `depth_scan` holds, per token, the depth after
 // it (x) and the count of closure starts through it (y).
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import closure_layout;
 
 struct TokenOut

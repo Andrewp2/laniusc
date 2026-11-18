@@ -1,14 +1,14 @@
-import primitive_types;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 import parser.token_features;
 import type_checker.calls.explicit_call_environment;
 import type_checker.semantics.constant_reference;
 import type_checker.types.parameters.generic_param_lookup;
 import type_checker.predicates.predicate_scalar_subject;
-import gpu_index;
-import native_c_abi;
+import shared.buffers.gpu_index;
+import shared.native_interfaces.native_c_abi;
 import type_checker.local_struct_layout;
-import status;
+import shared.buffers.status;
 
 // Projection columns are sparse by their compact semantic domain. Value,
 // enclosing-function, control-depth, and expression-type columns cover every

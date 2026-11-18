@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.checked_array_counts;
 import type_checker.checked_type_graph;
 import type_checker.canonicalization.canonical_api;
@@ -20,8 +20,8 @@ import type_checker.checked_slots;
 // (docs/canonical-type-ids.md); rows written during inference are interned
 // on demand.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 
 struct Params
 {

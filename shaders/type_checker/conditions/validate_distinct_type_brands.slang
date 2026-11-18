@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Distinct types, step 2: reject a value whose brand differs from the brand
 // its context expects. `type M = distinct T;` is an ordinary alias for type
 // checking and lowering (M and T have the same checked type); this pass adds
@@ -25,9 +25,9 @@ import primitive_types;
 // match, struct-literal and array values. Brands inside an aggregate type
 // (`[M; 4]`, `&M`, `Vec<M>`) are not compared.
 
-import hir_records;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

@@ -10,7 +10,7 @@
 // - It does not resolve imports, expand visibility, resolve type/value paths,
 //   scan source bytes, use hashes, or apply same-source shortcuts.
 
-import status;
+import shared.buffers.status;
 
 struct Params
 {

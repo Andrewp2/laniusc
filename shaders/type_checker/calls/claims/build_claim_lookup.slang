@@ -1,7 +1,7 @@
 // Builds one exact `(callee, slot)` call-claim index. Heads and next links
 // store row-plus-one so zero remains the empty-chain sentinel.
 
-import atomics;
+import shared.buffers.atomics;
 import type_checker.calls.claim_lookup;
 
 struct Params

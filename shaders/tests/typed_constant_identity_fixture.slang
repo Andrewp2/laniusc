@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 // Synthetic storage deliberately defeats row-address identity. Results are
 // production equality/hash outcomes, not a duplicate host type evaluator.

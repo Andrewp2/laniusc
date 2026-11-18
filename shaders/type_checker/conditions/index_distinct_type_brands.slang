@@ -4,8 +4,8 @@
 // accepts an entry only when the row's kind and token agree with the key, so
 // stale values from an earlier use of the buffer are never read as rows.
 
-import hir_records;
-import gpu_index;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

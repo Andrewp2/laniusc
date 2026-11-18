@@ -7,7 +7,7 @@
 // The end state (P7) is trait solver on canonical type IDs with level
 // rounds, where this walker is deleted.
 import type_checker.concrete_value_layout;
-import thread_scratch;
+import shared.buffers.thread_scratch;
 
 [ForceInline]
 uint concrete_value_words_cell(uint depth)

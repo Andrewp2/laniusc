@@ -2,8 +2,8 @@
 // The packed dependency page carries a compact module-to-declaration index, so
 // each lane reads one count without scanning or depending on artifact order.
 
-import dependency_interface;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.buffers.gpu_index;
 
 struct Params
 {

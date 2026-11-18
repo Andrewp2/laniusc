@@ -3,8 +3,8 @@
 // searches (blocked_search_tree.slang). Rows past the active node count do
 // not count towards either.
 
-import prefix_scan;
-import blocked_search_tree;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 
 struct Params
 {

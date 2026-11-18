@@ -8,8 +8,8 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import codegen.lir.x86.liveness_walk;
-import atomics;
-import gpu_index;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
 
 struct Params
 {

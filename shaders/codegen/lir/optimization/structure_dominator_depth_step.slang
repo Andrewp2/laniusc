@@ -3,7 +3,7 @@
 // (`pointer_jump_hop_pairs` in lowering_ir.rs).
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

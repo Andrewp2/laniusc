@@ -1,6 +1,6 @@
 // A compact application row owns its lexical slot. Only a completed declaration
 // match publishes status 1; consumers never read partly initialized mappings.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.calls.explicit_constant_operand;
 public RWStructuredBuffer<uint> call_explicit_application_status;
 public RWStructuredBuffer<uint> call_explicit_arg_slot;

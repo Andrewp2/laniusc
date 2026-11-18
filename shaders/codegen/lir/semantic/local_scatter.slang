@@ -1,8 +1,8 @@
-import primitive_types;
-import hir_records;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint param_capacity; uint n_tokens; uint local_capacity; };
 ConstantBuffer<Params> gParams;

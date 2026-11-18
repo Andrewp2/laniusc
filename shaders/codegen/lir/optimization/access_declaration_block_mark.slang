@@ -2,7 +2,7 @@
 // the first ordered access in each populated `(declaration, basic block)`.
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

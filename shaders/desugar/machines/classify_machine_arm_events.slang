@@ -2,9 +2,9 @@
 // enum event that is the variant its pattern names, when the pattern accepts
 // every payload. For an integer event it is whether the arm accepts every
 // value. The machine's first token checks that its event type is known.
-import gpu_index;
-import byte_packing;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 
 struct ArmParams

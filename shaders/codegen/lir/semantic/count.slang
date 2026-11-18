@@ -1,12 +1,12 @@
-import native_value_layout;
-import checked_semantic_artifact;
-import hir_records;
-import hir_match_patterns;
+import shared.native_interfaces.native_value_layout;
+import shared.semantics.checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.syntax.hir_match_patterns;
 import codegen.lir.semantic.common;
 import codegen.lir.semantic.match_recipe;
 import codegen.lir.semantic.loop_recipe;
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_hir_nodes; uint n_tokens; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;

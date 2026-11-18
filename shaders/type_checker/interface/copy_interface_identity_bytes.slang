@@ -2,9 +2,9 @@
 // Each lane handles one bounded name (at most 64 bytes), so work remains
 // parallel over all exported module segments and declarations.
 
-import gpu_index;
-import byte_packing;
-import atomics;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.buffers.atomics;
 
 struct Params
 {

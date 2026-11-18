@@ -276,7 +276,7 @@ fn fixture() -> Fixture {
             f.valid(&separated_digits(&text));
         }
     }
-    // The Eisel-Lemire fast path (lemire in shaders/float_decimal.slang)
+    // The Eisel-Lemire fast path (lemire in shaders/shared/numbers/float_decimal.slang)
     // decides most literals; each case below must match the exact result
     // whether it decides or falls back. Short and 20- to 40-digit mantissas
     // over the whole exponent range, shortest round-trip spellings of random

@@ -4,7 +4,7 @@
 // resolution. This pass consumes those records and independently validates the
 // argument types and the resolved trait's generic arity.
 
-import atomics;
+import shared.buffers.atomics;
 import type_checker.predicates.predicate_owner_lookup;
 
 #define PREDICATE_BOUND_DECL_RESOLUTION 0

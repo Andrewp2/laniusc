@@ -1,6 +1,6 @@
 import type_checker.trait_solver.abi;
 import type_checker.trait_solver.catalog_stages;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

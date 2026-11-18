@@ -9,7 +9,7 @@ import type_checker.argument_context;
 #include "../results/argument_result_reference.slang"
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-import primitive_types;
+import shared.semantics.primitive_types;
 #define INFERENCE_INDEX_GRAPH ARGUMENT_TYPE_GRAPH
 #define INFERENCE_TYPE_CAPACITY() parameter_type_capacity()
 #define INFERENCE_CALL_RESULT_CLOSED(instance) concrete_instance_is_closed<ARGUMENT_TYPE_GRAPH, CheckedSourceConstantGraph, CheckedSourceConstantEnvironment>(instance, parameter_type_capacity(), gParams.n_tokens)

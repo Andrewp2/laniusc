@@ -8,10 +8,10 @@
 // (ct_realize) and published as a checked reference. Published references
 // and group boundaries remain meaningful after this immutable dependency
 // page has been replaced.
-import semantic_interface_layout;
-import dependency_interface;
-import atomics;
-import status;
+import shared.semantics.semantic_interface_layout;
+import shared.semantics.dependency_interface;
+import shared.buffers.atomics;
+import shared.buffers.status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;

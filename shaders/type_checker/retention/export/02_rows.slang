@@ -4,7 +4,7 @@
 // and writes the four scan flags (retention_job.slang). A row of a retained
 // body raises its function's token end, so the body's token span is known
 // without walking the body.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;

@@ -4,7 +4,7 @@
 // materializes its transitive result root without exposing wrapper chains to
 // consumers. Rounds after the walk converges return at once (hir_walk_state).
 
-import hir_walk_state;
+import shared.syntax.hir_walk_state;
 
 struct Params
 {

@@ -5,8 +5,8 @@
 // as a checked row; a literal whose published row already has that ID keeps
 // it, since rows are unique per ID. The length is the element count, or the
 // count of `[value; count]`.
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_mutable_rows;

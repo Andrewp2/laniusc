@@ -1,10 +1,10 @@
-import hir_records;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 import codegen.lir.semantic.common;
 import codegen.lowering_ir;
-import checked_semantic_artifact;
-import native_value_layout;
-import gpu_index;
+import shared.semantics.checked_semantic_artifact;
+import shared.native_interfaces.native_value_layout;
+import shared.buffers.gpu_index;
 struct Params { uint n_hir_nodes; uint n_tokens; uint reserved1; uint reserved2; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;

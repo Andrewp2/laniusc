@@ -76,7 +76,7 @@ review. The compiler owner implemented the repair. The original paths were:
 - The existing enum ABI reserves one discriminant word, even without variants:
   LIR `semantic/function_layout_collect.slang` initializes every enum to one;
   `function_scatter.slang::local_enum_word_count` returns one plus maximum
-  payload; `shaders/dependency_return_layout.slang` initializes enum width one.
+  payload; `shaders/shared/semantics/dependency_return_layout.slang` initializes enum width one.
   This is storage layout, not a legal discriminant or an inhabitable value.
 - `dependencies/enum_instance_layout.slang` instead initialized its computed
   maximum to zero and only raised it while visiting members.

@@ -3,7 +3,7 @@
 // The pass runs over the enum family's rows (hir_enum_rank_node); other rows
 // are not read or written.
 
-import atomics;
+import shared.buffers.atomics;
 import generated_parse_production_ids;
 
 struct Params

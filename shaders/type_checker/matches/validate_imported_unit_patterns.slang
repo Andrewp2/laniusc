@@ -5,14 +5,14 @@
 // scrutinee, so the scrutinee must have the literal's kind of type. So is a
 // local variant arm: the scrutinee must be a value of the variant's enum.
 
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
 import type_checker.checked_type_graph;
 import type_checker.checked_scoped_types;
 import type_checker.checked_index_reference;
 import type_checker.checked_pattern_path;
-import status;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

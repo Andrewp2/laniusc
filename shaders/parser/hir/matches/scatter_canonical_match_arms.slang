@@ -3,9 +3,9 @@
 // The mark pass counted arms at their match's anchor token, so the exclusive
 // scan at that anchor is the start of the match's contiguous arm range. Arms
 // are found through the raw node recorded at their own anchor.
-import hir_records;
-import prefix_scan;
-import canonical_hir_identity;
+import shared.syntax.hir_records;
+import shared.collectives.prefix_scan;
+import shared.syntax.canonical_hir_identity;
 struct Params { uint raw_capacity; uint canonical_capacity; uint uses_status_count; uint local_ancestor_span; };
 ConstantBuffer<Params> gCanonical;
 StructuredBuffer<uint> family_flag;

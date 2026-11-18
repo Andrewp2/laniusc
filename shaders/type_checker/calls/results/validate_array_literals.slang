@@ -15,7 +15,7 @@ bool defer_call_result_closure(uint instance)
 }
 #define INFERENCE_CALL_RESULT_CLOSED(instance) defer_call_result_closure(instance)
 #include "../array_literal_inference_inputs.slang"
-import status;
+import shared.buffers.status;
 import type_checker.checked_array_counts;
 import type_checker.checked_type_identity;
 import type_checker.checked_slots;

@@ -4,7 +4,7 @@
 import type_checker.argument_context;
 import type_checker.checked_index_reference;
 import type_checker.scoped_type_equality;
-import hir_expr_semantics;
+import shared.syntax.hir_expr_semantics;
 
 bool assignment_expression_context<TGraph : IScopedTypeGraph>(uint node,
     uint statement, uint hir_count, uint tokens, uint type_capacity,

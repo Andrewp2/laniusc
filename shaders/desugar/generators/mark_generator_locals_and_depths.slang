@@ -2,7 +2,7 @@
 // change in the number of locals in scope, and the change of depth in the
 // loops that hold a `yield`. The prefix sums give, at a `yield`, the number
 // of locals in scope, and at a local, its position among them.
-import gpu_index;
+import shared.buffers.gpu_index;
 import generator_layout;
 
 struct ContextParams

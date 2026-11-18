@@ -14,8 +14,8 @@ import type_checker.constant_parameter_slots;
 //   does not resolve calls, inspect source bytes, hash token text, perform CPU
 //   lookup, or apply same-source shortcuts.
 
-import hir_records;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.status;
 import type_checker.methods.method_lookup;
 import type_checker.instance_arguments;
 import type_checker.constant_atoms;

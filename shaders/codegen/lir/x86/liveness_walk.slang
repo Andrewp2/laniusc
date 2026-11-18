@@ -9,7 +9,7 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import codegen.lir.x86.liveness_dependencies;
-import atomics;
+import shared.buffers.atomics;
 
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;

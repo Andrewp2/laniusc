@@ -1,7 +1,7 @@
 // Pointer-doubling scan of per-block x86 linker section totals.
 
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 struct ScanParams
 {

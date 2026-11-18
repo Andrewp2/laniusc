@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Bind HIR `self` member receivers to their method receiver declaration.
 //

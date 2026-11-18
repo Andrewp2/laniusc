@@ -3,10 +3,10 @@
 // Each table has at least twice as many slots as the page has members, so an
 // insertion always finds a free slot.
 
-import dependency_interface;
-import semantic_interface_layout;
-import atomics;
-import gpu_index;
+import shared.semantics.dependency_interface;
+import shared.semantics.semantic_interface_layout;
+import shared.buffers.atomics;
+import shared.buffers.gpu_index;
 
 RWStructuredBuffer<uint> dependency_method_lookup;
 

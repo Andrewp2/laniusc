@@ -2,9 +2,9 @@
 // scrutinee's nominal environment, substituted over canonical IDs while the
 // dependency page is resident and realized as a caller-side checked row.
 // Canonical row numbers never cross the page boundary.
-import hir_records;
-import status;
-import dependency_interface;
+import shared.syntax.hir_records;
+import shared.buffers.status;
+import shared.semantics.dependency_interface;
 import type_checker.checked_pattern_path;
 import type_checker.mutable_checked_type_graph;
 import type_checker.canonicalization.canonical_api;

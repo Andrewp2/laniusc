@@ -1,8 +1,8 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Immutable catalog/batch atoms. Row addresses are storage references only;
 // equality and hashing read the complete typed tuple.
 import type_checker.trait_solver.abi;
-import constant_value;
+import shared.semantics.constant_value;
 
 // Row decoders read their row once and combine pure field tests without
 // short-circuit branches (a failed read leaves an all-INVALID row).

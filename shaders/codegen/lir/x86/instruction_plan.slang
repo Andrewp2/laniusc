@@ -10,8 +10,8 @@
 // The plan is pure: the caller supplies every buffer-derived value in
 // X86PlanInput, and emission resolves branch targets, runtime offsets and
 // string data afterwards (X86_RESOLVE_*), so counting needs none of them.
-import primitive_types;
-import native_value_layout;
+import shared.semantics.primitive_types;
+import shared.native_interfaces.native_value_layout;
 import codegen.lowering_ir;
 import codegen.lir.x86.common;
 import codegen.lir.x86.storage_layout;

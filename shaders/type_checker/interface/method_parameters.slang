@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 static const uint INTERFACE_METHOD_INVALID = 0xffffffffu;
 static const uint INTERFACE_METHOD_SYMBOL = 0x80000000u;

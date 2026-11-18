@@ -12,9 +12,9 @@
 // entry (select_instance_execution_rows admits no other call). The
 // function row gets the realized return width and no interface index: its
 // native symbol is private to this job (0x40000000 | its first token).
-import primitive_types;
-import hir_records;
-import checked_semantic_artifact;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
 

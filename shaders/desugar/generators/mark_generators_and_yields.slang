@@ -3,9 +3,9 @@
 // a generator: its body and the blocks of `while` and `if`. The prefix sums
 // of these rows number the generators and yields and give each token's
 // depths. A token of `import core::option` marks its file.
-import gpu_index;
-import byte_packing;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.syntax.generated_token_ids;
 import generator_layout;
 
 struct MarkParams

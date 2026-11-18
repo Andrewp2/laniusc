@@ -1,11 +1,11 @@
-import semantic_interface_layout;
+import shared.semantics.semantic_interface_layout;
 // Scatter canonical module paths and public declaration identities.
 // Signature/type/member fields remain a separate typed-graph export stage.
 
-import gpu_index;
-import atomics;
-import hir_records;
-import native_c_abi;
+import shared.buffers.gpu_index;
+import shared.buffers.atomics;
+import shared.syntax.hir_records;
+import shared.native_interfaces.native_c_abi;
 
 struct Params
 {

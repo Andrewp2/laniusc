@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 // Resolve one checked scalar result-type record per dense compact-HIR expression.
 //
 // Leaves consume type-checker facts directly. Operators whose result type is
@@ -6,9 +6,9 @@ import primitive_types;
 // chain locally. Comparisons retain their bool result while backends can read
 // the checked type of their operand rows.
 
-import hir_records;
-import gpu_index;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.checked_index_reference;
 import type_checker.literal_symbolic_context;
 

@@ -1,4 +1,4 @@
-import hir_records;
+import shared.syntax.hir_records;
 
 // Mark compact-HIR value paths and calls for downstream value consumers.
 //

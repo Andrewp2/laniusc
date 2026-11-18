@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.constant_parameter_slots;
 import type_checker.operator_operand_rules;
 // Validate declaration initializers, assignments, and returns from dense
@@ -6,9 +6,9 @@ import type_checker.operator_operand_rules;
 // in the type-instance passes, while this boundary rejects a definite
 // aggregate/non-aggregate category mismatch.
 
-import hir_records;
-import gpu_index;
-import status;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
+import shared.buffers.status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;

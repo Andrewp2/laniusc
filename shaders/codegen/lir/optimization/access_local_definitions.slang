@@ -5,8 +5,8 @@
 // the cross-CFG propagation stage.
 
 import codegen.optimization_ir;
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 StructuredBuffer<uint> opt_ir_access_group_total;
 StructuredBuffer<OptIrAccessGroup> opt_ir_access_groups;

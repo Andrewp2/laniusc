@@ -296,7 +296,7 @@ impl RadixSortKernels {
         RadixSortPasses {
             small: self.small.and_then(|key| kernels.optional(key)),
             histogram: kernels.dynamic_uniform_kernel(self.histogram, "gParams"),
-            bucket_prefix: kernels.dynamic_uniform_kernel("radix/bucket_prefix", "gParams"),
+            bucket_prefix: kernels.dynamic_uniform_kernel("radix/scan_radix_bucket_histograms", "gParams"),
             scatter: kernels.dynamic_uniform_kernel(self.scatter, "gParams"),
         }
     }
@@ -308,7 +308,7 @@ impl RadixSortKernels {
     ) -> Result<(), String> {
         for step in [passes.order_to_temporary, passes.temporary_to_order] {
             graph.assign_kernel(step.histogram, self.histogram)?;
-            graph.assign_kernel(step.bucket_prefix, "radix/bucket_prefix")?;
+            graph.assign_kernel(step.bucket_prefix, "radix/scan_radix_bucket_histograms")?;
             graph.assign_kernel(step.scatter, self.scatter)?;
         }
         Ok(())
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn shared_radix_steps_request_dynamic_uniform_variants() {
-        for key in ["radix/bucket_prefix"] {
+        for key in ["radix/scan_radix_bucket_histograms"] {
             let reflection = crate::reflection::parse_reflection_from_file(
                 crate::shader_artifacts::artifact_path(&format!("{key}.reflect.json")),
             )

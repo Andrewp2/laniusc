@@ -12,7 +12,7 @@
 // bound row with no such root, or a root owned elsewhere, would leave a
 // trait reference without its fact: it raises RT_INV_TRAIT_FACT and marks
 // the function incomplete (step 15).
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.row_classes;

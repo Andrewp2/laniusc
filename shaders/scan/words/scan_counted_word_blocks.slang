@@ -4,7 +4,7 @@
 // It preserves the host-side scheduling shape of the regular scan while letting
 // the shader ignore inactive capacity rows without CPU readback.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

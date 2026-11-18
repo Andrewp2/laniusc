@@ -1,11 +1,11 @@
 import type_checker.constant_parameter_slots;
-import semantic_interface_layout;
-import constant_value;
+import shared.semantics.semantic_interface_layout;
+import shared.semantics.constant_value;
 import type_checker.constant_atoms;
 import type_checker.interface.scalar_leaves;
 // Scatter declaration generic parameters before ordinary members.
-import hir_records;
-import atomics;
+import shared.syntax.hir_records;
+import shared.buffers.atomics;
 struct Params { uint hir_capacity; uint decl_capacity; uint token_capacity; uint library_id; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_generic_param_count; StructuredBuffer<HirGenericParam> compact_generic_params;

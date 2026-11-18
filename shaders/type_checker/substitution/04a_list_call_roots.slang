@@ -5,7 +5,7 @@
 // are complete before the rounds. An entry is (HIR row, token | family << 31,
 // the instance row last pushed from it, 0). One lane per HIR row and per
 // argument row; call_root_count and call_root_args were cleared before.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.argument_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };

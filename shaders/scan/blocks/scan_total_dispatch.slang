@@ -3,7 +3,7 @@
 // total, clamped to the capacity and multiplied, in 256-lane workgroups,
 // split over y beyond 65535 groups.
 
-import uint_math;
+import shared.numbers.uint_math;
 
 public struct ScanTotalDispatchParams
 {

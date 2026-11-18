@@ -11,7 +11,7 @@
 // empty hash slot from 0 to the record ID. A lane that meets an occupied slot
 // fences (acquire) and compares the occupant's record, which was complete
 // before its CAS. Nobody ever waits for another invocation.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 // ---------------------------------------------------------------------------
 // References. A canonical reference is a record ID in [1, CT_ID_LIMIT), a

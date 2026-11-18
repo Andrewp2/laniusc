@@ -4,7 +4,7 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.ssa_block_argument_lookup;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

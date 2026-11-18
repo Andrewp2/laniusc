@@ -2,7 +2,7 @@
 // A row holds one bit per state of the machine. A step joins each row with
 // the rows of the states it names, so after n steps a row holds every state
 // at most 2^n transitions away. Eight steps cover a machine of 256 states.
-import gpu_index;
+import shared.buffers.gpu_index;
 import machine_layout;
 
 struct ReachParams

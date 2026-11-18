@@ -9,7 +9,7 @@
 // (operator_operand_type), which take no arithmetic, negation, condition or
 // index role. References keep the classification the scalar cache gives
 // them; a reference row without one stays unknown here.
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public static const uint OPR_TY_UNKNOWN = 0u;
 public static const uint OPR_TY_BOOL = 2u;

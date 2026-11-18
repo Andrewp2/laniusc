@@ -11,8 +11,8 @@
 // order and gives each closure its range of that list. Mode 1 runs per
 // piece and writes it; `count_scan.x` is the inclusive prefix sum of the
 // counts, so the token that emits a piece is the first whose sum passes it.
-import gpu_index;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.syntax.generated_token_ids;
 import desugar.tokens.desugaring_layout;
 import closure_layout;
 

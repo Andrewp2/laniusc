@@ -6,7 +6,7 @@ import parser.tokens.contexts.generic_parameter_keywords;
 // so later token classifiers can ask "am I in the type alias RHS?" without
 // walking backward through source tokens.
 
-import prefix_scan;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

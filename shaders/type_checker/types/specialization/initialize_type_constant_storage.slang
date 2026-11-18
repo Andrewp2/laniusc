@@ -2,8 +2,8 @@
 // source/array/dependency regions precede the bounded producer arena. Replay
 // atoms are reserved at the physical tail by their sole replay writer.
 import type_checker.constant_storage_plan;
-import constant_value;
-import gpu_index;
+import shared.semantics.constant_value;
+import shared.buffers.gpu_index;
 struct Params
 {
     uint n_tokens;

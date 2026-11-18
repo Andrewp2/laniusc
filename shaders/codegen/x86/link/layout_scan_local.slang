@@ -1,7 +1,7 @@
 // Per-object exclusive section-size scan for the x86 linker.
 
-import gpu_index;
-import prefix_scan;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
 
 struct Params
 {

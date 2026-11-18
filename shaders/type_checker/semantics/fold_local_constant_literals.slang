@@ -1,9 +1,9 @@
 // Fold literal leaves outside function bodies and start the constant
 // reference rounds (type_checker.semantics.const_fold).
 import type_checker.semantics.const_fold;
-import primitive_types;
-import hir_records;
-import gpu_index;
+import shared.semantics.primitive_types;
+import shared.syntax.hir_records;
+import shared.buffers.gpu_index;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; uint parser_feature_flags; };
 ConstantBuffer<Params> gParams;

@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import type_checker.concrete_type_equality;
 // Project a checked scalar constant reference after body substitution. Source
 // references remain immutable; the selected body supplies parameter atoms.

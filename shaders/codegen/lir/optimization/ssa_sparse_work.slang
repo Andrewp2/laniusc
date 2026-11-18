@@ -1,7 +1,7 @@
 // Shared exact sparse-set primitives for GPU SSA. Logical capacity lives in
 // one global set, so the number of lanes never multiplies storage.
 
-import atomics;
+import shared.buffers.atomics;
 
 public static const uint SSA_SPARSE_INSERT_EXISTING = 0u;
 public static const uint SSA_SPARSE_INSERTED = 1u;

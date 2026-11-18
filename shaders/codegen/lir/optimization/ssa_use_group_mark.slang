@@ -1,7 +1,7 @@
 // Marks the first ordered use of every dense SSA value.
 
 import codegen.lowering_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

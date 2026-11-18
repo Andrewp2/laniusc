@@ -10,7 +10,7 @@
 // those tables do. An entry past any capacity, every later entry and
 // every caller of one replay (EX_FLAG_CAPACITY). Also sizes the row and
 // table dispatches.
-import hir_records;
+import shared.syntax.hir_records;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
 

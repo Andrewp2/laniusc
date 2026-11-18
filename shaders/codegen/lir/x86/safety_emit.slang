@@ -1,4 +1,4 @@
-import primitive_types;
+import shared.semantics.primitive_types;
 import codegen.lir.x86.emission_common;
 import codegen.lir.x86.frame_layout;
 import codegen.lowering_ir;
@@ -7,7 +7,7 @@ import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
 import codegen.lir.x86.parameter_values;
 import codegen.lir.x86.runtime_abi;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 void emit_prologue(inout uint cursor, TargetLirFunction function,
                    SemanticLirFunction semantic_function, uint saved_mask)

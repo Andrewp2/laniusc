@@ -1,9 +1,9 @@
 // Minimum heaps over the depth before each token. The closure depth scan
 // already contains the inclusive depth; the preceding row is the exclusive
 // depth needed to locate an enclosing opener.
-import gpu_index;
-import prefix_scan;
-import blocked_search_tree;
+import shared.buffers.gpu_index;
+import shared.collectives.prefix_scan;
+import shared.search.blocked_search_tree;
 
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint4> depth_scan;

@@ -9,8 +9,8 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_constants;
 import type_checker.closure.dependency_closure_summary;
-import constant_value;
-import primitive_types;
+import shared.semantics.constant_value;
+import shared.semantics.primitive_types;
 
 static const uint INVALID = 0xffffffffu;
 static const uint NAMED_OPERAND_LIMIT = 32u;

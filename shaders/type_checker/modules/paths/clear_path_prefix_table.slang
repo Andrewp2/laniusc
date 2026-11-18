@@ -2,7 +2,7 @@
 // slots, giving the table a load factor of at most one half even when every
 // row races to publish a duplicate entry.
 
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params { uint segment_capacity; uint step; uint reserved0; uint reserved1; };
 ConstantBuffer<Params> gParams;

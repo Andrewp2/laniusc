@@ -4,7 +4,7 @@
 // project_dependency_struct_literals) write only those rows' name tokens, so every other token
 // keeps the CT_NONE that 01 wrote before the rounds.
 #include "field_expected_ids.slang"
-import hir_records;
+import shared.syntax.hir_records;
 
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_literal_row_counts;

@@ -1,9 +1,9 @@
 // Literal width can be owned by a checked generic operand or a const's own
 // annotation before ordinary expression inference has assigned a scalar.
 // This reader consumes immutable evidence and never republishes a context.
-import hir_records;
-import hir_expr_semantics;
-import primitive_types;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
+import shared.semantics.primitive_types;
 import type_checker.calls.explicit_call_environment;
 import type_checker.constant_atoms;
 import type_checker.argument_context;

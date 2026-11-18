@@ -31,8 +31,8 @@
 //
 // Lanes write the entry's head, token span and template blocks; the layout
 // lane assigns the virtual bases.
-import hir_records;
-import checked_semantic_artifact;
+import shared.syntax.hir_records;
+import shared.semantics.checked_semantic_artifact;
 import type_checker.closure.instance_closure;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;

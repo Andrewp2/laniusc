@@ -6,7 +6,7 @@
 // canonical_dependency_type entry to CT_PENDING.
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_dependency;
-import dependency_interface;
+import shared.semantics.dependency_interface;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]

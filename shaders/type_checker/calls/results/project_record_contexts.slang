@@ -4,8 +4,8 @@
 // are matched jointly against the field values (ct_match_roots), as one
 // pattern, and the bindings become the literal's context. A slice field
 // accepts an array value (the root coercion, per field).
-import hir_records;
-import hir_expr_semantics;
+import shared.syntax.hir_records;
+import shared.syntax.hir_expr_semantics;
 import type_checker.mutable_checked_type_graph;
 import type_checker.constant_atoms_identity;
 import type_checker.concrete_type_closure;
@@ -13,9 +13,9 @@ import type_checker.checked_index_reference;
 import type_checker.argument_context;
 import type_checker.calls.contextual_call_environment;
 import type_checker.types.aggregates.struct_field_lookup;
-import semantic_interface_layout;
-import dependency_interface;
-import status;
+import shared.semantics.semantic_interface_layout;
+import shared.semantics.dependency_interface;
+import shared.buffers.status;
 import type_checker.local_struct_layout;
 import type_checker.canonicalization.canonical_api;
 import type_checker.canonicalization.canonical_candidates;

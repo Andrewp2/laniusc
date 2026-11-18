@@ -3,9 +3,9 @@
 // finds the machines whose events it is, a `goto` finds its target and sets
 // one bit of the transition graph. Every broken rule goes to the status
 // words; the kernels after this one check the rules that need these names.
-import gpu_index;
-import byte_packing;
-import generated_token_ids;
+import shared.buffers.gpu_index;
+import shared.buffers.byte_packing;
+import shared.syntax.generated_token_ids;
 import machine_layout;
 
 struct ResolveParams

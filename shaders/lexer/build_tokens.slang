@@ -1,6 +1,6 @@
-import gpu_index;
+import shared.buffers.gpu_index;
 import utils;
-import atomics;
+import shared.buffers.atomics;
 
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> token_count;

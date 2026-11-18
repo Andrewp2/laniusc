@@ -12,8 +12,8 @@
 // They read the plan's status and the referenced-name marks, so they run in
 // the plan's submission, after rl_undefined.
 
-import gpu_index;
-__exported import atomics;
+import shared.buffers.gpu_index;
+__exported import shared.buffers.atomics;
 
 public struct CNParams
 {

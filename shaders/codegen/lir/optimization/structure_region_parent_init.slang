@@ -2,7 +2,7 @@
 // region in opening order. Pointer jumping skips closed siblings in parallel.
 
 import codegen.optimization_ir;
-import gpu_index;
+import shared.buffers.gpu_index;
 
 struct Params
 {

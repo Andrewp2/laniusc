@@ -5,7 +5,7 @@
 // against the row, while duplicate validation compares every row with the
 // representative selected by atomic minimum.
 
-import atomics;
+import shared.buffers.atomics;
 
 public static const uint GENERIC_PARAM_LOOKUP_EMPTY = 0u;
 public static const uint GENERIC_PARAM_LOOKUP_INVALID = 0xffffffffu;

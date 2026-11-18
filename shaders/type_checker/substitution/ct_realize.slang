@@ -23,7 +23,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.mutable_checked_type_graph;
 import type_checker.constant_atoms;
 import type_checker.constant_publication;
-import primitive_types;
+import shared.semantics.primitive_types;
 
 public RWStructuredBuffer<uint> type_application_count;
 public RWStructuredBuffer<uint> type_instance_state;
