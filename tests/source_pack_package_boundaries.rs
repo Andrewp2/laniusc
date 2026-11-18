@@ -6895,7 +6895,8 @@ fn source_root_loader_discovers_more_than_one_thousand_imports_iteratively() {
 
     let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
         .expect("large import graph should load without a fixed file-count cap");
-    assert_eq!(manifest.files.len(), IMPORTED_FILE_COUNT + 1);
+    // The entry and embedded core::function plus its core::mem import.
+    assert_eq!(manifest.files.len(), IMPORTED_FILE_COUNT + 1 + 2);
     assert!(manifest.requires_bounded_compilation());
 
     std::fs::remove_dir_all(root).expect("remove large import source root");
@@ -6926,7 +6927,8 @@ fn source_root_loader_resolves_deep_import_paths() {
 
     let source_pack = load_entry_with_source_root(entry.path(), &source_root)
         .expect("source-root discovery should load arbitrary-depth imports");
-    assert_eq!(source_pack.sources.len(), 2);
+    // The entry and its import, plus embedded core::function and core::mem.
+    assert_eq!(source_pack.sources.len(), 2 + 2);
 
     std::fs::remove_dir_all(&root).expect("remove deep import source root");
 }
@@ -7278,8 +7280,8 @@ fn source_root_loader_keeps_direct_self_import_as_gpu_semantics() {
     .expect("source-root loader should use self-imports only as recursion guards");
     assert_eq!(
         manifest.files.len(),
-        1,
-        "a direct self-import should not duplicate the entry source file"
+        1 + 2,
+        "a direct self-import loads the entry once alongside core::function and core::mem"
     );
     assert!(
         manifest
@@ -7318,8 +7320,8 @@ fn source_root_loader_deduplicates_two_file_import_cycle_for_gpu_validation() {
     let canonical_helper = std::fs::canonicalize(&helper_path).expect("canonicalize helper");
     assert_eq!(
         manifest.files.len(),
-        2,
-        "entry and cyclic helper should be loaded once each"
+        2 + 2,
+        "entry and cyclic helper should load once each alongside core::function and core::mem"
     );
     assert!(
         manifest
@@ -7340,12 +7342,62 @@ fn source_root_loader_deduplicates_two_file_import_cycle_for_gpu_validation() {
 }
 
 #[test]
+fn source_root_loader_uses_embedded_core_until_a_disk_core_directory_is_supplied() {
+    use std::path::Path;
+
+    let root = common::temp_artifact_path("laniusc_package_boundaries", "disk_core_override", None);
+    let stdlib_root = root.join("stdlib");
+    std::fs::create_dir_all(stdlib_root.join("std")).expect("create stdlib root without core");
+    let stdlib_module = stdlib_root.join("std/helpers.lani");
+    std::fs::write(
+        &stdlib_module,
+        "module std::helpers;\nimport core::option;\n",
+    )
+    .expect("write std module");
+    let entry = common::TempArtifact::new("laniusc_package_boundaries", "core_override", Some("lani"));
+    entry.write_str("import std::helpers;\nfn main() {}\n");
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(stdlib_root.clone()),
+        user_roots: Vec::new(),
+    };
+
+    let manifest = load_entry_path_manifest_with_source_roots(entry.path(), &roots)
+        .expect("stdlib imports can reach embedded core");
+    for path in ["<core>/option.lani", "<core>/function.lani", "<core>/mem.lani"] {
+        assert!(manifest.files.iter().any(|file| file.library_id == 0 && file.path == Path::new(path)));
+    }
+    assert!(manifest.files.iter().any(|file| file.path == stdlib_module));
+
+    let core_dir = stdlib_root.join("core");
+    std::fs::create_dir(&core_dir).expect("create disk core override");
+    common::write_core_language_item_fixture(&core_dir);
+    let error = load_entry_path_manifest_with_source_roots(entry.path(), &roots)
+        .expect_err("an incomplete disk core must report its missing import");
+    let diagnostic = error.to_public_diagnostic();
+    assert_eq!(diagnostic.code, "LNC0001");
+    assert_eq!(diagnostic.message, "missing source-root module core::option");
+    assert_eq!(diagnostic.primary_label.expect("located import").path, stdlib_module);
+
+    let option = core_dir.join("option.lani");
+    std::fs::write(&option, "module core::option;\n").expect("write disk option module");
+    let manifest = load_entry_path_manifest_with_source_roots(entry.path(), &roots)
+        .expect("load the disk core override");
+    // The entry, its std module, disk option, and the two disk language-item files.
+    assert_eq!(manifest.files.len(), 5);
+    for path in [&option, &core_dir.join("function.lani"), &core_dir.join("mem.lani")] {
+        assert!(manifest.files.iter().any(|file| file.library_id == 0 && file.path == *path));
+    }
+    std::fs::remove_dir_all(root).expect("remove override fixture");
+}
+
+#[test]
 fn source_root_loader_keeps_stdlib_only_imports_separate_from_entry_library() {
     let root = common::temp_artifact_path("laniusc_package_boundaries", "stdlib_only", None);
     let stdlib_root = root.join("stdlib");
     let stdlib_core_root = stdlib_root.join("core");
     let app_root = root.join("app");
     std::fs::create_dir_all(&stdlib_core_root).expect("create stdlib source root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     std::fs::create_dir_all(&app_root).expect("create entry source root");
 
     let stdlib_math = stdlib_core_root.join("math.lani");
@@ -7379,7 +7431,8 @@ fn source_root_loader_keeps_stdlib_only_imports_separate_from_entry_library() {
             depends_on_library_id: 0,
         }]
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, its math import, and the disk language-item files.
+    assert_eq!(manifest.files.len(), 2 + 2);
     assert!(
         manifest
             .files
@@ -7410,6 +7463,7 @@ fn source_root_loader_resolves_stdlib_nested_imports_inside_stdlib_boundary() {
     std::fs::create_dir_all(&app_root).expect("create app source root");
     std::fs::create_dir_all(&user_core_root).expect("create user core source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create stdlib core source root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     std::fs::create_dir_all(&stdlib_std_root).expect("create stdlib std source root");
 
     let user_number = user_core_root.join("number.lani");
@@ -7543,11 +7597,16 @@ fn source_root_loader_leaves_deep_module_paths_for_gpu_validation() {
 
     let source_pack = load_entry_with_source_root(entry.path(), &source_root)
         .expect("source-root discovery should not preempt resolver module-depth validation");
-    assert_eq!(source_pack.sources.len(), 1);
-    assert_eq!(source_pack.library_ids, vec![1]);
+    // Embedded core::mem precedes its importer core::function in library 0.
+    assert_eq!(source_pack.sources.len(), 3);
+    assert_eq!(source_pack.library_ids, vec![0, 0, 1]);
     assert_eq!(
         source_pack.source_paths,
-        vec![Some(entry.path().to_path_buf())]
+        vec![
+            Some(std::path::PathBuf::from("<core>/mem.lani")),
+            Some(std::path::PathBuf::from("<core>/function.lani")),
+            Some(entry.path().to_path_buf()),
+        ]
     );
 
     std::fs::remove_dir_all(&root).expect("remove deep module source root");

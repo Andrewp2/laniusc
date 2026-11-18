@@ -1,6 +1,6 @@
 use crate::common;
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use common::compile_fixture_entry_to_x86_64 as compile_entry_to_x86_64_with_stdlib;
 
 #[test]
 fn imported_f32_constants_execute_on_x86() {

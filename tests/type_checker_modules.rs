@@ -3464,7 +3464,8 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
         .expect("source-root path manifest should load imported user module");
-    assert_eq!(manifest.files.len(), 2);
+    // Embedded core::function and its core::mem import are also loaded.
+    assert_eq!(manifest.files.len(), 2 + 2);
     assert!(
         manifest
             .files
@@ -3521,7 +3522,8 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
         .expect("source-root loader should load the path candidate");
-    assert_eq!(manifest.files.len(), 2);
+    // Embedded core::function and its core::mem import are also loaded.
+    assert_eq!(manifest.files.len(), 2 + 2);
     assert!(manifest.files.iter().any(|file| file.path == helper_path));
 
     match common::block_on_gpu_with_timeout(
@@ -3721,6 +3723,7 @@ fn source_root_stdlib_nested_import_stays_inside_stdlib_boundary() {
     std::fs::create_dir_all(&app_root).expect("create temp app source root");
     std::fs::create_dir_all(&user_core_root).expect("create temp user core root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create temp stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     std::fs::create_dir_all(&stdlib_std_root).expect("create temp stdlib std root");
 
     let user_shared_path = user_core_root.join("shared.lani");
@@ -3783,7 +3786,8 @@ fn main() {
         &stdlib_root,
     )
     .expect("source-root path manifest should keep stdlib nested imports inside stdlib");
-    assert_eq!(manifest.files.len(), 3);
+    // The disk core provides the language item and its memory dependency.
+    assert_eq!(manifest.files.len(), 3 + 2);
     assert!(
         manifest
             .files
@@ -3952,7 +3956,8 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
         .expect("source-root path manifest should load transitive user imports");
-    assert_eq!(manifest.files.len(), 3);
+    // Embedded core::function and its core::mem import are also loaded.
+    assert_eq!(manifest.files.len(), 3 + 2);
     assert!(
         manifest
             .files
@@ -4094,6 +4099,7 @@ fn source_root_loader_deduplicates_import_cycles_without_semantic_rejection() {
     let stdlib_root = root.join("stdlib");
     let core_root = stdlib_root.join("core");
     std::fs::create_dir_all(&core_root).expect("create temp stdlib core root");
+    common::write_core_language_item_fixture(&core_root);
     let a_path = core_root.join("a.lani");
     let b_path = core_root.join("b.lani");
     std::fs::write(
@@ -4127,8 +4133,8 @@ fn main() { return 0; }
         .expect("source-root loader should use import cycles only as recursion guards");
     assert_eq!(
         manifest.files.len(),
-        3,
-        "entry plus two cyclic imports should be loaded once each"
+        3 + 2,
+        "entry, two cyclic imports, and two language-item files should be loaded once each"
     );
     assert!(
         manifest

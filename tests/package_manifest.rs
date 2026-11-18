@@ -2102,8 +2102,9 @@ fn main() {
     assert!(
         message.contains("import graph changed")
             && message.contains("app::helper")
-            && message.contains("expected 1 imports")
-            && message.contains("found 0"),
+            // The core::function import of core::mem remains in both graphs.
+            && message.contains("expected 2 imports")
+            && message.contains("found 1"),
         "expected loaded lockfile replay to report the stale entry import edge, got {message}"
     );
 
@@ -2815,8 +2816,8 @@ fn package_lockfile_public_serialize_emits_integrity_sections_that_deserialize()
         .expect("public serialization should include input identity files");
     assert_eq!(
         input_files.len(),
-        1,
-        "minimal fixture should persist exactly the entry source input"
+        3,
+        "minimal fixture persists the entry, core::function, and core::mem"
     );
     let source_identity_files = document
         .get("source_identities")
@@ -2833,10 +2834,8 @@ fn package_lockfile_public_serialize_emits_integrity_sections_that_deserialize()
         .and_then(|graph| graph.get("imports"))
         .and_then(|imports| imports.as_array())
         .expect("public serialization should include an import graph section");
-    assert!(
-        imports.is_empty(),
-        "minimal fixture should persist an empty import graph, not omit the section"
-    );
+    assert_eq!(imports.len(), 1, "the only import is core::function's dependency");
+    assert_import_graph_edge(&document, 0, "core::function", "core::mem", 0, "core::mem");
 
     serde_json::from_value::<PackageLockfile>(document)
         .expect("publicly serialized lockfile should pass public deserialization");
@@ -3407,6 +3406,12 @@ fn package_lockfile_rejects_input_identity_with_wrong_library_root() {
         .expect("input identity entry should be an object")
         .insert("library_id".to_string(), serde_json::Value::from(0));
 
+    // Keep the input list canonical after reassigning the entry to library 0.
+    input_files.sort_by(|left, right| {
+        (left["library_id"].as_u64(), left["path"].as_str())
+            .cmp(&(right["library_id"].as_u64(), right["path"].as_str()))
+    });
+
     let tampered_lockfile_json =
         serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
     let err = PackageLockfile::parse_json(&tampered_lockfile_json)
@@ -3601,6 +3606,34 @@ fn main() {
 }
 
 #[test]
+fn package_lockfile_replays_embedded_core_imports() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "embedded_core", None);
+    let source_root = root.join("src");
+    std::fs::create_dir_all(&source_root).expect("create package source root");
+    std::fs::write(
+        source_root.join("main.lani"),
+        "module main;\nimport core::option;\nfn main() {}\n",
+    )
+    .expect("write entry");
+    let manifest = PackageManifest::parse_json(
+        r#"{"package":"embedded-core","roots":["src"],"entry":"src/main.lani"}"#,
+    )
+    .expect("parse package manifest");
+    let resolved = manifest.resolve_from_dir(&root).expect("resolve package");
+    let lockfile = PackageLockfile::from_resolved_manifest(&resolved).expect("lock embedded import");
+    let json = lockfile.to_json_pretty().expect("serialize lock");
+    let document = serde_json::from_str(&json).expect("parse lock JSON");
+    assert_import_graph_edge(&document, 1, "main", "core::option", 0, "core::option");
+
+    let replay = PackageLockfile::parse_json(&json).expect("validate embedded core identity");
+    let paths = replay.load_path_manifest().expect("replay embedded core import");
+    for path in ["<core>/option.lani", "<core>/function.lani", "<core>/mem.lani"] {
+        assert!(paths.files.iter().any(|file| file.path == Path::new(path) && file.library_id == 0));
+    }
+    std::fs::remove_dir_all(root).expect("remove embedded-core package");
+}
+
+#[test]
 fn package_lockfile_records_item_imports_and_replays_declaring_modules() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "item_import", None);
     let app_root = root.join("src/app");
@@ -3637,7 +3670,8 @@ fn package_lockfile_records_item_imports_and_replays_declaring_modules() {
     );
     let replay = PackageLockfile::parse_json(&json).expect("round-trip literal item edge");
     let paths = replay.load_path_manifest().expect("replay item import");
-    assert_eq!(paths.files.len(), 2);
+    // The entry and item module, plus the two embedded language-item files.
+    assert_eq!(paths.files.len(), 2 + 2);
     assert!(paths.files.iter().any(|file| {
         file.path == std::fs::canonicalize(&helper).expect("canonical declaring module")
     }));
@@ -4893,8 +4927,8 @@ fn main() {
         .expect("source-root replay should ignore import-looking text inside literals");
     assert_eq!(
         path_manifest.files.len(),
-        1,
-        "literal text must not create package import graph edges"
+        1 + 2,
+        "literal text must not create package import graph edges, with core::function and core::mem also loaded"
     );
     lockfile
         .to_json_pretty()
@@ -5269,8 +5303,8 @@ fn main() {
         .expect("package manifest path replay should preserve direct reverse import edges");
     assert_eq!(
         path_manifest.files.len(),
-        2,
-        "cyclic import metadata should load each source file once"
+        2 + 2,
+        "cyclic import metadata should load each source file once, with core::function and core::mem also loaded"
     );
 
     let path_manifest = lockfile
@@ -5278,8 +5312,8 @@ fn main() {
         .expect("package lockfile path replay should preserve direct reverse import edges");
     assert_eq!(
         path_manifest.files.len(),
-        2,
-        "cyclic import metadata should load each source file once"
+        2 + 2,
+        "cyclic import metadata should load each source file once, with core::function and core::mem also loaded"
     );
 
     let source_pack = lockfile
@@ -5287,8 +5321,8 @@ fn main() {
         .expect("package lockfile source replay should preserve direct reverse import edges");
     assert_eq!(
         source_pack.sources.len(),
-        2,
-        "cyclic import metadata should load each source file once for source replay"
+        2 + 2,
+        "cyclic import metadata should load each source file once for source replay, with core::function and core::mem also loaded"
     );
 
     let lockfile_json = lockfile.to_json_pretty().expect(
@@ -5387,8 +5421,8 @@ fn main() {
         .expect("package manifest path replay should preserve longer import cycles as metadata");
     assert_eq!(
         path_manifest.files.len(),
-        3,
-        "cyclic source-root discovery should load each reachable file once"
+        3 + 2,
+        "cyclic source-root discovery should load each reachable file once, with core::function and core::mem also loaded"
     );
 
     let path_manifest = lockfile
@@ -5396,8 +5430,8 @@ fn main() {
         .expect("package lockfile path replay should preserve longer import cycles as metadata");
     assert_eq!(
         path_manifest.files.len(),
-        3,
-        "cyclic lockfile replay should load each reachable file once"
+        3 + 2,
+        "cyclic lockfile replay should load each reachable file once, with core::function and core::mem also loaded"
     );
 
     let source_pack = lockfile
@@ -5405,8 +5439,8 @@ fn main() {
         .expect("package lockfile source replay should preserve longer import cycle metadata");
     assert_eq!(
         source_pack.sources.len(),
-        3,
-        "cyclic replay metadata should not duplicate source files"
+        3 + 2,
+        "cyclic replay metadata should not duplicate source files, with core::function and core::mem also loaded"
     );
 
     let lockfile_json = lockfile.to_json_pretty().expect(
@@ -6162,8 +6196,9 @@ fn main() {
     assert!(
         message.contains("import graph changed")
             && message.contains("control::plane")
-            && message.contains("expected 1 imports")
-            && message.contains("found 0"),
+            // The core::function import of core::mem remains in both graphs.
+            && message.contains("expected 2 imports")
+            && message.contains("found 1"),
         "expected stale package-name-shaped import edge to be rejected as replay metadata, got {message}"
     );
 
@@ -6178,6 +6213,7 @@ fn package_lockfile_rejects_import_graph_edges_outside_library_dependencies() {
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     std::fs::write(
         app_root.join("leaf.lani"),
@@ -6272,6 +6308,7 @@ fn package_lockfile_rejects_stdlib_to_user_library_dependency_metadata() {
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     std::fs::write(
         stdlib_core_root.join("number.lani"),
@@ -6352,6 +6389,7 @@ fn package_lockfile_rejects_duplicate_library_dependency_metadata() {
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     std::fs::write(
         stdlib_core_root.join("number.lani"),
@@ -6431,6 +6469,7 @@ fn package_lockfile_rejects_library_dependency_without_import_edge() {
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     std::fs::write(
         stdlib_core_root.join("number.lani"),
@@ -6579,7 +6618,8 @@ fn package_lockfile_rejects_unknown_import_graph_library_ids() {
         .expect_err("lockfile import edges must use known package replay libraries");
     let message = format!("{err:?}");
     assert!(
-        message.contains("import graph edge 0 source")
+        // The valid core::function → core::mem edge comes first.
+        message.contains("import graph edge 1 source")
             && message.contains("library 2")
             && message.contains("unsupported"),
         "expected unknown import-edge library diagnostic, got {message}"
@@ -7205,6 +7245,7 @@ fn package_lockfile_import_graph_keeps_stdlib_nested_imports_inside_stdlib_bound
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&user_core_root).expect("create package user core source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core source root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     std::fs::create_dir_all(&stdlib_std_root).expect("create package stdlib std source root");
 
     let user_number = user_core_root.join("number.lani");
@@ -7318,6 +7359,7 @@ fn package_lockfile_rejects_user_import_edge_that_skips_user_shadow_for_stdlib_m
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&user_core_root).expect("create package user core source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core source root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     std::fs::create_dir_all(&stdlib_std_root).expect("create package stdlib std source root");
 
     let user_number = user_core_root.join("number.lani");
@@ -7429,6 +7471,7 @@ fn package_lockfile_rejects_stale_stdlib_fallback_when_user_module_appears() {
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
 
     let stdlib_number = stdlib_core_root.join("number.lani");
     std::fs::write(
@@ -7718,6 +7761,7 @@ fn package_lockfile_rejects_import_graph_dependencies_missing_from_identity_sect
         write_minimal_generated_lockfile(&root, "dependency-identity");
     let stdlib_core_root = root.join("stdlib").join("core");
     std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib root");
+    common::write_core_language_item_fixture(&stdlib_core_root);
     let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
     let canonical_entry = std::fs::canonicalize(&entry_path)
         .expect("canonicalize generated entry")
@@ -7740,6 +7784,18 @@ fn package_lockfile_rejects_import_graph_dependencies_missing_from_identity_sect
             "stdlib_root".to_string(),
             serde_json::Value::String(canonical_stdlib_root.display().to_string()),
         );
+    // Remove the original embedded inputs and their edge. The tampered
+    // dependency below must be the only reference to the missing disk library.
+    for section in ["inputs", "source_identities"] {
+        document[section]["files"]
+            .as_array_mut()
+            .expect("generated file list")
+            .retain(|file| file["library_id"] != 0);
+    }
+    document["import_graph"]["imports"]
+        .as_array_mut()
+        .expect("generated import edges")
+        .clear();
     let import_graph = document
         .get_mut("import_graph")
         .and_then(|import_graph| import_graph.as_object_mut())
@@ -9138,7 +9194,8 @@ fn main() {
         .collect::<Vec<_>>();
     assert_eq!(
         import_paths,
-        vec![Some("app::alpha"), Some("app::zeta")],
+        // Library 0 contributes the core::function → core::mem edge before user imports.
+        vec![Some("core::mem"), Some("app::alpha"), Some("app::zeta")],
         "generated package lockfiles should canonicalize import graph edge order"
     );
     import_edges.reverse();
