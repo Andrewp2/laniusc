@@ -282,15 +282,19 @@ impl SemanticProjectionOperations {
                 // These relations are initialized only for the corresponding
                 // parser feature. A reused workspace can contain unrelated
                 // scratch in their slots when the feature is absent.
-                let required_feature = if kernel.contains("struct_init")
-                    || kernel.ends_with("04a3_nested_struct_contexts")
-                {
-                    crate::lexer::features::PARSER_FEATURE_STRUCTS
-
-                } else if kernel.ends_with("05b_array_literal_return_refs") {
-                    crate::lexer::features::PARSER_FEATURE_ARRAYS
-                } else {
-                    0
+                // The pass name selects the feature. A shader key changes
+                // when its file is renamed.
+                let required_feature = match name {
+                    "type_check.body_specialization.literal_contexts"
+                    | "type_check.body_specialization.nested_literal_contexts"
+                    | "type_check.body_specialization.literal_fields"
+                    | "type_check.body_specialization.literal_substitute" => {
+                        crate::lexer::features::PARSER_FEATURE_STRUCTS
+                    }
+                    "type_check.body_specialization.array_literal_refs" => {
+                        crate::lexer::features::PARSER_FEATURE_ARRAYS
+                    }
+                    _ => 0,
                 };
                 let reference_pass = compiler_graph::BODY_REFERENCE_SPECIALIZATION_PASSES
                     .iter()
@@ -334,11 +338,16 @@ impl SemanticProjectionOperations {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
                     u32::try_from(instances.byte_size / 4)?
-                } else if kernel.starts_with("type_checker/type/instances/02")
-                    || kernel == compiler_graph::IMPORTED_FIELDS_KERNEL
-                    || kernel.ends_with("03b_member_substitute")
-                    || kernel.ends_with("04b_struct_init_substitute")
-                {
+                } else if matches!(
+                    name,
+                    "type_check.body_specialization.clear_application_index"
+                        | "type_check.body_specialization.index_applications"
+                        | "type_check.body_specialization.index_generated_applications"
+                        | "type_check.body_specialization.imported_fields"
+                        | "type_check.body_specialization.member_substitute"
+                        | "type_check.body_specialization.literal_substitute"
+                ) {
+                    // These passes run one lane per type expression token.
                     let tokens: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_expr_ref_tag")?;
                     (tokens.byte_size / 4) as u32

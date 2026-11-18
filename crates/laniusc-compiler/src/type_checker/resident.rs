@@ -425,8 +425,6 @@ impl GpuTypeChecker {
 
     /// Creates a type checker and loads all resident type-check pass pipelines.
     pub fn new(device: &wgpu::Device) -> Result<Self> {
-        let supports_large_workgroup_storage =
-            device.limits().max_compute_workgroup_storage_size >= 32 * 1024;
         let passes = TypeCheckPasses::prepare_prefixes(
             device,
             &["type_checker", "scan/counted", "scan/counted_pair", "radix"],
@@ -441,10 +439,8 @@ impl GpuTypeChecker {
                 {
                     return false;
                 }
-                (key != "type_checker/predicates/01b2_sort_keys_small"
-                    || supports_large_workgroup_storage)
-                    && (!key.starts_with("scan/counted_pair/")
-                        || device.limits().max_storage_buffers_per_shader_stage >= 7)
+                !key.starts_with("scan/counted_pair/")
+                    || device.limits().max_storage_buffers_per_shader_stage >= 7
             },
         )?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
