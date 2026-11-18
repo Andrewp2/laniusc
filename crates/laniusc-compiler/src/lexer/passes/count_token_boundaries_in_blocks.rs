@@ -14,7 +14,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Pair01SumInblockPass,
     label: "pair_01_sum_inblock",
     entry: "pair_01_sum_inblock",
-    shader: "lexer/pair/01_sum_inblock"
+    shader: "lexer/count_token_boundaries_in_blocks"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblockPass {

@@ -431,7 +431,7 @@ fn build_graph(
 
     reflected_pass(
         &mut graph,
-        <super::passes::source_file_boundaries::SourceFileBoundariesPass as Pass<
+        <super::passes::mark_source_file_boundaries::SourceFileBoundariesPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -455,7 +455,7 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::dfa::scan_inblock::Dfa01ScanInblockPass as Pass<
+        <super::passes::summarize_dfa_blocks::Dfa01ScanInblockPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -482,7 +482,7 @@ fn build_graph(
         ],
     )?;
     graph.add_pass(PassDesc {
-        name: <super::passes::dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass as Pass<
+        name: <super::passes::scan_dfa_block_summaries::Dfa02ScanBlockSummariesPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -495,7 +495,7 @@ fn build_graph(
     })?;
     reflected_pass(
         &mut graph,
-        <super::passes::dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass as Pass<
+        <super::passes::mark_token_boundaries::Dfa03ApplyBlockPrefixPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -533,7 +533,7 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::pair::sum_inblock::Pair01SumInblockPass as Pass<
+        <super::passes::count_token_boundaries_in_blocks::Pair01SumInblockPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -549,7 +549,7 @@ fn build_graph(
         ],
     )?;
     graph.add_pass(PassDesc {
-        name: <super::passes::pair::scan_block_totals::Pair02ScanBlockTotalsPass as Pass<
+        name: <super::passes::scan_token_boundary_counts::Pair02ScanBlockTotalsPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -562,7 +562,7 @@ fn build_graph(
     })?;
     reflected_pass(
         &mut graph,
-        <super::passes::pair::apply_block_prefix::Pair03ApplyBlockPrefixPass as Pass<
+        <super::passes::rank_token_boundaries::Pair03ApplyBlockPrefixPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -586,7 +586,7 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::compact::boundaries::kept::CompactBoundariesKeptPass as Pass<
+        <super::passes::compact_kept_token_boundaries::CompactBoundariesKeptPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -621,7 +621,7 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::compact::boundaries::all::CompactBoundariesAllPass as Pass<
+        <super::passes::compact_all_token_boundaries::CompactBoundariesAllPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,
@@ -644,7 +644,7 @@ fn build_graph(
     )?;
     reflected_pass(
         &mut graph,
-        <super::passes::tokens_build::TokensBuildPass as Pass<
+        <super::passes::build_tokens::TokensBuildPass as Pass<
             super::buffers::GpuBuffers,
             DebugOutput,
         >>::NAME,

@@ -1,4 +1,4 @@
-// shaders/lexer/compact_boundaries.slang
+// shaders/lexer/compact_token_boundaries.slang
 // Compact boundaries and write per-token data.
 // This file provides two entry points:
 //   - compact_boundaries_all   : uses ANY-end predicate (emit || eof)

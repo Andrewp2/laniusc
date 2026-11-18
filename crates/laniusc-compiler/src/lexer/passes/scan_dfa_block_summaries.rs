@@ -22,7 +22,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Dfa02ScanBlockSummariesPass,
     label: "dfa_02_scan_block_summaries",
     entry: "dfa_02_scan_block_summaries",
-    shader: "lexer/dfa/02_scan_block_summaries",
+    shader: "lexer/scan_dfa_block_summaries",
     dynamic_uniforms: ["gScan"]
 );
 

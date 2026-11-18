@@ -20,7 +20,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Pair02ScanBlockTotalsPass,
     label: "pair_02_scan_block_totals",
     entry: "pair_02_scan_block_totals",
-    shader: "lexer/pair/02_scan_block_totals"
+    shader: "lexer/scan_token_boundary_counts"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockTotalsPass {
@@ -74,7 +74,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         }
 
         // One block has its prefix already: pair_01 seeded it in ping.
-        if super::block_total_scan_steps(n).is_empty() {
+        if super::token_boundary_scan_steps::block_total_scan_steps(n).is_empty() {
             if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
                 return Err(anyhow::anyhow!(
                     "validation in pass {}: {:?}",
@@ -167,11 +167,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             b.dfa_02_pong.byte_size,
         );
 
-        let last = if super::block_total_scan_last_writer_is_ping(b.nb_sum) {
-            &b.dfa_02_ping
-        } else {
-            &b.dfa_02_pong
-        };
+        let last =
+            if super::token_boundary_scan_steps::block_total_scan_last_writer_is_ping(b.nb_sum) {
+                &b.dfa_02_ping
+            } else {
+                &b.dfa_02_pong
+            };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

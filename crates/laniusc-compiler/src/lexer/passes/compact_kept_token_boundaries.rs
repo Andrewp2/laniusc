@@ -14,7 +14,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     CompactBoundariesKeptPass,
     label: "compact_boundaries_kept",
     entry: "compact_boundaries_kept",
-    shader: "lexer/compact_boundaries"
+    shader: "lexer/compact_token_boundaries"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundariesKeptPass {

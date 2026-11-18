@@ -14,7 +14,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Dfa03ApplyBlockPrefixPass,
     label: "dfa_03_apply_block_prefix",
     entry: "dfa_03_apply_block_prefix",
-    shader: "lexer/dfa/03_apply_block_prefix"
+    shader: "lexer/mark_token_boundaries"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockPrefixPass {

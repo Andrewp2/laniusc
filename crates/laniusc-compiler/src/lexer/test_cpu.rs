@@ -89,7 +89,7 @@ fn retag_distinct_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
 
 /// The words of a `machine` item are contextual keywords, each in a position
 /// no value can take; see `machine_keyword_kind` in
-/// `shaders/lexer/tokens_build.slang`. Runs after keyword retags, as the GPU
+/// `shaders/lexer/build_tokens.slang`. Runs after keyword retags, as the GPU
 /// lexer does, and reads only the kinds those retags produced.
 fn retag_machine_words_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
     let before: Vec<TestCpuToken> = tokens.to_vec();

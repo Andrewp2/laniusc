@@ -14,7 +14,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Pair03ApplyBlockPrefixPass,
     label: "pair_03_apply_block_prefix",
     entry: "pair_03_apply_block_prefix",
-    shader: "lexer/pair/03_apply_block_prefix"
+    shader: "lexer/rank_token_boundaries"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlockPrefixPass {
@@ -75,11 +75,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
             b.s_keep_final.byte_size,
         );
 
-        let last = if super::block_total_scan_last_writer_is_ping(b.nb_sum) {
-            &b.dfa_02_ping
-        } else {
-            &b.dfa_02_pong
-        };
+        let last =
+            if super::token_boundary_scan_steps::block_total_scan_last_writer_is_ping(b.nb_sum) {
+                &b.dfa_02_ping
+            } else {
+                &b.dfa_02_pong
+            };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

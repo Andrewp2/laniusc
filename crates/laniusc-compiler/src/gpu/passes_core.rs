@@ -967,8 +967,8 @@ mod compute_pass_counting_tests {
             ("gpu/typed_constant_tests.rs", 2),
             ("lexer/driver.rs", 4),
             ("lexer/driver/readback.rs", 3),
-            ("lexer/passes/dfa/scan_block_summaries.rs", 1),
-            ("lexer/passes/pair/scan_block_totals.rs", 1),
+            ("lexer/passes/scan_dfa_block_summaries.rs", 1),
+            ("lexer/passes/scan_token_boundary_counts.rs", 1),
             // The fill of `LANIUS_CHECK=parser-poison`, a validation mode.
             ("parser/buffers.rs", 1),
             ("parser/buffers/scans.rs", 3),

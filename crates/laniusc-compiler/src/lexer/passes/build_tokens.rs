@@ -13,7 +13,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     TokensBuildPass,
     label: "tokens_build",
     entry: "tokens_build",
-    shader: "lexer/tokens_build"
+    shader: "lexer/build_tokens"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass {

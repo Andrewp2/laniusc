@@ -14,7 +14,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     Dfa01ScanInblockPass,
     label: "dfa_01_scan_inblock",
     entry: "dfa_01_scan_inblock",
-    shader: "lexer/dfa/01_scan_inblock"
+    shader: "lexer/summarize_dfa_blocks"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblockPass {

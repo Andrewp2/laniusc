@@ -1,10 +1,3 @@
-/// Applies token-boundary block prefixes.
-pub mod apply_block_prefix;
-/// Prefix-scans token-boundary block totals.
-pub mod scan_block_totals;
-/// Counts token boundaries inside blocks.
-pub mod sum_inblock;
-
 use crate::gpu::scan::{PingPongScanStep, ScanFinalize, ping_pong_scan_steps};
 
 /// Pair scan block totals are already seeded into the ping buffer by `pair_01`.
