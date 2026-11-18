@@ -321,7 +321,7 @@ impl GpuTraitSolver {
                     "implementation projection receipt",
                 )?,
             ],
-            "implementation projection receipt",
+            crate::readback_label!("implementation projection receipt"),
         )?;
         let header = words(&first[0])?;
         let used = match plan.completion(&header, one_status(&first[1])?) {
@@ -352,7 +352,7 @@ impl GpuTraitSolver {
             &self.device,
             &self.queue,
             &regions,
-            "implementation application rows",
+            crate::readback_label!("implementation application rows"),
         )?;
         self.query_scratch_poisoned = false;
         let mut raw = raw.iter();

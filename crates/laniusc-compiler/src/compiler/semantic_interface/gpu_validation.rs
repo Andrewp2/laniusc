@@ -206,7 +206,7 @@ pub(crate) fn validate_encoded_artifacts(
     }
     queue.submit(Some(encoder.finish()));
     let slice = readback.buffer.slice(0..4 * artifacts.len() as u64);
-    passes_core::map_readback_blocking(device, &slice, "semantic-interface validation")
+    passes_core::map_readback_blocking(device, &slice, crate::readback_label!("semantic-interface validation"))
         .map_err(|error| format!("{error:#}"))?;
     let keys = slice.get_mapped_range()
         .chunks_exact(4)

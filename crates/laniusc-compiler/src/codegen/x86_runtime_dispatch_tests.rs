@@ -29,7 +29,7 @@ fn words(values: &[u32]) -> Vec<u8> {
 
 fn read_bytes(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u8> {
     let slice = buffer.slice(..);
-    map_readback_blocking(device, &slice, "runtime dispatch regression").unwrap();
+    map_readback_blocking(device, &slice, "runtime dispatch regression".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let result = mapped.to_vec();
     drop(mapped);

@@ -298,7 +298,7 @@ fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
     resources["boundary_results"].copy_to(&mut encoder, 0, &readback, 0, (words * 4) as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, key).unwrap();
+    map_readback_blocking(&gpu.device, &slice, "canonical_type_leaf.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let actual: Vec<_> = mapped.chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().unwrap())).collect();

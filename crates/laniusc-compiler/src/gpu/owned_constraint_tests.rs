@@ -437,7 +437,7 @@ fn physical_gpu_owned_constraints_preserve_matching_overlap_and_fixed_contracts(
     results.copy_to(&mut encoder, 0, &readback, 0, (word_count * 4) as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "owned_constraints.readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "owned_constraints.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words: Vec<u32> = mapped
         .chunks_exact(4)

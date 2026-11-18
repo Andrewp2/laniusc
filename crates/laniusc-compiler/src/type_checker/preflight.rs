@@ -259,7 +259,7 @@ impl GpuTypeChecker {
         crate::gpu::passes_core::map_readback_blocking(
             device,
             &slice,
-            "type_check.preflight_capacities",
+            crate::readback_label!("type_check.preflight_capacities"),
         )?;
         let mapped = slice.get_mapped_range();
         let [module_records, call_param_rows, call_arg_rows] =

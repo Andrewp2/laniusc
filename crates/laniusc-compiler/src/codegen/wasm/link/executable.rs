@@ -497,13 +497,13 @@ impl GpuWasmLinker {
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
                 &output_slice,
-                "codegen.wasm.link.page.output",
+                crate::readback_label!("codegen.wasm.link.page.output"),
                 std::time::Duration::from_secs(30),
             )?;
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
                 &status_slice,
-                "codegen.wasm.link.page.status",
+                crate::readback_label!("codegen.wasm.link.page.status"),
                 std::time::Duration::from_secs(30),
             )?;
             let output_mapped = output_slice.get_mapped_range();

@@ -1010,7 +1010,7 @@ fn read_many(
     queue: &wgpu::Queue,
     parts: &[(&wgpu::Buffer, usize)],
 ) -> Result<Vec<u32>> {
-    read_many_labeled(device, queue, parts, "retained_substitution.readback")
+    read_many_labeled(device, queue, parts, crate::readback_label!("retained_substitution.readback"))
 }
 
 /// `read_many` under another readback label.
@@ -1018,7 +1018,7 @@ pub(super) fn read_many_labeled(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     parts: &[(&wgpu::Buffer, usize)],
-    label: &str,
+    label: crate::gpu::passes_core::ReadbackLabel,
 ) -> Result<Vec<u32>> {
     let sizes: Vec<u64> = parts
         .iter()
@@ -1029,7 +1029,7 @@ pub(super) fn read_many_labeled(
         return Ok(Vec::new());
     }
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
+        label: Some(label.as_str()),
         size: bytes,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,

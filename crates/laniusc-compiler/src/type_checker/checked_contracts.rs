@@ -457,7 +457,7 @@ fn read_scalars(
     }
     let mut batch = WordBatch::default();
     let rows = ScalarRows::push(&mut batch, inputs, requests)?;
-    rows.ordered(&batch.read(readback, device, queue, "checked contract facts")?)
+    rows.ordered(&batch.read(readback, device, queue, crate::readback_label!("checked contract facts"))?)
 }
 
 fn validate_source_rows(source: ContractSourceRows<'_>) -> Result<()> {

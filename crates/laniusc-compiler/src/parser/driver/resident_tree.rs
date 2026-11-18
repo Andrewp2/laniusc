@@ -56,7 +56,10 @@ impl U32Readback {
     }
 
     fn map(&self) {
-        crate::gpu::passes_core::map_readback_for_progress(&self.buffer.slice(..), self.label);
+        crate::gpu::passes_core::map_readback_for_progress(
+            &self.buffer.slice(..),
+            crate::readback_label!("parser.resident-tree"),
+        );
     }
 
     fn read_words(&self, count: usize) -> Result<Vec<u32>> {
@@ -2480,7 +2483,7 @@ impl GpuParser {
         readbacks.map_all();
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
-            "parser.resident-tree",
+            crate::readback_label!("parser.resident-tree"),
             wgpu::PollType::wait_indefinitely(),
         );
         readbacks.decode(bufs)

@@ -486,7 +486,7 @@ fn read_partition_batch(
     crate::gpu::passes_core::wait_for_readback_map(
         device,
         &status_slice,
-        "codegen.x86.link.symbol_partition.status",
+        crate::readback_label!("codegen.x86.link.symbol_partition.status"),
         std::time::Duration::from_secs(30),
     )?;
     let mapped = status_slice.get_mapped_range();
@@ -517,7 +517,7 @@ fn read_partition_batch(
     crate::gpu::passes_core::wait_for_readback_map(
         device,
         &values_slice,
-        "codegen.x86.link.symbol_partition.values",
+        crate::readback_label!("codegen.x86.link.symbol_partition.values"),
         std::time::Duration::from_secs(30),
     )?;
     let mapped = values_slice.get_mapped_range();

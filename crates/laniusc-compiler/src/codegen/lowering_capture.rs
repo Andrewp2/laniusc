@@ -49,7 +49,7 @@ pub fn take() -> Vec<BTreeMap<String, Vec<u32>>> {
                 .into_iter()
                 .map(|(name, buffer, bytes)| {
                     let slice = buffer.slice(..bytes);
-                    map_readback_blocking(device, &slice, "lowering capture")
+                    map_readback_blocking(device, &slice, crate::debug_readback_label!("lowering capture"))
                         .expect("map lowering capture");
                     let words = slice
                         .get_mapped_range()

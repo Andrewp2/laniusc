@@ -191,7 +191,7 @@ impl GpuTraitSolver {
             &self.device,
             &self.queue,
             &regions,
-            "native layout completions",
+            crate::readback_label!("native layout completions"),
         )?;
         let mut prefixes = Vec::with_capacity(plans.len());
         for (i, plan) in plans.iter().enumerate() {
@@ -267,7 +267,7 @@ impl GpuTraitSolver {
                 &self.device,
                 &self.queue,
                 &payload_regions,
-                "native semantic graph prefixes",
+                crate::readback_label!("native semantic graph prefixes"),
             )?
         };
         self.query_scratch_poisoned = false;

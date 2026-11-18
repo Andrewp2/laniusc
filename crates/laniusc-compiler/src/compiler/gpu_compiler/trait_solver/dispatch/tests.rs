@@ -568,7 +568,7 @@ fn gpu_catalog_admission_rejects_malformed_input_directories_and_recovers() {
         )
         .unwrap();
         let raw = readback
-            .read_regions(device, queue, &[region], "directory test GPU receipt")
+            .read_regions(device, queue, &[region], "directory test GPU receipt".into())
             .unwrap();
         one_status(&raw[0]).unwrap()
     };

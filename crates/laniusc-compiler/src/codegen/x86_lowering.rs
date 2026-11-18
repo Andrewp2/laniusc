@@ -1105,7 +1105,7 @@ mod tests {
 
     fn read_words(device: &wgpu::Device, buffer: &LaniusBuffer<u8>) -> Vec<u32> {
         let slice = buffer.slice(..);
-        map_readback_blocking(device, &slice, "x86 LIR readback").unwrap();
+        map_readback_blocking(device, &slice, "x86 LIR readback".into()).unwrap();
         let mapped = slice.get_mapped_range();
         let words = mapped
             .chunks_exact(4)

@@ -45,7 +45,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &slice,
-            "parser.hir_semantic_count",
+            crate::readback_label!("parser.hir_semantic_count"),
         )?;
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 30)?;
@@ -194,7 +194,7 @@ impl GpuParser {
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
             &slice,
-            "parser.recorded-ll1-hir.status",
+            crate::readback_label!("parser.recorded-ll1-hir.status"),
         )?;
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 11)?;

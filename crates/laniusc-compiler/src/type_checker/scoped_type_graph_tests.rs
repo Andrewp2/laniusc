@@ -296,7 +296,7 @@ fn physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity() {
     results.copy_to(&mut encoder, 0, &readback, 0, byte_count as u64);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(&gpu.device, &slice, "scope_probe.readback").unwrap();
+    map_readback_blocking(&gpu.device, &slice, "scope_probe.readback".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let words: Vec<_> = mapped.chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().unwrap())).collect();

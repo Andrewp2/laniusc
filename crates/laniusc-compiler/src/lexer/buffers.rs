@@ -158,7 +158,7 @@ impl GpuBuffers {
     pub(crate) fn read_recorded_count_features_and_error(
         &self,
         device: &wgpu::Device,
-        label: &str,
+        label: crate::gpu::passes_core::ReadbackLabel,
         through: Option<wgpu::SubmissionIndex>,
     ) -> anyhow::Result<(u32, u32, Option<u32>)> {
         // The wait lasts until the whole frontend recorded after the lexer

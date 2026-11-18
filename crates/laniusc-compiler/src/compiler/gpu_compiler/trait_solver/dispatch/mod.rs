@@ -1019,7 +1019,7 @@ impl GpuTraitSolver {
             &self.device,
             &self.queue,
             &regions,
-            "program proof wave progress",
+            crate::readback_label!("program proof wave progress"),
         )?;
         let catalog_status = one_status(&raw[4])?;
         let mut admission = None;

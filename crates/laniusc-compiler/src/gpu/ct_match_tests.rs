@@ -52,7 +52,7 @@ fn read_words(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &LaniusBuffer<
     buffer.copy_to(&mut encoder, 0, &readback, 0, (words * 4) as u64);
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(device, &slice, "ct_match_cases").unwrap();
+    map_readback_blocking(device, &slice, "ct_match_cases".into()).unwrap();
     let mapped = slice.get_mapped_range();
     let out = mapped.chunks_exact(4).map(|w| u32::from_le_bytes(w.try_into().unwrap())).collect();
     drop(mapped);

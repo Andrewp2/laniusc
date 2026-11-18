@@ -325,7 +325,7 @@ pub(crate) fn gpu_packed_dependency_page(
     encoder.copy_buffer_counted(&output.buffer, output.absolute_offset(0), &readback, 0, bytes);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    passes_core::map_readback_blocking(&gpu.device, &slice, "dependency page")
+    passes_core::map_readback_blocking(&gpu.device, &slice, "dependency page".into())
         .map_err(|err| err.to_string())?;
     let words = slice
         .get_mapped_range()
