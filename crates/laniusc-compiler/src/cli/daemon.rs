@@ -37,6 +37,7 @@ use crate::{
         GpuCompiler,
         GpuCompilerBackends,
         NativeLinkOptions,
+        embedded_core_source,
         load_entry_path_manifest_with_source_roots,
         load_explicit_source_pack_from_path_manifest,
     },
@@ -239,7 +240,7 @@ struct SourceFileStamp {
 
 struct CachedSourcePack {
     input: PathBuf,
-    stdlib_root: PathBuf,
+    stdlib_root: Option<PathBuf>,
     source_roots: Vec<PathBuf>,
     /// A native link reads the pack through its path manifest.
     path_backed: bool,
@@ -316,14 +317,14 @@ impl SourcePackCache {
     fn load<'a>(
         &'a mut self,
         input: &Path,
-        stdlib_root: &Path,
+        stdlib_root: Option<&Path>,
         source_roots: &[PathBuf],
         path_backed: bool,
         resident_limits: crate::codegen::unit::CompilationUnitLimits,
     ) -> Result<&'a CachedCompileInput, crate::compiler::CompileError> {
         let same_project = self.entry.as_ref().is_some_and(|entry| {
             entry.input == input
-                && entry.stdlib_root == stdlib_root
+                && entry.stdlib_root.as_deref() == stdlib_root
                 && entry.source_roots == source_roots
                 && entry.path_backed == path_backed
         });
@@ -343,7 +344,7 @@ impl SourcePackCache {
             load_entry_path_manifest_with_source_roots(
                 input,
                 &EntrySourceRoots {
-                    stdlib_root: Some(stdlib_root.to_path_buf()),
+                    stdlib_root: stdlib_root.map(Path::to_path_buf),
                     user_roots: source_roots.to_vec(),
                 },
             )?
@@ -364,7 +365,7 @@ impl SourcePackCache {
         if let (Some(file_stamps), Some(directory_snapshots)) = (file_stamps, directory_snapshots) {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
-                stdlib_root: stdlib_root.to_path_buf(),
+                stdlib_root: stdlib_root.map(Path::to_path_buf),
                 source_roots: source_roots.to_vec(),
                 path_backed,
                 source_pack,
@@ -525,6 +526,9 @@ fn source_file_stamp(path: &Path) -> Option<SourceFileStamp> {
 }
 
 fn source_file_stamp_values(path: &Path) -> Option<(u64, SystemTime)> {
+    if let Some(source) = embedded_core_source(path) {
+        return Some((source.len() as u64, std::time::UNIX_EPOCH));
+    }
     let metadata = fs::metadata(path).ok()?;
     Some((metadata.len(), metadata.modified().ok()?))
 }
@@ -555,10 +559,10 @@ fn file_stamp_changes(stamps: &[SourceFileStamp]) -> Option<Vec<(usize, SourceFi
 fn source_directory_snapshots(
     source_pack: &ExplicitSourcePackPathManifest,
     input: &Path,
-    stdlib_root: &Path,
+    stdlib_root: Option<&Path>,
     source_roots: &[PathBuf],
 ) -> Option<Vec<SourceDirectorySnapshot>> {
-    let roots = [input.parent(), Some(stdlib_root)]
+    let roots = [input.parent(), stdlib_root]
         .into_iter()
         .flatten()
         .chain(source_roots.iter().map(PathBuf::as_path))
@@ -569,6 +573,11 @@ fn source_directory_snapshots(
         .collect::<Vec<_>>();
     let mut directories = BTreeSet::new();
     for file in &source_pack.files {
+        if embedded_core_source(&file.path).is_some() {
+            // Detect a disk core override added after discovery.
+            directories.extend(stdlib_root.map(Path::to_path_buf));
+            continue;
+        }
         let Some(parent) = file.path.parent() else {
             continue;
         };
@@ -1912,13 +1921,7 @@ async fn compile_request(
     let Some(output) = request.output else {
         return job_error(id, started, "compile request is missing output".into());
     };
-    let Some(stdlib_root) = request.stdlib_root.or_else(|| options.stdlib_root.clone()) else {
-        return job_error(
-            id,
-            started,
-            "compile request needs stdlib_root or daemon --stdlib-root".into(),
-        );
-    };
+    let stdlib_root = request.stdlib_root.or_else(|| options.stdlib_root.clone());
     let source_roots = match source_roots {
         Ok(source_roots) => source_roots,
         Err(message) => return job_error(id, started, message),
@@ -1948,7 +1951,7 @@ async fn compile_request(
     let load_started = Instant::now();
     let source_pack = match source_pack_cache.load(
         &input,
-        &stdlib_root,
+        stdlib_root.as_deref(),
         &source_roots,
         native_link.is_some(),
         compiler.resident_source_unit_limits(),
@@ -2517,7 +2520,7 @@ mod tests {
         let mut cache = SourcePackCache::default();
         let resident_limits = crate::codegen::unit::CompilationUnitLimits::default();
         let first = cache
-            .load(&entry, &stdlib_root, &[], false, resident_limits)
+            .load(&entry, Some(&stdlib_root), &[], false, resident_limits)
             .expect("load initial cached source pack");
         assert!(first.resident().is_some_and(|source_pack| {
             source_pack
@@ -2529,7 +2532,7 @@ mod tests {
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
-            .load(&entry, &stdlib_root, &[], false, resident_limits)
+            .load(&entry, Some(&stdlib_root), &[], false, resident_limits)
             .expect("reload changed source pack");
         assert!(second.resident().is_some_and(|source_pack| {
             source_pack
@@ -2570,7 +2573,7 @@ mod tests {
         let limits = crate::codegen::unit::CompilationUnitLimits::default();
         let texts = |cache: &mut SourcePackCache| {
             cache
-                .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
+                .load(&entry, Some(&stdlib_root), std::slice::from_ref(&source_root), false, limits)
                 .expect("load resident source pack")
                 .resident()
                 .expect("default limits keep this project resident")
@@ -2625,7 +2628,7 @@ mod tests {
             max_source_files: 1,
         };
         let initial_count = cache
-            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
+            .load(&entry, Some(&stdlib_root), std::slice::from_ref(&source_root), false, limits)
             .expect("load initial bounded source pack")
             .bounded()
             .expect("tiny limits should select bounded input")
@@ -2635,7 +2638,7 @@ mod tests {
         let changed_source = "module unit;\nfn unit() { print(123456); return; }\n";
         fs::write(&unit, changed_source).expect("change bounded cache unit");
         let refreshed = cache
-            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
+            .load(&entry, Some(&stdlib_root), std::slice::from_ref(&source_root), false, limits)
             .expect("incrementally refresh bounded source pack")
             .bounded()
             .expect("refreshed input should remain bounded");
@@ -2664,7 +2667,7 @@ mod tests {
         )
         .expect("import added bounded cache source");
         let rediscovered_count = cache
-            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
+            .load(&entry, Some(&stdlib_root), std::slice::from_ref(&source_root), false, limits)
             .expect("rediscover bounded source pack after source addition")
             .bounded()
             .expect("rediscovered input should remain bounded")

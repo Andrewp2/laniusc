@@ -25,6 +25,13 @@ pub(super) fn source_pack_path_build_manifest(
     }
 }
 
+pub(super) fn read_source_path(path: &Path) -> std::io::Result<String> {
+    match embedded_core_source(path) {
+        Some(source) => Ok(source.to_owned()),
+        None => fs::read_to_string(path),
+    }
+}
+
 /// Reads explicit source paths into source strings with path-labeled errors.
 pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
     label: &str,
@@ -33,7 +40,7 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
     let mut sources = Vec::with_capacity(paths.len());
     for (i, path) in paths.iter().enumerate() {
         let path = path.as_ref();
-        let source = fs::read_to_string(path).map_err(|err| {
+        let source = read_source_path(path).map_err(|err| {
             input_read_failed_error(
                 path,
                 format!("read explicit {label} source file {i}"),
@@ -54,6 +61,15 @@ pub(super) fn read_explicit_source_path_metadata(
     library_id: u32,
     path: &Path,
 ) -> Result<ExplicitSourcePathFile, CompileError> {
+    if let Some(source) = embedded_core_source(path) {
+        return Ok(ExplicitSourcePathFile {
+            library_id,
+            path: path.to_path_buf(),
+            byte_len: source.len(),
+            modified_unix_nanos: None,
+            line_count: None,
+        });
+    }
     let metadata = fs::metadata(path).map_err(|err| {
         input_read_failed_error(
             path,
@@ -115,6 +131,19 @@ pub(super) fn validate_explicit_source_path_file_metadata(
     path_index: usize,
     file: &ExplicitSourcePathFile,
 ) -> Result<(), CompileError> {
+    if let Some(source) = embedded_core_source(&file.path) {
+        if source.len() == file.byte_len && file.modified_unix_nanos.is_none() {
+            return Ok(());
+        }
+        return Err(explicit_source_pack_manifest_invalid_at_path(
+            &file.path,
+            format!(
+                "embedded source file {} changed since the manifest was planned",
+                file.path.display()
+            ),
+            "regenerate the source-pack manifest with this compiler",
+        ));
+    }
     let metadata = fs::metadata(&file.path).map_err(|err| {
         input_read_failed_error(
             &file.path,
@@ -195,7 +224,7 @@ pub(super) fn read_explicit_source_path_files(
     validate_explicit_source_path_files_metadata(label, files)?;
     let mut sources = Vec::with_capacity(files.len());
     for (i, file) in files.iter().enumerate() {
-        let source = fs::read_to_string(&file.path).map_err(|err| {
+        let source = read_source_path(&file.path).map_err(|err| {
             input_read_failed_error(
                 &file.path,
                 format!("read explicit {label} source file {i}"),
@@ -338,9 +367,9 @@ fn source_pack_input_limit_label(source_index: usize, message: &str) -> Diagnost
 /// Compile one in-memory source string to WASM with the process-global GPU
 /// compiler.
 pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu(src)?;
+    let pack = load_in_memory_entry(src, Path::new("<source>"))?;
     global_wasm_gpu_compiler()?
-        .compile_expanded_source_to_wasm(&src)
+        .compile_source_pack_manifest_to_wasm(&pack)
         .await
 }
 
@@ -362,15 +391,15 @@ fn frontend_check_missed_generic_impl(result: &Result<(), CompileError>) -> bool
 /// Type-check one in-memory source string with the process-global frontend GPU
 /// compiler.
 pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
-    let src = prepare_source_for_gpu(src)?;
+    let pack = load_in_memory_entry(src, Path::new("<source>"))?;
     let checked = global_frontend_gpu_compiler()?
-        .type_check_expanded_source(&src)
+        .type_check_source_pack_manifest(&pack)
         .await;
     if !frontend_check_missed_generic_impl(&checked) {
         return checked;
     }
     global_x86_gpu_compiler()?
-        .compile_expanded_source_to_x86_64(&src)
+        .compile_source_pack_manifest_to_x86_64(&pack)
         .await
         .map(|_| ())
 }
@@ -512,14 +541,7 @@ where
 pub async fn type_check_source_with_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<(), CompileError> {
-    let path = path.as_ref();
-    let checked = global_frontend_gpu_compiler()?
-        .type_check_source_from_path(path)
-        .await;
-    if !frontend_check_missed_generic_impl(&checked) {
-        return checked;
-    }
-    compile_source_to_x86_64_with_gpu_codegen_from_path(path).await.map(|_| ())
+    type_check_entry_with_source_roots(path, &EntrySourceRoots::default()).await
 }
 
 /// Compile an in-memory source pack to WASM with the process-global GPU
@@ -598,17 +620,15 @@ where
 pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
-    global_wasm_gpu_compiler()?
-        .compile_source_to_wasm_from_path(path)
-        .await
+    compile_entry_to_wasm_with_source_roots(path, &EntrySourceRoots::default()).await
 }
 
 /// Compile one in-memory source string to x86_64 output with the process-global
 /// GPU compiler.
 pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu(src)?;
+    let pack = load_in_memory_entry(src, Path::new("<source>"))?;
     global_x86_gpu_compiler()?
-        .compile_expanded_source_to_x86_64(&src)
+        .compile_source_pack_manifest_to_x86_64(&pack)
         .await
 }
 
@@ -617,11 +637,7 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<
 pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
-    let path = path.as_ref();
-    let source = prepare_source_for_gpu_from_path(path)?;
-    global_x86_gpu_compiler()?
-        .compile_expanded_source_to_x86_64_with_diagnostic_path(&source, path.to_path_buf())
-        .await
+    compile_entry_to_x86_64_with_source_roots(path, &EntrySourceRoots::default()).await
 }
 
 /// Compile an in-memory source pack to x86_64 output with the process-global

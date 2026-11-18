@@ -18,7 +18,11 @@ pub use inputs::{
     load_explicit_source_pack_manifest_from_paths,
     load_explicit_source_pack_path_manifest_from_paths,
 };
-pub(crate) use inputs::source_root_import_paths_match;
+pub(crate) use inputs::{embedded_core_source, source_root_import_paths_match};
+pub(super) use inputs::{
+    EMBEDDED_CORE_ROOT, LANGUAGE_ITEM_MODULE, embedded_core_import_path, load_in_memory_entry,
+    uses_embedded_core,
+};
 
 mod compact_manifest;
 pub(super) use compact_manifest::compact_manifest_from_dependency_streams;

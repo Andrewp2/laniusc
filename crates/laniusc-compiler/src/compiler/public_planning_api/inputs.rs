@@ -126,8 +126,7 @@ where
         stdlib_root: stdlib_root.map(|path| path.as_ref().to_path_buf()),
         user_roots: vec![source_root.as_ref().to_path_buf()],
     };
-    let (stdlib_paths, user_paths) = collect_entry_source_root_paths(entry_path.as_ref(), &roots)?;
-    load_explicit_source_pack_manifest_from_paths(&stdlib_paths, &user_paths)
+    load_entry_with_source_roots(entry_path, &roots)
 }
 
 /// Build a path-only two-library source-pack manifest from stdlib and user
@@ -256,7 +255,7 @@ where
 }
 
 /// The two-library manifest of an entry's discovered paths. Library 0 holds
-/// exactly the files resolved under the standard-library root
+/// the files resolved from embedded core or the standard-library root
 /// (`SourceRootLibrary::Stdlib`), so the manifest names it as the standard
 /// library; every other loader leaves `standard_library_id` unset.
 fn stdlib_root_path_manifest(
@@ -362,10 +361,30 @@ struct SourceRootImport {
     label_len: usize,
 }
 
-/// The language-item module: the traits a closure implements. The type
-/// checker resolves its paths without an import, so a build with a stdlib
-/// root that holds it always loads it, after the entry's imports.
-const LANGUAGE_ITEM_MODULE: &str = "core::function";
+include!(concat!(env!("OUT_DIR"), "/embedded_core.rs"));
+
+pub(crate) const EMBEDDED_CORE_ROOT: &str = "<core>";
+
+pub(crate) fn embedded_core_source(path: &Path) -> Option<&'static str> {
+    let file = path.strip_prefix(EMBEDDED_CORE_ROOT).ok()?.to_str()?;
+    let index = EMBEDDED_CORE.binary_search_by_key(&file, |&(name, _)| name).ok()?;
+    Some(EMBEDDED_CORE[index].1)
+}
+
+// A supplied core directory is authoritative, including when a file is missing.
+pub(crate) fn uses_embedded_core(stdlib_root: Option<&Path>) -> bool {
+    stdlib_root.is_none_or(|root| !root.join("core").is_dir())
+}
+
+pub(crate) fn embedded_core_import_path(import_path: &str) -> Option<PathBuf> {
+    let name = import_path.strip_prefix("core::")?;
+    let path = Path::new(EMBEDDED_CORE_ROOT).join(format!("{name}.lani"));
+    embedded_core_source(&path).map(|_| path)
+}
+
+/// The type checker resolves the closure traits without an import. Load their
+/// module after the entry's imports to preserve the standard-library order.
+pub(crate) const LANGUAGE_ITEM_MODULE: &str = "core::function";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourceRootLibrary {
@@ -396,8 +415,43 @@ fn collect_entry_source_root_paths(
     entry_path: &Path,
     roots: &EntrySourceRoots,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CompileError> {
-    let entry_path = entry_path.to_path_buf();
-    let mut search_roots = Vec::with_capacity(roots.user_roots.len() + 1);
+    collect_source_root_paths(None, entry_path, roots)
+}
+
+pub(in crate::compiler) fn load_in_memory_entry(
+    source: &str,
+    entry_path: &Path,
+) -> Result<ExplicitSourcePack, CompileError> {
+    let (stdlib_paths, _) =
+        collect_source_root_paths(Some(source), entry_path, &EntrySourceRoots::default())?;
+    let stdlib_sources = read_explicit_source_paths("stdlib", &stdlib_paths)?;
+    ExplicitSourcePack::from_libraries(vec![
+        ExplicitSourceLibrary {
+            library_id: 0,
+            sources: stdlib_sources,
+            dependency_library_ids: Vec::new(),
+        },
+        ExplicitSourceLibrary {
+            library_id: 1,
+            sources: vec![source.to_owned()],
+            dependency_library_ids: vec![0],
+        },
+    ])?
+    .with_source_paths(
+        stdlib_paths
+            .into_iter()
+            .map(Some)
+            .chain(std::iter::once(Some(entry_path.to_path_buf())))
+            .collect(),
+    )
+}
+
+fn collect_source_root_paths(
+    entry_source: Option<&str>,
+    entry_path: &Path,
+    roots: &EntrySourceRoots,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CompileError> {
+    let mut search_roots = Vec::with_capacity(roots.user_roots.len() + 2);
     let mut seen_user_roots: BTreeSet<PathBuf> = BTreeSet::new();
     for source_root in &roots.user_roots {
         let source_root =
@@ -431,52 +485,60 @@ fn collect_entry_source_root_paths(
             SourceRootLibrary::Stdlib,
         )?);
     }
-    if search_roots.is_empty() {
-        return Err(source_root_input_error(
-            "source-root import loading requires at least one source root",
-            "pass at least one user source root or standard-library root",
-        ));
+    if uses_embedded_core(roots.stdlib_root.as_deref()) {
+        search_roots.push(SourceRootSearchRoot {
+            library: SourceRootLibrary::Stdlib,
+            label: "embedded core",
+            root: PathBuf::from(EMBEDDED_CORE_ROOT),
+        });
     }
 
     let mut loaded_source_paths = BTreeSet::new();
     let mut stdlib_paths = Vec::new();
     let mut user_paths = Vec::new();
 
-    let entry_source = read_source_for_import_discovery("entry", &entry_path)?;
-    if let Ok(canonical_entry_path) = fs::canonicalize(&entry_path) {
-        loaded_source_paths.insert(canonical_entry_path);
-    }
-    let entry_imports = leading_path_imports(&entry_source, &entry_path)?;
+    let disk_source;
+    let entry_source = match entry_source {
+        Some(source) => source,
+        None => {
+            disk_source = if roots.stdlib_root.is_none() && roots.user_roots.is_empty() {
+                prepare_source_for_gpu_from_path(entry_path)?
+            } else {
+                read_source_for_import_discovery("entry", entry_path)?
+            };
+            if let Ok(canonical_entry_path) = fs::canonicalize(entry_path) {
+                loaded_source_paths.insert(canonical_entry_path);
+            }
+            &disk_source
+        }
+    };
+    let entry_imports = leading_path_imports(entry_source, entry_path)?;
 
     load_source_root_imports(
         entry_imports,
+        SourceRootLibrary::User,
         &search_roots,
         &mut loaded_source_paths,
         &mut stdlib_paths,
         &mut user_paths,
     )?;
-    if let Some(stdlib) = search_roots
-        .iter()
-        .find(|root| root.library == SourceRootLibrary::Stdlib)
-        && source_root_module_path(&stdlib.root, LANGUAGE_ITEM_MODULE).is_file()
-    {
-        let language_item = SourceRootImport {
-            path: LANGUAGE_ITEM_MODULE.to_string(),
-            source_path: entry_path.clone(),
-            line: 1,
-            column: 1,
-            source_line: String::new(),
-            label_len: 0,
-        };
-        load_source_root_imports(
-            vec![language_item],
-            &search_roots,
-            &mut loaded_source_paths,
-            &mut stdlib_paths,
-            &mut user_paths,
-        )?;
-    }
-    user_paths.push(entry_path);
+    let language_item = SourceRootImport {
+        path: LANGUAGE_ITEM_MODULE.to_string(),
+        source_path: entry_path.to_path_buf(),
+        line: 1,
+        column: 1,
+        source_line: String::new(),
+        label_len: 0,
+    };
+    load_source_root_imports(
+        vec![language_item],
+        SourceRootLibrary::Stdlib,
+        &search_roots,
+        &mut loaded_source_paths,
+        &mut stdlib_paths,
+        &mut user_paths,
+    )?;
+    user_paths.push(entry_path.to_path_buf());
 
     Ok((stdlib_paths, user_paths))
 }
@@ -517,6 +579,7 @@ fn source_roots_overlap(left: &Path, right: &Path) -> bool {
 
 fn load_source_root_imports(
     imports: Vec<SourceRootImport>,
+    importer_library: SourceRootLibrary,
     roots: &[SourceRootSearchRoot],
     loaded_source_paths: &mut BTreeSet<PathBuf>,
     stdlib_paths: &mut Vec<PathBuf>,
@@ -525,7 +588,7 @@ fn load_source_root_imports(
     let mut pending = imports
         .into_iter()
         .rev()
-        .map(|import| SourceRootLoadAction::Discover(import, SourceRootLibrary::User))
+        .map(|import| SourceRootLoadAction::Discover(import, importer_library))
         .collect::<Vec<_>>();
     while let Some(action) = pending.pop() {
         match action {
@@ -675,6 +738,16 @@ fn collect_source_root_import_matches<'a>(
     let mut matches = Vec::new();
 
     for root in roots {
+        if root.root == Path::new(EMBEDDED_CORE_ROOT) {
+            if let Some(path) = embedded_core_import_path(&import.path) {
+                matches.push(SourceRootResolvedImport {
+                    library: root.library,
+                    root_label: root.label,
+                    path,
+                });
+            }
+            continue;
+        }
         let import_path = source_root_module_path(&root.root, &import.path);
         searched_paths.push(import_path.clone());
         let canonical_import_path = match fs::canonicalize(&import_path) {
@@ -915,7 +988,7 @@ fn missing_source_root_module_error(
 }
 
 fn read_source_for_import_discovery(label: &str, path: &Path) -> Result<String, CompileError> {
-    fs::read_to_string(path).map_err(|err| {
+    read_source_path(path).map_err(|err| {
         input_read_failed_error(
             path,
             format!("read source-root {label} source file"),

@@ -416,9 +416,9 @@ pub(super) fn import_graph_edge_summary(imports: &[PackageLockfileImportEdge]) -
     edges.join("; ")
 }
 
-/// Returns all files reachable from an entry file through import edges.
-pub(super) fn import_graph_reachable_files_from_entry(
-    entry_key: &(u32, PathBuf),
+/// Returns all files reachable from the roots through import edges.
+pub(super) fn import_graph_reachable_files(
+    roots: impl IntoIterator<Item = (u32, PathBuf)>,
     import_graph: &PackageLockfileImportGraph,
 ) -> BTreeSet<(u32, PathBuf)> {
     let mut edges_by_source = BTreeMap::<(u32, PathBuf), Vec<(u32, PathBuf)>>::new();
@@ -430,7 +430,7 @@ pub(super) fn import_graph_reachable_files_from_entry(
     }
 
     let mut reachable = BTreeSet::new();
-    let mut pending = vec![entry_key.clone()];
+    let mut pending = roots.into_iter().collect::<Vec<_>>();
     while let Some(file_key) = pending.pop() {
         if !reachable.insert(file_key.clone()) {
             continue;

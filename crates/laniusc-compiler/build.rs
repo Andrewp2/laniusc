@@ -27,6 +27,7 @@ fn main() {
     check_kernel_keys(&workspace_root);
     generate_lowering_ir_opcodes(&workspace_root);
     generate_primitive_type_constants(&workspace_root);
+    generate_embedded_core(&workspace_root);
     let slangc_version_timeout = timeout_from_env_ms(
         "LANIUS_SLANGC_VERSION_TIMEOUT_MS",
         DEFAULT_SLANGC_VERSION_TIMEOUT_MS,
@@ -79,6 +80,26 @@ fn main() {
         })
         .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=LANIUS_SHADER_BUILT_DIGEST={built_digest}");
+}
+
+fn generate_embedded_core(workspace_root: &Path) {
+    let core_dir = workspace_root.join("stdlib/core");
+    println!("cargo:rerun-if-changed={}", core_dir.display());
+    let mut sources = fs::read_dir(&core_dir)
+        .expect("read core source directory")
+        .map(|entry| entry.expect("read core directory entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "lani"))
+        .collect::<Vec<_>>();
+    sources.sort();
+
+    let mut generated = String::from("const EMBEDDED_CORE: &[(&str, &str)] = &[\n");
+    for path in sources {
+        let name = path.file_name().and_then(|name| name.to_str()).expect("core source name");
+        generated.push_str(&format!("    ({name:?}, include_str!({path:?})),\n"));
+    }
+    generated.push_str("];\n");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
+    fs::write(out_dir.join("embedded_core.rs"), generated).expect("write embedded core table");
 }
 
 fn generate_primitive_type_constants(workspace_root: &Path) {
