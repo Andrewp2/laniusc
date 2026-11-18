@@ -57,124 +57,127 @@ impl TokenFrontendPasses {
         Ok(Self {
             token_delimiters_01: pass!(
                 "parser_tokens_delimiters_01_local",
-                "parser/tokens/delimiters/01_local"
+                "parser/tokens/delimiters/scan_delimiter_depths_in_blocks"
             ),
             token_delimiters_02_scan: pass!(
                 "parser_tokens_delimiters_02_scan",
-                "parser/tokens/delimiters/02_scan"
+                "parser/tokens/delimiters/scan_delimiter_depth_blocks"
             ),
             token_statement_event_scan: pass!(
                 "parser_tokens_context_scan",
-                "parser/tokens/context/scan"
+                "parser/tokens/contexts/scan_token_context_blocks"
             ),
             token_delimiters_03_owner_local: pass!(
                 "parser_tokens_delimiters_03_owner_local",
-                "parser/tokens/delimiters/03_owner_local"
+                "parser/tokens/delimiters/summarize_brace_owner_headers"
             ),
             token_delimiters_04_owner_apply: pass!(
                 "parser_tokens_delimiters_04_owner_apply",
-                "parser/tokens/delimiters/04_owner_apply"
+                "parser/tokens/delimiters/apply_brace_owner_headers"
             ),
             tokens_brace_context: pass!(
                 "parser_tokens_brace_context",
-                "parser/tokens/brace/context"
+                "parser/tokens/contexts/classify_top_level_braces"
             ),
             tokens_statement_phase_01_local: pass!(
                 "parser_tokens_statement_phase_01_local",
-                "parser/tokens/statement/phase/01_local"
+                "parser/tokens/contexts/summarize_statement_phases"
             ),
             tokens_statement_phase_02_apply: pass!(
                 "parser_tokens_statement_phase_02_apply",
-                "parser/tokens/statement/phase/02_apply"
+                "parser/tokens/contexts/apply_statement_phases"
             ),
             tokens_impl_header_01_local: pass!(
                 "parser_tokens_impl_header_01_local",
-                "parser/tokens/impl/header/01_local"
+                "parser/tokens/contexts/summarize_impl_headers"
             ),
             tokens_impl_header_02_apply: pass!(
                 "parser_tokens_impl_header_02_apply",
-                "parser/tokens/impl/header/02_apply"
+                "parser/tokens/contexts/apply_impl_headers"
             ),
             tokens_where_clause_01_local: pass!(
                 "parser_tokens_where_clause_01_local",
-                "parser/tokens/where/clause/01_local"
+                "parser/tokens/contexts/summarize_where_clauses"
             ),
             tokens_where_clause_02_apply: pass!(
                 "parser_tokens_where_clause_02_apply",
-                "parser/tokens/where/clause/02_apply"
+                "parser/tokens/contexts/apply_where_clauses"
             ),
             tokens_match_pattern_01_local: pass!(
                 "parser_tokens_match_pattern_01_local",
-                "parser/tokens/match/pattern/01_local"
+                "parser/tokens/contexts/summarize_match_patterns"
             ),
             tokens_match_pattern_02_apply: pass!(
                 "parser_tokens_match_pattern_02_apply",
-                "parser/tokens/match/pattern/02_apply"
+                "parser/tokens/contexts/apply_match_patterns"
             ),
             tokens_delimiter_match_01_depth_blocks: pass!(
                 "parser_tokens_delimiter_match_01_depth_blocks",
-                "parser/tokens/delimiter_match/01_depth_blocks"
+                "parser/tokens/delimiters/build_delimiter_match_heaps"
             ),
             tokens_delimiter_match_02_build_min_tree: pass!(
                 "parser_tokens_delimiter_match_02_build_min_tree",
-                "parser/tokens/delimiter_match/02_build_min_tree"
+                "parser/tokens/delimiters/build_delimiter_min_trees"
             ),
             tokens_bracket_01_kinds: pass!(
                 "parser_tokens_bracket_01_kinds",
-                "parser/tokens/bracket/01_kinds"
+                "parser/tokens/kinds/classify_bracket_roles"
             ),
             tokens_bracket_match_03_pair_pse: pass!(
                 "parser_tokens_bracket_match_03_pair_pse",
-                "parser/tokens/bracket/match/03_pair_pse"
+                "parser/tokens/kinds/classify_square_brackets"
             ),
             tokens_brace_match_03_pair_pse: pass!(
                 "parser_tokens_brace_match_03_pair_pse",
-                "parser/tokens/brace/match/03_pair_pse"
+                "parser/tokens/kinds/classify_closing_braces"
             ),
             tokens_delimiter_match_03_enclosing_opens: pass!(
                 "parser_tokens_delimiter_match_03_enclosing_opens",
-                "parser/tokens/delimiter_match/03_enclosing_opens"
+                "parser/tokens/delimiters/find_enclosing_delimiters"
             ),
             tokens_to_angle_kinds: pass!(
                 "parser_tokens_to_angle_kinds",
-                "parser/tokens/to/angle_kinds"
+                "parser/tokens/kinds/classify_angle_openers"
             ),
-            tokens_to_kinds: pass!("parser_tokens_to_kinds", "parser/tokens/to/kinds"),
+            tokens_to_kinds: pass!(
+                "parser_tokens_to_kinds",
+                "parser/tokens/kinds/retag_token_kinds"
+            ),
             tokens_type_path_context_01_local: pass!(
                 "parser_tokens_type_path_context_01_local",
-                "parser/tokens/type/path/context/01_local"
+                "parser/tokens/contexts/summarize_type_path_contexts"
             ),
             tokens_type_path_context_02_apply: pass!(
                 "parser_tokens_type_path_context_02_apply",
-                "parser/tokens/type/path/context/02_apply"
+                "parser/tokens/contexts/apply_type_path_contexts"
             ),
             tokens_to_identifier_kinds: pass!(
                 "parser_tokens_to_identifier_kinds",
-                "parser/tokens/to/identifier_kinds"
+                "parser/tokens/kinds/retag_identifier_kinds"
             ),
             tokens_generic_shr_00_raw_local: pass!(
                 "parser_tokens_generic_shr_00_raw_local",
-                "parser/tokens/generic/shr/00_raw_local"
+                "parser/tokens/delimiters/scan_raw_angle_depths_in_blocks"
             ),
             tokens_generic_shr_00_raw_apply: pass!(
                 "parser_tokens_generic_shr_00_raw_apply",
-                "parser/tokens/generic/shr/00_raw_apply"
+                "parser/tokens/delimiters/apply_raw_angle_depths"
             ),
             tokens_generic_shr_01_local: pass!(
                 "parser_tokens_generic_shr_01_local",
-                "parser/tokens/generic/shr/01_local"
+                "parser/tokens/kinds/summarize_generic_angle_effects"
             ),
             tokens_generic_shr_02_scan: pass!(
                 "parser_tokens_generic_shr_02_scan",
-                "parser/tokens/generic/shr/02_scan"
+                "parser/tokens/kinds/scan_generic_angle_effect_blocks"
             ),
             tokens_generic_shr_03_apply: pass!(
                 "parser_tokens_generic_shr_03_apply",
-                "parser/tokens/generic/shr/03_apply"
+                "parser/tokens/kinds/mark_generic_shift_splits"
             ),
             tokens_generic_shr_04_close_kinds: pass!(
                 "parser_tokens_generic_shr_04_close_kinds",
-                "parser/tokens/generic/shr/04_close_kinds"
+                "parser/tokens/kinds/classify_split_shift_closers"
             ),
         })
     }

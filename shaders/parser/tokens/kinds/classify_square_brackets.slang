@@ -86,7 +86,7 @@ static const uint TK_STRUCT_LIT_RBRACE = 126u;
 static const uint TK_ENUM_LBRACE = 129u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
-#include "../../impl/header/context.slang"
+#include "../contexts/impl_header_context.slang"
 
 [ForceInline]
 uint active_token_count()

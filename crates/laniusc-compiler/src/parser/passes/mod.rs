@@ -181,13 +181,13 @@ pub mod pack;
 pub mod source_file_token_end;
 /// Parser acceptance status passes.
 pub mod status;
-pub(in crate::parser) mod token_frontend;
+pub(in crate::parser) mod tokens;
 /// Parser tree recovery passes.
 pub mod tree;
 
 /// Loaded compute passes for the parser pipeline.
 pub struct ParserPasses {
-    pub(in crate::parser) token_frontend: token_frontend::TokenFrontendPasses,
+    pub(in crate::parser) token_frontend: tokens::TokenFrontendPasses,
     pub(in crate::parser) active_pair_dispatch_args: PassData,
     pub(in crate::parser) tree_feature_dispatch_args: PassData,
     pub llp_pairs: llp_pairs::LLPPairsPass,
@@ -398,7 +398,7 @@ impl ParserPasses {
     /// Loads every parser compute pass for a GPU device.
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
-            token_frontend: token_frontend::TokenFrontendPasses::new(device)?,
+            token_frontend: tokens::TokenFrontendPasses::new(device)?,
             active_pair_dispatch_args: crate::gpu::passes_core::make_main_pass!(
                 device,
                 "parser_active_pair_dispatch_args",

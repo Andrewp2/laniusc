@@ -1,4 +1,4 @@
-import parser.tokens.statement.parameter_keywords;
+import parser.tokens.contexts.generic_parameter_keywords;
 // Statement phase block summaries for token retagging.
 //
 // tokens_brace_context records the statement owner before each token. This pass

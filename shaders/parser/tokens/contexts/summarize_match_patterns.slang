@@ -176,7 +176,7 @@ bool enclosing_match_brace_before(uint token_i, out uint open_i)
            brace_semantic_kind[open_i] == TK_MATCH_LBRACE;
 }
 
-#include "arm_comma.slang"
+#include "match_arm_comma.slang"
 
 uint match_pattern_event_for(uint token_i, uint kind)
 {

@@ -1407,7 +1407,7 @@ Limits found on the way:
 - laniusc rejected a `Type::Ctor(...)` match pattern anywhere after a bare `<`
   comparison in the same file, which is why the Lanius source writes
   comparisons with `>` and `>=` (the extractor emits `<` and `≤`). Fixed in the
-  match-pattern pass (`shaders/parser/tokens/match/pattern/arm_comma.slang`).
+  match-pattern pass (`shaders/parser/tokens/contexts/match_arm_comma.slang`).
 - Lanius match arms cannot contain blocks, `if`, or a `match` inside a larger
   expression; helper functions and `// extract: inline` cover this.
 - Native recursion depth: the compiler recurses once per list element and per

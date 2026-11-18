@@ -114,7 +114,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 .expect("pair scan graph binding reflection"),
             )
         };
-        // One workgroup scans every block (02_scan_block_totals.slang).
+        // One workgroup scans every block (scan_token_boundary_counts.slang).
         let mut pass = crate::gpu::passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {

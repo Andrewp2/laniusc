@@ -50,7 +50,7 @@ uint active_token_count()
     return min(lexer_token_count[0], gParams.n_tokens);
 }
 
-#include "event.slang"
+#include "impl_header_event.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

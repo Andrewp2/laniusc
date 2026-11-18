@@ -632,9 +632,25 @@ def reference_pattern(table: dict[str, str], suffix_ok: str) -> re.Pattern | Non
     )
 
 
-def replace_references(shader_map: dict[str, str], rust_map: dict[str, str]) -> int:
+def unique_basenames(shader_map: dict[str, str]) -> dict[str, str]:
+    """Old -> new file name for moved shaders whose old name is unique in the tree."""
+    counts: dict[str, int] = {}
+    for key in slang_files():
+        counts[os.path.basename(key)] = counts.get(os.path.basename(key), 0) + 1
+    return {
+        os.path.basename(old): os.path.basename(new)
+        for old, new in shader_map.items()
+        if counts[os.path.basename(old)] == 1
+    }
+
+
+def replace_references(shader_map, rust_map, basenames: dict[str, str]) -> int:
     shader_re = reference_pattern(shader_map, r"(?!\.(?!slang\b))")
     rust_re = reference_pattern(rust_map, "")
+    name_re = None
+    if basenames:
+        names = sorted(basenames, key=len, reverse=True)
+        name_re = re.compile(r"(?<![\w/.\-])(" + "|".join(map(re.escape, names)) + r")\.slang\b")
     count = 0
     for path in scanned_files():
         text = text_of(path)
@@ -645,6 +661,8 @@ def replace_references(shader_map: dict[str, str], rust_map: dict[str, str]) -> 
             new = shader_re.sub(lambda m: shader_map[m.group(1)], new)
         if rust_re:
             new = rust_re.sub(lambda m: rust_map[m.group(1)], new)
+        if name_re:
+            new = name_re.sub(lambda m: basenames[m.group(1)] + ".slang", new)
         if new != text:
             write(path, new)
             count += 1
@@ -655,6 +673,9 @@ def leftovers(shader_map, rust_map, module_map) -> list[str]:
     needles = [re.compile(r"(?<![\w.\-/])" + re.escape(k) + r"(?![\w/\-])") for k in shader_map]
     needles += [re.compile(re.escape(k[len("crate::") :]) + r"\b") for k in module_map]
     needles += [re.compile(re.escape(k)) for k in rust_map]
+    remaining = {os.path.basename(k) for k in slang_files()}
+    gone = {os.path.basename(k) for k in shader_map} - remaining
+    needles += [re.compile(r"(?<![\w.\-])" + re.escape(b) + r"\.slang\b") for b in sorted(gone)]
     found = []
     for path in scanned_files():
         text = text_of(path)
@@ -696,6 +717,7 @@ def main() -> None:
     if DRY_RUN:
         return
 
+    basenames = unique_basenames(shader_map)
     slang_text = rewrite_slang(shader_map)
     rewriter = RustRewriter(rust_map)
     rust_text = {}
@@ -725,7 +747,7 @@ def main() -> None:
     for f, text in rust_text.items():
         write(CRATE_SRC / f, text)
 
-    files = replace_references(shader_map, rust_map)
+    files = replace_references(shader_map, rust_map, basenames)
     reverse = {v: k for k, v in rewriter.module_map.items()}
     fix_declarations(old_decls, reverse, docs, rust_map, existed)
     remove_empty_dirs(SHADERS)

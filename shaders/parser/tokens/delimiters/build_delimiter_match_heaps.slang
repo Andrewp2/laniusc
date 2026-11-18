@@ -11,7 +11,7 @@
 
 import prefix_scan;
 import blocked_search_tree;
-import parser.tokens.statement.parameter_keywords;
+import parser.tokens.contexts.generic_parameter_keywords;
 
 struct Params
 {

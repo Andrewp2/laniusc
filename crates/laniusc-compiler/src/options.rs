@@ -644,12 +644,12 @@ mod tests {
 
     #[test]
     fn a_capture_names_one_pass_and_its_parameters() {
-        let capture = options(&[("LANIUS_CAPTURE", "parser/tokens/to/kinds,index=3,dir=out,per-job")])
+        let capture = options(&[("LANIUS_CAPTURE", "parser/tokens/kinds/retag_token_kinds,index=3,dir=out,per-job")])
             .capture
             .expect("capture");
         assert_eq!(
             capture,
-            Capture { pass: "parser/tokens/to/kinds".into(), index: 3, dir: "out".into(), per_job: true }
+            Capture { pass: "parser/tokens/kinds/retag_token_kinds".into(), index: 3, dir: "out".into(), per_job: true }
         );
         assert!(options(&[("LANIUS_CAPTURE", "index=3")]).capture.is_none());
     }

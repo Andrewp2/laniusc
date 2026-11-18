@@ -1,4 +1,4 @@
-import parser.tokens.statement.parameter_keywords;
+import parser.tokens.contexts.generic_parameter_keywords;
 // Apply prefix-scanned brace-owner header context.
 
 import prefix_scan;

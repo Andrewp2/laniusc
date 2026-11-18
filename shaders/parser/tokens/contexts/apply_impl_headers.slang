@@ -1,7 +1,7 @@
 // Apply prefix-scanned impl-header context rows.
 
 import prefix_scan;
-import parser.tokens.context.before_block;
+import parser.tokens.contexts.token_context_before_block;
 
 struct Params
 {
@@ -64,7 +64,7 @@ uint event_token_index(uint event)
     return encoded == 0u ? 0xffffffffu : encoded - 1u;
 }
 
-#include "event.slang"
+#include "impl_header_event.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

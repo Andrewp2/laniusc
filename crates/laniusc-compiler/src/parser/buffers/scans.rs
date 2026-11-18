@@ -277,7 +277,7 @@ mod tests {
             &gpu.device,
             "test.context_scan",
             "main",
-            "parser/tokens/context/scan",
+            "parser/tokens/contexts/scan_token_context_blocks",
         )
         .unwrap();
         let mut encoder = gpu
@@ -366,7 +366,7 @@ mod tests {
             &gpu.device,
             "test.delimiter",
             "main",
-            "parser/tokens/delimiters/02_scan",
+            "parser/tokens/delimiters/scan_delimiter_depth_blocks",
         )
         .unwrap();
         let mut encoder = gpu
