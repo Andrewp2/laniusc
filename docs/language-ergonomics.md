@@ -412,12 +412,17 @@ lexer"). `mark` flags closure starts and a prefix sum gives each token its
 bracket depth and closure number; `roles` finds binders; `records` finds
 each closure's parameter, result type and body; `captures` resolves each
 name in a body to the nearest typed binder before the closure; `pieces`
-writes the site, the import and the struct and impls as pieces that the
-shared stages of the desugaring splice into the stream. A copied token
-keeps its source position, so a diagnostic in a closure body points at the
-source (`closure_body_error.lani`). Import discovery loads
-`core::function` for every file that contains a `|`, because the
-desugaring adds that import to a file with a closure. `mark` reads the word
+writes the site and the struct and impls as pieces that the shared stages
+of the desugaring splice into the stream. A copied token keeps its source
+position, so a diagnostic in a closure body points at the source
+(`closure_body_error.lani`). The generated code names the traits by their
+full paths, and the file imports nothing. `core::function` is a language
+item, as Rust's `core::ops`: the type checker resolves a path into it from
+any module without an import
+(`shaders/type_checker/modules/10c_resolve_qualified_paths.slang`), and a
+build with a stdlib root always loads it. A build without it reports
+`LNC0021`, "closure trait module `core::function` is missing", at the
+closure's `|`. `mark` reads the word
 `move` before a closure start; `records` then starts the site at that word
 and `pieces` ends it with `}` in place of `}.borrow()`. Fixtures:
 `tests/fixtures/language/closure*.lani` and `closure_modules/`.

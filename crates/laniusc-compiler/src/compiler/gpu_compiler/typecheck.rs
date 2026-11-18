@@ -4392,6 +4392,35 @@ fn trait_bound_diagnostic(
     )
 }
 
+/// A closure implements a trait of `core::function`, a language item. Its
+/// generated impl header labels the closure's `|`; when that header does not
+/// resolve, the build did not load the module.
+fn missing_closure_trait_module(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> Option<CompileError> {
+    let label = diagnostic_label_from_source_span(
+        path,
+        source,
+        start,
+        len,
+        "this closure implements a trait of `core::function`, which this build does not load",
+    );
+    if source.as_bytes().get(label.byte_start?) != Some(&b'|') {
+        return None;
+    }
+    Some(CompileError::Diagnostic(
+        Diagnostic::error("LNC0021", "closure trait module `core::function` is missing")
+            .with_primary_label(label)
+            .with_note(
+                "closures implement the traits of the language-item module `core::function`, which the stdlib root provides",
+            )
+            .with_help("pass a stdlib root that contains core/function.lani"),
+    ))
+}
+
 fn trait_impl_diagnostic(
     path: &Path,
     source: &str,
@@ -4399,6 +4428,11 @@ fn trait_impl_diagnostic(
     len: usize,
     detail: u32,
 ) -> Option<CompileError> {
+    if detail == 2
+        && let Some(diagnostic) = missing_closure_trait_module(path, source, start, len)
+    {
+        return Some(diagnostic);
+    }
     let (label, note) = match detail {
         2 => (
             "trait impl header does not resolve to a trait",

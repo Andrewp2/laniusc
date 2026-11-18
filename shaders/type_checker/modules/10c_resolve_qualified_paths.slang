@@ -7,7 +7,10 @@
 //   canonical id and then looking up the leaf in that module's declaration
 //   table. Private declarations are visible only from the owning module.
 //   Public cross-module declarations are visible only through an explicit
-//   resolved import edge from the consuming module to the prefix module.
+//   resolved import edge from the consuming module to the prefix module,
+//   except in `core::function`, the module of the closure traits. It is a
+//   language item, as Rust's `core::ops`: any module names its items by the
+//   full path without importing it, and the closure desugar relies on that.
 //   One-segment paths are handled by local/imported lookup passes.
 // - It does not scan source bytes, perform CPU lookup, or apply same-source
 //   shortcuts.
@@ -33,6 +36,8 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_token;
+// The name ids of the builtin symbols (type_checker/params.rs).
+StructuredBuffer<uint> language_name_id;
 RWStructuredBuffer<uint4> resolved_value_qualifier_binding;
 
 RWStructuredBuffer<uint> resolved_decl;
@@ -62,6 +67,8 @@ static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 static const uint IMPORT_STATUS_OK = 0u;
 static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
 static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
+static const uint LANGUAGE_SYMBOL_CORE = 63u;
+static const uint LANGUAGE_SYMBOL_FUNCTION = 87u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -134,14 +141,24 @@ bool decl_visible_from_path(uint path_i, uint decl_i)
     return decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC;
 }
 
-bool module_prefix_visible_from_path(uint path_i, uint module_i)
+// `core::function::Item`: a path into the language-item module.
+bool names_language_item_module(uint path_i, uint prefix_count)
+{
+    uint base = path_segment_base[path_i];
+    return prefix_count == 2u &&
+           path_segment_name_id[base] == language_name_id[LANGUAGE_SYMBOL_CORE] &&
+           path_segment_name_id[base + 1u] == language_name_id[LANGUAGE_SYMBOL_FUNCTION];
+}
+
+bool module_prefix_visible_from_path(uint path_i, uint module_i, uint prefix_count)
 {
     uint owner_module = path_owner_module_id[path_i];
     if (owner_module == INVALID)
         return false;
     if (owner_module == module_i)
         return true;
-    return has_import_edge(owner_module, module_i);
+    return names_language_item_module(path_i, prefix_count) ||
+           has_import_edge(owner_module, module_i);
 }
 
 uint find_qualified_variant(uint path_i, uint count)
@@ -217,7 +234,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         resolved_status[path_i] = PATH_RESOLVE_STATUS_INVALID_OWNER;
         return;
     }
-    if (!module_prefix_visible_from_path(path_i, module_i))
+    if (!module_prefix_visible_from_path(path_i, module_i, count - 1u))
     {
         resolved_decl[path_i] = INVALID;
         resolved_status[path_i] = PATH_RESOLVE_STATUS_MISSING_IMPORT_EDGE;
