@@ -41,6 +41,11 @@ public StructuredBuffer<uint> resolved_dependency_trait_header; // 4 words per p
 
 public globallycoherent RWStructuredBuffer<uint4> rt_x_tflags;
 public globallycoherent RWStructuredBuffer<uint4> rt_x_tscan;
+// For each bound or impl trait node, 14b stages its immutable key and keeps
+// the claimed slot plus one. 14d reads the term from the slot's second word.
+public globallycoherent RWStructuredBuffer<uint4> rt_x_trait_key;
+public globallycoherent RWStructuredBuffer<uint2> rt_x_trait_terms;
+public RWStructuredBuffer<uint> rt_x_trait_term_slot;
 
 public static const uint PREDICATE_GENERIC_BOUND = 1u;
 public static const uint PREDICATE_TRAIT_IMPL = 2u;
@@ -101,6 +106,16 @@ public bool trait_impl_row(uint row)
 {
     return valid_row(row) && compact_hir_core[row].kind == HIR_IMPL &&
         compact_hir_payload[row].a == HIR_IMPL_TRAIT_PAYLOAD && valid_row(compact_hir_payload[row].b);
+}
+
+public bool accepted_trait_impl(uint row, uint node)
+{
+    uint method_status = predicate_fact(F_METHOD_STATUS, row);
+    return predicate_fact(F_STATUS, row) == PREDICATE_STATUS_OK &&
+        compact_hir_semantic_facts[row].semantic_kind == HIR_SEMANTIC_IMPL_TRAIT &&
+        compact_hir_semantic_facts[node].semantic_kind == HIR_SEMANTIC_TYPE_PATH &&
+        compact_hir_core[node].parent == row &&
+        (method_status == PREDICATE_STATUS_OK || method_status == 0xffffffffu);
 }
 
 // An exported generic-bound predicate's owner row: a callable or an impl
@@ -198,6 +213,20 @@ public struct BoundArgs : IRtArgs
 {
     public uint start;
     public uint arg(uint index) { return type_row_term(compact_type_args[start + index].value); }
+}
+
+public uint exported_trait_decl(uint node)
+{
+    uint decl = rt_x_trait_key[node].y;
+    return decl == 0u ? RT_INVALID : decl;
+}
+
+public uint exported_trait_term(uint node)
+{
+    uint slot = rt_x_trait_term_slot[node];
+    if (slot == 0u) return RT_UNKNOWN;
+    uint term = rt_x_trait_terms[slot - 1u].y;
+    return rt_is_stored_term(term) ? term : RT_UNKNOWN;
 }
 
 // (file-relative byte start, byte length) of tokens [first, end).

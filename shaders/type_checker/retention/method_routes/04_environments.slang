@@ -8,6 +8,33 @@ uint selected_binding(uint4 selected,uint param)
     }
     return RT_UNKNOWN;
 }
+
+// Each request owns its argument block already. Only the winning request
+// allocates the ENV. Bound-route resolution reads its result after this pass.
+uint intern_environment(uint request, RtTermKey key, MrArgs args, uint arity)
+{
+    uint slots,stride; mr_env_slots.GetDimensions(slots,stride);
+    uint slot=rt_probe_start(key.hash.x,slots);
+    for (uint probe=0u;probe<slots;probe++)
+    {
+        uint prior=mr_env_slots[slot];
+        if (prior==0u)
+        {
+            DeviceMemoryBarrier();
+            InterlockedCompareExchange(mr_env_slots[slot],0u,request+1u,prior);
+            if (prior==0u) return rt_intern_term(key,args);
+        }
+        DeviceMemoryBarrier();
+        uint other=prior-1u;
+        bool same=mr_selected[other].x==key.words.x;
+        for (uint k=0u;same && k<arity;k++)
+            same=mr_args[other*64u+k]==args.arg(k);
+        if (same) return RT_PARAM_BIT | other;
+        slot=(slot+1u)&(slots-1u);
+    }
+    return RT_UNKNOWN;
+}
+
 [shader("compute")]
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
@@ -50,7 +77,7 @@ void main(uint3 id:SV_DispatchThreadID)
     uint tm=types==32u ? 0xffffffffu : (1u<<types)-1u; uint cm=constants==32u ? 0xffffffffu : (1u<<constants)-1u;
     RtTermKey key=rt_key_begin(RT_KIND_ENV,n,types,uint3(selected.x,tm,cm));
     for (uint k=0u;k<n;k++) rt_key_fold(key,args.arg(k));
-    uint result=rt_intern_term(key,args);
-    if (!rt_is_stored_term(result)) { mr_fail(i,12u); return; }
+    uint result=intern_environment(i,key,args,n);
+    if (result==RT_UNKNOWN) { mr_fail(i,12u); return; }
     mr_out[i]=uint4(selected.x,result,selected.w,1u);
 }

@@ -64,17 +64,51 @@ uint count_class(uint count)
     return rt_intern_term(key, none);
 }
 
-uint value_term(uint3 value)
-{
-    RtTermKey key = rt_key_begin(RT_KIND_CC_VALUE, 0u, 0u, value);
-    RtStoredArgs none; none.base = 0u;
-    return rt_intern_term(key, none);
-}
-
 void store_failed(uint task, uint term, uint env)
 {
     sb_overflow(SB_OVERFLOW_STORE);
     fail(task, SB_CAPACITY, term, env, RT_NONE);
+}
+
+// Publish an immutable candidate address, then let just the winner allocate.
+// Edges and root publication resolve the slot after this dispatch.
+void stage_result(uint task, uint term, uint env, RtTermKey key, EdgeArgs args)
+{
+    uint4 header = uint4(key.head, key.words);
+    sb_term_keys[task] = header;
+    uint slots; uint stride;
+    sb_term_slots.GetDimensions(slots, stride);
+    uint slot = (key.hash.x & sb_config[SB_CFG_HASH_MASK]) & (slots - 1u);
+    uint arity = (key.head >> 8u) & 0xffu;
+    for (uint probe = 0u; probe < slots; probe++)
+    {
+        uint prior = sb_term_slots[slot].x;
+        if (prior == 0u)
+        {
+            DeviceMemoryBarrier();
+            InterlockedCompareExchange(sb_term_slots[slot].x, 0u, task + 1u, prior);
+            if (prior == 0u)
+            {
+                uint result = rt_intern_term(key, args);
+                sb_term_slots[slot].y = result;
+                if (!rt_is_term(result)) { store_failed(task, term, env); return; }
+                finish(task, slot, SB_TERM_SLOT, term, env, RT_NONE, SB_ENV_NONE);
+                return;
+            }
+        }
+        DeviceMemoryBarrier();
+        bool same = all(sb_term_keys[prior - 1u] == header);
+        uint base = sb_task_key[prior - 1u].w;
+        for (uint i = 0u; same && i < arity; i++)
+            same = sb_edges[base + i].x == args.arg(i);
+        if (same)
+        {
+            finish(task, slot, SB_TERM_SLOT, term, env, RT_NONE, SB_ENV_NONE);
+            return;
+        }
+        slot = (slot + 1u) & (slots - 1u);
+    }
+    fail(task, SB_INVARIANT, term, env, RT_NONE);
 }
 
 void expand_round(uint3 dtid)
@@ -138,10 +172,10 @@ void eval_round(uint3 dtid)
         if (e.y == SB_EDGE_SAME) { sb_edges[base + i] = sb_edges[base + e.x]; continue; }
         if (e.y == SB_EDGE_TASK)
         {
-            uint4 r = sb_task_res[e.x];
+            uint2 f;
+            uint4 r = sb_task_result(sb_edge_task(e.x), f);
             if (r.y != SB_OK)
             {
-                uint2 f = sb_task_fail[e.x];
                 finish(task, RT_UNKNOWN, r.y == SB_PENDING ? SB_INVARIANT : r.y, r.z, r.w, f.x, f.y);
                 return;
             }
@@ -170,9 +204,9 @@ void eval_round(uint3 dtid)
         }
         uint3 value;
         if (!constant_value_from_count(count, words.x, value)) { fail(task, SB_FIT_FAILED, term, env, child); return; }
-        uint folded = value_term(value);
-        if (!rt_is_term(folded)) { store_failed(task, term, env); return; }
-        finish(task, folded, SB_OK, RT_NONE, 0u, RT_NONE, SB_ENV_NONE);
+        EdgeArgs no_args;
+        no_args.base = 0u;
+        stage_result(task, term, env, rt_key_begin(RT_KIND_CC_VALUE, 0u, 0u, value), no_args);
         return;
     }
     if (kind == RT_KIND_ARRAY || kind == RT_KIND_SLICE || kind == RT_KIND_REF)
@@ -236,10 +270,7 @@ void eval_round(uint3 dtid)
     for (uint i = 0u; i < arity; i++) rt_key_fold(built, args.arg(i));
     if (!built.ok) { fail(task, SB_INVARIANT, term, env, RT_NONE); return; }
     if (kind != RT_KIND_ENV && built.height > SB_MAX_HEIGHT) { fail(task, SB_DEPTH, term, env, RT_NONE); return; }
-    uint result = rt_intern_term(built, args);
-    if (!rt_is_term(result)) { store_failed(task, term, env); return; }
-    if (!rt_term_closed(result)) { fail(task, SB_INVARIANT, term, env, result); return; }
-    finish(task, result, SB_OK, RT_NONE, 0u, RT_NONE, SB_ENV_NONE);
+    stage_result(task, term, env, built, args);
 }
 
 [shader("compute")]

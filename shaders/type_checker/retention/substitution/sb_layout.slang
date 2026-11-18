@@ -28,6 +28,8 @@ public static const uint SB_STATUSES = 32u;
 public static const uint SB_EDGE_TASK = 0xffffffffu;
 // An argument equal to an earlier argument of the same task: (that index, SB_EDGE_SAME).
 public static const uint SB_EDGE_SAME = 0xfffffffeu;
+// A task whose result is in a term slot built by an earlier evaluation dispatch.
+public static const uint SB_TERM_SLOT = 0xfffffffdu;
 
 // ENV causes (r2.x of an SB_ENV result).
 public static const uint SB_ENV_NONE = 0u;
@@ -83,7 +85,7 @@ public static const uint SB_C_LEVEL = 11u;
 public static const uint SB_C_EVAL_ROUNDS = 12u;   // nonempty levels evaluated
 public static const uint SB_C_MAX_LEVEL = 13u;
 public static const uint SB_C_REQUESTS = 14u;
-public static const uint SB_C_SPARE_TASKS = 15u;   // tasks that lost a memo race
+public static const uint SB_C_SPARE_TASKS = 15u;   // tasks dropped on edge overflow
 public static const uint SB_C_EDGE_LANES = 16u;    // expansion lanes dispatched
 public static const uint SB_C_EDGES_RESOLVED = 17u;
 public static const uint SB_C_MAX_FRONTIER = 18u;
