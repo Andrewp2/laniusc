@@ -38,7 +38,8 @@ use crate::{
         GpuCompilerBackends,
         NativeLinkOptions,
         embedded_core_source,
-        load_entry_path_manifest_with_source_roots,
+        EntrySourceDependencies,
+        load_entry_path_manifest_and_dependencies,
         load_explicit_source_pack_from_path_manifest,
     },
     gpu::{
@@ -71,7 +72,10 @@ const DAEMON_CAPABILITIES: &[&str] = &[
     "native_link",
     RENDERED_DIAGNOSTICS_CAPABILITY,
     WORKING_DIRECTORY_CAPABILITY,
+    DEPFILE_CAPABILITY,
 ];
+/// The `depfile` request field.
+const DEPFILE_CAPABILITY: &str = "depfile";
 /// The `working_directory` request field.
 pub(super) const WORKING_DIRECTORY_CAPABILITY: &str = "working_directory";
 /// The `diagnostic_format` request field and the `rendered_diagnostic`
@@ -170,6 +174,10 @@ struct DaemonRequest {
     input: Option<PathBuf>,
     #[serde(default)]
     output: Option<PathBuf>,
+    /// Where a successful compile writes its dependency file
+    /// (`cli/depfile.rs`), after the output.
+    #[serde(default)]
+    depfile: Option<PathBuf>,
     #[serde(default)]
     stdlib_root: Option<PathBuf>,
     /// One user source root. `source_roots` lists several; a request names
@@ -245,6 +253,10 @@ struct CachedSourcePack {
     /// A native link reads the pack through its path manifest.
     path_backed: bool,
     source_pack: CachedCompileInput,
+    /// What the discovery of `source_pack` depended on. A reused or refreshed
+    /// entry imports the same modules from the same directory listings, so
+    /// the record stays valid for as long as the entry does.
+    dependencies: EntrySourceDependencies,
     file_stamps: Vec<SourceFileStamp>,
     directory_snapshots: Vec<SourceDirectorySnapshot>,
 }
@@ -281,7 +293,7 @@ impl CachedCompileInput {
 #[derive(Default)]
 struct SourcePackCache {
     entry: Option<CachedSourcePack>,
-    transient: Option<CachedCompileInput>,
+    transient: Option<(CachedCompileInput, EntrySourceDependencies)>,
     /// The directory the daemon started in, once a job has asked for it.
     start_directory: Option<PathBuf>,
     /// The directory the last job ran in, when a job has changed it.
@@ -339,9 +351,9 @@ impl SourcePackCache {
         self.entry = None;
         self.transient = None;
 
-        let path_manifest = {
+        let (path_manifest, dependencies) = {
             let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.discover");
-            load_entry_path_manifest_with_source_roots(
+            load_entry_path_manifest_and_dependencies(
                 input,
                 &EntrySourceRoots {
                     stdlib_root: stdlib_root.map(Path::to_path_buf),
@@ -369,6 +381,7 @@ impl SourcePackCache {
                 source_roots: source_roots.to_vec(),
                 path_backed,
                 source_pack,
+                dependencies,
                 file_stamps,
                 directory_snapshots,
             });
@@ -378,11 +391,21 @@ impl SourcePackCache {
                 .expect("stored source-pack cache entry disappeared")
                 .source_pack)
         } else {
-            self.transient = Some(source_pack);
-            Ok(self
+            self.transient = Some((source_pack, dependencies));
+            Ok(&self
                 .transient
                 .as_ref()
-                .expect("stored transient source pack disappeared"))
+                .expect("stored transient source pack disappeared")
+                .0)
+        }
+    }
+
+    /// What the discovery of the last loaded project depended on.
+    fn dependencies(&self) -> Option<&EntrySourceDependencies> {
+        match (&self.entry, &self.transient) {
+            (Some(entry), _) => Some(&entry.dependencies),
+            (None, Some((_, dependencies))) => Some(dependencies),
+            (None, None) => None,
         }
     }
 
@@ -685,7 +708,8 @@ fn print_help() {
          through the C compiler driver, as the --native-link, --native-library, --native-object, --native-library-path\n\
          and --native-linker flags do. diagnostic_format (text, json or lsp-json) adds rendered_diagnostic to a\n\
          failed compile: the text `laniusc --diagnostic-format` prints. working_directory is an absolute directory\n\
-         that the request's relative paths resolve against. A request field the daemon does not know is a protocol\n\
+         that the request's relative paths resolve against. depfile is the path of a JSON dependency file written\n\
+         after the output, as --depfile does. A request field the daemon does not know is a protocol\n\
          error.\n\
          The ready and status events list the supported request features under capabilities."
     );
@@ -1895,6 +1919,7 @@ async fn compile_request(
     let source_roots = request.user_source_roots();
     let native_link = request.native_link_options();
     let source_root = request.source_root;
+    let request_depfile = request.depfile;
     let id = request.id;
     let diagnostic_format = match request.diagnostic_format.as_deref() {
         None => None,
@@ -2043,6 +2068,16 @@ async fn compile_request(
         }
         EmittedArtifact::File(byte_len) => byte_len,
     };
+    if let Some(depfile) = &request_depfile {
+        let dependencies = source_pack_cache
+            .dependencies()
+            .expect("a compiled job has a loaded project");
+        if let Err(err) =
+            super::depfile::write(depfile, Some(&output), dependencies, native_link.as_ref())
+        {
+            return job_error(id, started, err);
+        }
+    }
     let write_ms = write_started.elapsed().as_secs_f64() * 1000.0;
     let _span = crate::gpu::trace::HostSpan::new("host.compiler", "daemon.response_metrics");
     json!({
@@ -2055,6 +2090,7 @@ async fn compile_request(
         "source_roots": source_roots,
         "native_link": native_link.is_some(),
         "output": output,
+        "depfile": request_depfile,
         "output_bytes": output_bytes,
         "load_ms": load_ms,
         "compile_ms": compile_ms,
@@ -2552,6 +2588,57 @@ mod tests {
     // A resident pack refreshes an edited file's text in place, and an edit
     // that changes a file's imports reloads the project, even when the newly
     // imported file was already on disk (no directory change to notice).
+    #[test]
+    fn source_pack_cache_records_what_discovery_depended_on() {
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-daemon-dependencies-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let stdlib_root = root.join("stdlib");
+        let first_root = root.join("first");
+        let second_root = root.join("second");
+        for directory in [&stdlib_root, &first_root, &second_root] {
+            fs::create_dir_all(directory).expect("create dependency fixture directory");
+        }
+        let root = fs::canonicalize(&root).expect("canonicalize dependency fixture");
+        let entry = root.join("main.lani");
+        let unit = root.join("second/unit.lani");
+        fs::write(&entry, "import unit;\nfn main() { return; }\n")
+            .expect("write dependency fixture entry");
+        fs::write(&unit, "module unit;\nfn unit() { return; }\n")
+            .expect("write dependency fixture unit");
+
+        let mut cache = SourcePackCache::default();
+        assert!(cache.dependencies().is_none());
+        cache
+            .load(
+                &entry,
+                Some(&stdlib_root),
+                &[first_root, second_root],
+                false,
+                crate::codegen::unit::CompilationUnitLimits::default(),
+            )
+            .expect("load dependency fixture");
+        let dependencies = cache.dependencies().expect("a loaded project has dependencies");
+
+        // Embedded core modules are not files.
+        assert_eq!(dependencies.sources, [entry, unit]);
+        // `unit` could also come from the first source root or the
+        // standard-library root, and a `core` directory would replace the
+        // embedded one.
+        for absent in ["first/unit.lani", "stdlib/unit.lani", "stdlib/core"] {
+            assert!(
+                dependencies.absent_paths.contains(&root.join(absent)),
+                "{absent} is not in {:?}",
+                dependencies.absent_paths
+            );
+        }
+        assert!(dependencies.absent_paths.is_sorted());
+        assert!(!dependencies.absent_paths.contains(&root.join("second/unit.lani")));
+        fs::remove_dir_all(&root).expect("remove dependency fixture");
+    }
+
     #[test]
     fn resident_source_pack_cache_refreshes_edits_and_rediscovers_changed_imports() {
         let unique = SystemTime::now()

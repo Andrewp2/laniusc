@@ -252,6 +252,10 @@ trait InputVisitor {
     fn shared(&mut self, path: &Path, soname: String) -> Result<()>;
     /// Returns a driver-fallback reason when one applies.
     fn archive(&mut self, path: &Path) -> Result<Option<String>>;
+    /// Every file the walk opens: a library, an archive or a linker script.
+    fn input(&mut self, _path: &Path) {}
+    /// Every library file name the search looked up and did not find.
+    fn absent(&mut self, _path: &Path) {}
 }
 
 impl InputVisitor for Resolver<'_> {
@@ -306,12 +310,20 @@ fn walk_library(visitor: &mut impl InputVisitor, name: &str, depth: usize) -> Re
             "library -l{name} is in the C driver's private directories"
         )));
     }
-    let found = visitor.search().iter().find_map(|directory| {
-        [format!("lib{name}.so"), format!("lib{name}.a")]
-            .into_iter()
-            .map(|file| directory.join(file))
-            .find(|path| path.is_file())
-    });
+    let files = [format!("lib{name}.so"), format!("lib{name}.a")];
+    let mut found = None;
+    let mut directory = 0;
+    while found.is_none() && directory < visitor.search().len() {
+        for file in &files {
+            let path = visitor.search()[directory].join(file);
+            if path.is_file() {
+                found = Some(path);
+                break;
+            }
+            visitor.absent(&path);
+        }
+        directory += 1;
+    }
     let Some(path) = found else {
         return Ok(Some(format!(
             "library -l{name} is not on the linker's default search path"
@@ -326,6 +338,7 @@ fn walk_library(visitor: &mut impl InputVisitor, name: &str, depth: usize) -> Re
 }
 
 fn walk_input(visitor: &mut impl InputVisitor, path: &Path, soname: String, depth: usize) -> Result<Option<String>> {
+    visitor.input(path);
     match input_kind(path)? {
         InputKind::Shared => {
             visitor.shared(path, soname)?;
@@ -375,6 +388,90 @@ fn walk_script(visitor: &mut impl InputVisitor, path: &Path, depth: usize) -> Re
         }
     }
     Ok(None)
+}
+
+/// The files a native link of one request reads, for a build tool that
+/// decides whether the executable is current. The executable is current
+/// while every file in `inputs` is unchanged and no path in `absent_paths`
+/// exists.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NativeLinkDependencies {
+    /// The request's native objects and every shared library, archive and
+    /// linker script that the library search above selects, as canonical
+    /// paths, sorted. The implicit C library is included.
+    pub inputs: Vec<PathBuf>,
+    /// Library file names the search looked up in an earlier directory and
+    /// did not find, sorted. A file created at one of them replaces the
+    /// library found later.
+    pub absent_paths: Vec<PathBuf>,
+    /// `-l` names this search does not locate: a library in the C driver's
+    /// private directories, one off the search path, or one whose linker
+    /// script it cannot follow. The C driver chooses their files, and
+    /// `inputs` does not list them. The C driver's startup objects are not
+    /// listed either.
+    pub unlocated_libraries: Vec<String>,
+}
+
+struct Lister {
+    search: Vec<PathBuf>,
+    dependencies: NativeLinkDependencies,
+}
+
+impl InputVisitor for Lister {
+    fn search(&self) -> &[PathBuf] {
+        &self.search
+    }
+
+    fn shared(&mut self, _path: &Path, _soname: String) -> Result<()> {
+        Ok(())
+    }
+
+    fn archive(&mut self, _path: &Path) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn input(&mut self, path: &Path) {
+        self.dependencies.inputs.push(path.to_path_buf());
+    }
+
+    fn absent(&mut self, path: &Path) {
+        self.dependencies.absent_paths.push(path.to_path_buf());
+    }
+}
+
+/// Lists the files a native link of `options` reads. It runs the library
+/// search of this module again and reads no symbol table.
+pub fn native_link_dependencies(options: &NativeLinkOptions) -> NativeLinkDependencies {
+    let mut lister = Lister {
+        search: options
+            .library_paths
+            .iter()
+            .cloned()
+            .chain(STANDARD_DIRECTORIES.iter().map(PathBuf::from))
+            .collect(),
+        dependencies: NativeLinkDependencies::default(),
+    };
+    for object in &options.objects {
+        lister.input(object);
+    }
+    for library in options.libraries.iter().map(String::as_str).chain(["c"]) {
+        if !matches!(walk_library(&mut lister, library, 0), Ok(None)) {
+            lister.dependencies.unlocated_libraries.push(library.to_owned());
+        }
+    }
+    let mut dependencies = lister.dependencies;
+    for input in &mut dependencies.inputs {
+        if let Ok(canonical) = std::fs::canonicalize(&*input) {
+            *input = canonical;
+        }
+    }
+    dependencies.inputs.sort_unstable();
+    dependencies.inputs.dedup();
+    dependencies.absent_paths.sort_unstable();
+    dependencies.absent_paths.dedup();
+    dependencies.unlocated_libraries.sort_unstable();
+    dependencies.unlocated_libraries.dedup();
+    dependencies
 }
 
 /// One input's names for the resident link's GPU name match

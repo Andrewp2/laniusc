@@ -9,6 +9,7 @@ mod args;
 mod common;
 mod compile;
 mod daemon;
+mod depfile;
 mod diagnostics;
 mod dispatch;
 mod doctor;

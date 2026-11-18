@@ -129,7 +129,11 @@ pub use semantic_interface::{
     NativeCSignature,
     NativeCType,
 };
-pub use crate::codegen::x86::native::NativeLinkOptions;
+pub use crate::codegen::x86::native::{
+    NativeLinkDependencies,
+    NativeLinkOptions,
+    native_link_dependencies,
+};
 pub(crate) use crate::codegen::x86::native::NativeMainBridge;
 pub(crate) use semantic_interface::{
     gpu_validation as semantic_interface_validation,

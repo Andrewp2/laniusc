@@ -39,6 +39,9 @@ pub(crate) struct CompileRequest {
     pub(crate) package_manifest: Option<PathBuf>,
     pub(crate) package_lockfile: Option<PathBuf>,
     pub(crate) output: Option<PathBuf>,
+    /// `--depfile`: where a successful compile writes its dependency file
+    /// (`cli/depfile.rs`).
+    pub(crate) depfile: Option<PathBuf>,
     pub(crate) emit: String,
     pub(crate) check_only: bool,
     pub(crate) native_link: Option<NativeLinkOptions>,

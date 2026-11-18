@@ -7,10 +7,11 @@ use std::path::{Path, PathBuf};
 use super::{
     args::CompileRequest,
     common::{CliError, missing_cli_argument_error},
-    output::{CliEmission, write_cli_emission},
+    depfile,
+    output::{CliEmission, CliOutputError, write_cli_emission},
 };
 use crate::{
-    compiler::{EntrySourceRoots, NativeLinkOptions},
+    compiler::{EntrySourceRoots, NativeLinkOptions, load_entry_path_manifest_and_dependencies},
     gpu::device,
 };
 
@@ -28,6 +29,7 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
         package_manifest,
         package_lockfile,
         output,
+        depfile,
         emit,
         check_only,
         native_link,
@@ -69,10 +71,42 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
     };
 
     device::persist_created_pipelines();
-    if check_only {
-        return Ok(());
+    if !check_only {
+        write_cli_emission(emitted, output.clone(), &emit)?;
     }
-    write_cli_emission(emitted, output, &emit)?;
+    if let Some(depfile) = depfile {
+        write_depfile(
+            &depfile,
+            output.as_deref().filter(|_| !check_only),
+            &inputs,
+            stdlib_root.as_deref(),
+            &source_roots,
+            native_link.as_ref(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Writes the dependency file of a compile that ran in this process. The
+/// compile entry points return only the output, so import discovery runs
+/// once more here. A compile in the daemon records the list during its one
+/// discovery.
+fn write_depfile(
+    depfile: &Path,
+    output: Option<&Path>,
+    inputs: &[PathBuf],
+    stdlib_root: Option<&Path>,
+    source_roots: &[PathBuf],
+    native_link: Option<&NativeLinkOptions>,
+) -> Result<(), CliError> {
+    let input = required_entry_input(inputs, "laniusc --depfile")?;
+    let roots = EntrySourceRoots {
+        stdlib_root: stdlib_root.map(Path::to_path_buf),
+        user_roots: source_roots.to_vec(),
+    };
+    let (_, sources) = load_entry_path_manifest_and_dependencies(input, &roots)
+        .map_err(CliError::from_compile_error)?;
+    depfile::write(depfile, output, &sources, native_link).map_err(CliOutputError::from)?;
     Ok(())
 }
 

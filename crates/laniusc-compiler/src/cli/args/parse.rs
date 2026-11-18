@@ -112,6 +112,14 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
                         missing_cli_option_value_error(&arg, "an output path")
                     })?));
             }
+            "--depfile" => {
+                request.depfile = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    missing_cli_option_value_error("--depfile", "a dependency file path")
+                })?));
+            }
+            flag if flag.starts_with("--depfile=") => {
+                request.depfile = Some(PathBuf::from(flag.trim_start_matches("--depfile=")));
+            }
             flag if flag.starts_with("--emit=") => {
                 request.emit = flag.trim_start_matches("--emit=").to_string();
             }

@@ -211,8 +211,57 @@ pub fn load_entry_path_manifest_with_source_roots<EP>(
 where
     EP: AsRef<Path>,
 {
-    let (stdlib_paths, user_paths) = collect_entry_source_root_paths(entry_path.as_ref(), roots)?;
-    stdlib_root_path_manifest(&stdlib_paths, &user_paths)
+    load_entry_path_manifest_and_dependencies(entry_path, roots).map(|(manifest, _)| manifest)
+}
+
+/// The files and paths that decide what an entry's import discovery loads.
+/// A later discovery loads the same sources while every file in `sources`
+/// is unchanged and no path in `absent_paths` exists.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EntrySourceDependencies {
+    /// The entry and every imported source file read from disk, as canonical
+    /// paths, sorted. Modules of the embedded `core` are part of the compiler
+    /// executable and are not listed.
+    pub sources: Vec<PathBuf>,
+    /// Every path discovery looked up for an import and did not find, sorted.
+    /// A file created at one of them changes which module an import selects
+    /// or makes the import ambiguous.
+    pub absent_paths: Vec<PathBuf>,
+}
+
+/// `load_entry_path_manifest_with_source_roots`, together with the files
+/// and absent paths the same discovery depended on.
+pub fn load_entry_path_manifest_and_dependencies<EP>(
+    entry_path: EP,
+    roots: &EntrySourceRoots,
+) -> Result<(ExplicitSourcePackPathManifest, EntrySourceDependencies), CompileError>
+where
+    EP: AsRef<Path>,
+{
+    let entry_path = entry_path.as_ref();
+    let mut absent_paths = Vec::new();
+    let (stdlib_paths, user_paths) =
+        collect_source_root_paths(None, entry_path, roots, &mut absent_paths)?;
+    // A `core` directory created under the standard-library root replaces
+    // the embedded one.
+    if let Some(stdlib_root) = &roots.stdlib_root
+        && uses_embedded_core(Some(stdlib_root))
+    {
+        absent_paths.push(fs::canonicalize(stdlib_root).unwrap_or(stdlib_root.clone()).join("core"));
+    }
+    absent_paths.sort_unstable();
+    absent_paths.dedup();
+    // Imported paths are canonical already. The entry is as the caller wrote it.
+    let mut sources = stdlib_paths
+        .iter()
+        .chain(&user_paths)
+        .filter(|path| !path.starts_with(EMBEDDED_CORE_ROOT))
+        .map(|path| fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+        .collect::<Vec<_>>();
+    sources.sort_unstable();
+    sources.dedup();
+    let manifest = stdlib_root_path_manifest(&stdlib_paths, &user_paths)?;
+    Ok((manifest, EntrySourceDependencies { sources, absent_paths }))
 }
 
 /// Discover paths for an entry file, one user source root, and a
@@ -415,7 +464,7 @@ fn collect_entry_source_root_paths(
     entry_path: &Path,
     roots: &EntrySourceRoots,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CompileError> {
-    collect_source_root_paths(None, entry_path, roots)
+    collect_source_root_paths(None, entry_path, roots, &mut Vec::new())
 }
 
 pub(in crate::compiler) fn load_in_memory_entry(
@@ -423,7 +472,12 @@ pub(in crate::compiler) fn load_in_memory_entry(
     entry_path: &Path,
 ) -> Result<ExplicitSourcePack, CompileError> {
     let (stdlib_paths, _) =
-        collect_source_root_paths(Some(source), entry_path, &EntrySourceRoots::default())?;
+        collect_source_root_paths(
+            Some(source),
+            entry_path,
+            &EntrySourceRoots::default(),
+            &mut Vec::new(),
+        )?;
     let stdlib_sources = read_explicit_source_paths("stdlib", &stdlib_paths)?;
     ExplicitSourcePack::from_libraries(vec![
         ExplicitSourceLibrary {
@@ -446,10 +500,13 @@ pub(in crate::compiler) fn load_in_memory_entry(
     )
 }
 
+/// `absent_paths` receives every path looked up for an import that held
+/// nothing (`EntrySourceDependencies::absent_paths`), in lookup order.
 fn collect_source_root_paths(
     entry_source: Option<&str>,
     entry_path: &Path,
     roots: &EntrySourceRoots,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CompileError> {
     let mut search_roots = Vec::with_capacity(roots.user_roots.len() + 2);
     let mut seen_user_roots: BTreeSet<PathBuf> = BTreeSet::new();
@@ -521,6 +578,7 @@ fn collect_source_root_paths(
         &mut loaded_source_paths,
         &mut stdlib_paths,
         &mut user_paths,
+        absent_paths,
     )?;
     let language_item = SourceRootImport {
         path: LANGUAGE_ITEM_MODULE.to_string(),
@@ -537,6 +595,7 @@ fn collect_source_root_paths(
         &mut loaded_source_paths,
         &mut stdlib_paths,
         &mut user_paths,
+        absent_paths,
     )?;
     user_paths.push(entry_path.to_path_buf());
 
@@ -584,6 +643,7 @@ fn load_source_root_imports(
     loaded_source_paths: &mut BTreeSet<PathBuf>,
     stdlib_paths: &mut Vec<PathBuf>,
     user_paths: &mut Vec<PathBuf>,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<(), CompileError> {
     let mut pending = imports
         .into_iter()
@@ -597,7 +657,12 @@ fn load_source_root_imports(
                 SourceRootLibrary::User => user_paths.push(resolved.path),
             },
             SourceRootLoadAction::Discover(import, importer_library) => {
-                let resolved = match resolve_source_root_module_or_item(&import, roots, importer_library) {
+                let resolved = match resolve_source_root_module_or_item(
+                    &import,
+                    roots,
+                    importer_library,
+                    absent_paths,
+                ) {
                     Ok(resolved) => resolved,
                     Err(error) => return Err(error),
                 };
@@ -627,8 +692,9 @@ fn resolve_source_root_module_or_item(
     import: &SourceRootImport,
     roots: &[SourceRootSearchRoot],
     importer_library: SourceRootLibrary,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<SourceRootResolvedImport, CompileError> {
-    let whole = resolve_source_root_import(import, roots, importer_library);
+    let whole = resolve_source_root_import(import, roots, importer_library, absent_paths);
     let Err(error) = whole else { return whole };
     let missing = matches!(&error, CompileError::Diagnostic(d) if d.code == "LNC0001");
     if !missing {
@@ -636,13 +702,14 @@ fn resolve_source_root_module_or_item(
     }
     let Some((module, _item)) = import.path.rsplit_once("::") else { return Err(error) };
     let prefix = SourceRootImport { path: module.to_string(), ..import.clone() };
-    resolve_source_root_import(&prefix, roots, importer_library).map_err(|_| error)
+    resolve_source_root_import(&prefix, roots, importer_library, absent_paths).map_err(|_| error)
 }
 
 fn resolve_source_root_import(
     import: &SourceRootImport,
     roots: &[SourceRootSearchRoot],
     importer_library: SourceRootLibrary,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<SourceRootResolvedImport, CompileError> {
     let mut searched_paths = Vec::with_capacity(roots.len());
 
@@ -653,6 +720,7 @@ fn resolve_source_root_import(
                 .iter()
                 .filter(|root| root.library == SourceRootLibrary::Stdlib),
             &mut searched_paths,
+            absent_paths,
         )?;
         if stdlib_matches.len() > 1 {
             return Err(ambiguous_source_root_module_error(import, &stdlib_matches));
@@ -665,6 +733,7 @@ fn resolve_source_root_import(
                     .filter(|root| root.library == SourceRootLibrary::User),
                 &stdlib_match.path,
                 &mut searched_paths,
+                absent_paths,
             )?;
             if !user_alias_matches.is_empty() {
                 let mut matches = vec![stdlib_match.clone()];
@@ -680,6 +749,7 @@ fn resolve_source_root_import(
                 .iter()
                 .filter(|root| root.library == SourceRootLibrary::User),
             &mut searched_paths,
+            absent_paths,
         )?;
         if !user_matches.is_empty() {
             return Err(source_root_package_boundary_error(import, &user_matches));
@@ -693,6 +763,7 @@ fn resolve_source_root_import(
             .iter()
             .filter(|root| root.library == SourceRootLibrary::User),
         &mut searched_paths,
+        absent_paths,
     )?;
     let mut stdlib_matches = collect_source_root_import_matches(
         import,
@@ -700,6 +771,7 @@ fn resolve_source_root_import(
             .iter()
             .filter(|root| root.library == SourceRootLibrary::Stdlib),
         &mut searched_paths,
+        absent_paths,
     )?;
 
     if user_matches.len() > 1 {
@@ -734,6 +806,7 @@ fn collect_source_root_import_matches<'a>(
     import: &SourceRootImport,
     roots: impl Iterator<Item = &'a SourceRootSearchRoot>,
     searched_paths: &mut Vec<PathBuf>,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<Vec<SourceRootResolvedImport>, CompileError> {
     let mut matches = Vec::new();
 
@@ -752,7 +825,10 @@ fn collect_source_root_import_matches<'a>(
         searched_paths.push(import_path.clone());
         let canonical_import_path = match fs::canonicalize(&import_path) {
             Ok(path) => path,
-            Err(_) => continue,
+            Err(_) => {
+                absent_paths.push(import_path);
+                continue;
+            }
         };
         if !canonical_import_path.starts_with(&root.root) {
             return Err(source_root_escape_error(
@@ -790,6 +866,7 @@ fn collect_source_root_import_alias_matches<'a>(
     roots: impl Iterator<Item = &'a SourceRootSearchRoot>,
     canonical_target: &Path,
     searched_paths: &mut Vec<PathBuf>,
+    absent_paths: &mut Vec<PathBuf>,
 ) -> Result<Vec<SourceRootResolvedImport>, CompileError> {
     let mut matches = Vec::new();
 
@@ -798,7 +875,10 @@ fn collect_source_root_import_alias_matches<'a>(
         searched_paths.push(import_path.clone());
         let canonical_import_path = match fs::canonicalize(&import_path) {
             Ok(path) => path,
-            Err(_) => continue,
+            Err(_) => {
+                absent_paths.push(import_path);
+                continue;
+            }
         };
         if canonical_import_path.as_path() != canonical_target {
             continue;

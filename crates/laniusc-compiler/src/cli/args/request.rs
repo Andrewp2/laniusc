@@ -43,6 +43,7 @@ pub(super) struct CompileRequestBuilder {
     pub(super) package_manifest: Option<PathBuf>,
     pub(super) package_lockfile: Option<PathBuf>,
     pub(super) output: Option<PathBuf>,
+    pub(super) depfile: Option<PathBuf>,
     pub(super) emit: String,
     pub(super) target_triple: Option<String>,
     pub(super) language_edition: String,
@@ -63,6 +64,7 @@ impl Default for CompileRequestBuilder {
             package_manifest: None,
             package_lockfile: None,
             output: None,
+            depfile: None,
             emit: LANIUS_DEFAULT_EMIT_TARGET.to_string(),
             target_triple: None,
             language_edition: LANIUS_LANGUAGE_EDITION.to_string(),
@@ -86,6 +88,7 @@ impl CompileRequestBuilder {
             package_manifest,
             package_lockfile,
             output,
+            depfile,
             emit,
             target_triple,
             language_edition,
@@ -200,6 +203,33 @@ impl CompileRequestBuilder {
         let native_link = native_link
             .map(native_link::canonicalize_options)
             .transpose()?;
+        // The dependency file lists what import discovery from one entry
+        // file read. The other input modes name their source files.
+        if depfile.is_some() {
+            let other_mode = if uses_source_pack || source_pack_options_requested {
+                Some("source-pack flags")
+            } else if !stdlib_paths.is_empty() {
+                Some("--stdlib")
+            } else if package_manifest.is_some() || package_lockfile.is_some() {
+                Some("--package-manifest/--package-lockfile")
+            } else {
+                None
+            };
+            if let Some(other_mode) = other_mode {
+                return Err(incompatible_cli_options_error(
+                    "laniusc",
+                    "--depfile",
+                    other_mode,
+                    "--depfile lists the files found from one entry input file; pass the entry with --source-root or --stdlib-root",
+                ));
+            }
+            if inputs.len() != 1 {
+                return Err(missing_cli_argument_error(
+                    "laniusc",
+                    "exactly one entry input file with --depfile",
+                ));
+            }
+        }
 
         Ok(CompileRequest {
             inputs,
@@ -209,6 +239,7 @@ impl CompileRequestBuilder {
             package_manifest,
             package_lockfile,
             output,
+            depfile,
             emit,
             check_only,
             native_link,

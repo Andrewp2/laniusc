@@ -26,6 +26,7 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 
 pub(crate) mod resolve;
+pub use resolve::{NativeLinkDependencies, native_link_dependencies};
 pub(crate) use resolve::{NativeDynamicImports, NativeResolution};
 
 use super::{

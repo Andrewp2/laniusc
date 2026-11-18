@@ -123,6 +123,9 @@ impl Job {
             "working_directory": std::env::current_dir().ok()?.to_str()?,
             "diagnostic_format": format.name(),
         });
+        if let Some(depfile) = &request.depfile {
+            line["depfile"] = depfile.to_str()?.into();
+        }
         if let Some(native) = &request.native_link {
             let defaults = NativeLinkOptions::default();
             if native.timeout != defaults.timeout

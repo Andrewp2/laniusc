@@ -2,7 +2,9 @@ use super::*;
 
 mod inputs;
 pub use inputs::{
+    EntrySourceDependencies,
     EntrySourceRoots,
+    load_entry_path_manifest_and_dependencies,
     load_entry_path_manifest_with_source_root,
     load_entry_path_manifest_with_source_root_and_optional_stdlib,
     load_entry_path_manifest_with_source_root_and_stdlib,

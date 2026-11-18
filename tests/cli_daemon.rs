@@ -1133,4 +1133,47 @@ fn cli_compile_runs_in_the_shared_daemon_of_its_build() {
         String::from_utf8_lossy(&json_locally.stderr),
     );
     assert_eq!(OneShotDaemons::pid(&sockets[0]), daemon, "a rejected compile keeps the daemon");
+
+    // `--depfile` lists what the compile read and what it looked up without
+    // finding. The daemon and a compile in the client's process write the
+    // same file.
+    let source_root = project.join("src");
+    fs::create_dir_all(&source_root).expect("create the source root");
+    fs::write(project.join("uses.lani"), "import unit;\nfn main() -> i32 { return 42; }\n")
+        .expect("write the source that imports a module");
+    fs::write(source_root.join("unit.lani"), "module unit;\nfn unit() { return; }\n")
+        .expect("write the imported module");
+    let dependencies = |flags: &[&str], depfile: &str| {
+        let flags = [flags, &["--source-root", "src", "--depfile", depfile]].concat();
+        let compiled = compile(&flags, "uses.lani", "uses");
+        common::assert_command_success("compile with a dependency file", &compiled);
+        let text = fs::read(project.join(depfile)).expect("read the dependency file");
+        serde_json::from_slice::<serde_json::Value>(&text).expect("parse the dependency file")
+    };
+    let from_daemon = dependencies(&[], "uses.deps.json");
+    assert_eq!(from_daemon, dependencies(&["--no-daemon"], "uses_local.deps.json"));
+    assert_eq!(exit_code("uses"), Some(42));
+    let canonical = |path: PathBuf| {
+        let path = fs::canonicalize(path).expect("canonicalize a listed path");
+        serde_json::Value::from(path.to_str().expect("a UTF-8 path"))
+    };
+    let lists = |field: &str, path: &serde_json::Value| {
+        from_daemon[field].as_array().is_some_and(|paths| paths.contains(path))
+    };
+    assert_eq!(from_daemon["schema"], "lanius.depfile.v1");
+    assert_eq!(from_daemon["output"], canonical(project.join("uses")));
+    assert!(lists("sources", &canonical(project.join("uses.lani"))), "{from_daemon}");
+    assert!(lists("sources", &canonical(source_root.join("unit.lani"))), "{from_daemon}");
+    // The standard-library root is the other place `unit` could come from.
+    let stdlib = fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .expect("canonicalize the standard-library root");
+    let shadow = serde_json::Value::from(stdlib.join("unit.lani").to_str().expect("a UTF-8 path"));
+    assert!(lists("absent_paths", &shadow), "{from_daemon}");
+    assert_eq!(from_daemon["native_inputs"], serde_json::json!([]));
+
+    // A compile that fails leaves the earlier dependency file as it was.
+    let earlier = fs::read(project.join("uses.deps.json")).expect("read the earlier file");
+    let failed = compile(&["--depfile", "uses.deps.json"], "bad.lani", "bad");
+    assert_eq!(failed.status.code(), Some(1));
+    assert_eq!(fs::read(project.join("uses.deps.json")).expect("read it again"), earlier);
 }
