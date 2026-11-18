@@ -164,7 +164,7 @@ fn cli_lsp_capabilities_reports_no_run_diagnostic_contract() {
             && feature["boundary"] == "x86 backend"
             && feature["next_step"]
                 .as_str()
-                .is_some_and(|next_step| next_step.contains("--emit=wasm"))
+                .is_some_and(|next_step| next_step.contains("native output requires support for this construct in x86 lowering"))
     }));
     assert!(unsupported_features.iter().any(|feature| {
         feature["code"] == "LNC0022"

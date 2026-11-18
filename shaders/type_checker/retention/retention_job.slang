@@ -429,7 +429,15 @@ public uint rel_token(BodySpan span, uint token, inout uint foreign)
 
 public void stat_add(uint function, uint stat, uint amount)
 {
-    if (amount != 0u) InterlockedAdd(rt_x_stats[function * 4u + stat], amount);
+    stat_add_at(function, function, stat, amount);
+}
+
+// Adds to `function`'s statistic and records `row` as the fault's row.
+public void stat_add_at(uint function, uint row, uint stat, uint amount)
+{
+    if (amount == 0u) return;
+    InterlockedAdd(rt_x_stats[function * 4u + stat], amount);
+    rt_fault(row, RT_FAULT_STAT + stat);
 }
 
 // The function whose body contains `row`, or INVALID.

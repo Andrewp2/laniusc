@@ -215,6 +215,9 @@ pub struct RetainedTraitCheck {
     pub producer_failures: u32,
     /// First failure as (code, lane), producer.slang RC_E_*.
     pub first_failure: Option<(u32, u32)>,
+    /// When the store is not ready: the export's first fault (reason, job,
+    /// file, byte, length), from the store counters the count pass copies.
+    pub store_fault: Option<[u32; 5]>,
     /// Required-member own bounds the solver cannot admit (no row).
     pub unsupported_member_bounds: u32,
     pub fill_faults: u32,
@@ -814,6 +817,7 @@ fn run(
         attempts: 0,
         producer_failures: 0,
         first_failure: None,
+        store_fault: None,
         unsupported_member_bounds: 0,
         fill_faults: 0,
         rows: [0; TABLE_COUNT],
@@ -913,6 +917,12 @@ fn run(
     report.closure_active_waves = state[S_CLOSURE_WAVES];
     if state[S_FIRST] != u32::MAX {
         report.first_failure = Some((state[S_FIRST] >> 24, state[S_FIRST] & 0xff_ffff));
+    }
+    if status[counts::READY] == 0 && status[counts::FAULT] != 0 {
+        report.store_fault = Some([
+            status[counts::FAULT], status[counts::FAULT_JOB], status[counts::FAULT_FILE],
+            status[counts::FAULT_BYTE], status[counts::FAULT_LEN],
+        ]);
     }
     for counter in 0..COUNTERS {
         report.rows[COUNTER_TABLE[counter]] = state[S_TOTALS + counter];
