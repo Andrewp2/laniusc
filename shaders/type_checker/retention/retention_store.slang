@@ -79,6 +79,8 @@ public globallycoherent RWStructuredBuffer<uint4> rt_seg_tokens; // body tokens:
 
 public static const uint RT_DIR_WORDS = 4u;
 public static const uint RT_USE_WORDS = 3u;
+// Native call argument mode also records whether an i32 zero was a literal.
+public static const uint RT_CALL_ARG_NULL_LITERAL = 1u << 8u;
 public static const uint RT_SEG_WORDS = 6u;
 public static const uint RT_ROW_WORDS = 7u;
 public static const uint RT_DIR_STAGED = 1u;

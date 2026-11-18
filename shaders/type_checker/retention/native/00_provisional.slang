@@ -22,6 +22,8 @@
 // and the translated term of every argument, as the caller's job checked
 // them.
 import hir_records;
+import hir_expr_semantics;
+import primitive_types;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import codegen.x86.finalize.symbol_identity;
@@ -53,6 +55,20 @@ static const uint NC_STATUS_EXPORT_PENDING = 8u;
 static const uint DIR_FREE_FN = 1u;
 static const uint USE_DIRECT = 1u;
 static const uint HIR_CALL = 19u;
+
+bool pointer_null_literal(uint row)
+{
+    for (uint depth = 0u; row < hir_count() && depth < hir_count(); depth++)
+    {
+        HirCore core = compact_hir_core[row];
+        HirPayload payload = compact_hir_payload[row];
+        if (!hir_is_forward_expression(core.kind, payload.a))
+            return core.kind == HIR_SEM_KIND_LITERAL_EXPR &&
+                payload.a == HIR_SEM_EXPR_INT && payload.b == 0u && payload.c == 0u;
+        row = payload.b;
+    }
+    return false;
+}
 
 // The provisional identity of `call`, or none; records the use's ABI facts.
 bool provisional_use(uint call, out uint use)
@@ -110,6 +126,8 @@ bool provisional_use(uint call, out uint use)
                 term = translate_checked(semantic_expr_ref_tag_by_hir[value], semantic_expr_ref_payload_by_hir[value]);
                 mode = semantic_argument_mode_by_hir[value];
                 if (mode > 3u) flags |= NC_FLAG_ARG_UNTRANSLATED;
+                if (term == SCALAR_I32 && pointer_null_literal(value))
+                    mode |= RT_CALL_ARG_NULL_LITERAL;
             }
         }
         if (!rt_is_term(term) || !rt_term_closed(term)) flags |= NC_FLAG_ARG_UNTRANSLATED;
