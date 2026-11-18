@@ -102,7 +102,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (valid_hir(stmt.d)) return;
     uint source = initializer_token(stmt.c);
     if (!imported_nominal_token(source)) return;
-    // 07_project_calls publishes the callee's type and constant arity with
+    // project_dependency_calls publishes the callee's type and constant arity with
     // its declared result; calls/01 clears the word on every token.
     if (compact_hir_core[stmt.c].kind == HIR_CALL_EXPR &&
         (call_dependency_generic_requirements[source] & 0x7fffffffu) != 0u) return;

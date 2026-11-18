@@ -637,7 +637,7 @@ impl GpuTypeChecker {
             &typecheck_graph,
             &resources,
             compiler_graph::SCOPE_HIR_PASS,
-            &passes.kernel("type_checker/scope/hir"),
+            &passes.kernel("type_checker/visibility/publish_hir_scope_types"),
             &token_active_dispatch_args,
         )?;
         let if_depth_bind_groups = create_if_depth_bind_groups(

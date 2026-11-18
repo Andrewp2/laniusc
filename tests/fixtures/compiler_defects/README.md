@@ -205,7 +205,7 @@ without the receiver's environment.
 A result that names the trait's parameters, such as `Iterator<T>::next`
 returning `Option<T>`, was fixed the same day. The bound's trait arguments
 (`Iterator<i32>`) are already the call's context arguments: the dependency
-bound-member offer (`dependencies/15b_offer_bound_members.slang`) publishes
+bound-member offer (`offer_dependency_bound_members.slang`) publishes
 them. The materializer now substitutes such a result in that environment
 whenever the call has one. This change grew the kernel from 18,657 to 18,695
 instructions. The before and after builds compiled 84 programs: the 78 above,

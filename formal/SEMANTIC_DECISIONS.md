@@ -2367,7 +2367,7 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
   to the source text) names any such store in stdlib/ and extended/.
 - A module that declares nothing the front end counts. laniusc's module
   table holds every file's `module` item, and an import whose whole path is
-  a module imports the module (modules/05_resolve_imports.slang). The front
+  a module imports the module (resolve_module_imports.slang). The front
   end counted a module only when it declared a type, function, constant or
   alias, so `import a::b;` with `a/b.lani` holding only a trait imported the
   function `b` of `a`, and a local `b()` called `a::b` instead of this

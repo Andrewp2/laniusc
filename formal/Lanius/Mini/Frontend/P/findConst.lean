@@ -312,7 +312,7 @@ def variantsNamed (types : List TypeDecl) (m : List (List Nat)) (name : List Nat
     else
       variantsNamed rest m name (k + 1)
 
-/-- A module path is a module when a file's `module` item names it, as in laniusc (modules/05_resolve_imports.slang), whatever the file declares; then `import m;` imports it rather than an item of m's prefix. -/
+/-- A module path is a module when a file's `module` item names it, as in laniusc (resolve_module_imports.slang), whatever the file declares; then `import m;` imports it rather than an item of m's prefix. -/
 def isModule (d : Decls) (m : List (List Nat)) : Bool :=
   moduleMember d.homes m
 

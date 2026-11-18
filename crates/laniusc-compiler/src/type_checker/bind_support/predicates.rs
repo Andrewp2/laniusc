@@ -114,7 +114,7 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         graph,
         &obligation_dispatch_resources,
         compiler_graph::PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS,
-        &passes.kernel("type_checker/count/dispatch_args"),
+        &passes.kernel("type_checker/conditions/write_count_dispatch_args"),
         &predicate_single_dispatch_args,
     )?;
     let obligation_pair_dispatch_clear = crate::gpu::operations::ClearBufferOperation::entire(

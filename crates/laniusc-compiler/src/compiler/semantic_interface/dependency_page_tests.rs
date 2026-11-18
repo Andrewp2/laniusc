@@ -1,5 +1,5 @@
 //! Packing of dependency interfaces into GPU dependency pages
-//! (`type_checker::dependency_pack`), checked on pages read back from the GPU.
+//! (`type_checker::dependency_packing`), checked on pages read back from the GPU.
 use super::*;
 
 fn one_function_interface(

@@ -53,9 +53,9 @@ pub(crate) use generic_calls::{
     scope_generic_type_identities,
 };
 mod dependency_interface;
-mod dependency_pack;
+mod dependency_packing;
 #[cfg(test)]
-pub(crate) use dependency_pack::gpu_packed_dependency_page;
+pub(crate) use dependency_packing::gpu_packed_dependency_page;
 mod module_path;
 mod operations;
 mod params;

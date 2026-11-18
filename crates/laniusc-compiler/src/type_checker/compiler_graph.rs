@@ -497,10 +497,10 @@ pub(super) const VISIBLE_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
     small_pass: VISIBLE_SORT_PASS,
     passes: radix_sort_graph_passes!("type_check.visible.sort_hir_decl_keys"),
     kernels: RadixSortKernels::new(
-        "type_checker/visible/03e_sort_hir_decl_keys",
-        "type_checker/visible/03f_sort_hir_decl_keys_scatter",
+        "type_checker/visibility/sort_hir_decl_keys",
+        "type_checker/visibility/scatter_sorted_hir_decl_keys",
     )
-    .with_small("type_checker/visible/03d2_sort_hir_decl_keys_small"),
+    .with_small("type_checker/visibility/sort_small_hir_decl_keys"),
     resources: RadixSortResources {
         count: "hir_visible_decl_count_out",
         order: "hir_visible_decl_key_order",
@@ -841,10 +841,10 @@ pub(super) const MODULE_DECL_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefi
     small_pass: MODULE_DECL_KEY_SORT_PASS,
     passes: radix_sort_graph_passes!("type_check.modules.decl_keys"),
     kernels: RadixSortKernels::new(
-        "type_checker/modules/06_sort_decl_keys",
-        "type_checker/modules/06b_sort_decl_keys_scatter",
+        "type_checker/modules/declarations/sort_decl_keys",
+        "type_checker/modules/declarations/scatter_sorted_decl_keys",
     )
-    .with_small("type_checker/modules/06a2_sort_decl_keys_small"),
+    .with_small("type_checker/modules/declarations/sort_decl_keys_small"),
     resources: RadixSortResources {
         count: "decl_count_out",
         order: "decl_key_to_decl_id",
@@ -2825,7 +2825,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/09_init_canonical_type_roots",
+        "type_checker/dependencies/projections/seed_dependency_canonical_type_roots",
         reflected_bindings![
             "canonical_type_roots" => roots_a: Write,
             "checked_constant_atoms" => constant_atoms: Write,
@@ -2839,7 +2839,7 @@ fn add_dependency_type_index_passes(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Declarations,
                 kernels,
-                "type_checker/dependencies/10_jump_canonical_type_roots",
+                "type_checker/dependencies/projections/jump_dependency_canonical_type_roots",
                 reflected_bindings![
                     "canonical_type_roots_in" => roots_in: Read,
                     "canonical_type_roots_out" => roots_out: Write,
@@ -2863,7 +2863,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/12_clear_declaration_generic_arity",
+        "type_checker/dependencies/projections/clear_dependency_generic_arity",
         reflected_bindings![
             "declaration_generic_arity" => declaration_generic_arity: Write,
             "dependency_declaration_constant_arity" => declaration_constant_arity: Write,
@@ -2875,7 +2875,7 @@ fn add_dependency_type_index_passes(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/dependencies/13_count_declaration_generic_arity",
+        "type_checker/dependencies/projections/count_dependency_generic_arity",
         reflected_bindings![
             "declaration_generic_arity" => declaration_generic_arity: ReadWrite,
             "declaration_field_count" => declaration_field_count: ReadWrite,
@@ -4310,7 +4310,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/names/00_clear",
+        "type_checker/symbols/clear_language_names",
         reflected_bindings![
             "language_name_id" => _language_name_id: Write,
             "name_max_len" => name_max_len: Write,
@@ -4326,7 +4326,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/00_prepare",
+        "type_checker/symbols/prepare_name_hashes",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: Write,
@@ -4341,7 +4341,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/01_insert",
+        "type_checker/symbols/intern_exact_names",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: ReadWrite,
@@ -4353,7 +4353,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/names/hash/02_assign_ids",
+        "type_checker/symbols/assign_exact_name_ids",
         reflected_bindings![
             "name_count_in" => name_scan_total: Read,
             "name_hash_table_a" => name_hash_table_a: ReadWrite,
@@ -4370,7 +4370,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/decls/00a_clear_type_codes",
+        "type_checker/symbols/clear_language_type_codes",
         reflected_bindings![
             "language_type_code_by_name_id" => _language_type_code_by_name_id: Write,
             "language_entrypoint_tag_by_name_id" => _language_entrypoint_tag_by_name_id: Write,
@@ -4382,7 +4382,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Declarations,
         kernels,
-        "type_checker/language/decls/00_materialize",
+        "type_checker/symbols/materialize_language_declarations",
         reflected_bindings!["language_decl_name_id" => _language_decl_name_id: Write],
     )?;
     graph.add_kernel_pass_by_name(
@@ -5297,7 +5297,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/visible/01/clear/resident",
+        "type_checker/visibility/clear_resident_visibility",
         reflected_bindings![
             "visible_decl" => visible_decl: Write,
             "visible_type" => visible_type: Write,
@@ -5312,7 +5312,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::DispatchArguments,
         kernels,
-        "type_checker/count/dispatch_args",
+        "type_checker/conditions/write_count_dispatch_args",
         reflected_bindings![
             "count_in" => compact_match_payload_row_count,
             "dispatch_args" => match_payload_dispatch_args: Write,
@@ -5521,7 +5521,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
         kernels,
-        "type_checker/scope/hir",
+        "type_checker/visibility/publish_hir_scope_types",
         &[],
     )?;
     CALLS_RESOLVE.register_kernel(&mut graph, kernels)?;
@@ -5959,7 +5959,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -6042,13 +6042,13 @@ fn build_graph(
         ),
         (
             MATCH_PAYLOADS_TYPE_INFERENCE.name,
-            "type_checker/modules/10m2_type_match_payloads",
+            "type_checker/matches/type_match_payloads",
             ResourceDomain::HirNodes,
             &[][..],
         ),
         (
             MATCH_EXPRS_TYPE_INFERENCE.name,
-            "type_checker/modules/10n_type_match_exprs",
+            "type_checker/matches/type_match_exprs",
             ResourceDomain::HirNodes,
             &[][..],
         ),
@@ -6138,7 +6138,7 @@ fn build_graph(
                 ),
                 (
                     CALLS_RECORD_IMPORTED_FIELDS_PASS,
-                    "type_checker/dependencies/16_project_struct_literals",
+                    "type_checker/dependencies/projections/project_dependency_struct_literals",
                     reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
                 ),
                 (
@@ -6375,7 +6375,7 @@ fn build_graph(
             CompilerPhase::TypeCheck,
             ResourceDomain::DispatchArguments,
             kernels,
-            "type_checker/count/dispatch_args",
+            "type_checker/conditions/write_count_dispatch_args",
             reflected_bindings![
                 "count_in" => predicate_obligation_pair_total,
                 "dispatch_args" => predicate_obligation_pair_dispatch_args: Write,
@@ -6469,7 +6469,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08_validate_call_args",
+        "type_checker/dependencies/projections/validate_dependency_call_arguments",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
         ],
@@ -6479,7 +6479,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -6492,7 +6492,7 @@ fn build_graph(
         CompilerPhase::TypeCheck,
         ResourceDomain::HirNodes,
         kernels,
-        "type_checker/dependencies/08a_validate_call_results",
+        "type_checker/dependencies/projections/validate_dependency_call_results",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
@@ -6662,12 +6662,12 @@ fn build_graph(
         ),
         (
             "type_check.body_specialization.payloads",
-            "type_checker/modules/10m2_type_match_payloads",
+            "type_checker/matches/type_match_payloads",
             ResourceDomain::HirNodes,
         ),
         (
             "type_check.body_specialization.matches",
-            "type_checker/modules/10n_type_match_exprs",
+            "type_checker/matches/type_match_exprs",
             ResourceDomain::HirNodes,
         ),
         (
@@ -7302,7 +7302,7 @@ mod tests {
                     .pass_id(VISIBLE_RADIX_SORT.passes.order_to_temporary.histogram)
                     .unwrap(),
             ),
-            Some("type_checker/visible/03e_sort_hir_decl_keys"),
+            Some("type_checker/visibility/sort_hir_decl_keys"),
         );
         assert!(
             graph.repeated_regions().len() >= 4,

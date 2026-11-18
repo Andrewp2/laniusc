@@ -244,11 +244,11 @@ impl SemanticProjectionOperations {
                 ),
                 (
                     "type_check.body_specialization.payloads",
-                    "type_checker/modules/10m2_type_match_payloads",
+                    "type_checker/matches/type_match_payloads",
                 ),
                 (
                     "type_check.body_specialization.matches",
-                    "type_checker/modules/10n_type_match_exprs",
+                    "type_checker/matches/type_match_exprs",
                 ),
                 (
                     "type_check.body_specialization.bound_members",

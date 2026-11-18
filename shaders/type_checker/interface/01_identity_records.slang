@@ -112,7 +112,7 @@ uint named_module_count()
 }
 
 // The published modules: the declared rows, then an empty-path module for
-// each file that declares none (05b_clear_file_module_map numbers them after
+// each file that declares none (clear_file_module_map numbers them after
 // the rows). Word 4 of interface_status is one past the largest module a
 // published declaration or implementation names (00_identity_sizes,
 // implementations/05_scatter). A job always publishes at least the root.

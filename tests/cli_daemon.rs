@@ -910,7 +910,7 @@ fn main() -> i32 {
 }
 
 // The first job of a fresh daemon once typed `original.value` as i32 or as
-// unknown depending on warp order: type_checker/scope/hir read a struct
+// unknown depending on warp order: type_checker/visibility/publish_hir_scope_types read a struct
 // declaration's visible type while that declaration's own lane was writing
 // it (2026-10-19; about one fresh daemon in three emitted an extra spill
 // pair). A trim frees the resident buffers, so the job after it starts from

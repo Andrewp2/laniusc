@@ -1,19 +1,19 @@
 mod calls;
 mod control;
-mod language;
+mod language_items;
 mod method_keys;
 mod methods;
-mod names;
 mod predicates;
+mod symbols;
 mod type_instances;
-mod visible;
+mod visibility;
 
 pub(super) use calls::*;
 pub(super) use control::*;
-pub(super) use language::*;
+pub(super) use language_items::*;
 pub(super) use method_keys::*;
 pub(super) use methods::*;
-pub(super) use names::*;
 pub(super) use predicates::*;
+pub(super) use symbols::*;
 pub(super) use type_instances::*;
-pub(super) use visible::*;
+pub(super) use visibility::*;

@@ -42,7 +42,7 @@ struct KernelTypeRefs : IExplicitOperandTypeRefs
 }
 // Every local value declaration of the unit (parameters, let, const, for and
 // match binders) marks its name in the visible-declaration pass, which runs
-// before call binding in the same job (visible/03b_mark_hir_decl_names).
+// before call binding in the same job (mark_hir_decl_names).
 StructuredBuffer<uint> hir_value_decl_name_present;
 
 // A body operand `f<NAME>()` means the module constant when no local value

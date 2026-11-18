@@ -8,7 +8,7 @@ use crate::gpu::compiler_graph::{AccessMode, CompactionSpec, ReflectedComputeSpe
 pub(in crate::type_checker) const MODULE_RECORDS_MARK: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.records.mark",
     HirNodes,
-    "type_checker/modules/00_mark_records"
+    "type_checker/modules/records/mark_module_record_candidates"
     ; resources [typecheck_resource!("record_family_bits" => "module_record_family_bits", Write)]
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
@@ -16,7 +16,7 @@ pub(in crate::type_checker) const MODULE_RECORDS_MARK: ReflectedComputeSpec = ty
 pub(in crate::type_checker) const PATH_STATE_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.paths.clear",
     HirNodes,
-    "type_checker/modules/01a_clear_path_state";
+    "type_checker/modules/paths/clear_path_state";
     writes [
         "path_id_by_owner_hir",
         "path_id_by_owner_token",
@@ -29,7 +29,7 @@ pub(in crate::type_checker) const PATH_STATE_CLEAR: ReflectedComputeSpec = typec
 pub(in crate::type_checker) const PATHS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.paths.scatter",
     HirNodes,
-    "type_checker/modules/01_scatter_paths";
+    "type_checker/modules/paths/scatter_paths";
     writes [
         "path_owner_hir",
         "path_len",
@@ -45,14 +45,14 @@ pub(in crate::type_checker) const PATHS_SCATTER: ReflectedComputeSpec = typechec
 pub(in crate::type_checker) const PATH_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.path_dispatch_args",
     DispatchArguments,
-    "type_checker/modules/01a_path_dispatch_args";
+    "type_checker/modules/paths/write_path_dispatch_args";
     writes ["path_count_out", "path_dispatch_args"]
 );
 
 pub(in crate::type_checker) const PATH_SEGMENTS_COUNT: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.path_segments.count",
     HirNodes,
-    "type_checker/modules/01b/count_path_segments";
+    "type_checker/modules/paths/count_path_segments";
     writes [
         "path_segment_base",
         "path_segment_count",
@@ -65,7 +65,7 @@ pub(in crate::type_checker) const PATH_SEGMENTS_COUNT: ReflectedComputeSpec = ty
 pub(in crate::type_checker) const PATH_SEGMENTS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.path_segments.scatter",
     Tokens,
-    "type_checker/modules/01b/scatter_path_segments";
+    "type_checker/modules/paths/scatter_path_segments";
     writes [
         "path_segment_name_id",
         "path_segment_token",
@@ -78,14 +78,14 @@ pub(in crate::type_checker) const PATH_SEGMENTS_SCATTER: ReflectedComputeSpec = 
 pub(in crate::type_checker) const PATH_PREFIX_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.path_prefix_dispatch_args",
     DispatchArguments,
-    "type_checker/modules/01c_path_prefix_dispatch_args";
+    "type_checker/modules/paths/write_path_prefix_dispatch_args";
     writes ["path_prefix_row_dispatch_args", "path_prefix_round_dispatch_args"]
 );
 pub(in crate::type_checker) const PATH_PREFIX_TABLE_CLEAR: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.path_prefix_table_clear",
         Tokens,
-        "type_checker/modules/01c_path_prefix_table_clear";
+        "type_checker/modules/paths/clear_path_prefix_table";
         writes ["path_prefix_table_state"]
     )
     .with_indirect_dispatch("path_prefix_row_dispatch_args");
@@ -93,7 +93,7 @@ pub(in crate::type_checker) const PATH_PREFIX_INTERN_A_TO_B: ReflectedComputeSpe
     typecheck_operation!(
         "type_check.modules.path_prefix_table_intern.a_to_b",
         Tokens,
-        "type_checker/modules/01c_path_prefix_table_insert";
+        "type_checker/modules/paths/intern_path_prefix_pairs";
         resources [
             typecheck_resource!("path_prefix_id_in" => "path_prefix_id_a", Read),
             typecheck_resource!("path_prefix_id_out" => "path_prefix_id_b", Write),
@@ -105,7 +105,7 @@ pub(in crate::type_checker) const PATH_PREFIX_INTERN_B_TO_A: ReflectedComputeSpe
     typecheck_operation!(
         "type_check.modules.path_prefix_table_intern.b_to_a",
         Tokens,
-        "type_checker/modules/01c_path_prefix_table_insert";
+        "type_checker/modules/paths/intern_path_prefix_pairs";
         resources [
             typecheck_resource!("path_prefix_id_in" => "path_prefix_id_b", Read),
             typecheck_resource!("path_prefix_id_out" => "path_prefix_id_a", Write),
@@ -117,7 +117,7 @@ pub(in crate::type_checker) const PATH_PREFIX_FINALIZE: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.path_prefix_finalize",
         Tokens,
-        "type_checker/modules/01c_path_prefix_finalize";
+        "type_checker/modules/paths/finalize_path_prefix_ids";
         resources [typecheck_resource!("path_prefix_id_a" => "path_prefix_id_a", ReadWrite)]
     )
     .with_indirect_dispatch("path_prefix_row_dispatch_args");
@@ -125,14 +125,14 @@ pub(in crate::type_checker) const PATH_PREFIX_FINALIZE: ReflectedComputeSpec =
 pub(in crate::type_checker) const MODULE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.clear_module_lookup",
     Declarations,
-    "type_checker/modules/02d_clear_module_lookup";
+    "type_checker/modules/clear_module_lookup";
     writes ["module_by_canonical_id"]
 );
 
 pub(in crate::type_checker) const MODULE_KEYS_BUILD: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.build_module_keys",
     Declarations,
-    "type_checker/modules/02e_build_module_keys";
+    "type_checker/modules/build_module_keys";
     writes [
         "module_status",
         "module_key_canonical_id",
@@ -144,7 +144,7 @@ pub(in crate::type_checker) const MODULE_KEYS_BUILD: ReflectedComputeSpec = type
 pub(in crate::type_checker) const MODULE_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.module_dispatch_args",
     DispatchArguments,
-    "type_checker/count/dispatch_args"
+    "type_checker/conditions/write_count_dispatch_args"
     ; resources [
         typecheck_resource!("count_in" => "module_count_out", Read),
         typecheck_resource!("dispatch_args" => "module_dispatch_args", Write),
@@ -154,14 +154,14 @@ pub(in crate::type_checker) const MODULE_DISPATCH: ReflectedComputeSpec = typech
 pub(in crate::type_checker) const MODULES_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.validate_modules",
     Declarations,
-    "type_checker/modules/04_validate_modules"
+    "type_checker/modules/validate_module_records"
 )
 .with_indirect_dispatch("module_dispatch_args");
 
 pub(in crate::type_checker) const IMPORT_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_dispatch_args",
     DispatchArguments,
-    "type_checker/count/dispatch_args"
+    "type_checker/conditions/write_count_dispatch_args"
     ; resources [
         typecheck_resource!("count_in" => "import_record_count_out", Read),
         typecheck_resource!("dispatch_args" => "import_dispatch_args", Write),
@@ -171,13 +171,13 @@ pub(in crate::type_checker) const IMPORT_DISPATCH: ReflectedComputeSpec = typech
 pub(in crate::type_checker) const VARIANT_DECL_COUNT_APPEND: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.append_variant_decl_count",
     Declarations,
-    "type_checker/modules/02c1_append_variant_decl_count"
+    "type_checker/modules/records/append_variant_decl_count"
 );
 
 pub(in crate::type_checker) const DECL_RECORD_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.clear_decl_lookup",
     Tokens,
-    "type_checker/modules/02d/clear_decl_lookup";
+    "type_checker/modules/declarations/clear_decl_span_lookup";
     writes ["decl_id_by_name_token"]
 );
 
@@ -185,7 +185,7 @@ pub(in crate::type_checker) const DECL_SPAN_RECORDS_SCATTER: ReflectedComputeSpe
     typecheck_operation!(
         "type_check.modules.scatter_decl_span_records",
         HirNodes,
-        "type_checker/modules/02d/scatter_decl_span_records";
+        "type_checker/modules/records/scatter_decl_span_records";
             writes [
                 "decl_name_token",
                 "decl_token_start",
@@ -202,7 +202,7 @@ pub(in crate::type_checker) const DECL_SPAN_RECORDS_SCATTER: ReflectedComputeSpe
 pub(in crate::type_checker) const VARIANT_DECL_RECORDS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
 "type_check.modules.scatter_variant_decl_records",
 Declarations,
-"type_checker/modules/02c2_scatter_variant_decl_records";
+"type_checker/modules/records/scatter_variant_decl_records";
 writes [
     "decl_module_file_id",
     "decl_name_token",
@@ -235,7 +235,7 @@ pub(in crate::type_checker) const DECL_KEY_RADIX_DISPATCH: ReflectedComputeSpec 
 pub(in crate::type_checker) const DECLS_VALIDATE: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.validate_decls",
     Declarations,
-    "type_checker/modules/07_validate_decls"
+    "type_checker/modules/declarations/validate_decls"
     ; resources [
         typecheck_resource!("decl_status" => "decl_status", Write),
         typecheck_resource!(
@@ -249,7 +249,7 @@ pub(in crate::type_checker) const DECLS_VALIDATE: ReflectedComputeSpec = typeche
 pub(in crate::type_checker) const DECL_NAMESPACE_MARK: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.decl_namespace.mark",
     Declarations,
-    "type_checker/modules/08_mark_decl_namespace_keys"
+    "type_checker/modules/declarations/mark_decl_namespace_keys"
     ; resources [
         typecheck_resource!("sorted_decl_key_order" => "decl_key_to_decl_id"),
         typecheck_resource!("decl_type_key_flag" => "type_instance_arg_ref_tag", Write),
@@ -262,7 +262,7 @@ pub(in crate::type_checker) const DECL_NAMESPACE_SCATTER: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.decl_namespace.scatter",
         Declarations,
-        "type_checker/modules/08b_scatter_decl_namespace_keys"
+        "type_checker/modules/declarations/scatter_decl_namespace_keys"
         ; writes ["decl_type_key_to_decl_id", "decl_value_key_to_decl_id"]
         ; resources [
             typecheck_resource!("sorted_decl_key_order" => "decl_key_to_decl_id"),
@@ -275,13 +275,13 @@ pub(in crate::type_checker) const DECL_NAMESPACE_SCATTER: ReflectedComputeSpec =
 pub(in crate::type_checker) const DECL_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.declarations.clear_lookup",
     Declarations,
-    "type_checker/modules/08c_clear_decl_lookup";
+    "type_checker/modules/declarations/clear_decl_lookup";
     writes ["decl_lookup_state"]
 );
 pub(in crate::type_checker) const DECL_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.declarations.build_lookup",
     Declarations,
-    "type_checker/modules/08d_build_decl_lookup";
+    "type_checker/modules/declarations/build_decl_lookup";
     resources [typecheck_resource!("decl_lookup_state" => "decl_lookup_state", ReadWrite)]
 )
 .with_indirect_dispatch("decl_key_radix_dispatch_args");
@@ -289,7 +289,7 @@ pub(in crate::type_checker) const DECL_LOOKUP_BUILD: ReflectedComputeSpec = type
 pub(in crate::type_checker) const DECL_DUPLICATES_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.decl_namespace.validate_duplicates",
     Declarations,
-    "type_checker/modules/08e_validate_decl_duplicates"
+    "type_checker/modules/declarations/validate_decl_duplicates"
 )
 .with_aliases(&[typecheck_resource!(
     "decl_duplicate_of" => "type_decl_generic_param_count_by_owner_token",
@@ -300,7 +300,7 @@ pub(in crate::type_checker) const DECL_DUPLICATES_VALIDATE: ReflectedComputeSpec
 pub(in crate::type_checker) const DECL_PUBLIC_MARK: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.decl_public.mark",
     Declarations,
-    "type_checker/modules/08c_mark_public_decl_keys"
+    "type_checker/modules/declarations/mark_public_decl_keys"
     ; resources [
         typecheck_resource!("decl_type_public_flag" => "type_instance_arg_ref_tag", Write),
         typecheck_resource!("decl_value_public_flag" => "type_instance_arg_ref_payload", Write),
@@ -340,7 +340,7 @@ pub(in crate::type_checker) const INTERFACE_PUBLIC_DECLS_MAP: ReflectedComputeSp
 pub(in crate::type_checker) const FILE_MODULE_MAP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.file_module_map.clear",
     Declarations,
-    "type_checker/modules/05b_clear_file_module_map"
+    "type_checker/modules/clear_file_module_map"
     ; writes ["module_id_by_file_id", "decl_module_id", "import_module_id", "path_owner_module_id"]
     ; resources [typecheck_resource!("import_count_out" => "import_record_count_out", Read)]
 );
@@ -349,7 +349,7 @@ pub(in crate::type_checker) const FILE_MODULE_MAP_BUILD: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.file_module_map.build",
         Declarations,
-        "type_checker/modules/05c_build_file_module_map"
+        "type_checker/modules/build_file_module_map"
         ; writes ["module_id_by_file_id"]
     )
     .with_indirect_dispatch("module_dispatch_args");
@@ -357,7 +357,7 @@ pub(in crate::type_checker) const FILE_MODULE_MAP_BUILD: ReflectedComputeSpec =
 pub(in crate::type_checker) const ATTACH_RECORD_MODULES: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.records.attach_modules",
     Declarations,
-    "type_checker/modules/05d_attach_record_modules"
+    "type_checker/modules/attach_record_modules"
     ; writes ["decl_module_id", "import_module_id", "path_owner_module_id"]
     ; resources [
         typecheck_resource!("import_count_out" => "import_record_count_out", Read),
@@ -368,7 +368,7 @@ pub(in crate::type_checker) const ATTACH_RECORD_MODULES: ReflectedComputeSpec = 
 pub(in crate::type_checker) const RESOLVE_IMPORTS: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.imports.resolve",
     Declarations,
-    "type_checker/modules/05_resolve_imports"
+    "type_checker/modules/imports/resolve_module_imports"
     ; writes ["import_target_module_id", "import_item_name_id", "import_status"]
     ; resources [
         typecheck_resource!("status" => "status", ReadWrite),
@@ -380,7 +380,7 @@ pub(in crate::type_checker) const RESOLVE_IMPORTS: ReflectedComputeSpec = typech
 pub(in crate::type_checker) const IMPORT_EDGE_SET_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_edges.clear",
     Declarations,
-    "type_checker/modules/05e_clear_import_edge_set";
+    "type_checker/modules/imports/clear_import_edge_set";
     writes ["import_edge_set_state"]
 );
 
@@ -388,7 +388,7 @@ pub(in crate::type_checker) const IMPORT_EDGE_SET_BUILD: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.import_edges.build",
         Declarations,
-        "type_checker/modules/05f_build_import_edge_set";
+        "type_checker/modules/imports/build_import_edge_set";
         resources [
             typecheck_resource!("import_count_out" => "import_record_count_out", Read),
             typecheck_resource!("import_edge_set_state" => "import_edge_set_state", ReadWrite),
@@ -400,7 +400,7 @@ pub(in crate::type_checker) const IMPORT_CYCLES_VALIDATE: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.modules.import_cycles.validate",
         Declarations,
-        "type_checker/modules/05h_validate_import_cycles";
+        "type_checker/modules/imports/validate_import_cycles";
         resources [
             typecheck_resource!("import_count_out" => "import_record_count_out", Read),
             typecheck_resource!("import_status" => "import_status", ReadWrite),
@@ -413,7 +413,7 @@ pub(in crate::type_checker) const IMPORT_VISIBILITY_COUNT: ReflectedComputeSpec 
     typecheck_operation!(
         "type_check.modules.import_visibility.count",
         Declarations,
-        "type_checker/modules/09_count_import_visibility"
+        "type_checker/modules/imports/count_import_visibility"
         ; writes ["import_visible_type_count", "import_visible_value_count"]
         ; resources [
             typecheck_resource!("import_count_out" => "import_record_count_out", Read),
@@ -430,7 +430,7 @@ pub(in crate::type_checker) const IMPORT_VISIBILITY_COUNT: ReflectedComputeSpec 
 pub(in crate::type_checker) const IMPORT_VISIBLE_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_visible_dispatch_args",
     DispatchArguments,
-    "type_checker/count/pair_max_dispatch_args"
+    "type_checker/conditions/write_max_count_dispatch_args"
     ; resources [
         typecheck_resource!("left_count_in" => "import_visible_type_count_out", Read),
         typecheck_resource!("right_count_in" => "import_visible_value_count_out", Read),
@@ -469,7 +469,7 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_SCATTER: ReflectedComputeS
     typecheck_pass!(
         "type_check.modules.import_visibility.scatter_type",
         Declarations,
-        "type_checker/modules/09b_scatter_import_visibility"
+        "type_checker/modules/imports/scatter_import_visibility"
     )
     .with_aliases(IMPORT_VISIBLE_TYPE_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -477,7 +477,7 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_SCATTER: ReflectedCompute
     typecheck_pass!(
         "type_check.modules.import_visibility.scatter_value",
         Declarations,
-        "type_checker/modules/09b_scatter_import_visibility"
+        "type_checker/modules/imports/scatter_import_visibility"
     )
     .with_aliases(IMPORT_VISIBLE_VALUE_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -501,20 +501,20 @@ const IMPORT_VISIBLE_VALUE_LOOKUP_ALIASES: &[crate::gpu::compiler_graph::Reflect
 pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_visibility.clear_type_lookup",
     Declarations,
-    "type_checker/modules/09c_clear_import_visible_lookup";
+    "type_checker/modules/imports/clear_import_visible_lookup";
     resources [typecheck_resource!("import_visible_lookup_state" => "import_visible_type_lookup_state", Write)]
 );
 pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.import_visibility.clear_value_lookup",
     Declarations,
-    "type_checker/modules/09c_clear_import_visible_lookup";
+    "type_checker/modules/imports/clear_import_visible_lookup";
     resources [typecheck_resource!("import_visible_lookup_state" => "import_visible_value_lookup_state", Write)]
 );
 pub(in crate::type_checker) const IMPORT_VISIBLE_TYPE_LOOKUP_BUILD: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.modules.import_visibility.build_type_lookup",
         Declarations,
-        "type_checker/modules/09e_build_import_visible_key_tables"
+        "type_checker/modules/imports/build_import_visible_key_tables"
     )
     .with_aliases(IMPORT_VISIBLE_TYPE_LOOKUP_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -522,7 +522,7 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_VALUE_LOOKUP_BUILD: ReflectedCo
     typecheck_pass!(
         "type_check.modules.import_visibility.build_value_lookup",
         Declarations,
-        "type_checker/modules/09e_build_import_visible_key_tables"
+        "type_checker/modules/imports/build_import_visible_key_tables"
     )
     .with_aliases(IMPORT_VISIBLE_VALUE_LOOKUP_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -544,7 +544,7 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_STATUS_INITIALIZE: ReflectedCom
     typecheck_pass!(
         "type_check.modules.import_visibility.initialize_status",
         Declarations,
-        "type_checker/modules/09f_validate_import_visible_keys"
+        "type_checker/modules/imports/validate_import_visible_keys"
     )
     .with_aliases(IMPORT_VISIBLE_STATUS_INITIALIZE_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -552,7 +552,7 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_AMBIGUITY_VALIDATE: ReflectedCo
     typecheck_pass!(
         "type_check.modules.import_visibility.validate_ambiguity",
         Declarations,
-        "type_checker/modules/09f_validate_import_visible_keys"
+        "type_checker/modules/imports/validate_import_visible_keys"
     )
     .with_aliases(IMPORT_VISIBLE_STATUS_VALIDATE_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
@@ -569,7 +569,7 @@ const RESOLVE_LOCAL_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResour
 pub(in crate::type_checker) const RESOLVE_LOCAL_TYPE_PATHS: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.paths.resolve_local_type",
     HirNodes,
-    "type_checker/modules/10_resolve_local_paths"
+    "type_checker/modules/paths/resolve_local_paths"
 )
 .with_aliases(RESOLVE_LOCAL_TYPE_ALIASES)
 .with_indirect_dispatch("path_dispatch_args");
@@ -577,7 +577,7 @@ pub(in crate::type_checker) const RESOLVE_LOCAL_VALUE_PATHS: ReflectedComputeSpe
     typecheck_pass!(
         "type_check.modules.paths.resolve_local_value",
         HirNodes,
-        "type_checker/modules/10_resolve_local_paths"
+        "type_checker/modules/paths/resolve_local_paths"
     )
     .with_aliases(RESOLVE_LOCAL_VALUE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
@@ -607,7 +607,7 @@ pub(in crate::type_checker) const RESOLVE_IMPORTED_TYPE_PATHS: ReflectedComputeS
     typecheck_pass!(
         "type_check.modules.paths.resolve_imported_type",
         HirNodes,
-        "type_checker/modules/10b_resolve_imported_paths"
+        "type_checker/modules/paths/resolve_imported_paths"
     )
     .with_aliases(RESOLVE_IMPORTED_TYPE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
@@ -615,7 +615,7 @@ pub(in crate::type_checker) const RESOLVE_IMPORTED_VALUE_PATHS: ReflectedCompute
     typecheck_pass!(
         "type_check.modules.paths.resolve_imported_value",
         HirNodes,
-        "type_checker/modules/10b_resolve_imported_paths"
+        "type_checker/modules/paths/resolve_imported_paths"
     )
     .with_aliases(RESOLVE_IMPORTED_VALUE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
@@ -635,7 +635,7 @@ pub(in crate::type_checker) const RESOLVE_QUALIFIED_TYPE_PATHS: ReflectedCompute
     typecheck_pass!(
         "type_check.modules.paths.resolve_qualified_type",
         HirNodes,
-        "type_checker/modules/10c_resolve_qualified_paths"
+        "type_checker/modules/paths/resolve_qualified_paths"
     )
     .with_aliases(RESOLVE_QUALIFIED_TYPE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
@@ -643,7 +643,7 @@ pub(in crate::type_checker) const RESOLVE_QUALIFIED_VALUE_PATHS: ReflectedComput
     typecheck_pass!(
         "type_check.modules.paths.resolve_qualified_value",
         HirNodes,
-        "type_checker/modules/10c_resolve_qualified_paths"
+        "type_checker/modules/paths/resolve_qualified_paths"
     )
     .with_aliases(RESOLVE_QUALIFIED_VALUE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
@@ -651,7 +651,7 @@ pub(in crate::type_checker) const RESOLVE_QUALIFIED_VALUE_PATHS: ReflectedComput
 pub(in crate::type_checker) const TYPE_PATH_STATE_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.clear_type_path_types",
     Tokens,
-    "type_checker/modules/10d_clear_type_path_types";
+    "type_checker/modules/paths/clear_type_path_types";
     writes [
         "module_type_path_type",
         "module_type_path_status",
@@ -672,7 +672,7 @@ const fn type_path_projection(name: &'static str) -> ReflectedComputeSpec {
     typecheck_pass!(
         name,
         HirNodes,
-        "type_checker/modules/10e_project_type_paths"
+        "type_checker/modules/paths/project_type_paths"
     )
     .with_indirect_dispatch("path_dispatch_args")
 }
@@ -693,14 +693,14 @@ pub(in crate::type_checker) const TYPE_ALIASES_NORMALIZE: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.modules.normalize_type_aliases",
         Tokens,
-        "type_checker/modules/10e0l_normalize_type_aliases"
+        "type_checker/modules/paths/normalize_type_aliases"
     )
     .with_indirect_dispatch("token_active_dispatch_args");
 pub(in crate::type_checker) const TYPE_ALIAS_INSTANCES_PROJECT: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.modules.project_type_alias_instances",
         Tokens,
-        "type_checker/modules/10e0k_project_type_alias_instances"
+        "type_checker/modules/paths/project_type_alias_instances"
     )
     .with_indirect_dispatch("token_active_dispatch_args");
 
@@ -708,14 +708,14 @@ pub(in crate::type_checker) const NORMALIZED_VALUE_MEMBERS_RESOLVE: ReflectedCom
     typecheck_pass!(
         "type_check.modules.resolve_normalized_value_members",
         HirNodes,
-        "type_checker/modules/10l_resolve_normalized_value_members"
+        "type_checker/modules/values/resolve_normalized_value_members"
     )
     .with_indirect_dispatch("path_dispatch_args");
 
 pub(in crate::type_checker) const TYPE_INSTANCES_PROJECT: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.project_type_instances",
     HirNodes,
-    "type_checker/modules/10k_project_type_instances"
+    "type_checker/modules/paths/project_type_instances"
 )
 .with_indirect_dispatch("path_dispatch_args");
 
@@ -761,20 +761,20 @@ pub(in crate::type_checker) const INTERFACE_HIDDEN_DECLS_PUBLISH: ReflectedCompu
 pub(in crate::type_checker) const VALUE_CALL_PATHS_MARK: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.mark_value_call_paths",
     HirNodes,
-    "type_checker/modules/10f_mark_value_call_paths"
+    "type_checker/modules/values/mark_value_call_paths"
 );
 
 pub(in crate::type_checker) const VALUE_PATHS_PROJECT: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.project_value_paths",
     HirNodes,
-    "type_checker/modules/10g_project_value_paths"
+    "type_checker/modules/values/project_value_paths"
 )
 .with_indirect_dispatch("path_dispatch_args");
 
 pub(in crate::type_checker) const TYPE_PATHS_VALIDATE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.validate_type_paths",
     HirNodes,
-    "type_checker/modules/10e3_validate_type_paths"
+    "type_checker/modules/paths/validate_type_paths"
 )
 .with_indirect_dispatch("path_dispatch_args");
 
@@ -782,7 +782,7 @@ const fn consume_value_calls(name: &'static str) -> ReflectedComputeSpec {
     typecheck_pass!(
         name,
         HirNodes,
-        "type_checker/modules/10h_consume_value_calls"
+        "type_checker/modules/values/bind_value_path_calls"
     )
     .with_indirect_dispatch("path_dispatch_args")
 }
@@ -791,7 +791,7 @@ const fn mirror_value_call_leaf(name: &'static str) -> ReflectedComputeSpec {
     typecheck_pass!(
         name,
         HirNodes,
-        "type_checker/modules/10h2_mirror_value_call_leaf"
+        "type_checker/modules/values/mirror_value_call_to_callee_leaf"
     )
     .with_indirect_dispatch("path_dispatch_args")
 }
@@ -813,13 +813,13 @@ pub(in crate::type_checker) const VALUE_CALL_LEAF_MIRROR_AFTER_METHOD_ROW_ARGS:
 pub(in crate::type_checker) const VALUE_CONSTS_CONSUME: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.consume_value_consts",
     HirNodes,
-    "type_checker/modules/10i_consume_value_consts"
+    "type_checker/modules/values/bind_value_path_constants"
 )
 .with_indirect_dispatch("path_dispatch_args");
 pub(in crate::type_checker) const VALUE_ENUM_UNITS_CONSUME: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.consume_value_enum_units",
     HirNodes,
-    "type_checker/modules/10j_consume_value_enum_units"
+    "type_checker/modules/values/bind_value_path_enum_units"
 )
 .with_indirect_dispatch("path_dispatch_args");
 
@@ -831,7 +831,7 @@ pub(in crate::type_checker) const VALUE_ENUM_UNITS_CONSUME_AFTER_INFERENCE: Refl
 pub(in crate::type_checker) const MATCH_PATTERNS_BIND: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.bind_match_patterns",
     HirNodes,
-    "type_checker/modules/10m_bind_match_patterns"
+    "type_checker/matches/bind_match_patterns"
 )
 .with_indirect_dispatch("match_hir_dispatch_args");
 
@@ -839,7 +839,7 @@ pub(in crate::type_checker) const MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE: Reflect
     typecheck_pass!(
         "type_check.modules.validate_imported_unit_patterns",
         HirNodes,
-        "type_checker/modules/10m3_validate_imported_unit_patterns"
+        "type_checker/matches/validate_imported_unit_patterns"
     )
     .with_indirect_dispatch("match_hir_dispatch_args");
 
@@ -847,14 +847,14 @@ pub(in crate::type_checker) const MATCH_EXHAUSTIVE_VALIDATE: ReflectedComputeSpe
     typecheck_pass!(
         "type_check.modules.validate_match_exhaustive",
         HirNodes,
-        "type_checker/modules/10o_validate_match_exhaustive"
+        "type_checker/matches/validate_match_exhaustive"
     )
     .with_indirect_dispatch("match_hir_dispatch_args");
 
 pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.type_match_payloads",
     HirNodes,
-    "type_checker/modules/10m2_type_match_payloads"
+    "type_checker/matches/type_match_payloads"
 )
 .with_indirect_dispatch("match_hir_dispatch_args");
 
@@ -867,7 +867,7 @@ pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE_AFTER_CALLS: ReflectedComp
 pub(in crate::type_checker) const VALUE_ENUM_CALLS_CONSUME: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.consume_value_enum_calls",
     HirNodes,
-    "type_checker/modules/10l_consume_value_enum_calls"
+    "type_checker/modules/values/bind_value_path_enum_calls"
 )
 .with_indirect_dispatch("path_dispatch_args");
 
@@ -875,7 +875,7 @@ pub(in crate::type_checker) const VALUE_ENUM_CALLS_FINALIZE: ReflectedComputeSpe
     typecheck_pass!(
         "type_check.modules.finalize_value_enum_calls",
         HirNodes,
-        "type_checker/modules/10l3_finalize_value_enum_calls"
+        "type_checker/modules/values/finalize_value_enum_calls"
     )
     .with_indirect_dispatch("path_dispatch_args");
 
@@ -889,7 +889,7 @@ pub(in crate::type_checker) const VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE: Ref
 pub(in crate::type_checker) const MATCH_EXPRS_TYPE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.type_match_exprs",
     HirNodes,
-    "type_checker/modules/10n_type_match_exprs"
+    "type_checker/matches/type_match_exprs"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -905,7 +905,7 @@ const fn record_flag(name: &'static str) -> ReflectedComputeSpec {
     typecheck_pass!(
         name,
         HirNodes,
-        "type_checker/modules/00b_extract_record_flag"
+        "type_checker/modules/records/extract_module_record_flags"
     )
     .with_aliases(RECORD_FLAG_ALIASES)
     .with_indirect_dispatch("hir_active_dispatch_args")
@@ -952,7 +952,7 @@ record_compaction!(
     MODULE_RECORD_FLAG,
     super::super::compiler_graph::MODULE_RECORD_SCAN,
     "module",
-    "type_checker/modules/02_scatter_module_records",
+    "type_checker/modules/records/scatter_module_records",
     ["module_file_id", "module_path_id", "module_owner_hir"]
 );
 record_compaction!(
@@ -962,7 +962,7 @@ record_compaction!(
     IMPORT_RECORD_FLAG,
     super::super::compiler_graph::IMPORT_RECORD_SCAN,
     "import",
-    "type_checker/modules/02b_scatter_import_records",
+    "type_checker/modules/records/scatter_import_records",
     [
         "import_module_file_id",
         "import_path_id",
@@ -977,7 +977,7 @@ record_compaction!(
     DECL_RECORD_FLAG,
     super::super::compiler_graph::DECL_RECORD_SCAN,
     "decl",
-    "type_checker/modules/02c_scatter_decl_core_records",
+    "type_checker/modules/records/scatter_decl_core_records",
     [
         "decl_module_file_id",
         "decl_name_id",

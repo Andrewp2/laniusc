@@ -77,7 +77,7 @@ impl TypeCheckPreflightGraph {
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 passes,
-                "type_checker/modules/00a_count_record_candidates",
+                "type_checker/modules/records/count_record_candidates",
                 &[],
             )
             .map_err(anyhow::Error::msg)?;
@@ -223,7 +223,7 @@ impl GpuTypeChecker {
             PREFLIGHT_COUNT_PASS,
             &self
                 .passes
-                .kernel("type_checker/modules/00a_count_record_candidates"),
+                .kernel("type_checker/modules/records/count_record_candidates"),
             parse_bufs.tree_capacity,
         )?;
         clear.record(encoder);

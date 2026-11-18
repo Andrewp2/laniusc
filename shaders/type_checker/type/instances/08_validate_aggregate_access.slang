@@ -532,7 +532,7 @@ void validate_member_expr_node(uint node)
 // A local struct literal supplies each declared field once: detail 3 at the
 // constructor for a missing field, detail 4 at a repeated field. An unknown
 // field is reported per row (detail 0). An imported record is checked by
-// dependencies/16_project_struct_literals.
+// project_dependency_struct_literals.
 void validate_struct_literal_complete(uint node)
 {
     uint record = written_struct_literal_type(node);

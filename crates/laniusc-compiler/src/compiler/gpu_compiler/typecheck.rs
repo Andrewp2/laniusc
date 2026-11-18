@@ -3857,7 +3857,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
 }
 
 /// Text for the three reports of the match exhaustiveness pass
-/// (`10o_validate_match_exhaustive.slang`).
+/// (`validate_match_exhaustive.slang`).
 fn match_not_exhaustive_diagnostic(
     path: &Path,
     source: &str,

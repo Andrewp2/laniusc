@@ -359,7 +359,7 @@ pub(in crate::type_checker) fn create(
         graph,
         &canonical_type_resources,
         type_index_names.initialize,
-        &passes.kernel("type_checker/dependencies/09_init_canonical_type_roots"),
+        &passes.kernel("type_checker/dependencies/projections/seed_dependency_canonical_type_roots"),
         dependencies.type_count.max(1),
     )?;
     let jump_a_to_b = if canonical_type_jump_rounds == 0 {
@@ -375,7 +375,7 @@ pub(in crate::type_checker) fn create(
             graph,
             &canonical_type_resources,
             name,
-            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
+            &passes.kernel("type_checker/dependencies/projections/jump_dependency_canonical_type_roots"),
             dependencies.type_count.max(1),
         )?)
     };
@@ -385,7 +385,7 @@ pub(in crate::type_checker) fn create(
             graph,
             &canonical_type_resources,
             type_index_names.jump_b_to_a,
-            &passes.kernel("type_checker/dependencies/10_jump_canonical_type_roots"),
+            &passes.kernel("type_checker/dependencies/projections/jump_dependency_canonical_type_roots"),
             dependencies.type_count.max(1),
         )?)
     } else {
@@ -396,7 +396,7 @@ pub(in crate::type_checker) fn create(
         graph,
         &canonical_type_resources,
         type_index_names.clear_generic_arity,
-        &passes.kernel("type_checker/dependencies/12_clear_declaration_generic_arity"),
+        &passes.kernel("type_checker/dependencies/projections/clear_dependency_generic_arity"),
         dependencies.declaration_count.max(1),
     )?;
     let count_generic_arity = ComputeOperation::direct(
@@ -404,7 +404,7 @@ pub(in crate::type_checker) fn create(
         graph,
         &canonical_type_resources,
         type_index_names.count_generic_arity,
-        &passes.kernel("type_checker/dependencies/13_count_declaration_generic_arity"),
+        &passes.kernel("type_checker/dependencies/projections/count_dependency_generic_arity"),
         dependencies.member_count.max(1),
     )?;
     let type_index = DependencyTypeIndexOperations {

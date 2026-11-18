@@ -178,7 +178,7 @@ pub(in crate::type_checker) const DEPENDENCY_WORKSPACE_CLEAR: ReflectedComputeSp
     typecheck_pass!(
         "type_check.dependencies.clear_workspace",
         Declarations,
-        "type_checker/dependencies/00_clear_workspace"
+        "type_checker/dependencies/clear_dependency_workspace"
     )
     .initializer();
 
@@ -186,14 +186,14 @@ pub(in crate::type_checker) const DEPENDENCY_MODULE_LOOKUP_CLEAR: ReflectedCompu
     typecheck_pass!(
         "type_check.dependencies.clear_module_lookup",
         Declarations,
-        "type_checker/dependencies/00a_clear_module_lookup"
+        "type_checker/dependencies/visibility/clear_dependency_module_lookup"
     )
     .initializer();
 
 pub(in crate::type_checker) const DEPENDENCY_MODULE_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_pass!(
     "type_check.dependencies.build_module_lookup",
     Declarations,
-    "type_checker/dependencies/00_build_module_lookup"
+    "type_checker/dependencies/visibility/build_dependency_module_lookup"
 );
 
 /// The method index of the page in the dependency slot
@@ -203,21 +203,21 @@ pub(in crate::type_checker) const DEPENDENCY_METHOD_LOOKUP_CLEAR: ReflectedCompu
     typecheck_pass!(
         "type_check.dependencies.clear_method_lookup",
         Declarations,
-        "type_checker/dependencies/00b_clear_method_lookup"
+        "type_checker/dependencies/clear_dependency_method_lookup"
     )
     .initializer();
 
 pub(in crate::type_checker) const DEPENDENCY_METHOD_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_pass!(
     "type_check.dependencies.build_method_lookup",
     Declarations,
-    "type_checker/dependencies/00c_build_method_lookup"
+    "type_checker/dependencies/build_dependency_method_lookup"
 );
 
 pub(in crate::type_checker) const DEPENDENCY_IMPORTS_RESOLVE: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.resolve_imports",
         Declarations,
-        "type_checker/dependencies/01_resolve_imports"
+        "type_checker/dependencies/visibility/resolve_dependency_imports"
     )
     .with_initializes(&["import_target_dependency_module_id"])
     .with_indirect_dispatch("import_dispatch_args");
@@ -226,35 +226,35 @@ pub(in crate::type_checker) const DEPENDENCY_IMPORT_VISIBILITY_COUNT: ReflectedC
     typecheck_pass!(
         "type_check.dependencies.count_import_visibility",
         Declarations,
-        "type_checker/dependencies/02_count_import_visibility"
+        "type_checker/dependencies/visibility/count_dependency_import_visibility"
     )
     .with_indirect_dispatch("import_dispatch_args");
 
 pub(in crate::type_checker) const DEPENDENCY_IMPORT_VISIBILITY_SCATTER: ReflectedComputeSpec = typecheck_pass!(
     "type_check.dependencies.scatter_import_visibility",
     Declarations,
-    "type_checker/dependencies/03_scatter_import_visibility"
+    "type_checker/dependencies/visibility/scatter_dependency_import_visibility"
 );
 
 pub(in crate::type_checker) const DEPENDENCY_VISIBLE_LOOKUP_CLEAR: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.clear_visible_lookup",
         Declarations,
-        "type_checker/dependencies/04_clear_visible_lookup"
+        "type_checker/dependencies/visibility/clear_dependency_visible_lookup"
     )
     .initializer();
 
 pub(in crate::type_checker) const DEPENDENCY_VISIBLE_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_pass!(
     "type_check.dependencies.build_visible_lookup",
     Declarations,
-    "type_checker/dependencies/05_build_visible_lookup"
+    "type_checker/dependencies/visibility/build_dependency_visible_lookup"
 );
 
 pub(in crate::type_checker) const DEPENDENCY_TYPE_PATHS_RESOLVE: ReflectedComputeSpec =
     typecheck_operation!(
         "type_check.dependencies.resolve_type_paths",
         Declarations,
-        "type_checker/dependencies/06_resolve_paths"
+        "type_checker/dependencies/visibility/resolve_dependency_paths"
         ; resources [
             typecheck_resource!("resolved_decl" => "resolved_type_decl"),
             typecheck_resource!("resolved_status" => "resolved_type_status"),
@@ -266,7 +266,7 @@ pub(in crate::type_checker) const DEPENDENCY_VALUE_PATHS_RESOLVE: ReflectedCompu
     typecheck_operation!(
         "type_check.dependencies.resolve_value_paths",
         Declarations,
-        "type_checker/dependencies/06_resolve_paths"
+        "type_checker/dependencies/visibility/resolve_dependency_paths"
         ; resources [
             typecheck_resource!("resolved_decl" => "resolved_value_decl"),
             typecheck_resource!("resolved_status" => "resolved_value_status"),
@@ -281,7 +281,7 @@ pub(in crate::type_checker) const DEPENDENCY_TYPES_PROJECT: ReflectedComputeSpec
     typecheck_pass!(
         "type_check.dependencies.project_types",
         Declarations,
-        "type_checker/dependencies/11_project_types"
+        "type_checker/dependencies/projections/project_dependency_types"
     )
     .with_indirect_dispatch("path_dispatch_args");
 
@@ -292,7 +292,7 @@ pub(in crate::type_checker) const DEPENDENCY_TYPE_INSTANCES_PROJECT: ReflectedCo
     typecheck_pass!(
         "type_check.dependencies.project_type_instances",
         Declarations,
-        "type_checker/dependencies/14_project_type_instances"
+        "type_checker/dependencies/projections/project_dependency_type_instances"
     )
     .with_indirect_dispatch("path_dispatch_args");
 
@@ -300,14 +300,14 @@ pub(in crate::type_checker) const DEPENDENCY_ALIAS_TARGETS_MATERIALIZE: Reflecte
     typecheck_pass!(
         "type_check.dependencies.materialize_alias_targets",
         Tokens,
-        "type_checker/dependencies/14a_materialize_alias_targets"
+        "type_checker/dependencies/projections/materialize_dependency_alias_targets"
     )
     .with_indirect_dispatch("path_dispatch_args");
 
 pub(in crate::type_checker) const DEPENDENCY_CALLS_PROJECT: ReflectedComputeSpec = typecheck_pass!(
     "type_check.dependencies.project_calls",
     Calls,
-    "type_checker/dependencies/07_project_calls"
+    "type_checker/dependencies/projections/project_dependency_calls"
 )
 .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -315,21 +315,21 @@ pub(in crate::type_checker) const DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_CLEAR: Ref
     DEPENDENCY_VISIBLE_LOOKUP_CLEAR.with_name("type_check.dependencies.normalized_members.clear");
 pub(in crate::type_checker) const DEPENDENCY_NORMALIZED_MEMBER_LOOKUP_BUILD: ReflectedComputeSpec =
     typecheck_pass!("type_check.dependencies.normalized_members.build", Declarations,
-        "type_checker/dependencies/06b_build_enum_member_lookup");
+        "type_checker/dependencies/visibility/build_dependency_enum_member_lookup");
 pub(in crate::type_checker) const DEPENDENCY_NORMALIZED_MEMBERS_RESOLVE: ReflectedComputeSpec =
     typecheck_pass!("type_check.dependencies.normalized_members.resolve", Declarations,
-        "type_checker/dependencies/06c_resolve_normalized_value_members")
+        "type_checker/dependencies/visibility/resolve_normalized_dependency_value_members")
         .with_indirect_dispatch("path_dispatch_args");
 pub(in crate::type_checker) const DEPENDENCY_NORMALIZED_VALUES_PROJECT: ReflectedComputeSpec =
     typecheck_pass!("type_check.dependencies.normalized_members.values", Declarations,
-        "type_checker/dependencies/11a_project_normalized_values")
+        "type_checker/dependencies/projections/project_normalized_dependency_values")
         .with_indirect_dispatch("path_dispatch_args");
 
 pub(in crate::type_checker) const DEPENDENCY_CALL_PARAMS_PROJECT: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.project_call_params",
         Calls,
-        "type_checker/dependencies/07a_project_call_params"
+        "type_checker/dependencies/projections/project_dependency_call_parameters"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -337,7 +337,7 @@ pub(in crate::type_checker) const DEPENDENCY_CALL_PARAMS_SCATTER: ReflectedCompu
     typecheck_pass!(
         "type_check.dependencies.scatter_call_params",
         CallArguments,
-        "type_checker/dependencies/07b_scatter_call_params"
+        "type_checker/dependencies/projections/scatter_dependency_call_parameters"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -345,7 +345,7 @@ pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT: ReflectedComputeSp
     typecheck_pass!(
         "type_check.dependencies.collect_methods",
         HirNodes,
-        "type_checker/dependencies/15a_collect_methods"
+        "type_checker/dependencies/projections/collect_dependency_methods"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT_LOOKUP: ReflectedComputeSpec =
@@ -363,7 +363,7 @@ pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER: ReflectedCompu
     typecheck_pass!(
         "type_check.dependencies.offer_bound_members",
         HirNodes,
-        "type_checker/dependencies/15b_offer_bound_members"
+        "type_checker/dependencies/projections/offer_dependency_bound_members"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 // The preliminary lookup sweep dispatches from its gated grid (methods/08c).
@@ -380,7 +380,7 @@ pub(in crate::type_checker) const DEPENDENCY_METHODS_PROJECT: ReflectedComputeSp
     typecheck_pass!(
         "type_check.dependencies.project_methods",
         HirNodes,
-        "type_checker/dependencies/15_project_methods"
+        "type_checker/dependencies/projections/project_dependency_methods"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -388,7 +388,7 @@ pub(in crate::type_checker) const DEPENDENCY_STRUCT_LITERALS_PROJECT: ReflectedC
     typecheck_pass!(
         "type_check.dependencies.project_struct_literals",
         HirNodes,
-        "type_checker/dependencies/16_project_struct_literals"
+        "type_checker/dependencies/projections/project_dependency_struct_literals"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -396,7 +396,7 @@ pub(in crate::type_checker) const DEPENDENCY_CALL_ARGS_VALIDATE: ReflectedComput
     typecheck_pass!(
         "type_check.dependencies.validate_call_args",
         HirNodes,
-        "type_checker/dependencies/08_validate_call_args"
+        "type_checker/dependencies/projections/validate_dependency_call_arguments"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -404,7 +404,7 @@ pub(in crate::type_checker) const DEPENDENCY_CALL_ARITY_VALIDATE: ReflectedCompu
     typecheck_pass!(
         "type_check.dependencies.validate_call_arity",
         HirNodes,
-        "type_checker/dependencies/08c_validate_call_arity"
+        "type_checker/dependencies/projections/validate_dependency_call_arity"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
@@ -412,7 +412,7 @@ pub(in crate::type_checker) const DEPENDENCY_CALL_RESULTS_SUBSTITUTE: ReflectedC
     typecheck_pass!(
         "type_check.dependencies.validate_call_results.substitute",
         HirNodes,
-        "type_checker/dependencies/08a_validate_call_results"
+        "type_checker/dependencies/projections/validate_dependency_call_results"
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 

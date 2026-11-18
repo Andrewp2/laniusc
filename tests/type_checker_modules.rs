@@ -2586,7 +2586,7 @@ fn typechecker_graph_uses_compact_hir_control_and_hir_scope_validation() {
             && resident.contains("bind_groups.scope_hir.record(encoder)?")
             && graph.contains("type_check.conditions.compact_expr")
             && graph.contains("type_check.scope.hir")
-            && graph.contains("type_checker/scope/hir"),
+            && graph.contains("type_checker/visibility/publish_hir_scope_types"),
         "control validation should consume compact HIR while scope publication remains HIR-based"
     );
     assert!(

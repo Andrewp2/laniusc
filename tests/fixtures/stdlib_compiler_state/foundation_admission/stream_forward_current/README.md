@@ -58,7 +58,7 @@ callee and its source receiver, dereference count, matched checked type, passing
 mode and parameter reference together. `methods/08_finalize_candidates.slang`
 constructs that plan; `semantic/artifact/00_calls.slang` refuses a callable with
 a missing/stale plan. Imported trait bound offering in
-`dependencies/15b_offer_bound_members.slang` currently rejects a path call of a
+`offer_dependency_bound_members.slang` currently rejects a path call of a
 self member; thus the explicit `W::write` probe fails before reaching the missing
 generic external-target export. Weakening receiver checks would not supply the
 implementation environment needed by ordinary dotted `writer.write` calls.

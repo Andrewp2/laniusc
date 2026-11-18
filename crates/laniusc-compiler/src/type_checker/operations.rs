@@ -51,11 +51,11 @@ mod generic_parameter_index;
 mod late_semantics;
 mod methods;
 mod module_paths;
-mod names;
 mod returns;
 mod struct_field_index;
+mod symbols;
 mod type_instances;
-mod visible;
+mod visibility;
 mod visible_decls;
 
 pub(super) use call_argument_matching::*;
@@ -69,11 +69,11 @@ pub(super) use generic_parameter_index::*;
 pub(super) use late_semantics::*;
 pub(super) use methods::*;
 pub(super) use module_paths::*;
-pub(super) use names::*;
 pub(super) use returns::*;
 pub(super) use struct_field_index::*;
+pub(super) use symbols::*;
 pub(super) use type_instances::*;
-pub(super) use visible::*;
+pub(super) use visibility::*;
 pub(super) use visible_decls::*;
 
 use super::*;
