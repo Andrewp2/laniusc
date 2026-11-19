@@ -66,27 +66,12 @@ use crate::gpu::{
         RadixSortKernels,
         RadixSortOperation,
         RadixSortResources,
+        STEP_PROGRAM_MAX_GROUPS,
+        STEP_PROGRAM_SYNC_WORDS,
+        StepProgramOperation,
     },
     resource_registry::ResourceMap,
     timer::GpuTimer,
-};
-
-pub(super) const OPT_IR_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationNodes,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.blocks.scan.local",
-        apply: "lir.opt.blocks.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.total",
-        input: "lir.opt.block_start_flag",
-        output_prefix: "lir.opt.block_prefix",
-        total: "lir.opt.block_total",
-        dispatch_args: "lir.opt.block_scan_dispatch_args",
-        local_prefix: "lir.opt.block_scan_local_prefix",
-        block_sum: "lir.opt.block_scan_block_sum",
-    },
 };
 
 pub(super) const OPT_IR_REGION_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -104,42 +89,6 @@ pub(super) const OPT_IR_REGION_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.block_scan_dispatch_args",
         local_prefix: "lir.opt.block_scan_local_prefix",
         block_sum: "lir.opt.block_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_EDGE_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationBlocks,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.edges.scan.local",
-        apply: "lir.opt.edges.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.block_total",
-        input: "lir.opt.edge_count_by_block",
-        output_prefix: "lir.opt.edge_prefix",
-        total: "lir.opt.edge_total",
-        dispatch_args: "lir.opt.edge_scan_dispatch_args",
-        local_prefix: "lir.opt.edge_scan_local_prefix",
-        block_sum: "lir.opt.edge_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_PREDECESSOR_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationBlocks,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.predecessors.scan.local",
-        apply: "lir.opt.predecessors.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.block_total",
-        input: "lir.opt.edge_count_by_block",
-        output_prefix: "lir.opt.edge_prefix",
-        total: "lir.opt.predecessor_total",
-        dispatch_args: "lir.opt.edge_scan_dispatch_args",
-        local_prefix: "lir.opt.edge_scan_local_prefix",
-        block_sum: "lir.opt.edge_scan_block_sum",
     },
 };
 
@@ -860,20 +809,10 @@ impl<'a> GpuOptIrView<'a> {
 }
 
 pub(crate) struct GpuOptimizationStage {
-    project: JobSized,
-    structure_mark: JobSized,
-    block_scan: PrefixScanOperation,
-    structure_scatter: JobSized,
-    structure_finalize: JobSized,
-    structure_edge_mark: JobSized,
-    edge_scan: PrefixScanOperation,
-    structure_edge_scatter: JobSized,
-    predecessor_clear: JobSized,
-    predecessor_count: JobSized,
-    predecessor_scan: PrefixScanOperation,
-    predecessor_prepare: JobSized,
-    predecessor_scatter: JobSized,
-    predecessor_validate: JobSized,
+    control_flow: [[StepProgramOperation; 2]; 2],
+    program_sync: LaniusBuffer<u32>,
+    capacities: LoweringCapacities,
+    program_groups_override: Option<u32>,
     structure_function_init: JobSized,
     structure_function_reduce: JobSized,
     structure_function_finalize: JobSized,
@@ -1670,112 +1609,32 @@ impl GpuOptimizationStage {
         resources.attach_graph(graph, &allocations);
         resources.register_graph_bindings(graph, &graph_bindings);
         semantic.register(graph, &mut resources)?;
-        let pass = kernels.kernel("codegen/lir/optimization/control_flow/project_optimization_nodes");
-        let project = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.project",
-            pass,
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let structure_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.mark",
-            kernels.kernel("codegen/lir/optimization/control_flow/mark_control_flow_blocks"),
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let block_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_BLOCK_SCAN)?;
-        let structure_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.scatter",
-            kernels.kernel("codegen/lir/optimization/control_flow/scatter_control_flow_blocks"),
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let structure_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.finalize",
-            kernels.kernel("codegen/lir/optimization/control_flow/finalize_control_flow_blocks"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let structure_edge_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.edge_mark",
-            kernels.kernel("codegen/lir/optimization/control_flow/mark_control_flow_edges"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let edge_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_EDGE_SCAN)?;
-        let structure_edge_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.edge_scatter",
-            kernels.kernel("codegen/lir/optimization/control_flow/scatter_control_flow_edges"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let predecessor_clear = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.predecessors.clear",
-            kernels.kernel("codegen/lir/optimization/control_flow/clear_control_flow_predecessors"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let predecessor_count = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.predecessors.count",
-            kernels.kernel("codegen/lir/optimization/control_flow/count_control_flow_predecessors"),
-            &params,
-            edge_capacity,
-        )?, opt_extent::edge, capacities)?;
-        let predecessor_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_PREDECESSOR_SCAN)?;
-        let predecessor_prepare = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.predecessors.prepare",
-            kernels.kernel("codegen/lir/optimization/control_flow/prepare_control_flow_predecessor_ranges"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let predecessor_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.predecessors.scatter",
-            kernels.kernel("codegen/lir/optimization/control_flow/scatter_control_flow_predecessors"),
-            &params,
-            edge_capacity,
-        )?, opt_extent::edge, capacities)?;
-        let predecessor_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.predecessors.validate",
-            kernels.kernel("codegen/lir/optimization/control_flow/validate_control_flow_predecessors"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
+        let program_sync = workspace
+            .alias(graph, resource("step_program_sync")?, STEP_PROGRAM_SYNC_WORDS)
+            .map_err(anyhow::Error::msg)?;
+        let program_groups_override = std::env::var("LANIUS_LIR_PROGRAM_GROUPS")
+            .ok()
+            .and_then(|value| value.parse().ok());
+        let program_parallel_groups = program_groups_override.unwrap_or(STEP_PROGRAM_MAX_GROUPS);
+        resources.buffer("gParams", &params);
+        let pass = kernels.kernel("codegen/lir/optimization/control_flow/build_control_flow");
+        let variant = |groups, validate| {
+            StepProgramOperation::new(
+                device,
+                &(graph, &allocations),
+                &resources,
+                "lir.opt.build_control_flow",
+                pass,
+                &program_sync,
+                0,
+                groups,
+                validate,
+            )
+        };
+        let control_flow = [
+            [variant(1, 0)?, variant(1, 1)?],
+            [variant(program_parallel_groups, 0)?, variant(program_parallel_groups, 1)?],
+        ];
         let structure_function_init = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2830,20 +2689,10 @@ impl GpuOptimizationStage {
         )?, opt_extent::use_rows, capacities)?;
 
         Ok(Self {
-            project,
-            structure_mark,
-            block_scan,
-            structure_scatter,
-            structure_finalize,
-            structure_edge_mark,
-            edge_scan,
-            structure_edge_scatter,
-            predecessor_clear,
-            predecessor_count,
-            predecessor_scan,
-            predecessor_prepare,
-            predecessor_scatter,
-            predecessor_validate,
+            control_flow,
+            program_sync,
+            capacities,
+            program_groups_override,
             structure_function_init,
             structure_function_reduce,
             structure_function_finalize,
@@ -3088,22 +2937,10 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Optimization);
         }
-        self.project.record_job(encoder, job)?;
-        self.structure_mark.record_job(encoder, job)?;
-        self.block_scan.record(encoder)?;
-        self.structure_scatter.record_job(encoder, job)?;
-        self.structure_finalize.record_job(encoder, job)?;
-        self.structure_edge_mark.record_job(encoder, job)?;
-        self.edge_scan.record(encoder)?;
-        self.structure_edge_scatter.record_job(encoder, job)?;
-        self.predecessor_clear.record_job(encoder, job)?;
-        self.predecessor_count.record_job(encoder, job)?;
-        self.predecessor_scan.record(encoder)?;
-        self.predecessor_prepare.record_job(encoder, job)?;
-        self.predecessor_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.predecessor_validate.record_job(encoder, job)?;
-        }
+        let capacities = job.unwrap_or(self.capacities);
+        let rows = capacities.semantic_instructions.max(capacities.optimization_edge_capacity());
+        let parallel = rows > 4096 || self.program_groups_override.is_some();
+        self.control_flow[usize::from(parallel)][usize::from(validate_structure)].record(encoder)?;
         self.structure_function_init.record_job(encoder, job)?;
         self.structure_function_reduce.record_job(encoder, job)?;
         self.structure_function_finalize.record_job(encoder, job)?;
@@ -3326,6 +3163,10 @@ impl GpuOptimizationStage {
             timer.stamp(encoder, "optimization.ssa_uses.done");
         }
         Ok(())
+    }
+
+    pub(crate) fn program_sync(&self) -> &LaniusBuffer<u32> {
+        &self.program_sync
     }
 
     pub(crate) fn output<'a>(&'a self, semantic: GpuSemanticLirView<'a>) -> GpuOptIrView<'a> {

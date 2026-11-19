@@ -3864,6 +3864,18 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
     ))?;
+    let step_program_sync = graph.add_resource(workspace(
+        "step_program_sync",
+        ResourceDomain::OptimizationNodes,
+        LoweringCapacities::bytes::<u32>(
+            crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS as u32,
+        ),
+    ))?;
+    let opt_scan_group_sums = graph.add_resource(workspace(
+        "lir.opt.scan_group_sums",
+        ResourceDomain::OptimizationNodes,
+        LoweringCapacities::bytes::<u32>(256),
+    ))?;
     let opt_block_scan_dispatch_args = graph.add_indirect_storage(
         "lir.opt.block_scan_dispatch_args",
         ResourceDomain::DispatchArguments,
@@ -4572,7 +4584,7 @@ fn lowering_compiler_graph_builder(
         "lowering.status_readback",
         ResourceDomain::ArtifactBytes,
         ResourceClass::External,
-        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2]>(1),
+        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 3]>(1),
     )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
@@ -5412,7 +5424,7 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.metadata_readback",
                 ResourceDomain::ArtifactBytes,
                 ResourceClass::External,
-                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2]>(1),
+                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 3]>(1),
             )?,
         })
     } else {
@@ -5705,160 +5717,44 @@ fn lowering_compiler_graph_builder(
         schedule_radix_layout.steps,
     )?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.project",
+        name: "lir.opt.build_control_flow",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationNodes,
         accesses: vec![
             PassAccess::read("semantic_lir_total", semantic_total),
-            PassAccess::read_write("lowering_status", lowering_status),
             PassAccess::read("semantic_owner_by_instruction", semantic_owner),
-            PassAccess::write("opt_ir_total", opt_total),
-            PassAccess::write("opt_ir_control", opt_control),
-            PassAccess::write("opt_ir_results", opt_results),
-            PassAccess::write("opt_ir_semantic_row", opt_semantic_row),
-            PassAccess::write("opt_ir_source_hir", opt_source_hir),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.mark",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
             PassAccess::read("semantic_schedule_order", schedule_order),
             PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
-            PassAccess::write("opt_ir_position_by_node", opt_position_by_node),
-            PassAccess::write("opt_ir_block_start_flag", opt_block_start_flag),
-            PassAccess::write(
-                "opt_ir_block_scan_dispatch_args",
-                opt_block_scan_dispatch_args,
-            ),
-        ],
-    })?;
-    super::optimization::OPT_IR_BLOCK_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
-            PassAccess::read("opt_ir_block_start_flag", opt_block_start_flag),
-            PassAccess::read("opt_ir_block_prefix", opt_block_prefix),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read_write("opt_ir_control", opt_control),
-            PassAccess::write("opt_ir_blocks", opt_blocks),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read_write("opt_ir_blocks", opt_blocks),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.edge_mark",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::write("opt_ir_edge_count_by_block", opt_edge_count_by_block),
-            PassAccess::write(
-                "opt_ir_edge_scan_dispatch_args",
-                opt_edge_scan_dispatch_args,
-            ),
-        ],
-    })?;
-    super::optimization::OPT_IR_EDGE_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.edge_scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::read("opt_ir_core", opt_core),
             PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_edge_count_by_block", opt_edge_count_by_block),
-            PassAccess::read("opt_ir_edge_prefix", opt_edge_prefix),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read_write("opt_ir_blocks", opt_blocks),
-            PassAccess::write("opt_ir_edges", opt_edges),
             PassAccess::read_write("lowering_status", lowering_status),
+            PassAccess::write("opt_ir_total", opt_total),
+            PassAccess::initialize_read_write("opt_ir_control", opt_control),
+            PassAccess::write("opt_ir_results", opt_results),
+            PassAccess::write("opt_ir_semantic_row", opt_semantic_row),
+            PassAccess::initialize_read_write("opt_ir_source_hir", opt_source_hir),
+            PassAccess::write("opt_ir_position_by_node", opt_position_by_node),
+            PassAccess::initialize_read_write("opt_ir_block_start_flag", opt_block_start_flag),
+            PassAccess::initialize_read_write("opt_ir_block_prefix", opt_block_prefix),
+            PassAccess::initialize_read_write("opt_ir_block_total", opt_block_total),
+            PassAccess::initialize_read_write("opt_ir_blocks", opt_blocks),
+            PassAccess::initialize_read_write("opt_ir_edge_count_by_block", opt_edge_count_by_block),
+            PassAccess::initialize_read_write("opt_ir_edge_prefix", opt_edge_prefix),
+            PassAccess::initialize_read_write("opt_ir_edge_total", opt_edge_total),
+            PassAccess::initialize_read_write("opt_ir_edges", opt_edges),
+            PassAccess::initialize_read_write("opt_ir_predecessor_total", opt_predecessor_total),
+            PassAccess::initialize_read_write("opt_ir_predecessor_cursor", opt_predecessor_cursor),
+            PassAccess::initialize_read_write("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
+            PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
+            PassAccess::write("opt_ir_edge_scan_dispatch_args", opt_edge_scan_dispatch_args),
+            PassAccess::initialize_read_write("step_program_sync", step_program_sync),
         ],
     })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.predecessors.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::write("opt_ir_predecessor_count_by_block", opt_edge_count_by_block),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.predecessors.count",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationEdges,
-        accesses: vec![
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read_write("opt_ir_predecessor_count_by_block", opt_edge_count_by_block),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    super::optimization::OPT_IR_PREDECESSOR_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.predecessors.prepare",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
-            PassAccess::write("opt_ir_predecessor_cursor", opt_predecessor_cursor),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.predecessors.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationEdges,
-        accesses: vec![
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read_write("opt_ir_predecessor_cursor", opt_predecessor_cursor),
-            PassAccess::write("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.predecessors.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_predecessor_total", opt_predecessor_total),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_predecessor_count_by_block", opt_edge_count_by_block),
-            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
-            PassAccess::read("opt_ir_predecessor_cursor", opt_predecessor_cursor),
-            PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
+    graph.assign_kernel(
+        "lir.opt.build_control_flow",
+        "codegen/lir/optimization/control_flow/build_control_flow",
+    )?;
+    graph.require_complete_reflection("lir.opt.build_control_flow")?;
     graph.add_pass(PassDesc {
         name: "lir.opt.structure.function_init",
         phase: CompilerPhase::Optimization,
@@ -10398,6 +10294,14 @@ fn lowering_compiler_graph_builder(
         status_binding,
         status_destination,
     )?;
+    graph.add_buffer_copy_pass(
+        "lowering.step_program_failed.readback",
+        CompilerPhase::Artifact,
+        "step_program_sync",
+        step_program_sync,
+        status_binding,
+        status_destination,
+    )?;
     // The job's semantic and target row totals, read back after the status
     // in its buffer: a job lowered in a workspace larger than its own
     // capacities checks them against those capacities
@@ -11762,30 +11666,9 @@ mod tests {
         )
         .unwrap();
         for (pass_name, artifact) in [
-            ("lir.opt.project", "codegen/lir/optimization/control_flow/project_optimization_nodes"),
             (
-                "lir.opt.structure.mark",
-                "codegen/lir/optimization/control_flow/mark_control_flow_blocks",
-            ),
-            ("lir.opt.blocks.scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.opt.blocks.scan.apply", "scan/words/apply_counted_word_carries"),
-            (
-                "lir.opt.structure.scatter",
-                "codegen/lir/optimization/control_flow/scatter_control_flow_blocks",
-            ),
-            (
-                "lir.opt.structure.finalize",
-                "codegen/lir/optimization/control_flow/finalize_control_flow_blocks",
-            ),
-            (
-                "lir.opt.structure.edge_mark",
-                "codegen/lir/optimization/control_flow/mark_control_flow_edges",
-            ),
-            ("lir.opt.edges.scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.opt.edges.scan.apply", "scan/words/apply_counted_word_carries"),
-            (
-                "lir.opt.structure.edge_scatter",
-                "codegen/lir/optimization/control_flow/scatter_control_flow_edges",
+                "lir.opt.build_control_flow",
+                "codegen/lir/optimization/control_flow/build_control_flow",
             ),
             (
                 "lir.opt.structure.function_init",
@@ -11920,30 +11803,9 @@ mod tests {
         )
         .unwrap();
         for (pass_name, artifact) in [
-            ("lir.opt.project", "codegen/lir/optimization/control_flow/project_optimization_nodes"),
             (
-                "lir.opt.structure.mark",
-                "codegen/lir/optimization/control_flow/mark_control_flow_blocks",
-            ),
-            ("lir.opt.blocks.scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.opt.blocks.scan.apply", "scan/words/apply_counted_word_carries"),
-            (
-                "lir.opt.structure.scatter",
-                "codegen/lir/optimization/control_flow/scatter_control_flow_blocks",
-            ),
-            (
-                "lir.opt.structure.finalize",
-                "codegen/lir/optimization/control_flow/finalize_control_flow_blocks",
-            ),
-            (
-                "lir.opt.structure.edge_mark",
-                "codegen/lir/optimization/control_flow/mark_control_flow_edges",
-            ),
-            ("lir.opt.edges.scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.opt.edges.scan.apply", "scan/words/apply_counted_word_carries"),
-            (
-                "lir.opt.structure.edge_scatter",
-                "codegen/lir/optimization/control_flow/scatter_control_flow_edges",
+                "lir.opt.build_control_flow",
+                "codegen/lir/optimization/control_flow/build_control_flow",
             ),
             (
                 "lir.opt.structure.function_init",

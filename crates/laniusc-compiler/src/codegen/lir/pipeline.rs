@@ -215,6 +215,7 @@ pub(crate) struct GpuLoweringPipeline {
     status_readback: LaniusBuffer<u8>,
     status_base: usize,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
+    program_failed_copy: crate::gpu::operations::CopyBufferOperation,
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
@@ -990,7 +991,7 @@ impl GpuLoweringPipeline {
                 super::lowering_ir::X86_OBJECT_METADATA_BYTES as usize,
             ),
             None => (
-                readback_bytes(device, "lowering.status.readback", status_bytes + 8, status_bytes + 8),
+                readback_bytes(device, "lowering.status.readback", status_bytes + 12, status_bytes + 12),
                 "status_readback",
                 0,
             ),
@@ -1006,6 +1007,17 @@ impl GpuLoweringPipeline {
             &status_readback,
             status_base as u64,
             status_bytes as u64,
+        )?;
+        let program_failed_copy = crate::gpu::operations::CopyBufferOperation::new(
+            &(&graph, &status_allocations),
+            "lowering.step_program_failed.readback",
+            "step_program_sync",
+            optimizer.program_sync(),
+            crate::gpu::operations::StepProgramOperation::failed_offset(0),
+            status_binding,
+            &status_readback,
+            (status_base + status_bytes + 8) as u64,
+            4,
         )?;
         let target_total = workspace
             .alias::<u32>(
@@ -1052,6 +1064,7 @@ impl GpuLoweringPipeline {
             status_readback,
             status_base,
             status_readback_copy,
+            program_failed_copy,
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             recorded_job: Mutex::new(capacities),
@@ -1158,6 +1171,7 @@ impl GpuLoweringPipeline {
 
     fn record_status_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         self.status_readback_copy.record(encoder);
+        self.program_failed_copy.record(encoder);
         for copy in &self.job_totals_copies {
             copy.record(encoder);
         }
@@ -1165,7 +1179,7 @@ impl GpuLoweringPipeline {
 
     /// Flags a job whose semantic or target rows exceed the job's
     /// capacities, as the GPU checks of a fresh workspace for the job would
-    /// (project_optimization_nodes.slang, validate_x86_instruction_counts.slang,
+    /// (build_control_flow.slang, validate_x86_instruction_counts.slang,
     /// and validate_wasm_instruction_counts.slang). A job at this workspace's
     /// capacities was checked on the GPU. The job's x86
     /// analysis clears cover only its capacities; rows past them could read
@@ -1603,6 +1617,10 @@ impl GpuLoweringPipeline {
             first_unsupported_target_op: word(9),
         };
         let totals = std::mem::size_of::<LoweringStatus>() / 4;
+        anyhow::ensure!(
+            word(totals + 2) == 0,
+            "optimizer step program synchronization failed",
+        );
         let (semantic_rows, target_rows) = (word(totals), word(totals + 1));
         self.check_job_totals(&mut status, semantic_rows, target_rows);
         let mut prefix = words;

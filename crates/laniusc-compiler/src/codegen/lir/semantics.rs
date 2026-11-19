@@ -2436,9 +2436,9 @@ mod tests {
         #[derive(Clone, Copy, ShaderType)]
         struct ProjectParams {
             semantic_capacity: u32,
-            reserved0: u32,
-            reserved1: u32,
-            reserved2: u32,
+            hir_capacity: u32,
+            block_capacity: u32,
+            edge_capacity: u32,
         }
 
         let gpu = device::global();
@@ -2471,6 +2471,9 @@ mod tests {
             .unwrap();
         let owner_rows = [7u32, 9, 11, 13];
         owners.write(&gpu.queue, 0, &words(&[owner_rows]));
+        let order = alias_u32("lir.semantic.schedule_order", capacity as usize);
+        order.write(&gpu.queue, 0, &words(&[[0, 1, 2, 3]]));
+        let sync = alias_u32("step_program_sync", crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS);
 
         // Use the production graph bindings as well as the production shader:
         // an omitted status binding must fail this boundary test too.
@@ -2490,7 +2493,7 @@ mod tests {
             &gpu.device,
             "test.semantic_capacity.project",
             "main",
-            "codegen/lir/optimization/control_flow/project_optimization_nodes",
+            "codegen/lir/optimization/control_flow/build_control_flow",
         )
         .unwrap();
         let params = uniform_from_val(
@@ -2498,9 +2501,9 @@ mod tests {
             "test.semantic_capacity.params",
             &ProjectParams {
                 semantic_capacity: capacity,
-                reserved0: 0,
-                reserved1: 0,
-                reserved2: 0,
+                hir_capacity: capacities.hir_nodes,
+                block_capacity: capacities.optimization_block_capacity(),
+                edge_capacity: capacities.optimization_edge_capacity(),
             },
         );
         let clear = ComputeOperation::direct(
@@ -2512,14 +2515,17 @@ mod tests {
             1,
         )
         .unwrap();
-        let project = ComputeOperation::direct_with_uniform(
+        resources.buffer("gParams", &params);
+        let project = crate::gpu::operations::StepProgramOperation::new(
             &gpu.device,
             &(&graph, &allocations),
             &resources,
-            "lir.opt.project",
+            "lir.opt.build_control_flow",
             &project_pass,
-            &params,
-            capacity,
+            &sync,
+            0,
+            1,
+            1,
         )
         .unwrap();
         let status_bytes = LoweringStatus::min_size().get() as usize;

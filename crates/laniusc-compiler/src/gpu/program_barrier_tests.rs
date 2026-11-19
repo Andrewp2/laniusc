@@ -156,3 +156,81 @@ fn physical_gpu_step_program_orders_steps_across_workgroups() {
         }
     }
 }
+
+#[test]
+fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
+    #[derive(encase::ShaderType)]
+    struct ScanParams {
+        groups: u32,
+        rows: u32,
+    }
+
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let label = "tests/probe_program_scan";
+    let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
+    for (groups, rows) in [(1, 0), (1, 4099), (64, 0), (64, 257), (64, 131_075)] {
+        let params = uniform_from_val(device, label, &ScanParams { groups, rows });
+        let count = rows as usize;
+        let input = storage_rw_for_array::<u32>(device, label, count.max(1));
+        let prefix = storage_rw_for_array::<u32>(device, label, count.max(1));
+        let total = storage_rw_for_array::<u32>(device, label, 1);
+        let sums = storage_rw_for_array::<u32>(device, label, groups as usize);
+        let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
+        let data: Vec<u32> = (0..rows).map(|row| row.wrapping_mul(269) % 19).collect();
+        if !data.is_empty() {
+            let bytes: Vec<u8> = data.iter().flat_map(|value| value.to_le_bytes()).collect();
+            input.write(queue, 0, &bytes);
+        }
+        let entries = [
+            ("gParams", params.as_entire_binding()),
+            ("step_program_sync", sync.as_entire_binding()),
+            ("input_words", input.as_entire_binding()),
+            ("prefix", prefix.as_entire_binding()),
+            ("total", total.as_entire_binding()),
+            ("sums", sums.as_entire_binding()),
+        ];
+        passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
+        let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+            device, Some(label), &pass, 0, &entries,
+        ).unwrap();
+        let header_bytes = (SYNC_WORDS + 1) * 4;
+        let size = header_bytes + count * 4;
+        let readback = readback_bytes(device, label, size, size);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        sync.clear(&mut encoder, 0, None);
+        {
+            let mut compute = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
+            );
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, Some(&bindings), &[]);
+            compute.dispatch_workgroups(groups, 1, 1);
+        }
+        sync.copy_to(&mut encoder, 0, &readback, 0, (SYNC_WORDS * 4) as u64);
+        total.copy_to(&mut encoder, 0, &readback, (SYNC_WORDS * 4) as u64, 4);
+        if count != 0 {
+            prefix.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * 4) as u64);
+        }
+        queue.submit(Some(encoder.finish()));
+        let slice = readback.slice(..);
+        map_readback_blocking(device, &slice, label.into()).unwrap();
+        let mapped = slice.get_mapped_range();
+        let output: Vec<u32> = mapped
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        drop(mapped);
+        readback.unmap();
+        assert_eq!(output[1], 0, "groups {groups}, rows {rows}");
+        assert_eq!(output[3], groups, "groups {groups}, rows {rows}");
+        let mut expected = 0u32;
+        for (row, (value, actual)) in data.into_iter().zip(&output[SYNC_WORDS + 1..]).enumerate() {
+            assert_eq!(*actual, expected, "groups {groups}, rows {rows}, row {row}");
+            expected = expected.wrapping_add(value);
+        }
+        assert_eq!(output[SYNC_WORDS], expected, "groups {groups}, rows {rows}");
+    }
+}

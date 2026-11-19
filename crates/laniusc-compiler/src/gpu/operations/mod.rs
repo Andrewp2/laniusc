@@ -23,6 +23,7 @@ mod exact_lookup;
 mod inclusive_block_scan;
 mod prefix_scan;
 mod radix_sort;
+mod step_program;
 
 pub(crate) use buffer::{
     ClearBufferOperation,
@@ -44,6 +45,12 @@ pub(crate) use radix_sort::{
     RadixSortKernels,
     RadixSortOperation,
     RadixSortResources,
+};
+
+pub(crate) use step_program::{
+    STEP_PROGRAM_MAX_GROUPS,
+    STEP_PROGRAM_SYNC_WORDS,
+    StepProgramOperation,
 };
 
 fn record_direct(
