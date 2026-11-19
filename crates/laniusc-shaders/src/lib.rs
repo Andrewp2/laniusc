@@ -128,3 +128,9 @@ mod used_bindings;
 #[cfg(test)]
 #[path = "../kernel_keys.rs"]
 mod kernel_keys;
+
+// The step-program buffer pass runs in build.rs; compile it here so its tests run.
+#[cfg(test)]
+#[path = "../step_program_coherence.rs"]
+#[allow(dead_code)]
+mod step_program_coherence;

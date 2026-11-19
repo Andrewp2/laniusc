@@ -1,0 +1,158 @@
+//! Step programs on the physical GPU (shaders/shared/collectives/step_program.slang,
+//! shaders/tests/probe_program_barrier.slang). The test prints the time per
+//! step for each case: run it with `--nocapture` to see them.
+
+use std::time::Instant;
+
+use super::{
+    buffers::{readback_bytes, storage_rw_for_array, uniform_from_val},
+    device,
+    passes_core::{self, make_pass_data_from_shader_key, map_readback_blocking},
+};
+
+const KERNEL: &str = "tests/probe_program_barrier";
+const LANES: u32 = 256;
+const SLOT: u32 = 3;
+const SYNC_WORDS: usize = 4;
+
+#[derive(encase::ShaderType)]
+struct Params {
+    groups: u32,
+    rounds: u32,
+    rows_per_lane: u32,
+    slot: u32,
+}
+
+struct Outcome {
+    arrivals: u32,
+    failed: u32,
+    finished_groups: u32,
+    wrong_cells: u32,
+    micros: f64,
+}
+
+fn run(groups: u32, rounds: u32, rows_per_lane: u32) -> Outcome {
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let pass = make_pass_data_from_shader_key(device, KERNEL, "main", KERNEL).unwrap();
+    let params = uniform_from_val(
+        device,
+        "program_barrier.params",
+        &Params {
+            groups,
+            rounds,
+            rows_per_lane,
+            slot: SLOT,
+        },
+    );
+    let sync_words = (SLOT as usize + 1) * SYNC_WORDS;
+    let sync = storage_rw_for_array::<u32>(device, "program_barrier.sync", sync_words);
+    let wrong_cells = storage_rw_for_array::<u32>(device, "program_barrier.wrong_cells", 4);
+    let cells = storage_rw_for_array::<u32>(
+        device,
+        "program_barrier.cells",
+        (groups * LANES * 2 * rows_per_lane) as usize,
+    );
+    let entries = [
+        ("gParams", params.as_entire_binding()),
+        ("step_program_sync", sync.as_entire_binding()),
+        ("cells", cells.as_entire_binding()),
+        ("wrong_cells", wrong_cells.as_entire_binding()),
+    ];
+    passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
+    let group = passes_core::bind_group::create_bind_group_from_bindings(
+        device,
+        Some(KERNEL),
+        &pass,
+        0,
+        &entries,
+    )
+    .unwrap();
+    let sync_bytes = (sync_words * 4) as u64;
+    let readback = readback_bytes(
+        device,
+        "program_barrier.readback",
+        sync_words * 4 + 4,
+        sync_words + 1,
+    );
+    let mut outcome = Outcome {
+        arrivals: 0,
+        failed: 0,
+        finished_groups: 0,
+        wrong_cells: 0,
+        micros: f64::MAX,
+    };
+    for _ in 0..5 {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.clear_buffer(&sync, 0, None);
+        encoder.clear_buffer(&cells, 0, None);
+        encoder.clear_buffer(&wrong_cells, 0, None);
+        {
+            let mut compute = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor {
+                    label: Some(KERNEL),
+                    timestamp_writes: None,
+                },
+            );
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, Some(&group), &[]);
+            passes_core::record_compute_dispatch();
+            compute.dispatch_workgroups(groups, 1, 1);
+        }
+        sync.copy_to(&mut encoder, 0, &readback, 0, sync_bytes);
+        wrong_cells.copy_to(&mut encoder, 0, &readback, sync_bytes, 4);
+        let started = Instant::now();
+        queue.submit(Some(encoder.finish()));
+        let slice = readback.slice(..);
+        map_readback_blocking(device, &slice, "program_barrier".into()).unwrap();
+        outcome.micros = outcome.micros.min(started.elapsed().as_secs_f64() * 1e6);
+        let mapped = slice.get_mapped_range();
+        let words: Vec<u32> = mapped
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        drop(mapped);
+        readback.unmap();
+        let slot = &words[SLOT as usize * SYNC_WORDS..];
+        outcome.arrivals = slot[0];
+        outcome.failed = slot[1];
+        outcome.finished_groups = slot[3];
+        outcome.wrong_cells = words[sync_words];
+    }
+    outcome
+}
+
+#[test]
+fn physical_gpu_step_program_orders_steps_across_workgroups() {
+    for (groups, rows_per_lane, rounds) in [
+        (1u32, 1u32, 2000u32),
+        (1, 16, 500),
+        (1, 256, 100),
+        (8, 1, 2000),
+        (64, 1, 2000),
+        (64, 4, 500),
+        (64, 32, 200),
+    ] {
+        let empty = run(groups, 0, rows_per_lane).micros;
+        let outcome = run(groups, rounds, rows_per_lane);
+        println!(
+            "groups {groups:3} rows per step {:7}: {:7.3} us per step",
+            groups * LANES * rows_per_lane,
+            (outcome.micros - empty) / f64::from(rounds),
+        );
+        assert_eq!(
+            outcome.failed, 0,
+            "a wait for the other groups ran out of spins"
+        );
+        assert_eq!(
+            outcome.wrong_cells, 0,
+            "a step did not see the step before it"
+        );
+        assert_eq!(outcome.finished_groups, groups);
+        if groups > 1 {
+            assert_eq!(outcome.arrivals, groups * rounds);
+        }
+    }
+}

@@ -12,13 +12,14 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 
 // The compiler's build script uses the rest of this module.
 #[allow(dead_code)]
 mod kernel_keys;
 mod reflection_names;
 mod spirv_size;
+mod step_program_coherence;
 mod used_bindings;
 
 fn main() -> Result<()> {
@@ -138,6 +139,7 @@ fn main() -> Result<()> {
         .collect();
     remove_stale_shader_artifacts(&shader_out_dir, &active_artifact_keys)?;
     check_reflection_binding_names(&shader_artifacts)?;
+    check_step_program_coherence(&shader_artifacts)?;
     check_inlined_size_budget(&workspace_root, &shader_out_dir, &shader_artifacts)?;
     write_generated_shader_artifacts(&out_dir, &shader_artifacts)?;
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
@@ -611,6 +613,41 @@ fn check_driver_hazards(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Resu
     driver_hazard_result(&hazards)
 }
 
+/// Fails the build when a step program has a writable storage buffer without
+/// the `Coherent` decoration, or when the reference step program is not
+/// recognized as one (see `step_program_coherence.rs`).
+fn check_step_program_coherence(shader_artifacts: &[(String, PathBuf, PathBuf)]) -> Result<()> {
+    let mut failures = Vec::new();
+    let mut reference_found = false;
+    for (artifact_key, spv_path, _) in shader_artifacts {
+        let buffers = step_program_coherence::step_program_buffers(&read_spirv_words(spv_path)?)
+            .with_context(|| format!("check step program buffers of {}", spv_path.display()))?;
+        if artifact_key == step_program_coherence::REFERENCE_STEP_PROGRAM {
+            reference_found = buffers.is_step_program;
+        }
+        if buffers.is_step_program && !buffers.incoherent.is_empty() {
+            let names: Vec<&str> =
+                buffers.incoherent.iter().map(|(_, name)| name.as_str()).collect();
+            failures.push(format!("  {artifact_key}: {}", names.join(", ")));
+        }
+    }
+    if !reference_found {
+        bail!(
+            "the build did not recognize {} as a step program, so it cannot make any step \
+             program's buffers coherent",
+            step_program_coherence::REFERENCE_STEP_PROGRAM
+        );
+    }
+    if !failures.is_empty() {
+        bail!(
+            "step programs with a writable buffer that is not coherent. A plain read of it does \
+             not see what another workgroup wrote earlier in the dispatch:\n{}",
+            failures.join("\n")
+        );
+    }
+    Ok(())
+}
+
 /// Fails the build, in every budget mode, when a kernel's reflection lists two
 /// top-level bindings with one name. The runtime binds parameters by name, so
 /// such a kernel cannot be bound: the type-check graph refuses to build and
@@ -877,9 +914,33 @@ fn compile_shader_job(
     validate_shader_artifact_size(&job.ep, &job.spv_out, max_shader_spv_bytes)?;
     record_used_bindings(&job.spv_out, &job.refl_out)
         .with_context(|| format!("record used bindings of {}", job.artifact_key))?;
+    make_step_program_buffers_coherent(&job.spv_out)
+        .with_context(|| format!("make the buffers of {} coherent", job.artifact_key))?;
     fs::write(&job.stamp_out, &job.compile_stamp)
         .with_context(|| format!("write shader stamp {}", job.stamp_out.display()))?;
     Ok((job.artifact_key, job.spv_out, job.refl_out))
+}
+
+/// Adds the `Coherent` decoration to the writable storage buffers of a step
+/// program (see `step_program_coherence.rs`).
+fn make_step_program_buffers_coherent(spv_path: &Path) -> Result<()> {
+    let mut words = read_spirv_words(spv_path)?;
+    if !step_program_coherence::make_step_program_buffers_coherent(&mut words)? {
+        return Ok(());
+    }
+    let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    fs::write(spv_path, bytes)
+        .with_context(|| format!("write shader SPIR-V {}", spv_path.display()))
+}
+
+fn read_spirv_words(spv_path: &Path) -> Result<Vec<u32>> {
+    let bytes = fs::read(spv_path)
+        .with_context(|| format!("read shader SPIR-V {}", spv_path.display()))?;
+    ensure!(bytes.len() % 4 == 0, "SPIR-V size is not a multiple of 4");
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
+        .collect())
 }
 
 /// Version of the used-binding pass in the stamp (see `used_bindings.rs`):

@@ -62,6 +62,8 @@ mod canonical_intern_stress_tests;
 
 #[cfg(test)]
 mod ct_match_tests;
+#[cfg(test)]
+mod program_barrier_tests;
 
 #[cfg(test)]
 mod readback_limit_tests;
