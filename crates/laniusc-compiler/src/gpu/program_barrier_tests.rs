@@ -126,6 +126,12 @@ fn run(groups: u32, rounds: u32, rows_per_lane: u32) -> Outcome {
 
 #[test]
 fn physical_gpu_step_program_orders_steps_across_workgroups() {
+    device::global();
+    let large_launch = device::is_rtx_3090_vulkan().then_some((
+        super::operations::STEP_PROGRAM_MAX_GROUPS,
+        8,
+        500,
+    ));
     for (groups, rows_per_lane, rounds) in [
         (1u32, 1u32, 2000u32),
         (1, 16, 500),
@@ -134,7 +140,7 @@ fn physical_gpu_step_program_orders_steps_across_workgroups() {
         (64, 1, 2000),
         (64, 4, 500),
         (64, 32, 200),
-    ] {
+    ].into_iter().chain(large_launch) {
         let empty = run(groups, 0, rows_per_lane).micros;
         let outcome = run(groups, rounds, rows_per_lane);
         println!(

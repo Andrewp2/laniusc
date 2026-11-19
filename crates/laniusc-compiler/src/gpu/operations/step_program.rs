@@ -12,7 +12,7 @@ use crate::gpu::{
 
 // Match the launch size and slot layout in step_program.slang.
 const GROUP_LANES: u32 = 256;
-pub(crate) const STEP_PROGRAM_MAX_GROUPS: u32 = 64;
+pub(crate) const STEP_PROGRAM_MAX_GROUPS: u32 = 164;
 pub(crate) const STEP_PROGRAM_SYNC_WORDS: usize = 4;
 const SLOT_BYTES: u64 = (STEP_PROGRAM_SYNC_WORDS * size_of::<u32>()) as u64;
 const FAILED_OFFSET: u64 = size_of::<u32>() as u64;

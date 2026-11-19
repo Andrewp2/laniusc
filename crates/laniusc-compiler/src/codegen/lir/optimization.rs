@@ -432,6 +432,13 @@ impl GpuOptimizationStage {
             )
             .map_err(anyhow::Error::msg)?;
         resources.buffer("gParams", &params);
+        // 164 groups took less time across both settings lowerings on the
+        // RTX 3090. Other adapters keep the 64-group launch limit.
+        let large_groups = if crate::gpu::device::is_rtx_3090_vulkan() {
+            STEP_PROGRAM_MAX_GROUPS
+        } else {
+            64
+        };
         let variants = |resources: &ResourceMap<'_>, name, key, slot| -> Result<_> {
             let pass = kernels.kernel(key);
             let variant = |groups, validate| {
@@ -450,8 +457,8 @@ impl GpuOptimizationStage {
             Ok([
                 [variant(1, 0)?, variant(1, 1)?],
                 [
-                    variant(STEP_PROGRAM_MAX_GROUPS, 0)?,
-                    variant(STEP_PROGRAM_MAX_GROUPS, 1)?,
+                    variant(large_groups, 0)?,
+                    variant(large_groups, 1)?,
                 ],
             ])
         };

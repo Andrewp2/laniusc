@@ -447,6 +447,12 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
         }
     }
     DEVICE_VENDOR.store(adapter_info.vendor, Ordering::Release);
+    NVIDIA_RTX_3090_VULKAN.store(
+        adapter_info.backend == wgpu::Backend::Vulkan
+            && adapter_info.vendor == NVIDIA_VENDOR_ID
+            && adapter_info.device == 0x2204,
+        Ordering::Release,
+    );
     if adapter_info.vendor != NVIDIA_VENDOR_ID {
         NAMED_DRIVER_SHARD_UNDECIDED.store(false, Ordering::Release);
     }
@@ -868,6 +874,11 @@ static NAMED_DRIVER_SHARD: OnceLock<NamedDriverShard> = OnceLock::new();
 static PROCESS_STARTED: OnceLock<SystemTime> = OnceLock::new();
 /// The PCI vendor of the device the compiler opened; 0 before one is open.
 static DEVICE_VENDOR: AtomicU32 = AtomicU32::new(0);
+static NVIDIA_RTX_3090_VULKAN: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn is_rtx_3090_vulkan() -> bool {
+    NVIDIA_RTX_3090_VULKAN.load(Ordering::Acquire)
+}
 /// Cleared once `check_named_driver_shard` decided, or on a non-NVIDIA device.
 static NAMED_DRIVER_SHARD_UNDECIDED: AtomicBool = AtomicBool::new(false);
 

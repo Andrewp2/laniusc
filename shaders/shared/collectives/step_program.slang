@@ -50,7 +50,7 @@
 //   dispatch.
 
 public static const uint STEP_PROGRAM_GROUP_LANES = 256u;
-public static const uint STEP_PROGRAM_MAX_GROUPS = 64u;
+public static const uint STEP_PROGRAM_MAX_GROUPS = 164u;
 public static const uint STEP_PROGRAM_SPIN_LIMIT = 1u << 24u;
 
 // Words of one program's slot in the sync buffer.
