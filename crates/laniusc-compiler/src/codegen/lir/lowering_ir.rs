@@ -1354,7 +1354,6 @@ fn add_step_radix_resources(
     [order, temporary_order, histogram, bucket_total]: [&'static str; 4],
 ) -> Result<StepRadixResources, String> {
     let rows = u64::from(capacity.max(1));
-    let tiles = rows.div_ceil(256);
     let group_sums = u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS);
     let mut storage = |name, words| {
         graph.add_storage(name, domain, ResourceClass::Workspace, words * 4)
@@ -1362,7 +1361,7 @@ fn add_step_radix_resources(
     Ok(StepRadixResources {
         order: storage(order, rows)?,
         temporary_order: storage(temporary_order, rows)?,
-        histogram: storage(histogram, (tiles + group_sums) * 256)?,
+        histogram: storage(histogram, group_sums * 256)?,
         bucket_total: storage(bucket_total, 256)?,
     })
 }

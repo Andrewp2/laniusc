@@ -184,7 +184,7 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         let total = storage_rw_for_array::<u32>(device, label, 1);
         let sums = storage_rw_for_array::<u32>(device, label, groups as usize);
         let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
-        let data: Vec<u32> = (0..rows).map(|row| row.wrapping_mul(269) % 19).collect();
+        let data: Vec<u32> = (0..rows).map(|row| row.wrapping_mul(0x9e3779b9)).collect();
         if !data.is_empty() {
             let bytes: Vec<u8> = data.iter().flat_map(|value| value.to_le_bytes()).collect();
             input.write(queue, 0, &bytes);
@@ -256,14 +256,20 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
     let (device, queue) = (&gpu.device, &gpu.queue);
     let label = "tests/probe_program_radix_sort";
     let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
-    for (groups, rows, digits) in [(1, 0, 1), (1, 801, 1), (1, 1219, 2), (64, 18_125, 3)] {
+    for (groups, rows, digits) in [
+        (1, 0, 1),
+        (1, 801, 1),
+        (1, 1219, 2),
+        (64, 18_125, 3),
+        (64, 65_651, 4),
+    ] {
         let params = uniform_from_val(device, label, &SortParams { groups, rows, digits });
         let count = rows as usize;
         let data: Vec<u32> = (0..rows)
             .map(|row| ((row.wrapping_mul(269) % 713) << 8) | (if row % 13 == 0 { 255 } else { row % 11 }))
             .collect();
         let mut expected: Vec<u32> = (0..rows).collect();
-        let mask = (1u32 << (digits * 8)) - 1;
+        let mask = u32::MAX >> ((4 - digits) * 8);
         expected.sort_by_key(|row| data[*row as usize] & mask);
         let keys = storage_rw_for_array::<u32>(device, label, count.max(1));
         if !data.is_empty() {
@@ -272,7 +278,7 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
         }
         let order = storage_rw_for_array::<u32>(device, label, count.max(1));
         let temporary = storage_rw_for_array::<u32>(device, label, count.max(1));
-        let histogram = storage_rw_for_array::<u32>(device, label, (count.max(1).div_ceil(256) + groups as usize) * 256);
+        let histogram = storage_rw_for_array::<u32>(device, label, groups as usize * 256);
         let bucket_total = storage_rw_for_array::<u32>(device, label, 256);
         let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
         let entries = [
@@ -321,5 +327,231 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
         assert_eq!(output[3], groups, "groups {groups}, rows {rows}, digits {digits}");
         let mismatch = output[SYNC_WORDS..].iter().zip(&expected).position(|(a, b)| a != b);
         assert_eq!(mismatch, None, "groups {groups}, rows {rows}, digits {digits}");
+    }
+}
+
+#[test]
+#[ignore = "GPU timing benchmark"]
+fn benchmark_step_program_collectives() {
+    use super::buffers::{LaniusBuffer, storage_ro_from_u32s_with_queue};
+    use super::compiler_graph::{
+        CompilerGraphBuilder, CompilerGraphWorkspace, CompilerPhase, PrefixScanGraphPasses,
+        PrefixScanResources, PrefixScanSpec, RadixSortGraphPasses, RadixSortGraphStepPasses,
+        ResourceDomain,
+    };
+    use super::kernels::KernelRegistry;
+    use super::operations::{
+        PrefixScanOperation, RadixDispatchDomain, RadixSortDefinition, RadixSortDispatch,
+        RadixSortKernels, RadixSortOperation, RadixSortResources,
+    };
+    use super::resource_registry::ResourceMap;
+    use super::timer::{GpuCompilerPhase, GpuTimer};
+
+    #[derive(encase::ShaderType)]
+    struct ProbeParams {
+        groups: u32,
+        rows: u32,
+        mode: u32,
+    }
+
+    #[derive(encase::ShaderType)]
+    struct SortParams {
+        rows: u32,
+        bits_per_field: u32,
+        blocks: u32,
+        digit: u32,
+    }
+
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let scan_key = "tests/probe_program_scan";
+    let sort_key = "tests/probe_program_radix_sort";
+    let histogram_key = "type_checker/visibility/sort_hir_decl_keys";
+    let scatter_key = "type_checker/visibility/scatter_sorted_hir_decl_keys";
+    let kernels = KernelRegistry::prepare(device, [
+        scan_key,
+        sort_key,
+        histogram_key,
+        scatter_key,
+        "scan/words/scan_counted_word_blocks",
+        "scan/words/apply_counted_word_carries",
+        "radix/scan_radix_bucket_histograms",
+    ]).unwrap();
+    let scan = kernels.kernel(scan_key);
+    let sort = kernels.kernel(sort_key);
+    let graph = CompilerGraphBuilder::new().build().unwrap();
+    let workspace = CompilerGraphWorkspace::new(device, "collective benchmark", &graph).unwrap();
+    let allocations = workspace.allocations();
+    let label = "collective benchmark";
+    let groups = 64;
+    let digits = 4;
+
+    for rows in [4096u32, 65_536, 1_048_576, 4_194_304] {
+        let blocks = rows.div_ceil(256);
+        let storage = |words| storage_rw_for_array::<u32>(device, label, words);
+        let upload = |words: &[u32]| storage_ro_from_u32s_with_queue(device, queue, label, words);
+        let count = upload(&[rows]);
+        let key_words: Vec<u32> = (0..rows)
+            .map(|row| row.wrapping_mul(0x9e3779b9).rotate_left(11))
+            .collect();
+        let keys = upload(&key_words);
+        let prefix = storage(rows as usize);
+        let total = storage(1);
+        let sums = storage(groups as usize);
+        let order = storage(rows as usize);
+        let temporary = storage(rows as usize);
+        let histogram = storage(((blocks + groups) * 256) as usize);
+        let bucket_prefix = storage((blocks * 256) as usize);
+        let bucket_total = storage(256);
+        let sync = storage(SYNC_WORDS);
+        let probe_scan_params = uniform_from_val(
+            device, label, &ProbeParams { groups, rows, mode: 0 },
+        );
+        let probe_sort_params = uniform_from_val(
+            device, label, &ProbeParams { groups, rows, mode: digits },
+        );
+        let bind = |pass, entries: &[(&str, wgpu::BindingResource<'_>)]| {
+            passes_core::bind_group::create_bind_group_from_bindings(
+                device, Some(label), pass, 0, entries,
+            ).unwrap()
+        };
+        let scan_bind = bind(scan, &[
+            ("gParams", probe_scan_params.as_entire_binding()),
+            ("step_program_sync", sync.as_entire_binding()),
+            ("input_words", keys.as_entire_binding()),
+            ("prefix", prefix.as_entire_binding()),
+            ("total", total.as_entire_binding()),
+            ("sums", sums.as_entire_binding()),
+        ]);
+        let sort_bind = bind(sort, &[
+            ("gParams", probe_sort_params.as_entire_binding()),
+            ("step_program_sync", sync.as_entire_binding()),
+            ("keys", keys.as_entire_binding()),
+            ("order", order.as_entire_binding()),
+            ("temporary", temporary.as_entire_binding()),
+            ("histogram", histogram.as_entire_binding()),
+            ("bucket_total", bucket_total.as_entire_binding()),
+        ]);
+        let block_sums = storage(blocks as usize);
+        let local_prefix = storage(rows as usize);
+        let args = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: 12,
+            usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let args = LaniusBuffer::<u32>::new_labeled((args, 12), 3, label);
+        let dispatch_bytes: Vec<u8> = [blocks, 1, 1].into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        args.write(queue, 0, &dispatch_bytes);
+        let mut resources = ResourceMap::new();
+        resources.attach_graph(&graph, &allocations);
+        resources.buffers([
+            ("count", &count),
+            ("input", &keys),
+            ("prefix", &prefix),
+            ("total", &total),
+            ("dispatch", &args),
+            ("local_prefix", &local_prefix),
+            ("block_sums", &block_sums),
+        ]);
+        let dispatched_scan = PrefixScanOperation::from_spec(device, &kernels, &resources, PrefixScanSpec {
+            phase: CompilerPhase::Optimization,
+            dispatch_domain: ResourceDomain::OptimizationValues,
+            passes: PrefixScanGraphPasses { local: "scan.local", apply: "scan.apply" },
+            resources: PrefixScanResources {
+                count: "count",
+                input: "input",
+                output_prefix: "prefix",
+                total: "total",
+                dispatch_args: "dispatch",
+                local_prefix: "local_prefix",
+                block_sum: "block_sums",
+            },
+        }).unwrap();
+
+        // The visibility kernels encode a non-null name key as name_id + 1.
+        let name_keys: Vec<u32> = key_words.into_iter()
+            .map(|word| word.wrapping_sub(1))
+            .collect();
+        let name_keys = upload(&name_keys);
+        let owner = storage(rows as usize);
+        resources.buffers([
+            ("hir_visible_decl_count_out", &count),
+            ("hir_visible_decl_name_id", &name_keys),
+            ("hir_visible_decl_owner_fn", &owner),
+            ("order", &order),
+            ("temporary", &temporary),
+            ("histogram", &histogram),
+            ("bucket_prefix", &bucket_prefix),
+            ("bucket_total", &bucket_total),
+        ]);
+        let sort_passes = RadixSortGraphStepPasses {
+            histogram: "sort.histogram", bucket_prefix: "sort.bucket_prefix", scatter: "sort.scatter",
+        };
+        let sort_definition = RadixSortDefinition {
+            phase: CompilerPhase::Optimization,
+            dispatch_domain: ResourceDomain::OptimizationValues,
+            small_pass: "sort.small",
+            passes: RadixSortGraphPasses {
+                order_to_temporary: sort_passes, temporary_to_order: sort_passes,
+            },
+            kernels: RadixSortKernels::new(histogram_key, scatter_key),
+            resources: RadixSortResources {
+                count: "count", order: "order", temporary_order: "temporary",
+                histogram: "histogram", bucket_prefix: "bucket_prefix", bucket_total: "bucket_total",
+            },
+            dispatch_args: "dispatch",
+        };
+        let dispatched_sort = RadixSortOperation::new(
+            device, &kernels, &resources,
+            sort_definition.plan(rows, 0, digits, RadixSortDispatch {
+                small: RadixDispatchDomain::Direct(0),
+                rows: RadixDispatchDomain::Direct(rows),
+                bucket_prefix: RadixDispatchDomain::Direct(256 * 256),
+            }),
+            |digit| SortParams { rows, bits_per_field: 32, blocks, digit },
+        ).unwrap();
+
+        let record_probe = |encoder: &mut wgpu::CommandEncoder,
+                            pass: &passes_core::PassData,
+                            bind: &wgpu::BindGroup| {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, bind, &[]);
+            compute.dispatch_workgroups(groups, 1, 1);
+        };
+        let mut timer = GpuTimer::new(device, queue, 80, GpuCompilerPhase::Optimization);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        for _ in 0..10 {
+            timer.stamp(&mut encoder, "scan dispatched begin");
+            dispatched_scan.record(&mut encoder).unwrap();
+            timer.stamp(&mut encoder, "scan dispatched end");
+            sync.clear(&mut encoder, 0, None);
+            timer.stamp(&mut encoder, "scan program begin");
+            record_probe(&mut encoder, scan, &scan_bind);
+            timer.stamp(&mut encoder, "scan program end");
+            timer.stamp(&mut encoder, "sort dispatched begin");
+            dispatched_sort.record(&mut encoder).unwrap();
+            timer.stamp(&mut encoder, "sort dispatched end");
+            sync.clear(&mut encoder, 0, None);
+            timer.stamp(&mut encoder, "sort program begin");
+            record_probe(&mut encoder, sort, &sort_bind);
+            timer.stamp(&mut encoder, "sort program end");
+        }
+        timer.resolve(&mut encoder);
+        queue.submit(Some(encoder.finish()));
+        let stamps = timer.try_read(device).unwrap();
+        let median = |index: usize| {
+            let mut times: Vec<f64> = stamps.chunks_exact(8).skip(1).map(|sample| {
+                let ticks = sample[index + 1].ticks - sample[index].ticks;
+                ticks as f64 * f64::from(timer.period_ns()) / 1000.0
+            }).collect();
+            times.sort_by(f64::total_cmp);
+            times[times.len() / 2]
+        };
+        println!("{rows:8} rows, us: scan {:.2} / {:.2}, sort {:.2} / {:.2} (dispatches / program)",
+            median(0), median(2), median(4), median(6));
     }
 }
