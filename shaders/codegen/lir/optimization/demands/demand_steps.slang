@@ -350,12 +350,9 @@ public void publish_value_demand_seeds(uint row, uint seed_total)
 // and the lane that admits a row owns it and walks on from it, so no lane
 // waits on another.
 //
-// The walk keeps no stack: a closure row records the predecessor row it was
-// admitted through and the demand that admitted it, and the lane returns along
-// that record.
-
-// Two words per closure row: the predecessor row it was admitted through, then
-// the demand row that admitted it.
+// A lane records a resume point only when it descends before its current
+// predecessor range is exhausted. A resume point stores the next predecessor
+// and the previous resume row.
 
 void close_value_demands_capacity(uint required, uint available)
 {
@@ -405,10 +402,12 @@ public void close_value_demands(
         else window_end = bound;
     }
     uint row = root_row;
+    uint resume_row = INVALID;
     uint block = root.block;
     uint cursor = block < block_total
         ? opt_ir_predecessor_prefix[block] : INVALID;
-    // A lane enters each row it owns once and returns from it once.
+    // A lane enters each row it owns once and resumes it at most once per
+    // child it admits.
     uint budget = 2u * demand_params.demand_capacity + 2u;
     for (uint step = 0u; step < budget; ++step)
     {
@@ -474,21 +473,23 @@ public void close_value_demands(
             demand.declaration = declaration;
             demand.block = predecessor;
             opt_ir_ssa_demands[admitted_row] = demand;
-            opt_ir_ssa_walk[2u * admitted_row] = predecessor_row;
-            opt_ir_ssa_walk[2u * admitted_row + 1u] = row;
+            if (cursor < predecessor_end)
+            {
+                opt_ir_ssa_walk[2u * row] = cursor;
+                opt_ir_ssa_walk[2u * row + 1u] = resume_row;
+                resume_row = row;
+            }
             row = admitted_row;
             block = predecessor;
             cursor = opt_ir_predecessor_prefix[predecessor];
             admitted = true;
         }
         if (admitted) continue;
-        if (row == root_row) return;
-        // The record was checked when this lane admitted the row through it.
-        uint predecessor_row = opt_ir_ssa_walk[2u * row];
-        row = opt_ir_ssa_walk[2u * row + 1u];
-        block = opt_ir_edge_to_block(opt_ir_edges[
-            opt_ir_predecessor_edge_ids[predecessor_row]].packed_target);
-        cursor = predecessor_row + 1u;
+        if (resume_row == INVALID) return;
+        row = resume_row;
+        resume_row = opt_ir_ssa_walk[2u * row + 1u];
+        block = opt_ir_ssa_demands[row].block;
+        cursor = opt_ir_ssa_walk[2u * row];
     }
 }
 
