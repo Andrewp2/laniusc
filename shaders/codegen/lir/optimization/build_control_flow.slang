@@ -210,8 +210,9 @@ bool analyze_control_flow(inout StepProgram program, bool validate)
             mark_control_flow_regions(row, nodes);
         for (uint row = program.lane; row < functions; row += program.lanes)
             clear_function_region_ranges(row, functions);
-        for (uint row = program.lane; row < gParams.semantic_capacity * 2u; row += program.lanes)
-            clear_region_owners(row);
+        // Leaves start at nodes. Clear only the part of the tree this job uses.
+        for (uint row = program.lane; row < nodes * 2u; row += program.lanes)
+            opt_ir_region_ownership_tree[row] = 0u;
         if (!step_barrier(program)) return false;
 
         if (!step_program_prefix_scan(program, nodes, opt_ir_block_start_flag,
@@ -244,7 +245,7 @@ bool analyze_control_flow(inout StepProgram program, bool validate)
         for (uint row = program.lane; row < regions; row += program.lanes)
         {
             finalize_control_flow_regions(row, regions, functions);
-            write_region_ownership_ranges(row, regions);
+            write_region_ownership_ranges(row, regions, nodes);
         }
         if (!step_barrier(program)) return false;
 
@@ -253,7 +254,7 @@ bool analyze_control_flow(inout StepProgram program, bool validate)
         for (uint row = program.lane; row < nodes; row += program.lanes)
             assign_nodes_to_regions(row, nodes, blocks, regions);
         for (uint row = program.lane; row < blocks; row += program.lanes)
-            assign_blocks_to_regions(row, blocks, regions);
+            assign_blocks_to_regions(row, blocks, regions, nodes);
         if (!step_barrier(program)) return false;
 
         for (uint row = program.lane; row < edges; row += program.lanes)

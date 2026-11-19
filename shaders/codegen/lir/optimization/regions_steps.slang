@@ -210,31 +210,18 @@ public void finalize_function_region_ranges(uint function_id, uint function_tota
     opt_ir_functions[function_id] = function;
 }
 
-// Clears the phase-local interval-stabbing tree. Leaves begin at
-// `semantic_capacity`, so the standard iterative segment-tree representation
-// uses exactly twice the node capacity and does not require power-of-two
-// padding.
-
-public void clear_region_owners(uint row)
-{
-    uint capacity = gParams.semantic_capacity * 2u;
-    if (row < capacity) opt_ir_region_ownership_tree[row] = 0u;
-}
-
 // Adds every half-open region interval to a range-max segment tree. Dense
 // region IDs follow opening position, so the maximum active ID is exactly the
 // innermost region at a point. Closing labels are excluded and therefore
 // inherit their parent region.
 
-public void write_region_ownership_ranges(uint region_id, uint total)
+public void write_region_ownership_ranges(uint region_id, uint total, uint nodes)
 {
     if (region_id >= total) return;
 
     OptIrRegion region = opt_ir_regions[region_id];
-    uint left = min(region.position_start, gParams.semantic_capacity) +
-        gParams.semantic_capacity;
-    uint right = min(region.position_end, gParams.semantic_capacity) +
-        gParams.semantic_capacity;
+    uint left = min(region.position_start, nodes) + nodes;
+    uint right = min(region.position_end, nodes) + nodes;
     uint encoded = region_id + 1u;
     while (left < right)
     {
@@ -257,9 +244,9 @@ void assign_nodes_to_regions_structure_failure(uint node)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, node);
 }
 
-uint region_for_position(uint position)
+uint region_for_position(uint position, uint nodes)
 {
-    uint cursor = gParams.semantic_capacity + position;
+    uint cursor = nodes + position;
     uint encoded = 0u;
     while (cursor != 0u)
     {
@@ -280,7 +267,7 @@ public void assign_nodes_to_regions(uint position, uint total, uint block_total,
         return;
     }
     uint block_id = opt_ir_control[node].block_id;
-    uint region_id = region_for_position(position);
+    uint region_id = region_for_position(position, total);
     bool valid = block_id < block_total;
     if (region_id != STRUCTURE_INVALID)
     {
@@ -293,7 +280,7 @@ public void assign_nodes_to_regions(uint position, uint total, uint block_total,
             if (opens_region(opt_ir_op(opt_ir_core[node])))
             {
                 uint expected_parent = position == 0u
-                    ? STRUCTURE_INVALID : region_for_position(position - 1u);
+                    ? STRUCTURE_INVALID : region_for_position(position - 1u, total);
                 if (expected_parent != STRUCTURE_INVALID)
                 {
                     valid = valid && expected_parent < region_total;
@@ -326,14 +313,14 @@ void assign_blocks_to_regions_structure_failure(uint block_id)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block_id);
 }
 
-public void assign_blocks_to_regions(uint block_id, uint block_total, uint region_total)
+public void assign_blocks_to_regions(uint block_id, uint block_total, uint region_total, uint nodes)
 {
     if (block_id >= block_total) return;
 
     OptIrBlock block = opt_ir_blocks[block_id];
-    uint region_id = block.position_start < gParams.semantic_capacity
-        ? region_for_position(block.position_start) : STRUCTURE_INVALID;
-    bool valid = block.position_start < gParams.semantic_capacity;
+    bool valid = block.position_start < nodes;
+    uint region_id = valid
+        ? region_for_position(block.position_start, nodes) : STRUCTURE_INVALID;
     if (region_id != STRUCTURE_INVALID)
     {
         valid = valid && region_id < region_total;

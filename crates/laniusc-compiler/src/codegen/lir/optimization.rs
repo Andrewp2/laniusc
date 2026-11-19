@@ -550,10 +550,7 @@ impl GpuOptimizationStage {
             .max(capacities.optimization_edge_capacity())
             .max(capacities.hir_nodes);
         let validate = usize::from(validate_structure);
-        // CFG ownership clears across the built workspace. Keep the clear
-        // parallel when a large arena is reused.
-        let large_workspace = self.capacities.semantic_instructions > 4096;
-        self.control_flow[usize::from(rows > 4096 || large_workspace)][validate]
+        self.control_flow[usize::from(rows > 4096)][validate]
             .record(encoder)?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
