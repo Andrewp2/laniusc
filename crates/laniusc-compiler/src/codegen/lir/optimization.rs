@@ -56,7 +56,6 @@ use crate::gpu::{
     },
     kernels::KernelRegistry,
     operations::{
-        ClearBuffersOperation,
         ComputeOperation,
         PrefixScanOperation,
         PrefixScanPairOperation,
@@ -72,71 +71,6 @@ use crate::gpu::{
     },
     resource_registry::ResourceMap,
     timer::GpuTimer,
-};
-
-pub(super) const OPT_IR_SSA_DEMAND_SEED_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationAccessGroups,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.demands.seed.scan.local",
-        apply: "lir.opt.ssa.demands.seed.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.declaration_block_total",
-        input: "lir.opt.ssa.demand_seed_flag",
-        output_prefix: "lir.opt.ssa.demand_seed_prefix",
-        total: "lir.opt.ssa.demand_total",
-        dispatch_args: "lir.opt.access_radix_dispatch_args",
-        local_prefix: "lir.opt.ssa.demand_seed_scan_local_prefix",
-        block_sum: "lir.opt.ssa.demand_seed_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
-    left_label: "lir.opt.ssa.block_arguments",
-    right_label: "lir.opt.ssa.block_argument_incoming",
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationSsaDemands,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.block_arguments.scan.local",
-        apply: "lir.opt.ssa.block_arguments.scan.apply",
-    },
-    left: PrefixScanResources {
-        count: "lir.opt.ssa.demand_total",
-        input: "lir.opt.ssa.block_argument_flag",
-        output_prefix: "lir.opt.ssa.block_argument_flag",
-        total: "lir.opt.ssa.block_argument_total",
-        dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
-        local_prefix: "lir.opt.ssa.block_argument_flag",
-        block_sum: "lir.opt.ssa.block_argument_scan_block_sum",
-    },
-    right: PrefixScanResources {
-        count: "lir.opt.ssa.demand_total",
-        input: "lir.opt.ssa.block_argument_incoming_count",
-        output_prefix: "lir.opt.ssa.block_argument_incoming_count",
-        total: "lir.opt.ssa.block_argument_incoming_total",
-        dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
-        local_prefix: "lir.opt.ssa.block_argument_incoming_count",
-        block_sum: "lir.opt.ssa.block_argument_incoming_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_USER_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationSsaBlockArguments,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.block_argument_users.scan.local",
-        apply: "lir.opt.ssa.block_argument_users.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.ssa.block_argument_total",
-        input: "lir.opt.ssa.block_argument_user_count",
-        output_prefix: "lir.opt.ssa.block_argument_user_prefix",
-        total: "lir.opt.ssa.block_argument_user_total",
-        dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
-        local_prefix: "lir.opt.ssa.block_argument_user_scan_local_prefix",
-        block_sum: "lir.opt.ssa.block_argument_user_scan_block_sum",
-    },
 };
 
 pub(super) const OPT_IR_SSA_VALUE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
@@ -215,37 +149,6 @@ pub(super) const OPT_IR_SSA_AGGREGATE_USE_SCAN: PrefixScanSpec = PrefixScanSpec 
     },
 };
 
-pub(super) const OPT_IR_SSA_DEMAND_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationSsaDemands,
-    small_pass: "lir.opt.ssa.demands.sort",
-    passes: RadixSortGraphPasses {
-        order_to_temporary: RadixSortGraphStepPasses {
-            histogram: "lir.opt.ssa.demands.sort.histogram.a",
-            bucket_prefix: "lir.opt.ssa.demands.sort.prefix.a",
-            scatter: "lir.opt.ssa.demands.sort.scatter.a",
-        },
-        temporary_to_order: RadixSortGraphStepPasses {
-            histogram: "lir.opt.ssa.demands.sort.histogram.b",
-            bucket_prefix: "lir.opt.ssa.demands.sort.prefix.b",
-            scatter: "lir.opt.ssa.demands.sort.scatter.b",
-        },
-    },
-    kernels: RadixSortKernels::new(
-        "codegen/lir/optimization/demands/count_value_demand_sort_buckets",
-        "codegen/lir/optimization/demands/scatter_sorted_value_demands",
-    ),
-    resources: RadixSortResources {
-        count: "lir.opt.ssa.demand_total",
-        order: "lir.opt.ssa.demand_order",
-        temporary_order: "lir.opt.ssa.demand_order_tmp",
-        histogram: "lir.opt.ssa.demand_radix_histogram",
-        bucket_prefix: "lir.opt.ssa.demand_radix_bucket_prefix",
-        bucket_total: "lir.opt.ssa.demand_radix_bucket_total",
-    },
-    dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
-};
-
 pub(super) const OPT_IR_SSA_USE_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
     phase: CompilerPhase::Optimization,
     dispatch_domain: ResourceDomain::OptimizationUses,
@@ -295,7 +198,7 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
     },
 };
 
-pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
+pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 4;
 pub(super) const OPTIMIZATION_PROGRAM_FAILURE_BYTES: usize = OPTIMIZATION_PROGRAM_SLOTS * 4;
 
 const RADIX_ROWS_PER_BLOCK: u32 = 256;
@@ -319,14 +222,8 @@ mod opt_extent {
     pub(super) fn access(c: LoweringCapacities) -> u32 {
         c.optimization_access_capacity()
     }
-    pub(super) fn declaration_block(c: LoweringCapacities) -> u32 {
-        c.optimization_declaration_block_capacity()
-    }
-    pub(super) fn demand(c: LoweringCapacities) -> u32 {
-        c.optimization_ssa_demand_capacity()
-    }
     pub(super) fn ssa_value_mark(c: LoweringCapacities) -> u32 {
-        c.semantic_instructions.max(demand(c)).max(1)
+        c.semantic_instructions.max(c.optimization_ssa_demand_capacity()).max(1)
     }
     pub(super) fn value(c: LoweringCapacities) -> u32 {
         c.optimization_value_capacity()
@@ -456,15 +353,6 @@ struct AccessParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
-struct AccessRadixParams {
-    item_capacity: u32,
-    subject_bits: u32,
-    max_blocks: u32,
-    key_step: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
 struct UseRadixParams {
     item_capacity: u32,
     key_bits: u32,
@@ -481,20 +369,9 @@ struct SsaParams {
     declaration_capacity: u32,
     declaration_block_capacity: u32,
     demand_capacity: u32,
-    reserved0: u32,
-    max_radix_blocks: u32,
-    incoming_capacity: u32,
-}
-
-/// One round of the demand-alias collapse. Two rounds of `hops_per_round`
-/// hops cover every chain when `(hops_per_round + 1)^2 >= demand_capacity`.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-struct SsaAliasParams {
-    demand_capacity: u32,
-    hops_per_round: u32,
-    final_round: u32,
+    alias_hops: u32,
     reserved: u32,
+    incoming_capacity: u32,
 }
 
 #[repr(C)]
@@ -682,35 +559,7 @@ pub(crate) struct GpuOptimizationStage {
     program_groups_override: Option<u32>,
     control_flow_analysis: [[StepProgramOperation; 2]; 2],
     declaration_accesses: [[StepProgramOperation; 2]; 2],
-    demand_seed_mark: JobSized,
-    demand_seed_scan: PrefixScanOperation,
-    demand_seed_scatter: JobSized,
-    demand_seed_validate: JobSized,
-    demand_work_clear: ClearBuffersOperation,
-    demand_closure_prepare: ComputeOperation,
-    demand_seed_publish: JobSized,
-    demand_close: JobSized,
-    demand_sort_prepare: ComputeOperation,
-    demand_sort: RadixSortOperation<AccessRadixParams>,
-    demand_validate: JobSized,
-    demand_materialize: JobSized,
-    demand_commit: JobSized,
-    block_argument_mark: JobSized,
-    block_argument_scan: PrefixScanPairOperation,
-    block_argument_scatter: JobSized,
-    block_argument_validate: JobSized,
-    demand_alias_jump: JobSized,
-    demand_alias_resolve: JobSized,
-    demand_alias_validate: JobSized,
-    block_argument_user_count_clear: ClearBuffersOperation,
-    block_argument_user_count: JobSized,
-    block_argument_user_scan: PrefixScanOperation,
-    block_argument_user_cursor_clear: ClearBuffersOperation,
-    block_argument_user_scatter: JobSized,
-    trivial_block_argument_init: JobSized,
-    trivial_block_argument_propagate: JobSized,
-    trivial_block_argument_finalize: JobSized,
-    trivial_block_argument_validate: JobSized,
+    block_arguments: [[StepProgramOperation; 2]; 2],
     ssa_value_mark: JobSized,
     ssa_value_scan: PrefixScanPairOperation,
     ssa_value_scatter: JobSized,
@@ -782,12 +631,10 @@ pub(crate) struct GpuOptimizationStage {
     _reaching_definition_states: LaniusBuffer<OptIrReachingDefinitionState>,
     _ssa_demands: LaniusBuffer<OptIrSsaDemand>,
     _ssa_demand_seed_total: LaniusBuffer<u32>,
-    _ssa_alias_params: [LaniusBuffer<SsaAliasParams>; 2],
     _ssa_sparse_declaration: LaniusBuffer<u32>,
     _ssa_sparse_block: LaniusBuffer<u32>,
     _ssa_walk: LaniusBuffer<u32>,
     _ssa_demand_order: LaniusBuffer<u32>,
-    _ssa_demand_radix_dispatch_args: LaniusBuffer<u32>,
     _ssa_canonical_demands_tmp: LaniusBuffer<OptIrSsaDemand>,
     _ssa_demand_resolutions: LaniusBuffer<u32>,
     _ssa_demand_resolution_tmp: LaniusBuffer<u32>,
@@ -862,8 +709,6 @@ impl GpuOptimizationStage {
         let ssa_walk_capacity = capacities.optimization_ssa_walk_capacity();
         let value_capacity = capacities.optimization_value_capacity();
         let use_capacity = capacities.optimization_use_capacity();
-        let access_radix = opt_ir_access_radix_layout(capacities);
-        let ssa_demand_radix = opt_ir_ssa_demand_radix_layout(capacities);
         let ssa_use_radix = opt_ir_ssa_use_radix_layout(capacities);
         let count = workspace
             .alias(graph, resource("lir.opt.total")?, 1)
@@ -1118,13 +963,6 @@ impl GpuOptimizationStage {
                 demand_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let ssa_demand_radix_dispatch_args = workspace
-            .alias(
-                graph,
-                resource("lir.opt.ssa.demand_radix_dispatch_args")?,
-                3,
-            )
-            .map_err(anyhow::Error::msg)?;
         let ssa_canonical_demands_tmp = workspace
             .alias(
                 graph,
@@ -1370,7 +1208,7 @@ impl GpuOptimizationStage {
                 declaration_capacity: capacities.declaration_capacity(),
                 parameter_capacity: capacities.parameters.max(1),
                 local_capacity: capacities.local_capacity(),
-                reserved: access_radix.blocks,
+                reserved: 0,
             },
         );
         let ssa_params = uniform_from_val(
@@ -1383,8 +1221,8 @@ impl GpuOptimizationStage {
                 declaration_capacity: capacities.declaration_capacity(),
                 declaration_block_capacity,
                 demand_capacity,
-                reserved0: 0,
-                max_radix_blocks: ssa_demand_radix.blocks,
+                alias_hops: demand_capacity.isqrt().max(1),
+                reserved: 0,
                 incoming_capacity,
             },
         );
@@ -1458,285 +1296,13 @@ impl GpuOptimizationStage {
             "codegen/lir/optimization/accesses/build_declaration_accesses",
             2,
         )?;
-        let demand_seed_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
+        resources.buffer("gParams", &ssa_params);
+        let block_arguments = variants(
             &resources,
-            "lir.opt.ssa.demands.seed.mark",
-            kernels.kernel("codegen/lir/optimization/demands/mark_value_demand_seeds"),
-            &access_params,
-            declaration_block_capacity,
-        )?, opt_extent::declaration_block, capacities)?;
-        let demand_seed_scan = PrefixScanOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_SSA_DEMAND_SEED_SCAN,
+            "lir.opt.build_block_arguments",
+            "codegen/lir/optimization/demands/build_block_arguments",
+            3,
         )?;
-        let demand_seed_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.seed.scatter",
-            kernels.kernel("codegen/lir/optimization/demands/scatter_value_demand_seeds"),
-            &access_params,
-            declaration_block_capacity,
-        )?, opt_extent::declaration_block, capacities)?;
-        let demand_seed_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.seed.validate",
-            kernels.kernel("codegen/lir/optimization/demands/validate_value_demand_seeds"),
-            &access_params,
-            declaration_block_capacity,
-        )?, opt_extent::declaration_block, capacities)?;
-        let demand_work_clear = ClearBuffersOperation::new(
-            &(graph, &allocations),
-            "lir.opt.ssa.demands.work_clear",
-            &[
-                (
-                    "opt_ir_ssa_sparse_declaration",
-                    (&ssa_sparse_declaration).into(),
-                ),
-                ("opt_ir_ssa_sparse_block", (&ssa_sparse_block).into()),
-            ],
-        )?;
-        let demand_closure_prepare = ComputeOperation::direct(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.closure.prepare",
-            kernels.kernel("codegen/lir/optimization/demands/prepare_value_demand_closure"),
-            1,
-        )?;
-        let demand_seed_publish = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.closure.seed_publish",
-            kernels.kernel("codegen/lir/optimization/demands/publish_value_demand_seeds"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_close = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.close",
-            kernels.kernel("codegen/lir/optimization/demands/close_value_demands"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_sort_prepare = ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.sort.prepare",
-            kernels.kernel("codegen/lir/optimization/demands/prepare_value_demand_sort"),
-            &ssa_params,
-            1,
-        )?;
-        let demand_key_bits =
-            ssa_demand_radix.block_bits | (ssa_demand_radix.declaration_bits << 16);
-        let demand_sort = OPT_IR_SSA_DEMAND_RADIX_SORT.operation(
-            device,
-            kernels,
-            &resources,
-            demand_capacity,
-            0,
-            ssa_demand_radix.steps,
-            RadixSortDispatch {
-                small: RadixDispatchDomain::Direct(1),
-                rows: RadixDispatchDomain::Indirect(&ssa_demand_radix_dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Direct(
-                    RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
-                ),
-            },
-            |key_step| AccessRadixParams {
-                item_capacity: demand_capacity,
-                subject_bits: demand_key_bits,
-                max_blocks: ssa_demand_radix.blocks,
-                key_step,
-            },
-        )?;
-        let demand_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.validate",
-            kernels.kernel("codegen/lir/optimization/demands/validate_value_demands"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_materialize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.materialize",
-            kernels.kernel("codegen/lir/optimization/demands/materialize_value_demands"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_commit = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demands.commit",
-            kernels.kernel("codegen/lir/optimization/demands/commit_value_demands"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let block_argument_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.block_arguments.mark",
-            kernels.kernel("codegen/lir/optimization/block_arguments/mark_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let block_argument_scan = PrefixScanPairOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_SSA_BLOCK_ARGUMENT_SCAN,
-        )?;
-        let block_argument_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.block_arguments.scatter",
-            kernels.kernel("codegen/lir/optimization/block_arguments/scatter_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let block_argument_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.block_arguments.validate",
-            kernels.kernel("codegen/lir/optimization/block_arguments/validate_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        // One lane per demand row; the second round hops over the first
-        // round's jumps and leaves the result in the resolution table.
-        let ssa_alias_params = [0u32, 1].map(|final_round| {
-            uniform_from_val(
-                device,
-                "lir.opt.ssa.demand_aliases.params",
-                &SsaAliasParams {
-                    demand_capacity,
-                    hops_per_round: demand_capacity.isqrt().max(1),
-                    final_round,
-                    reserved: 0,
-                },
-            )
-        });
-        let demand_alias_jump = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demand_aliases.jump",
-            kernels.kernel("codegen/lir/optimization/demands/resolve_value_demand_aliases"),
-            &ssa_alias_params[0],
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_alias_resolve = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demand_aliases.resolve",
-            kernels.kernel("codegen/lir/optimization/demands/resolve_value_demand_aliases"),
-            &ssa_alias_params[1],
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let demand_alias_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.demand_aliases.validate",
-            kernels.kernel("codegen/lir/optimization/demands/validate_value_demand_aliases"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let block_argument_user_count_clear = ClearBuffersOperation::new(
-            &(graph, &allocations),
-            "lir.opt.ssa.block_argument_users.count_clear",
-            &[((
-                "opt_ir_ssa_block_argument_user_count",
-                (&ssa_block_argument_user_count).into(),
-            ))],
-        )?;
-        let block_argument_user_count = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.block_argument_users.count",
-            kernels.kernel("codegen/lir/optimization/block_arguments/count_block_argument_users"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let block_argument_user_scan = PrefixScanOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_SSA_BLOCK_ARGUMENT_USER_SCAN,
-        )?;
-        let block_argument_user_cursor_clear = ClearBuffersOperation::new(
-            &(graph, &allocations),
-            "lir.opt.ssa.block_argument_users.cursor_clear",
-            &[((
-                "opt_ir_ssa_block_argument_user_count",
-                (&ssa_block_argument_user_count).into(),
-            ))],
-        )?;
-        let block_argument_user_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.block_argument_users.scatter",
-            kernels.kernel("codegen/lir/optimization/block_arguments/scatter_block_argument_users"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.trivial_block_arguments.init",
-            kernels.kernel("codegen/lir/optimization/block_arguments/seed_trivial_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_propagate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.trivial_block_arguments.propagate",
-            kernels.kernel("codegen/lir/optimization/block_arguments/propagate_trivial_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.trivial_block_arguments.finalize",
-            kernels.kernel("codegen/lir/optimization/block_arguments/finalize_trivial_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
-        let trivial_block_argument_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.trivial_block_arguments.validate",
-            kernels.kernel("codegen/lir/optimization/block_arguments/validate_trivial_block_arguments"),
-            &ssa_params,
-            demand_capacity,
-        )?, opt_extent::demand, capacities)?;
         let ssa_value_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -1998,35 +1564,7 @@ impl GpuOptimizationStage {
             program_groups_override,
             control_flow_analysis,
             declaration_accesses,
-            demand_seed_mark,
-            demand_seed_scan,
-            demand_seed_scatter,
-            demand_seed_validate,
-            demand_work_clear,
-            demand_closure_prepare,
-            demand_seed_publish,
-            demand_close,
-            demand_sort_prepare,
-            demand_sort,
-            demand_validate,
-            demand_materialize,
-            demand_commit,
-            block_argument_mark,
-            block_argument_scan,
-            block_argument_scatter,
-            block_argument_validate,
-            demand_alias_jump,
-            demand_alias_resolve,
-            demand_alias_validate,
-            block_argument_user_count_clear,
-            block_argument_user_count,
-            block_argument_user_scan,
-            block_argument_user_cursor_clear,
-            block_argument_user_scatter,
-            trivial_block_argument_init,
-            trivial_block_argument_propagate,
-            trivial_block_argument_finalize,
-            trivial_block_argument_validate,
+            block_arguments,
             ssa_value_mark,
             ssa_value_scan,
             ssa_value_scatter,
@@ -2098,12 +1636,10 @@ impl GpuOptimizationStage {
             _reaching_definition_states: reaching_definition_states,
             _ssa_demands: ssa_demands,
             _ssa_demand_seed_total: ssa_demand_seed_total,
-            _ssa_alias_params: ssa_alias_params,
             _ssa_sparse_declaration: ssa_sparse_declaration,
             _ssa_sparse_block: ssa_sparse_block,
             _ssa_walk: ssa_walk,
             _ssa_demand_order: ssa_demand_order,
-            _ssa_demand_radix_dispatch_args: ssa_demand_radix_dispatch_args,
             _ssa_canonical_demands_tmp: ssa_canonical_demands_tmp,
             _ssa_demand_resolutions: ssa_demand_resolutions,
             _ssa_demand_resolution_tmp: ssa_demand_resolution_tmp,
@@ -2207,84 +1743,11 @@ impl GpuOptimizationStage {
         let access_parallel = access_rows > 4096 || self.program_groups_override.is_some();
         self.declaration_accesses[usize::from(access_parallel)][usize::from(validate_structure)]
             .record(encoder)?;
-        self.demand_seed_mark.record_job(encoder, job)?;
-        self.demand_seed_scan.record(encoder)?;
-        self.demand_seed_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.demand_seed_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_seeds.done");
-        }
-        self.demand_work_clear.record(encoder);
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_closure.clear.done");
-        }
-        self.demand_closure_prepare.record(encoder)?;
-        self.demand_seed_publish.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_closure.publish.done");
-        }
-        self.demand_close.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_closure.close.done");
-        }
-        self.demand_sort_prepare.record(encoder)?;
-        self.demand_sort.record(encoder)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_closure.sort.done");
-        }
-        if validate_structure {
-            self.demand_validate.record_job(encoder, job)?;
-        }
-        self.demand_materialize.record_job(encoder, job)?;
-        self.demand_commit.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_closure.done");
-        }
-        self.block_argument_mark.record_job(encoder, job)?;
-        self.block_argument_scan.record(encoder)?;
-        self.block_argument_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.block_argument_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.block_arguments.done");
-        }
-        self.demand_alias_jump.record_job(encoder, job)?;
-        self.demand_alias_resolve.record_job(encoder, job)?;
-        if validate_structure {
-            self.demand_alias_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.demand_aliases.done");
-        }
-        self.block_argument_user_count_clear.record(encoder);
-        self.block_argument_user_count.record_job(encoder, job)?;
-        self.block_argument_user_scan.record(encoder)?;
-        self.block_argument_user_cursor_clear.record(encoder);
-        self.block_argument_user_scatter.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.block_argument_users.done");
-        }
-        self.trivial_block_argument_init.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.trivial_block_arguments.init.done");
-        }
-        self.trivial_block_argument_propagate.record_job(encoder, job)?;
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(
-                encoder,
-                "optimization.trivial_block_arguments.propagate.done",
-            );
-        }
-        self.trivial_block_argument_finalize.record_job(encoder, job)?;
-        if validate_structure {
-            self.trivial_block_argument_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.trivial_block_arguments.done");
-        }
+        let argument_rows = capacities.optimization_ssa_sparse_capacity()
+            .max(capacities.optimization_ssa_incoming_capacity());
+        let argument_parallel = argument_rows > 4096 || self.program_groups_override.is_some();
+        self.block_arguments[usize::from(argument_parallel)][usize::from(validate_structure)]
+            .record(encoder)?;
         self.ssa_value_mark.record_job(encoder, job)?;
         self.ssa_value_scan.record(encoder)?;
         self.ssa_value_scatter.record_job(encoder, job)?;

@@ -40,7 +40,6 @@ public StructuredBuffer<SemanticLirLocal> semantic_locals;
 public StructuredBuffer<OptIrFunction> opt_ir_functions;
 public RWStructuredBuffer<uint> opt_ir_access_total;
 public RWStructuredBuffer<uint> opt_ir_declaration_access_total;
-public RWStructuredBuffer<uint> opt_ir_access_radix_dispatch_args;
 public StructuredBuffer<uint> opt_ir_position_by_node;
 public StructuredBuffer<OptIrBlock> opt_ir_blocks;
 public RWStructuredBuffer<uint> opt_ir_access_order;
@@ -164,12 +163,6 @@ public void local_access_layout(
         // The group-mark pass lowers this to the first memory-domain row with
         // an atomic min after the stable radix ordering.
         opt_ir_declaration_access_total[0u] = active_total;
-        uint blocks = max(radix_active_block_count(
-            active_total, gParams.reserved, WG_SIZE), 1u);
-        opt_ir_access_radix_dispatch_args[0u] = min(blocks, MAX_GROUPS_X);
-        opt_ir_access_radix_dispatch_args[1u] =
-            (blocks + MAX_GROUPS_X - 1u) / MAX_GROUPS_X;
-        opt_ir_access_radix_dispatch_args[2u] = 1u;
         if (final_total > gParams.access_capacity)
             local_access_layout_capacity(final_total);
     }
