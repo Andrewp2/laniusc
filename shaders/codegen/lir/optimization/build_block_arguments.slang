@@ -180,13 +180,18 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
     if (!step_barrier(program)) return false;
 
     for (uint row = program.lane; row < demands; row += program.lanes)
+        materialize_value_demands(row, demands);
+    if (!step_barrier(program)) return false;
+
+    if (validate)
     {
-        if (validate)
+        // Validate closure against the materialized order while the original
+        // table still contains the seed rows.
+        for (uint row = program.lane; row < demands; row += program.lanes)
             validate_value_demands(row, demands, min(seeds, demands), blocks, edges,
                 accesses, declaration_blocks);
-        materialize_value_demands(row, demands);
+        if (!step_barrier(program)) return false;
     }
-    if (!step_barrier(program)) return false;
 
     // Marking the block argument reads only the demand just committed by
     // this lane. The predecessor lists are inputs of this program.

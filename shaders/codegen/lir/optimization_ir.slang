@@ -135,6 +135,8 @@ struct OptIrAccessGroup
 struct OptIrDeclarationBlock
 {
     uint access_start;
+    uint declaration;
+    uint block;
 };
 
 struct OptIrReachingDefinitionState

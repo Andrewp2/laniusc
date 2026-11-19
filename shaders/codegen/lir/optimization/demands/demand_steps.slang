@@ -4,8 +4,8 @@ import codegen.lir.optimization.argument_tables;
 import codegen.lir.optimization.demands.ssa_sparse_sets;
 
 // Shared exact lookup over the canonical declaration/block access relation.
-// The table remains compact: keys and outgoing definitions are projected from
-// stable access rows rather than duplicated in retained SSA storage.
+// Keys are stored with the access range. Outgoing definitions use the last
+// access of that range.
 
 static const uint SSA_DEMAND_INVALID = 0xffffffffu;
 
@@ -33,23 +33,6 @@ public bool opt_ir_ssa_demand_less(
         (left.declaration == right.declaration && left.block < right.block);
 }
 
-public OptIrSsaDemand opt_ir_declaration_block_key(
-    uint row,
-    uint access_total)
-{
-    OptIrSsaDemand key;
-    key.declaration = SSA_DEMAND_INVALID;
-    key.block = SSA_DEMAND_INVALID;
-    uint order_i = opt_ir_declaration_blocks[row].access_start;
-    if (order_i >= access_total) return key;
-    uint access_id = opt_ir_access_order[order_i];
-    if (access_id >= access_total) return key;
-    OptIrAccessCore access = opt_ir_accesses[access_id];
-    key.declaration = access.subject;
-    key.block = access.block_id;
-    return key;
-}
-
 // Lower bound inside the half-open row window `[lo, hi)`. A lane that stays on
 // one declaration narrows the window to that declaration's rows once and then
 // pays only for the blocks of that declaration.
@@ -57,29 +40,18 @@ public uint opt_ir_lower_bound_declaration_block_in(
     uint declaration,
     uint block,
     uint lo,
-    uint hi,
-    uint access_total)
+    uint hi)
 {
     while (lo < hi)
     {
         uint mid = lo + (hi - lo) / 2u;
-        OptIrSsaDemand key = opt_ir_declaration_block_key(mid, access_total);
+        OptIrDeclarationBlock key = opt_ir_declaration_blocks[mid];
         bool less = key.declaration < declaration ||
             (key.declaration == declaration && key.block < block);
         if (less) lo = mid + 1u;
         else hi = mid;
     }
     return lo;
-}
-
-public uint opt_ir_lower_bound_declaration_block(
-    uint declaration,
-    uint block,
-    uint row_total,
-    uint access_total)
-{
-    return opt_ir_lower_bound_declaration_block_in(
-        declaration, block, 0u, row_total, access_total);
 }
 
 // `[lo, hi)` must contain every row of `declaration`; the full table always
@@ -93,9 +65,9 @@ public uint opt_ir_outgoing_local_definition_in(
     uint access_total)
 {
     uint row = opt_ir_lower_bound_declaration_block_in(
-        declaration, block, lo, hi, access_total);
+        declaration, block, lo, hi);
     if (row >= declaration_block_total) return SSA_DEMAND_INVALID;
-    OptIrSsaDemand key = opt_ir_declaration_block_key(row, access_total);
+    OptIrDeclarationBlock key = opt_ir_declaration_blocks[row];
     if (key.declaration != declaration || key.block != block)
         return SSA_DEMAND_INVALID;
 
@@ -428,8 +400,7 @@ public void close_value_demands(
             declaration,
             side == 0u ? 0u : INVALID,
             window_start,
-            declaration_block_total,
-            access_total);
+            declaration_block_total);
         if (side == 0u) window_start = bound;
         else window_end = bound;
     }
@@ -536,9 +507,7 @@ OptIrSsaDemand ordered_demand(uint dense_row, uint total)
     OptIrSsaDemand invalid;
     invalid.declaration = INVALID;
     invalid.block = INVALID;
-    if (dense_row >= total) return invalid;
-    uint source_row = opt_ir_ssa_demand_order[dense_row];
-    return source_row < total ? opt_ir_ssa_demands[source_row] : invalid;
+    return dense_row < total ? opt_ir_ssa_canonical_demands_tmp[dense_row] : invalid;
 }
 
 uint lower_bound_demand(uint declaration, uint block, uint total)

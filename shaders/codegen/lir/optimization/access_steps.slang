@@ -376,8 +376,11 @@ public void scatter_access_declaration_blocks(uint order_i, uint total, uint acc
         return;
     }
 
+    OptIrAccessCore access = opt_ir_accesses[access_id];
     OptIrDeclarationBlock declaration_block;
     declaration_block.access_start = order_i;
+    declaration_block.declaration = access.subject;
+    declaration_block.block = access.block_id;
     opt_ir_declaration_blocks[row] = declaration_block;
 }
 

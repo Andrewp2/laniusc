@@ -147,13 +147,14 @@ pub struct OptIrAccessGroup {
 /// One declaration's accesses within one basic block. Rows are ordered first
 /// by declaration and then by block. `access_start` addresses the stable
 /// declaration-access ordering; the next row's start (or the declaration
-/// access total) supplies the end. The declaration and block are deliberately
-/// not repeated here: both are available from the first ordered access. This
-/// keeps the required sparse SSA state to one word per populated pair.
+/// access total) supplies the end. The key fields let the demand walk search
+/// this relation without loading the access permutation and source rows.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
 pub struct OptIrDeclarationBlock {
     pub access_start: u32,
+    pub declaration: u32,
+    pub block: u32,
 }
 
 /// Incoming reaching-definition state for one [`OptIrDeclarationBlock`].
@@ -279,7 +280,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<OptIrRegion>(), 16);
         assert_eq!(std::mem::size_of::<OptIrAccessCore>(), 8);
         assert_eq!(std::mem::size_of::<OptIrAccessGroup>(), 16);
-        assert_eq!(std::mem::size_of::<OptIrDeclarationBlock>(), 4);
+        assert_eq!(std::mem::size_of::<OptIrDeclarationBlock>(), 12);
         assert_eq!(std::mem::size_of::<OptIrReachingDefinitionState>(), 4);
         assert_eq!(std::mem::size_of::<OptIrSsaDemand>(), 8);
         assert_eq!(std::mem::size_of::<OptIrBlockArgument>(), 16);
