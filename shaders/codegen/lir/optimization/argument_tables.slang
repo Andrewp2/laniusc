@@ -74,7 +74,6 @@ public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_total;
 public RWStructuredBuffer<OptIrBlockArgument> opt_ir_ssa_block_arguments;
 public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_flag;
 public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_prefix;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_total;
 public RWStructuredBuffer<uint> opt_ir_ssa_sparse_declaration;
 public RWStructuredBuffer<uint> opt_ir_ssa_sparse_block;
 public StructuredBuffer<uint> opt_ir_edge_total;

@@ -524,16 +524,14 @@ impl GpuOptimizationStage {
         encoder: &mut wgpu::CommandEncoder,
         timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.record_for_job(encoder, timer, None, None, true)
+        self.record_for_job(encoder, timer, None, true)
     }
 
-    /// Records each program with the active job's group count. The CFG
-    /// program can be submitted with the earlier semantic lowering work.
+    /// Records each program with the job's group count.
     pub(crate) fn record_for_job(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
-        split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
         job: Option<LoweringCapacities>,
         validate_structure: bool,
     ) -> Result<()> {
@@ -550,14 +548,6 @@ impl GpuOptimizationStage {
         let large_workspace = self.capacities.semantic_instructions > 4096;
         self.control_flow[usize::from(rows > 4096 || large_workspace)][validate]
             .record(encoder)?;
-        if let Some(split) = split {
-            split.submit_prefix(
-                encoder,
-                "compile.lowering.semantic",
-                "lowering.optimizer.submission.begin",
-                timer.as_deref_mut(),
-            );
-        }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
         }

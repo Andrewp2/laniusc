@@ -4080,11 +4080,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationSsaDemands,
         LoweringCapacities::bytes::<u32>(1),
     ))?;
-    let opt_ssa_demand_seed_total = graph.add_resource(workspace(
-        "lir.opt.ssa.demand_seed_total",
-        ResourceDomain::OptimizationSsaDemands,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
     let opt_ssa_demands = graph.add_resource(workspace(
         "lir.opt.ssa.demands",
         ResourceDomain::OptimizationSsaDemands,
@@ -5679,11 +5674,7 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_ssa_demand_seed_prefix",
                 opt_ssa_demand_seed_prefix,
             ),
-            PassAccess::initialize_read_write(
-                "opt_ir_ssa_demand_seed_total",
-                opt_ssa_demand_seed_total,
-            ),
-            PassAccess::initialize_read_write(
+            PassAccess::read_write(
                 "opt_ir_ssa_sparse_declaration",
                 opt_ssa_sparse_declaration,
             ),

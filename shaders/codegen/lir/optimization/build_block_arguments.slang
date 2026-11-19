@@ -158,7 +158,6 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
     uint seeds = min(raw_seeds, demand_params.demand_capacity);
     for (uint row = program.lane; row < declaration_rows; row += program.lanes)
         scatter_value_demand_seeds(row, declaration_rows, accesses);
-    if (program.lane == 0u) opt_ir_ssa_demand_seed_total[0u] = raw_seeds;
     if (!step_barrier(program)) return false;
 
     if (validate)
