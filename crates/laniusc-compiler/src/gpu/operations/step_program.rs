@@ -10,10 +10,12 @@ use crate::gpu::{
     resource_registry::ResourceMap,
 };
 
-const SLOT_BYTES: u64 = 16;
-const FAILED_OFFSET: u64 = 4;
+// Match the launch size and slot layout in step_program.slang.
+const GROUP_LANES: u32 = 256;
 pub(crate) const STEP_PROGRAM_MAX_GROUPS: u32 = 64;
 pub(crate) const STEP_PROGRAM_SYNC_WORDS: usize = 4;
+const SLOT_BYTES: u64 = (STEP_PROGRAM_SYNC_WORDS * size_of::<u32>()) as u64;
+const FAILED_OFFSET: u64 = size_of::<u32>() as u64;
 
 #[derive(ShaderType)]
 struct Launch {
@@ -27,6 +29,7 @@ pub(crate) struct StepProgramOperation {
     operation: ComputeOperation,
     sync: LaniusBuffer<u32>,
     offset: u64,
+    _launch: LaniusBuffer<Launch>,
 }
 
 impl StepProgramOperation {
@@ -44,14 +47,35 @@ impl StepProgramOperation {
         groups: u32,
         options: u32,
     ) -> Result<Self> {
-        ensure!((1..=256).contains(&groups), "invalid step program group count {groups}");
-        ensure!(pass.thread_group_size == [256, 1, 1], "{name} must use 256 lanes");
+        ensure!(
+            (1..=STEP_PROGRAM_MAX_GROUPS).contains(&groups),
+            "invalid step program group count {groups}",
+        );
+        ensure!(
+            pass.thread_group_size == [GROUP_LANES, 1, 1],
+            "{name} must use {GROUP_LANES} lanes",
+        );
         let offset = u64::from(slot) * SLOT_BYTES;
-        ensure!(offset + SLOT_BYTES <= sync.byte_size as u64, "{name} has no sync slot {slot}");
+        ensure!(
+            offset + SLOT_BYTES <= sync.byte_size as u64,
+            "{name} has no sync slot {slot}",
+        );
+        let binding = resources.tracked_view("step_program_sync")?;
+        ensure!(
+            *binding.buffer == sync.buffer
+                && binding.byte_offset == sync.byte_offset
+                && binding.byte_size == sync.byte_size as u64,
+            "{name} must clear the buffer bound as step_program_sync",
+        );
         let launch = uniform_from_val(
             device,
             name,
-            &Launch { groups, slot, options, reserved: 0 },
+            &Launch {
+                groups,
+                slot,
+                options,
+                reserved: 0,
+            },
         );
         let operation = ComputeOperation::direct_with_named_uniform(
             device,
@@ -61,9 +85,14 @@ impl StepProgramOperation {
             pass,
             "program_launch",
             &launch,
-            groups * 256,
+            groups * GROUP_LANES,
         )?;
-        Ok(Self { operation, sync: sync.clone(), offset })
+        Ok(Self {
+            operation,
+            sync: sync.clone(),
+            offset,
+            _launch: launch,
+        })
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {

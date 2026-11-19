@@ -1,7 +1,7 @@
 import shared.collectives.step_program;
 import shared.collectives.program_prefix_scan;
 
-struct Params { uint groups; uint rows; };
+struct Params { uint groups; uint rows; uint in_place; };
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> input_words;
 RWStructuredBuffer<uint> prefix;
@@ -13,7 +13,15 @@ RWStructuredBuffer<uint> sums;
 void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
     StepProgram program = step_program_begin(group, local, gParams.groups, 0u);
-    if (!step_program_prefix_scan(program, gParams.rows, input_words, prefix, total, sums))
-        return;
+    if (gParams.in_place != 0u)
+    {
+        if (!step_program_prefix_scan(program, gParams.rows, input_words, input_words, total, sums))
+            return;
+    }
+    else
+    {
+        if (!step_program_prefix_scan(program, gParams.rows, input_words, prefix, total, sums))
+            return;
+    }
     step_program_end(program);
 }

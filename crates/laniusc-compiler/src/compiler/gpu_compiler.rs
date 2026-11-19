@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     // A job records the pointer-jump pairs of its token capacity
-    // (LoweringCapacities::job_jump_pairs). Every later pair must find
+    // (LoweringCapacities::job_execution_rank_jump_pairs). Every later pair must find
     // nothing left to jump, so compiling the same program with the
     // conservative bounds (the workspace's pairs) has to give the same
     // artifact byte for byte. The enum cases nest as deep as they have
@@ -1218,22 +1218,17 @@ mod tests {
                 .expect("x86 lowering cache")
                 .retained_capacities()
                 .expect("retained lowering workspace");
-            let job_pairs = retained.job_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
+            let job_pairs =
+                retained.job_execution_rank_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
             assert!(
                 retained.hir_nodes > u16::MAX as u32 && retained.semantic_instructions > u16::MAX as u32,
-                "{case}: the retained workspace ({} HIR rows, {} semantic instructions) should reach the third pointer-jump bucket",
+                "{case}: the retained workspace ({} HIR rows, {} semantic instructions) should retain a larger lowering workspace",
                 retained.hir_nodes,
                 retained.semantic_instructions
             );
-            // Pointer-jump pairs follow 4096 links each, so every workspace
-            // from 4097 to 16.7M rows records two execution-rank and SSA
-            // pairs; the region-parent doubling walk still shrinks with the job.
             assert!(
-                job_pairs.region_parent < retained.jump_pairs().region_parent
-                    && job_pairs.ssa_value_link <= retained.jump_pairs().ssa_value_link
-                    && job_pairs.execution_rank <= retained.jump_pairs().execution_rank,
-                "{case}: the retained workspace should record more pairs than the job needs ({job_pairs:?} of {:?})",
-                retained.jump_pairs()
+                job_pairs <= retained.execution_rank_jump_pairs(),
+                "{case}: job execution-rank pairs exceeded the workspace's bound",
             );
             if wasm_runs {
                 let conservative = compile(LoweringTarget::Wasm, source, true);

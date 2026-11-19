@@ -17,7 +17,7 @@ public void mark_control_flow_regions(uint position, uint total)
 
     uint node = semantic_schedule_order[position];
     bool opener = node < total && opens_region(opt_ir_op(opt_ir_core[node]));
-    opt_ir_region_start_flag[position] = opener ? 1u : 0u;
+    opt_ir_block_start_flag[position] = opener ? 1u : 0u;
 }
 
 // Clears only the region range fields after block/function construction.
@@ -61,10 +61,10 @@ uint matching_owner_local_close(uint opener, uint total)
 
 public void scatter_control_flow_regions(uint position, uint total, uint region_total, uint block_total)
 {
-    if (position >= total || opt_ir_region_start_flag[position] == 0u) return;
+    if (position >= total || opt_ir_block_start_flag[position] == 0u) return;
 
     uint node = semantic_schedule_order[position];
-    uint region_id = opt_ir_region_prefix[position];
+    uint region_id = opt_ir_block_prefix[position];
     uint close = node < total ? matching_owner_local_close(node, total) : STRUCTURE_INVALID;
     uint close_position = close < total ? opt_ir_position_by_node[close] : STRUCTURE_INVALID;
     uint block_id = node < total ? opt_ir_control[node].block_id : STRUCTURE_INVALID;

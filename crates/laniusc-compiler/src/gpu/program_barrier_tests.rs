@@ -163,14 +163,21 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
     struct ScanParams {
         groups: u32,
         rows: u32,
+        in_place: u32,
     }
 
     let gpu = device::global();
     let (device, queue) = (&gpu.device, &gpu.queue);
     let label = "tests/probe_program_scan";
     let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
-    for (groups, rows) in [(1, 0), (1, 4099), (64, 0), (64, 257), (64, 131_075)] {
-        let params = uniform_from_val(device, label, &ScanParams { groups, rows });
+    for (groups, rows, in_place) in [
+        (1, 0, 0),
+        (1, 4099, 1),
+        (64, 0, 0),
+        (64, 257, 0),
+        (64, 131_075, 1),
+    ] {
+        let params = uniform_from_val(device, label, &ScanParams { groups, rows, in_place });
         let count = rows as usize;
         let input = storage_rw_for_array::<u32>(device, label, count.max(1));
         let prefix = storage_rw_for_array::<u32>(device, label, count.max(1));
@@ -212,7 +219,8 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         sync.copy_to(&mut encoder, 0, &readback, 0, (SYNC_WORDS * 4) as u64);
         total.copy_to(&mut encoder, 0, &readback, (SYNC_WORDS * 4) as u64, 4);
         if count != 0 {
-            prefix.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * 4) as u64);
+            let scanned = if in_place == 0 { &prefix } else { &input };
+            scanned.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * 4) as u64);
         }
         queue.submit(Some(encoder.finish()));
         let slice = readback.slice(..);
@@ -252,7 +260,7 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
         let params = uniform_from_val(device, label, &SortParams { groups, rows, digits });
         let count = rows as usize;
         let data: Vec<u32> = (0..rows)
-            .map(|row| ((row.wrapping_mul(269) % 713) << 8) | (row % 11))
+            .map(|row| ((row.wrapping_mul(269) % 713) << 8) | (if row % 13 == 0 { 255 } else { row % 11 }))
             .collect();
         let mut expected: Vec<u32> = (0..rows).collect();
         let mask = (1u32 << (digits * 8)) - 1;

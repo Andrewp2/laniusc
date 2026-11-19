@@ -1,59 +1,8 @@
 import codegen.lir.lowering_ir;
 import codegen.lir.optimization_ir;
+import codegen.lir.optimization.argument_tables;
 import radix.radix_digits;
 import shared.collectives.prefix_scan;
-
-public struct AccessParams
-{
-    public uint semantic_capacity;
-    public uint hir_capacity;
-    public uint block_capacity;
-    public uint access_capacity;
-    public uint declaration_capacity;
-    public uint parameter_capacity;
-    public uint local_capacity;
-    public uint reserved;
-};
-
-public ConstantBuffer<AccessParams> gParams;
-public StructuredBuffer<uint> opt_ir_block_total;
-public StructuredBuffer<OptIrNodeControl> opt_ir_control;
-public StructuredBuffer<uint> opt_ir_reachable;
-public StructuredBuffer<uint> opt_ir_total;
-public StructuredBuffer<OptIrNodeCore> opt_ir_core;
-public StructuredBuffer<uint> semantic_schedule_order;
-public RWStructuredBuffer<uint> opt_ir_access_flag;
-public StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
-public RWStructuredBuffer<uint> opt_ir_access_prefix;
-public RWStructuredBuffer<uint> opt_ir_instruction_access_total;
-public RWStructuredBuffer<uint> opt_ir_metadata_access_total;
-public RWStructuredBuffer<OptIrAccessCore> opt_ir_accesses;
-public RWStructuredBuffer<uint> opt_ir_access_source_rows;
-public RWStructuredBuffer<uint> opt_ir_access_positions;
-public RWStructuredBuffer<uint> opt_ir_access_kinds;
-public RWStructuredBuffer<LoweringStatus> lowering_status;
-public StructuredBuffer<uint> semantic_function_total;
-public StructuredBuffer<uint> semantic_param_total;
-public StructuredBuffer<SemanticLirParam> semantic_params;
-public StructuredBuffer<uint> semantic_local_total;
-public StructuredBuffer<SemanticLirLocal> semantic_locals;
-public StructuredBuffer<OptIrFunction> opt_ir_functions;
-public RWStructuredBuffer<uint> opt_ir_access_total;
-public RWStructuredBuffer<uint> opt_ir_declaration_access_total;
-public StructuredBuffer<uint> opt_ir_position_by_node;
-public StructuredBuffer<OptIrBlock> opt_ir_blocks;
-public RWStructuredBuffer<uint> opt_ir_access_order;
-public RWStructuredBuffer<uint> opt_ir_access_group_start_flag;
-public RWStructuredBuffer<uint> opt_ir_local_definition_by_access;
-public RWStructuredBuffer<uint> opt_ir_access_group_prefix;
-public RWStructuredBuffer<OptIrAccessGroup> opt_ir_access_groups;
-public RWStructuredBuffer<OptIrDeclarationBlock> opt_ir_declaration_blocks;
-public RWStructuredBuffer<uint> opt_ir_access_group_total;
-public RWStructuredBuffer<uint> opt_ir_declaration_block_total;
-public RWStructuredBuffer<OptIrReachingDefinitionState> opt_ir_reaching_definition_states;
-public RWStructuredBuffer<uint> access_order_temporary;
-public RWStructuredBuffer<uint> access_histogram;
-public RWStructuredBuffer<uint> access_bucket_total;
 
 bool opt_ir_node_has_cfg_owner(uint node, uint node_total)
 {
@@ -82,19 +31,19 @@ public void mark_local_accesses(uint position, uint total)
 public void scatter_local_accesses(uint position, uint total, uint metadata_total)
 {
     if (position == 0u &&
-        opt_ir_instruction_access_total[0u] > gParams.access_capacity)
+        opt_ir_instruction_access_total[0u] > access_params.access_capacity)
     {
         InterlockedOr(lowering_status[0u].flags,
             LOWERING_STATUS_OPTIMIZATION_CAPACITY);
         InterlockedMax(lowering_status[0u].required_capacity,
             opt_ir_instruction_access_total[0u]);
-        lowering_status[0u].available_capacity = gParams.access_capacity;
+        lowering_status[0u].available_capacity = access_params.access_capacity;
     }
     if (position >= total || opt_ir_access_flag[position] == 0u) return;
 
     uint node = semantic_schedule_order[position];
     uint access_id = metadata_total + opt_ir_access_prefix[position];
-    if (node >= total || access_id >= gParams.access_capacity) return;
+    if (node >= total || access_id >= access_params.access_capacity) return;
 
     OptIrAccessCore access;
     access.subject = opt_ir_access_subject(
@@ -119,13 +68,13 @@ void local_access_layout_capacity(uint required)
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_CAPACITY);
     InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = gParams.access_capacity;
+    lowering_status[0u].available_capacity = access_params.access_capacity;
 }
 
 void write_metadata_access(uint access_id, uint subject, uint source_row,
     uint function_id, uint kind, uint function_total)
 {
-    if (access_id >= gParams.access_capacity) return;
+    if (access_id >= access_params.access_capacity) return;
     OptIrAccessCore access;
     access.subject = subject;
     if (function_id < function_total)
@@ -157,13 +106,13 @@ public void local_access_layout(
     uint final_total = saturating_add(metadata_total, instruction_total);
     if (row == 0u)
     {
-        uint active_total = min(final_total, gParams.access_capacity);
+        uint active_total = min(final_total, access_params.access_capacity);
         opt_ir_metadata_access_total[0u] = min(metadata_total, active_total);
         opt_ir_access_total[0u] = active_total;
         // The group-mark pass lowers this to the first memory-domain row with
         // an atomic min after the stable radix ordering.
         opt_ir_declaration_access_total[0u] = active_total;
-        if (final_total > gParams.access_capacity)
+        if (final_total > access_params.access_capacity)
             local_access_layout_capacity(final_total);
     }
 
@@ -238,7 +187,7 @@ public void validate_local_accesses(
         }
         if (kind == OPT_IR_ACCESS_DECLARATION_READ ||
             kind == OPT_IR_ACCESS_DECLARATION_WRITE)
-            valid = valid && access.subject < gParams.declaration_capacity;
+            valid = valid && access.subject < access_params.declaration_capacity;
         else
             valid = valid && access.subject < node_total;
     }
@@ -249,7 +198,7 @@ public void validate_local_accesses(
         {
             SemanticLirParam param = semantic_params[source_row];
             valid = access.subject == param.declaration_id &&
-                access.subject < gParams.declaration_capacity &&
+                access.subject < access_params.declaration_capacity &&
                 valid_function_position(param.function_id, access.block_id,
                     position, function_total, block_total);
         }
@@ -261,7 +210,7 @@ public void validate_local_accesses(
         {
             SemanticLirLocal local = semantic_locals[source_row];
             valid = access.subject == local.declaration_id &&
-                access.subject < gParams.declaration_capacity &&
+                access.subject < access_params.declaration_capacity &&
                 valid_function_position(local.function_id, access.block_id,
                     position, function_total, block_total);
         }
@@ -357,11 +306,11 @@ public void mark_access_declaration_blocks(uint order_i, uint total)
     if (order_i >= total) return;
 
     uint access_id = opt_ir_access_order[order_i];
-    bool starts = order_i == 0u || access_id >= gParams.access_capacity;
+    bool starts = order_i == 0u || access_id >= access_params.access_capacity;
     if (!starts)
     {
         uint previous_id = opt_ir_access_order[order_i - 1u];
-        starts = previous_id >= gParams.access_capacity ||
+        starts = previous_id >= access_params.access_capacity ||
             opt_ir_accesses[previous_id].subject !=
                 opt_ir_accesses[access_id].subject ||
             opt_ir_accesses[previous_id].block_id !=
@@ -377,7 +326,7 @@ void scatter_access_groups_capacity(uint required)
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_CAPACITY);
     InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = gParams.declaration_capacity;
+    lowering_status[0u].available_capacity = access_params.declaration_capacity;
 }
 
 public void scatter_access_groups(uint order_i, uint total)
@@ -387,7 +336,7 @@ public void scatter_access_groups(uint order_i, uint total)
 
     uint access_id = opt_ir_access_order[order_i];
     uint group_id = opt_ir_access_group_prefix[order_i];
-    if (access_id >= total || group_id >= gParams.declaration_capacity)
+    if (access_id >= total || group_id >= access_params.declaration_capacity)
     {
         scatter_access_groups_capacity(group_id + 1u);
         return;
@@ -410,7 +359,7 @@ void scatter_access_declaration_blocks_capacity(uint required)
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_CAPACITY);
     InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = gParams.access_capacity;
+    lowering_status[0u].available_capacity = access_params.access_capacity;
 }
 
 public void scatter_access_declaration_blocks(uint order_i, uint total, uint access_total)
@@ -421,7 +370,7 @@ public void scatter_access_declaration_blocks(uint order_i, uint total, uint acc
 
     uint access_id = opt_ir_access_order[order_i];
     uint row = opt_ir_access_group_prefix[order_i];
-    if (access_id >= access_total || row >= gParams.access_capacity)
+    if (access_id >= access_total || row >= access_params.access_capacity)
     {
         scatter_access_declaration_blocks_capacity(row + 1u);
         return;
@@ -532,11 +481,39 @@ bool find_access_local_definitions_is_definition(uint kind)
         kind == OPT_IR_ACCESS_DECLARATION_WRITE;
 }
 
+// One lane processes a short declaration range. The cooperative scan is
+// reserved for ranges that can use more than one warp of lanes.
+public void find_short_access_local_definitions(uint group_id, uint access_total)
+{
+    OptIrAccessGroup group = opt_ir_access_groups[group_id];
+    if (group.count > 32u) return;
+
+    uint block = INVALID;
+    uint definition = INVALID;
+    for (uint order_i = group.start; order_i < group.start + group.count; ++order_i)
+    {
+        uint access_id = opt_ir_access_order[order_i];
+        if (access_id >= access_total) continue;
+        OptIrAccessCore access = opt_ir_accesses[access_id];
+        uint kind = opt_ir_access_kinds[access_id];
+        if (access.block_id != block)
+        {
+            block = access.block_id;
+            definition = INVALID;
+        }
+        bool defines = find_access_local_definitions_is_definition(kind);
+        if (defines) definition = access_id;
+        opt_ir_local_definition_by_access[access_id] =
+            kind == OPT_IR_ACCESS_DECLARATION_READ || defines ? definition : INVALID;
+    }
+}
+
 public void find_access_local_definitions(uint group_id, uint lane, uint group_total, uint access_total)
 {
     if (group_id >= group_total) return;
 
     OptIrAccessGroup group = opt_ir_access_groups[group_id];
+    if (group.count <= 32u) return;
     uint rows_per_lane = group.count / WG_SIZE;
     if (group.count % WG_SIZE != 0u) rows_per_lane += 1u;
     uint begin = min(group.start + lane * rows_per_lane,

@@ -145,9 +145,9 @@ public void seed_control_flow_reachability(uint block, uint block_total, uint ed
     bool entry = valid &&
         opt_ir_functions[function_id].entry_block == block;
 
-    uint begin = opt_ir_predecessor_prefix[block];
+    uint begin = opt_ir_edge_prefix[block];
     uint end = block + 1u < block_total
-        ? opt_ir_predecessor_prefix[block + 1u] : edge_total;
+        ? opt_ir_edge_prefix[block + 1u] : edge_total;
     valid = valid && begin <= end && end <= edge_total;
     uint forward = 0u;
     for (uint row = begin; valid && row < end; ++row)
@@ -161,7 +161,7 @@ public void seed_control_flow_reachability(uint block, uint block_total, uint ed
     if (!valid) seed_control_flow_reachability_structure_failure(block);
 
     bool root = valid && !entry && forward == 0u;
-    opt_ir_live_predecessor_count_by_block[block] =
+    opt_ir_edge_count_by_block[block] =
         entry ? ENTRY_BIAS + forward : forward;
     opt_ir_reachable[block] = root ? 0u : 1u;
     opt_ir_dead_claim_by_block[block] = root ? CLAIM_ROOT : CLAIM_NONE;
@@ -225,7 +225,7 @@ public void close_control_flow_reachability(uint root, uint block_total, uint ed
             if ((opt_ir_edge_flags(edge.packed_target) & OPT_IR_EDGE_BACK) != 0u)
                 continue;
             uint prior;
-            InterlockedAdd(opt_ir_live_predecessor_count_by_block[target],
+            InterlockedAdd(opt_ir_edge_count_by_block[target],
                 0xffffffffu, prior);
             if (prior != 1u) continue;
             // This lane took the last live forward predecessor of the target.
@@ -282,9 +282,9 @@ public void validate_control_flow_reachability(uint block, uint block_total, uin
     bool entry = valid &&
         opt_ir_functions[function_id].entry_block == block;
 
-    uint begin = opt_ir_predecessor_prefix[block];
+    uint begin = opt_ir_edge_prefix[block];
     uint end = block + 1u < block_total
-        ? opt_ir_predecessor_prefix[block + 1u] : edge_total;
+        ? opt_ir_edge_prefix[block + 1u] : edge_total;
     valid = valid && begin <= end && end <= edge_total;
     bool reachable_predecessor = false;
     for (uint row = begin; valid && row < end; ++row)

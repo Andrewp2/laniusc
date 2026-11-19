@@ -69,7 +69,7 @@ pub(crate) struct LoweringJobBounds {
     pub(crate) output_demand: LoweringOutputDemand,
     /// An upper bound on the job's compact-HIR rows, or `u32::MAX` when the
     /// host does not know one. The pointer-jump pairs come from it
-    /// (`LoweringCapacities::job_jump_pairs`).
+    /// (`LoweringCapacities::job_execution_rank_jump_pairs`).
     pub(crate) hir_rows: u32,
     /// The job's lexed source bytes, or `u32::MAX` when unknown. With
     /// `hir_rows` it gives the rows the job can address
@@ -1860,7 +1860,7 @@ impl GpuSemanticLoweringStage {
             _string_params: string_params,
             _function_params: function_params,
             template_params,
-            execution_rank_pairs: capacities.jump_pairs().execution_rank,
+            execution_rank_pairs: capacities.execution_rank_jump_pairs(),
             total,
             core,
             operands,
@@ -1950,7 +1950,7 @@ impl GpuSemanticLoweringStage {
     /// passes are submitted before the layout validation, so the GPU runs them
     /// while the host records and finishes the rest of the lowering.
     /// `execution_rank_pairs` is the job's count
-    /// (`LoweringCapacities::job_jump_pairs`), capped at the built one.
+    /// (`LoweringCapacities::job_execution_rank_jump_pairs`), capped at the built one.
     pub(crate) fn record_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -2473,6 +2473,8 @@ mod tests {
         owners.write(&gpu.queue, 0, &words(&[owner_rows]));
         let order = alias_u32("lir.semantic.schedule_order", capacity as usize);
         order.write(&gpu.queue, 0, &words(&[[0, 1, 2, 3]]));
+        let functions = alias_u32("lir.semantic.function_total", 1);
+        functions.write(&gpu.queue, 0, &1u32.to_le_bytes());
         let sync = alias_u32(
             "step_program_sync",
             crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
@@ -2497,7 +2499,7 @@ mod tests {
             &gpu.device,
             "test.semantic_capacity.project",
             "main",
-            "codegen/lir/optimization/control_flow/build_control_flow",
+            "codegen/lir/optimization/build_control_flow",
         )
         .unwrap();
         let params = uniform_from_val(

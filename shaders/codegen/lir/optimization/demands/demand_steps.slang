@@ -1,62 +1,7 @@
 import codegen.lir.lowering_ir;
 import codegen.lir.optimization_ir;
+import codegen.lir.optimization.argument_tables;
 import codegen.lir.optimization.demands.ssa_sparse_sets;
-
-public struct DemandParams
-{
-    public uint block_capacity;
-    public uint edge_capacity;
-    public uint access_capacity;
-    public uint declaration_capacity;
-    public uint declaration_block_capacity;
-    public uint demand_capacity;
-    public uint alias_hops;
-    public uint reserved;
-    public uint incoming_capacity;
-};
-
-public ConstantBuffer<DemandParams> gParams;
-public StructuredBuffer<uint> opt_ir_access_total;
-public StructuredBuffer<OptIrAccessCore> opt_ir_accesses;
-public StructuredBuffer<uint> opt_ir_access_order;
-public StructuredBuffer<uint> opt_ir_local_definition_by_access;
-public StructuredBuffer<uint> opt_ir_declaration_block_total;
-public StructuredBuffer<OptIrDeclarationBlock> opt_ir_declaration_blocks;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_total;
-public RWStructuredBuffer<OptIrSsaDemand> opt_ir_ssa_demands;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_total;
-public RWStructuredBuffer<OptIrBlockArgument> opt_ir_ssa_block_arguments;
-public StructuredBuffer<OptIrReachingDefinitionState> opt_ir_reaching_definition_states;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_flag;
-public RWStructuredBuffer<LoweringStatus> lowering_status;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_prefix;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_seed_total;
-public RWStructuredBuffer<uint> opt_ir_ssa_sparse_declaration;
-public RWStructuredBuffer<uint> opt_ir_ssa_sparse_block;
-public StructuredBuffer<uint> opt_ir_block_total;
-public StructuredBuffer<uint> opt_ir_edge_total;
-public StructuredBuffer<OptIrEdge> opt_ir_edges;
-public StructuredBuffer<uint> opt_ir_predecessor_prefix;
-public StructuredBuffer<uint> opt_ir_predecessor_edge_ids;
-public StructuredBuffer<uint> opt_ir_reachable;
-public RWStructuredBuffer<uint> opt_ir_ssa_walk;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_order;
-public RWStructuredBuffer<OptIrSsaDemand> opt_ir_ssa_canonical_demands_tmp;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_flag;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_count;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_incoming_total;
-public RWStructuredBuffer<OptIrBlockArgumentIncoming> opt_ir_ssa_block_argument_incoming;
-public StructuredBuffer<uint> opt_ir_access_kinds;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_user_count;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_user_prefix;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_user_total;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_user_arguments;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_summary;
-public RWStructuredBuffer<uint> opt_ir_ssa_block_argument_replacement;
-public RWStructuredBuffer<uint> demand_order_temporary;
-public RWStructuredBuffer<uint> demand_histogram;
-public RWStructuredBuffer<uint> demand_bucket_total;
-public RWStructuredBuffer<uint> opt_ir_ssa_demand_resolution_tmp;
 
 // Shared exact lookup over the canonical declaration/block access relation.
 // The table remains compact: keys and outgoing definitions are projected from
@@ -297,7 +242,7 @@ void scatter_value_demand_seeds_capacity(uint required)
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_CAPACITY);
     InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = gParams.access_capacity;
+    lowering_status[0u].available_capacity = demand_params.access_capacity;
 }
 
 void scatter_value_demand_seeds_structure_failure(uint row)
@@ -315,9 +260,9 @@ public void scatter_value_demand_seeds(uint canonical_row, uint total, uint acce
 
     uint access_start = opt_ir_declaration_blocks[canonical_row].access_start;
     uint access_id = access_start < access_total
-        ? opt_ir_access_order[access_start] : gParams.access_capacity;
+        ? opt_ir_access_order[access_start] : demand_params.access_capacity;
     uint dense_row = opt_ir_ssa_demand_seed_prefix[canonical_row];
-    if (dense_row >= gParams.access_capacity)
+    if (dense_row >= demand_params.access_capacity)
         scatter_value_demand_seeds_capacity(dense_row + 1u);
     else if (access_id >= access_total)
         scatter_value_demand_seeds_structure_failure(canonical_row);
@@ -359,10 +304,10 @@ public void validate_value_demand_seeds(uint row, uint row_total, uint demand_to
     if (expected)
     {
         uint access_total = min(opt_ir_access_total[0u],
-            gParams.access_capacity);
+            demand_params.access_capacity);
         uint access_start = opt_ir_declaration_blocks[row].access_start;
         uint access_id = access_start < access_total
-            ? opt_ir_access_order[access_start] : gParams.access_capacity;
+            ? opt_ir_access_order[access_start] : demand_params.access_capacity;
         uint dense_row = opt_ir_ssa_demand_seed_prefix[row];
         valid = valid && access_id < access_total && dense_row < demand_total;
         if (valid)
@@ -377,8 +322,8 @@ public void validate_value_demand_seeds(uint row, uint row_total, uint demand_to
     if (row < demand_total)
     {
         OptIrSsaDemand demand = opt_ir_ssa_demands[row];
-        valid = valid && demand.declaration < gParams.declaration_capacity &&
-            demand.block < gParams.block_capacity &&
+        valid = valid && demand.declaration < demand_params.declaration_capacity &&
+            demand.block < demand_params.block_capacity &&
             (row == 0u || demand_less(opt_ir_ssa_demands[row - 1u], demand));
     }
 
@@ -411,7 +356,7 @@ public void publish_value_demand_seeds(uint row, uint seed_total)
     if (row >= seed_total) return;
 
     OptIrSsaDemand demand = opt_ir_ssa_demands[row];
-    uint hash_capacity = gParams.demand_capacity * 2u + 1u;
+    uint hash_capacity = demand_params.demand_capacity * 2u + 1u;
     uint hash_slot = 0xffffffffu;
     uint result = ssa_sparse_insert_key(
         demand.declaration,
@@ -468,7 +413,7 @@ public void close_value_demands(
 {
     if (root_row >= seed_total) return;
 
-    uint hash_capacity = gParams.demand_capacity * 2u + 1u;
+    uint hash_capacity = demand_params.demand_capacity * 2u + 1u;
 
     // Seed rows are final; closure rows are appended after them.
     OptIrSsaDemand root = opt_ir_ssa_demands[root_row];
@@ -493,7 +438,7 @@ public void close_value_demands(
     uint cursor = block < block_total
         ? opt_ir_predecessor_prefix[block] : INVALID;
     // A lane enters each row it owns once and returns from it once.
-    uint budget = 2u * gParams.demand_capacity + 2u;
+    uint budget = 2u * demand_params.demand_capacity + 2u;
     for (uint step = 0u; step < budget; ++step)
     {
         uint predecessor_end = block + 1u < block_total
@@ -549,9 +494,9 @@ public void close_value_demands(
             }
             uint admitted_row;
             InterlockedAdd(opt_ir_ssa_demand_total[0u], 1u, admitted_row);
-            if (admitted_row >= gParams.demand_capacity)
+            if (admitted_row >= demand_params.demand_capacity)
             {
-                close_value_demands_capacity(admitted_row + 1u, gParams.demand_capacity);
+                close_value_demands_capacity(admitted_row + 1u, demand_params.demand_capacity);
                 continue;
             }
             OptIrSsaDemand demand;
@@ -635,7 +580,7 @@ public void validate_value_demands(
     if (row < total)
     {
         OptIrSsaDemand demand = ordered_demand(row, total);
-        valid = demand.declaration < gParams.declaration_capacity &&
+        valid = demand.declaration < demand_params.declaration_capacity &&
             demand.block < block_total &&
             (row == 0u || opt_ir_ssa_demand_less(
                 ordered_demand(row - 1u, total), demand));
@@ -731,7 +676,7 @@ public void mark_block_arguments(uint row, uint total, uint block_total, uint ed
     if (row >= total) return;
 
     OptIrSsaDemand demand = opt_ir_canonical_ssa_demand(row, total);
-    bool valid = demand.declaration < gParams.declaration_capacity &&
+    bool valid = demand.declaration < demand_params.declaration_capacity &&
         demand.block < block_total;
     uint predecessor_count = 0u;
     if (valid)
@@ -826,13 +771,13 @@ public void scatter_block_arguments(
 
     if (row == 0u)
     {
-        if (raw_argument_total > gParams.demand_capacity)
-            scatter_block_arguments_capacity(raw_argument_total, gParams.demand_capacity);
-        if (raw_incoming_total > gParams.incoming_capacity)
-            scatter_block_arguments_capacity(raw_incoming_total, gParams.incoming_capacity);
+        if (raw_argument_total > demand_params.demand_capacity)
+            scatter_block_arguments_capacity(raw_argument_total, demand_params.demand_capacity);
+        if (raw_incoming_total > demand_params.incoming_capacity)
+            scatter_block_arguments_capacity(raw_incoming_total, demand_params.incoming_capacity);
     }
-    uint argument_total = min(raw_argument_total, gParams.demand_capacity);
-    uint incoming_total = min(raw_incoming_total, gParams.incoming_capacity);
+    uint argument_total = min(raw_argument_total, demand_params.demand_capacity);
+    uint incoming_total = min(raw_incoming_total, demand_params.incoming_capacity);
     OptIrSsaDemand demand = opt_ir_canonical_ssa_demand(row, total);
     if (demand.block >= block_total)
     {
@@ -1190,7 +1135,7 @@ public void resolve_value_demand_aliases(
         // A chain stays inside its declaration's contiguous demand rows.
         uint declaration = opt_ir_canonical_ssa_demand(row, total).declaration;
         for (uint hop = 0u;
-             hop < gParams.alias_hops &&
+             hop < demand_params.alias_hops &&
                  current.kind == OPT_IR_SSA_SOURCE_DEMAND;
              ++hop)
         {
@@ -1385,7 +1330,7 @@ public void scatter_block_argument_users(
 {
     if (argument >= argument_total) return;
 
-    uint user_capacity = gParams.demand_capacity * 2u;
+    uint user_capacity = demand_params.demand_capacity * 2u;
     if (argument == 0u && raw_user_total > user_capacity)
         scatter_block_argument_users_capacity(raw_user_total, user_capacity);
     uint user_total = min(raw_user_total, user_capacity);
@@ -1478,7 +1423,7 @@ public void seed_trivial_block_arguments(uint argument, uint argument_total, uin
     OptIrBlockArgument row = opt_ir_ssa_block_argument(argument);
     uint incoming_end = opt_ir_ssa_block_argument_incoming_end(
         argument, argument_total, incoming_total);
-    bool valid = row.declaration < gParams.declaration_capacity &&
+    bool valid = row.declaration < demand_params.declaration_capacity &&
         row.incoming_start <= incoming_end &&
         incoming_end <= incoming_total;
     uint summary = valid ? SUMMARY_NONE : SUMMARY_CONFLICT;
@@ -1653,7 +1598,7 @@ public void validate_trivial_block_arguments(
     OptIrBlockArgument row = opt_ir_ssa_block_argument(argument);
     uint incoming_end = opt_ir_ssa_block_argument_incoming_end(
         argument, argument_total, incoming_total);
-    bool valid = row.declaration < gParams.declaration_capacity &&
+    bool valid = row.declaration < demand_params.declaration_capacity &&
         row.incoming_start <= incoming_end &&
         incoming_end <= incoming_total;
     uint expected = SUMMARY_NONE;

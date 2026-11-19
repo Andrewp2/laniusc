@@ -35,7 +35,6 @@ use crate::gpu::{
         INDIRECT_DISPATCH_BINDING,
         PassAccess,
         PassDesc,
-        RadixSortGraphResourceNames,
         ResourceClass,
         ResourceDesc,
         ResourceDomain,
@@ -849,19 +848,9 @@ pub(crate) enum LoweringArtifactKind {
     Object,
 }
 
-/// Pointer-jump pairs that reach the root of every chain in a relation of
-/// `rows` rows. A chain is shorter than its relation, and the two rounds of a
-/// pair double the covered distance twice, so `ceil(bits(rows) / 2)` pairs
-/// cover `4^pairs > rows` links.
-pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
-    (u32::BITS - rows.max(1).leading_zeros()).div_ceil(2)
-}
-
 /// Input links one round of a multi-hop pointer jump follows
-/// (`POINTER_JUMP_HOPS` in propagate_semantic_execution_ranks.slang,
-/// propagate_dominator_tour_ranks.slang, propagate_dominator_depths.slang
-/// and propagate_ssa_value_resolutions.slang). A round multiplies the covered distance
-/// by at least this factor.
+/// (`POINTER_JUMP_HOPS` in propagate_semantic_execution_ranks.slang).
+/// A round multiplies the covered distance by at least this factor.
 pub(crate) const POINTER_JUMP_HOPS: u32 = 64;
 
 /// Pairs of multi-hop pointer-jump rounds that reach the root of every chain
@@ -871,35 +860,6 @@ pub(crate) const POINTER_JUMP_HOPS: u32 = 64;
 pub(crate) fn pointer_jump_hop_pairs(rows: u32) -> u32 {
     const BITS_PER_PAIR: u32 = 2 * POINTER_JUMP_HOPS.trailing_zeros();
     (u32::BITS - rows.max(1).leading_zeros()).div_ceil(BITS_PER_PAIR)
-}
-
-/// The pointer-jump pairs one lowering records, per relation. Each pair is
-/// an a-to-b and a b-to-a round, so any count leaves the result in the
-/// relation's first buffer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LoweringJumpPairs {
-    /// Expression ancestors over compact-HIR rows.
-    pub(crate) execution_rank: u32,
-    /// Dominator-tree Euler-tour arcs, two per block.
-    pub(crate) dominator_tour: u32,
-    /// Immediate-dominator depth over blocks.
-    pub(crate) dominator_depth: u32,
-    /// Structured-region parents.
-    pub(crate) region_parent: u32,
-    /// Declaration-read copy chains over semantic rows.
-    pub(crate) ssa_value_link: u32,
-}
-
-impl LoweringJumpPairs {
-    pub(crate) fn min(self, other: Self) -> Self {
-        Self {
-            execution_rank: self.execution_rank.min(other.execution_rank),
-            dominator_tour: self.dominator_tour.min(other.dominator_tour),
-            dominator_depth: self.dominator_depth.min(other.dominator_depth),
-            region_parent: self.region_parent.min(other.region_parent),
-            ssa_value_link: self.ssa_value_link.min(other.ssa_value_link),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1092,40 +1052,22 @@ impl LoweringCapacities {
             .max(1)
     }
 
-    /// The pointer-jump pairs the lowering records for relations sized by
-    /// these capacities. The graph registers these counts and a workspace
-    /// built from these capacities records at most these.
-    pub(crate) fn jump_pairs(self) -> LoweringJumpPairs {
-        let blocks = self.optimization_block_capacity();
-        LoweringJumpPairs {
-            execution_rank: pointer_jump_hop_pairs(self.hir_nodes),
-            dominator_tour: pointer_jump_hop_pairs(blocks.saturating_mul(2)),
-            dominator_depth: pointer_jump_hop_pairs(blocks),
-            region_parent: pointer_jump_pairs(self.optimization_region_capacity()),
-            ssa_value_link: pointer_jump_hop_pairs(self.semantic_instructions),
-        }
+    pub(crate) fn execution_rank_jump_pairs(self) -> u32 {
+        pointer_jump_hop_pairs(self.hir_nodes)
     }
 
-    /// The pointer-jump pairs a job needs when its compact HIR has at most
-    /// `hir_rows` rows: those of a fresh allocation for such a job, and never
-    /// more than these capacities record. A workspace retained from a larger
-    /// job would otherwise record the larger job's pairs.
-    ///
-    /// Each relation's chains are shorter than its row count, and the job's
-    /// rows are bounded by both the fresh allocation's capacities (the
-    /// structural factors of `from_frontend_unit`) and these (every kernel
-    /// clamps its total to the capacity it was built with), so the smaller
-    /// pair count still reaches every root. The optimizer's finalize passes
-    /// reject unconverged dominator, region and SSA chains, so a short count
-    /// would fail the job rather than miscompile it. Execution ranks have no
-    /// such check; their chains run over HIR rows, which `hir_rows` bounds.
-    pub(crate) fn job_jump_pairs(self, hir_rows: u32, target: LoweringTarget) -> LoweringJumpPairs {
-        let built = self.jump_pairs();
+    /// Bounds expression ancestor jumps by the HIR rows the job can address.
+    pub(crate) fn job_execution_rank_jump_pairs(
+        self,
+        hir_rows: u32,
+        target: LoweringTarget,
+    ) -> u32 {
+        let built = self.execution_rank_jump_pairs();
         if hir_rows >= self.hir_nodes {
             return built;
         }
         match Self::from_frontend_unit(self.source_bytes, self.tokens, hir_rows, target) {
-            Ok(job) => job.bucketed().jump_pairs().min(built),
+            Ok(job) => job.bucketed().execution_rank_jump_pairs().min(built),
             Err(_) => built,
         }
     }
@@ -3125,7 +3067,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::write("execution_rank", execution_rank_a),
         ],
     })?;
-    let rank_pairs = capacities.jump_pairs().execution_rank;
+    let rank_pairs = capacities.execution_rank_jump_pairs();
     graph.add_repeated_region(
         rank_pairs,
         vec![
@@ -3901,7 +3843,7 @@ fn lowering_compiler_graph_builder(
     let opt_scan_group_sums = graph.add_resource(workspace(
         "lir.opt.scan_group_sums",
         ResourceDomain::OptimizationNodes,
-        LoweringCapacities::bytes::<u32>(256),
+        LoweringCapacities::bytes::<u32>(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS),
     ))?;
     let opt_edge_count_by_block = graph.add_resource(workspace(
         "lir.opt.edge_count_by_block",
@@ -5533,6 +5475,8 @@ fn lowering_compiler_graph_builder(
         schedule_resources,
         schedule_radix_layout.steps,
     )?;
+    // A program binds every table its steps use. Each table must stay
+    // live for the whole dispatch, including temporary scan and sort data.
     graph.add_pass(PassDesc {
         name: "lir.opt.build_control_flow",
         phase: CompilerPhase::Optimization,
@@ -5545,88 +5489,98 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_core", opt_core),
             PassAccess::read("opt_ir_operands", opt_operands),
             PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::write("opt_ir_total", opt_total),
+            PassAccess::initialize_read_write("opt_ir_total", opt_total),
             PassAccess::initialize_read_write("opt_ir_control", opt_control),
             PassAccess::write("opt_ir_results", opt_results),
             PassAccess::write("opt_ir_semantic_row", opt_semantic_row),
             PassAccess::initialize_read_write("opt_ir_source_hir", opt_source_hir),
-            PassAccess::write("opt_ir_position_by_node", opt_position_by_node),
+            PassAccess::initialize_read_write("opt_ir_position_by_node", opt_position_by_node),
             PassAccess::initialize_read_write("opt_ir_block_start_flag", opt_block_start_flag),
             PassAccess::initialize_read_write("opt_ir_block_prefix", opt_block_prefix),
             PassAccess::initialize_read_write("opt_ir_block_total", opt_block_total),
             PassAccess::initialize_read_write("opt_ir_blocks", opt_blocks),
-            PassAccess::initialize_read_write("opt_ir_edge_count_by_block", opt_edge_count_by_block),
+            PassAccess::initialize_read_write(
+                "opt_ir_edge_count_by_block",
+                opt_edge_count_by_block,
+            ),
             PassAccess::initialize_read_write("opt_ir_edge_prefix", opt_edge_prefix),
             PassAccess::initialize_read_write("opt_ir_edge_total", opt_edge_total),
             PassAccess::initialize_read_write("opt_ir_edges", opt_edges),
             PassAccess::initialize_read_write("opt_ir_predecessor_total", opt_predecessor_total),
             PassAccess::initialize_read_write("opt_ir_predecessor_cursor", opt_predecessor_cursor),
-            PassAccess::initialize_read_write("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
+            PassAccess::initialize_read_write(
+                "opt_ir_predecessor_edge_ids",
+                opt_predecessor_edge_ids,
+            ),
             PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
             PassAccess::initialize_read_write("step_program_sync", step_program_sync),
+            PassAccess::read("semantic_function_total", semantic_function_total),
+            PassAccess::read("semantic_functions", semantic_functions),
+            PassAccess::initialize_read_write("opt_ir_functions", opt_functions),
+            PassAccess::initialize_read_write("opt_ir_reachable", opt_reachable),
+            PassAccess::initialize_read_write(
+                "opt_ir_dead_claim_by_block",
+                opt_dead_claim_by_block,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_immediate_dominator",
+                opt_immediate_dominator,
+            ),
+            PassAccess::initialize_read_write("opt_ir_dominator_children", opt_dominator_children),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_child_row_by_block",
+                opt_dominator_child_row_by_block,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_tour_link_a",
+                opt_dominator_tour_link_a,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_tour_link_b",
+                opt_dominator_tour_link_b,
+            ),
+            PassAccess::initialize_read_write("opt_ir_dominator_preorder", opt_dominator_preorder),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_subtree_end",
+                opt_dominator_subtree_end,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_block_by_dominator_preorder",
+                opt_block_by_dominator_preorder,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_depth_link_a",
+                opt_dominator_depth_link_a,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_dominator_depth_link_b",
+                opt_dominator_depth_link_b,
+            ),
+            PassAccess::initialize_read_write("opt_ir_dominator_depth", opt_dominator_depth),
+            PassAccess::initialize_read_write("opt_ir_region_total", opt_region_total),
+            PassAccess::initialize_read_write("opt_ir_regions", opt_regions),
+            PassAccess::initialize_read_write(
+                "opt_ir_region_parent_link_a",
+                opt_region_parent_link_a,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_region_parent_link_b",
+                opt_region_parent_link_b,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_region_ownership_tree",
+                opt_region_ownership_tree,
+            ),
+            PassAccess::initialize_read_write("opt_ir_block_region", opt_block_region),
         ],
     })?;
     graph.assign_kernel(
         "lir.opt.build_control_flow",
-        "codegen/lir/optimization/control_flow/build_control_flow",
+        "codegen/lir/optimization/build_control_flow",
     )?;
     graph.require_complete_reflection("lir.opt.build_control_flow")?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.analyze_control_flow",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("semantic_functions", semantic_functions),
-            PassAccess::initialize_read_write("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
-            PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::initialize_read_write("opt_ir_reachable", opt_reachable),
-            PassAccess::initialize_read_write("opt_ir_live_predecessor_count_by_block", opt_edge_count_by_block),
-            PassAccess::initialize_read_write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
-            PassAccess::initialize_read_write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::initialize_read_write("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
-            PassAccess::initialize_read_write("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::initialize_read_write("opt_ir_dominator_child_total", opt_predecessor_total),
-            PassAccess::initialize_read_write("opt_ir_dominator_child_row_by_block", opt_dominator_child_row_by_block),
-            PassAccess::initialize_read_write("opt_ir_dominator_tour_link_a", opt_dominator_tour_link_a),
-            PassAccess::initialize_read_write("opt_ir_dominator_tour_link_b", opt_dominator_tour_link_b),
-            PassAccess::initialize_read_write("opt_ir_dominator_preorder", opt_dominator_preorder),
-            PassAccess::initialize_read_write("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
-            PassAccess::initialize_read_write("opt_ir_block_by_dominator_preorder", opt_block_by_dominator_preorder),
-            PassAccess::initialize_read_write("opt_ir_dominator_depth_link_a", opt_dominator_depth_link_a),
-            PassAccess::initialize_read_write("opt_ir_dominator_depth_link_b", opt_dominator_depth_link_b),
-            PassAccess::initialize_read_write("opt_ir_dominator_depth", opt_dominator_depth),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::initialize_read_write("opt_ir_region_start_flag", opt_block_start_flag),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_position_by_node", opt_position_by_node),
-            PassAccess::initialize_read_write("opt_ir_region_prefix", opt_block_prefix),
-            PassAccess::initialize_read_write("opt_ir_region_total", opt_region_total),
-            PassAccess::read_write("opt_ir_control", opt_control),
-            PassAccess::initialize_read_write("opt_ir_regions", opt_regions),
-            PassAccess::initialize_read_write("opt_ir_region_parent_link_a", opt_region_parent_link_a),
-            PassAccess::initialize_read_write("opt_ir_region_parent_link_b", opt_region_parent_link_b),
-            PassAccess::initialize_read_write("opt_ir_region_ownership_tree", opt_region_ownership_tree),
-            PassAccess::initialize_read_write("opt_ir_block_region", opt_block_region),
-            PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
-            PassAccess::read_write("step_program_sync", step_program_sync),
-        ],
-    })?;
-    graph.assign_kernel(
-        "lir.opt.analyze_control_flow",
-        "codegen/lir/optimization/analyze_control_flow",
-    )?;
-    graph.require_complete_reflection("lir.opt.analyze_control_flow")?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.build_declaration_accesses",
+        name: "lir.opt.build_block_arguments",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationAccesses,
         accesses: vec![
@@ -5639,8 +5593,14 @@ fn lowering_compiler_graph_builder(
             PassAccess::initialize_read_write("opt_ir_access_flag", opt_access_flag),
             PassAccess::read("opt_ir_operands", opt_operands),
             PassAccess::initialize_read_write("opt_ir_access_prefix", opt_access_prefix),
-            PassAccess::initialize_read_write("opt_ir_instruction_access_total", opt_instruction_access_total),
-            PassAccess::initialize_read_write("opt_ir_metadata_access_total", opt_metadata_access_total),
+            PassAccess::initialize_read_write(
+                "opt_ir_instruction_access_total",
+                opt_instruction_access_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_metadata_access_total",
+                opt_metadata_access_total,
+            ),
             PassAccess::initialize_read_write("opt_ir_accesses", opt_accesses),
             PassAccess::initialize_read_write("opt_ir_access_source_rows", opt_access_source_rows),
             PassAccess::initialize_read_write("opt_ir_access_positions", opt_access_positions),
@@ -5653,83 +5613,142 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("semantic_locals", semantic_locals),
             PassAccess::read("opt_ir_functions", opt_functions),
             PassAccess::initialize_read_write("opt_ir_access_total", opt_access_total),
-            PassAccess::initialize_read_write("opt_ir_declaration_access_total", opt_declaration_access_total),
+            PassAccess::initialize_read_write(
+                "opt_ir_declaration_access_total",
+                opt_declaration_access_total,
+            ),
             PassAccess::read("opt_ir_position_by_node", opt_position_by_node),
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::initialize_read_write("opt_ir_access_order", opt_access_radix.order),
-            PassAccess::initialize_read_write("opt_ir_access_group_start_flag", opt_access_group_start_flag),
-            PassAccess::initialize_read_write("opt_ir_local_definition_by_access", opt_local_definition_by_access),
-            PassAccess::initialize_read_write("opt_ir_access_group_prefix", opt_access_group_prefix),
+            PassAccess::initialize_read_write(
+                "opt_ir_access_group_start_flag",
+                opt_access_group_start_flag,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_local_definition_by_access",
+                opt_local_definition_by_access,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_access_group_prefix",
+                opt_access_group_prefix,
+            ),
             PassAccess::initialize_read_write("opt_ir_access_groups", opt_access_groups),
             PassAccess::initialize_read_write("opt_ir_declaration_blocks", opt_declaration_blocks),
             PassAccess::initialize_read_write("opt_ir_access_group_total", opt_access_group_total),
-            PassAccess::initialize_read_write("opt_ir_declaration_block_total", opt_declaration_block_total),
-            PassAccess::initialize_read_write("opt_ir_reaching_definition_states", opt_reaching_definition_states),
-            PassAccess::initialize_read_write("access_order_temporary", opt_access_radix.temporary_order),
+            PassAccess::initialize_read_write(
+                "opt_ir_declaration_block_total",
+                opt_declaration_block_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_reaching_definition_states",
+                opt_reaching_definition_states,
+            ),
+            PassAccess::initialize_read_write(
+                "access_order_temporary",
+                opt_access_radix.temporary_order,
+            ),
             PassAccess::initialize_read_write("access_histogram", opt_access_radix.histogram),
             PassAccess::initialize_read_write("access_bucket_total", opt_access_radix.bucket_total),
             PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
             PassAccess::read_write("step_program_sync", step_program_sync),
-        ],
-    })?;
-    graph.assign_kernel(
-        "lir.opt.build_declaration_accesses",
-        "codegen/lir/optimization/accesses/build_declaration_accesses",
-    )?;
-    graph.require_complete_reflection("lir.opt.build_declaration_accesses")?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.build_block_arguments",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationSsaDemands,
-        accesses: vec![
-            PassAccess::read("opt_ir_access_total", opt_access_total),
-            PassAccess::read("opt_ir_accesses", opt_accesses),
-            PassAccess::read("opt_ir_access_order", opt_access_radix.order),
-            PassAccess::read("opt_ir_local_definition_by_access", opt_local_definition_by_access),
-            PassAccess::read("opt_ir_declaration_block_total", opt_declaration_block_total),
-            PassAccess::read("opt_ir_declaration_blocks", opt_declaration_blocks),
             PassAccess::initialize_read_write("opt_ir_ssa_demand_total", opt_ssa_demand_total),
             PassAccess::initialize_read_write("opt_ir_ssa_demands", opt_ssa_demands),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_total", opt_ssa_block_argument_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_arguments", opt_ssa_block_arguments),
-            PassAccess::read("opt_ir_reaching_definition_states", opt_reaching_definition_states),
-            PassAccess::initialize_read_write("opt_ir_ssa_demand_seed_flag", opt_ssa_demand_seed_flag),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::initialize_read_write("opt_ir_ssa_demand_seed_prefix", opt_ssa_demand_seed_prefix),
-            PassAccess::initialize_read_write("opt_ir_ssa_demand_seed_total", opt_ssa_demand_seed_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_sparse_declaration", opt_ssa_sparse_declaration),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_total",
+                opt_ssa_block_argument_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_arguments",
+                opt_ssa_block_arguments,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_demand_seed_flag",
+                opt_ssa_demand_seed_flag,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_demand_seed_prefix",
+                opt_ssa_demand_seed_prefix,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_demand_seed_total",
+                opt_ssa_demand_seed_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_sparse_declaration",
+                opt_ssa_sparse_declaration,
+            ),
             PassAccess::initialize_read_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::read("opt_ir_edge_total", opt_edge_total),
             PassAccess::read("opt_ir_edges", opt_edges),
             PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
             PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
             PassAccess::initialize_read_write("opt_ir_ssa_walk", opt_ssa_walk),
-            PassAccess::initialize_read_write("opt_ir_ssa_demand_order", opt_ssa_demand_radix.order),
-            PassAccess::initialize_read_write("opt_ir_ssa_canonical_demands_tmp", opt_ssa_canonical_demands_tmp),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_flag", opt_ssa_block_argument_flag),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_incoming_count", opt_ssa_block_argument_incoming_count),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_incoming_total", opt_ssa_block_argument_incoming_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_incoming", opt_ssa_block_argument_incoming),
-            PassAccess::read("opt_ir_access_kinds", opt_access_kinds),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_user_count", opt_ssa_block_argument_user_count),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_user_prefix", opt_ssa_block_argument_user_prefix),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_user_total", opt_ssa_block_argument_user_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_user_arguments", opt_ssa_block_argument_user_arguments),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_summary", opt_ssa_block_argument_summary),
-            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_replacement", opt_ssa_block_argument_replacement),
-            PassAccess::initialize_read_write("demand_order_temporary", opt_ssa_demand_radix.temporary_order),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_demand_order",
+                opt_ssa_demand_radix.order,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_canonical_demands_tmp",
+                opt_ssa_canonical_demands_tmp,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_flag",
+                opt_ssa_block_argument_flag,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_incoming_count",
+                opt_ssa_block_argument_incoming_count,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_incoming_total",
+                opt_ssa_block_argument_incoming_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_incoming",
+                opt_ssa_block_argument_incoming,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_user_count",
+                opt_ssa_block_argument_user_count,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_user_prefix",
+                opt_ssa_block_argument_user_prefix,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_user_total",
+                opt_ssa_block_argument_user_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_user_arguments",
+                opt_ssa_block_argument_user_arguments,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_summary",
+                opt_ssa_block_argument_summary,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_block_argument_replacement",
+                opt_ssa_block_argument_replacement,
+            ),
+            PassAccess::initialize_read_write(
+                "demand_order_temporary",
+                opt_ssa_demand_radix.temporary_order,
+            ),
             PassAccess::initialize_read_write("demand_histogram", opt_ssa_demand_radix.histogram),
-            PassAccess::initialize_read_write("demand_bucket_total", opt_ssa_demand_radix.bucket_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_demand_resolution_tmp", opt_ssa_demand_resolution_tmp),
-            PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
-            PassAccess::read_write("step_program_sync", step_program_sync),
+            PassAccess::initialize_read_write(
+                "demand_bucket_total",
+                opt_ssa_demand_radix.bucket_total,
+            ),
+            PassAccess::initialize_read_write(
+                "opt_ir_ssa_demand_resolution_tmp",
+                opt_ssa_demand_resolution_tmp,
+            ),
         ],
     })?;
     graph.assign_kernel(
         "lir.opt.build_block_arguments",
-        "codegen/lir/optimization/demands/build_block_arguments",
+        "codegen/lir/optimization/build_block_arguments",
     )?;
     graph.require_complete_reflection("lir.opt.build_block_arguments")?;
     graph.add_pass(PassDesc {
@@ -8400,14 +8419,8 @@ mod tests {
     }
 
     #[test]
-    fn job_jump_pairs_are_a_fresh_allocations_and_never_exceed_the_built_ones() {
+    fn job_execution_rank_pairs_never_exceed_the_workspace_bound() {
         for rows in (0..4_100).chain([65_535, 65_536, 1 << 27, u32::MAX]) {
-            assert_eq!(
-                pointer_jump_pairs(rows),
-                (u32::BITS - rows.leading_zeros()).max(1).div_ceil(2),
-                "{rows}"
-            );
-            assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
             let hop_pairs = pointer_jump_hop_pairs(rows);
             assert!(4096u128.pow(hop_pairs) > u128::from(rows), "{rows}");
             assert!(hop_pairs == 1 || 4096u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
@@ -8419,32 +8432,18 @@ mod tests {
                     .bucketed()
             };
             let retained = fresh(300_000);
-            let built = retained.jump_pairs();
-            assert_eq!(retained.job_jump_pairs(u32::MAX, target), built);
+            let built = retained.execution_rank_jump_pairs();
+            assert_eq!(retained.job_execution_rank_jump_pairs(u32::MAX, target), built);
             for hir in [0, 1, 7, 4_096, 4_097, 70_000, 299_999, 300_000, 1_000_000] {
                 assert_eq!(
-                    retained.job_jump_pairs(hir, target),
-                    fresh(hir).jump_pairs().min(built),
+                    retained.job_execution_rank_jump_pairs(hir, target),
+                    fresh(hir).execution_rank_jump_pairs().min(built),
                     "{hir}"
                 );
             }
-            let small = retained.job_jump_pairs(5_000, target);
+            let small = retained.job_execution_rank_jump_pairs(5_000, target);
             let job = fresh(5_000);
-            assert!(4096u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
-            assert!(4096u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
-            assert!(
-                4096u64.pow(small.dominator_tour)
-                    > 2 * u64::from(job.optimization_block_capacity())
-            );
-            assert!(
-                4096u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
-            );
-            assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
-            assert!(small.region_parent < built.region_parent);
-            // Instruction capacity is at least 4096 rows, which already needs
-            // two 4096-link pairs, and two pairs reach 16M rows, so job sizing
-            // never lowers this count below the built one.
-            assert!(small.ssa_value_link <= built.ssa_value_link);
+            assert!(4096u64.pow(small) > u64::from(job.hir_nodes));
         }
     }
 
@@ -9341,8 +9340,16 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             (
-                "lir.opt.ssa.demand_aliases.resolve",
-                "codegen/lir/optimization/demands/resolve_value_demand_aliases",
+                "lir.opt.build_control_flow",
+                "codegen/lir/optimization/build_control_flow",
+            ),
+            (
+                "lir.opt.build_block_arguments",
+                "codegen/lir/optimization/build_block_arguments",
+            ),
+            (
+                "lir.opt.build_ssa_values",
+                "codegen/lir/optimization/build_ssa_values",
             ),
         ] {
             let reflection = crate::reflection::parse_reflection_from_file(
@@ -9375,41 +9382,15 @@ mod tests {
         for (pass_name, artifact) in [
             (
                 "lir.opt.build_control_flow",
-                "codegen/lir/optimization/control_flow/build_control_flow",
-            ),
-            (
-                "lir.opt.analyze_control_flow",
-                "codegen/lir/optimization/analyze_control_flow",
-            ),
-            (
-                "lir.opt.build_declaration_accesses",
-                "codegen/lir/optimization/accesses/build_declaration_accesses",
+                "codegen/lir/optimization/build_control_flow",
             ),
             (
                 "lir.opt.build_block_arguments",
-                "codegen/lir/optimization/demands/build_block_arguments",
+                "codegen/lir/optimization/build_block_arguments",
             ),
             (
                 "lir.opt.build_ssa_values",
                 "codegen/lir/optimization/build_ssa_values",
-            ),
-            (
-                "lir.opt.access.sort.histogram.a",
-                "codegen/lir/optimization/accesses/count_access_sort_buckets",
-            ),
-            ("lir.opt.access.sort.prefix.a", "radix/scan_radix_bucket_histograms"),
-            (
-                "lir.opt.access.sort.scatter.a",
-                "codegen/lir/optimization/accesses/scatter_sorted_accesses",
-            ),
-            (
-                "lir.opt.access.sort.histogram.b",
-                "codegen/lir/optimization/accesses/count_access_sort_buckets",
-            ),
-            ("lir.opt.access.sort.prefix.b", "radix/scan_radix_bucket_histograms"),
-            (
-                "lir.opt.access.sort.scatter.b",
-                "codegen/lir/optimization/accesses/scatter_sorted_accesses",
             ),
             ("lir.wasm.frame_views", "codegen/lir/wasm/functions/classify_wasm_frame_views"),
             ("lir.wasm.frame_words", "codegen/lir/wasm/functions/count_wasm_frame_words"),
@@ -9472,41 +9453,15 @@ mod tests {
         for (pass_name, artifact) in [
             (
                 "lir.opt.build_control_flow",
-                "codegen/lir/optimization/control_flow/build_control_flow",
-            ),
-            (
-                "lir.opt.analyze_control_flow",
-                "codegen/lir/optimization/analyze_control_flow",
-            ),
-            (
-                "lir.opt.build_declaration_accesses",
-                "codegen/lir/optimization/accesses/build_declaration_accesses",
+                "codegen/lir/optimization/build_control_flow",
             ),
             (
                 "lir.opt.build_block_arguments",
-                "codegen/lir/optimization/demands/build_block_arguments",
+                "codegen/lir/optimization/build_block_arguments",
             ),
             (
                 "lir.opt.build_ssa_values",
                 "codegen/lir/optimization/build_ssa_values",
-            ),
-            (
-                "lir.opt.access.sort.histogram.a",
-                "codegen/lir/optimization/accesses/count_access_sort_buckets",
-            ),
-            ("lir.opt.access.sort.prefix.a", "radix/scan_radix_bucket_histograms"),
-            (
-                "lir.opt.access.sort.scatter.a",
-                "codegen/lir/optimization/accesses/scatter_sorted_accesses",
-            ),
-            (
-                "lir.opt.access.sort.histogram.b",
-                "codegen/lir/optimization/accesses/count_access_sort_buckets",
-            ),
-            ("lir.opt.access.sort.prefix.b", "radix/scan_radix_bucket_histograms"),
-            (
-                "lir.opt.access.sort.scatter.b",
-                "codegen/lir/optimization/accesses/scatter_sorted_accesses",
             ),
             ("lir.x86.analysis.clear", "codegen/lir/x86/liveness/clear_x86_value_analysis"),
             ("lir.x86.analysis.index", "codegen/lir/x86/liveness/index_x86_value_positions_and_uses"),

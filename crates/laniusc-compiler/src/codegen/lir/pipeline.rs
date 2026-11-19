@@ -17,7 +17,9 @@ use super::{
         lowering_compiler_graph_for_artifact,
         lowering_resource_bytes_for_artifact,
     },
-    optimization::{GpuOptimizationStage, OPTIMIZATION_PROGRAM_FAILURE_BYTES, OPTIMIZATION_PROGRAM_SLOTS},
+    optimization::{
+        GpuOptimizationStage, OPTIMIZATION_PROGRAM_FAILURE_BYTES, OPTIMIZATION_PROGRAM_SLOTS,
+    },
     semantics::{
         GpuSemanticHirInputs,
         GpuSemanticLoweringStage,
@@ -1120,6 +1122,28 @@ impl GpuLoweringPipeline {
 
     /// The job's capacities when they are below this workspace's, for the
     /// direct operations whose grids they bound (`JobSized`).
+    // Launch sizing uses the job's bounds before the workspace rounds them
+    // up for reuse. The shaders still clamp counts to allocated capacities.
+    fn optimizer_job_capacities(
+        &self,
+        bounds: super::semantics::LoweringJobBounds,
+    ) -> Option<LoweringCapacities> {
+        if !job_sized_direct_ops() || bounds.source_bytes == u32::MAX || bounds.hir_rows == u32::MAX {
+            return None;
+        }
+        let capacities = LoweringCapacities::from_frontend_unit(
+            bounds.source_bytes,
+            self.capacities.tokens,
+            bounds.hir_rows,
+            self.target.lowering_target(),
+        ).ok()?;
+        Some(LoweringCapacities {
+            semantic_instructions: capacities.semantic_instructions
+                .max(bounds.output_demand.semantic_instructions),
+            ..capacities
+        })
+    }
+
     fn sized_job(&self, job: LoweringCapacities) -> Option<LoweringCapacities> {
         self.smaller_job(job).filter(|_| job_sized_direct_ops())
     }
@@ -1300,21 +1324,21 @@ impl GpuLoweringPipeline {
         }
         // A workspace retained from a larger job would record that job's
         // pointer-jump pairs; the job's HIR bound gives its own.
-        let jump_pairs = self
+        let execution_rank_pairs = self
             .capacities
-            .job_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+            .job_execution_rank_jump_pairs(bounds.hir_rows, self.target.lowering_target());
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            jump_pairs.execution_rank,
+            execution_rank_pairs,
             self.sized_job(job),
         )?;
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            self.sized_job(job),
+            self.optimizer_job_capacities(bounds),
             true,
         )?;
         split.submit_prefix(
@@ -1387,21 +1411,21 @@ impl GpuLoweringPipeline {
         }
         // A workspace retained from a larger job would record that job's
         // pointer-jump pairs; the job's HIR bound gives its own.
-        let jump_pairs = self
+        let execution_rank_pairs = self
             .capacities
-            .job_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+            .job_execution_rank_jump_pairs(bounds.hir_rows, self.target.lowering_target());
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            jump_pairs.execution_rank,
+            execution_rank_pairs,
             self.sized_job(job),
         )?;
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            self.sized_job(job),
+            self.optimizer_job_capacities(bounds),
             true,
         )?;
         split.submit_prefix(

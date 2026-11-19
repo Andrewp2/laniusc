@@ -114,9 +114,9 @@ Walk walk_begin(uint goal, uint block_total, uint edge_total)
 {
     Walk walk;
     walk.goal = goal;
-    walk.row = opt_ir_predecessor_prefix[goal];
+    walk.row = opt_ir_edge_prefix[goal];
     walk.end = goal + 1u < block_total
-        ? opt_ir_predecessor_prefix[goal + 1u] : edge_total;
+        ? opt_ir_edge_prefix[goal + 1u] : edge_total;
     walk.left = STRUCTURE_INVALID;
     walk.right = STRUCTURE_INVALID;
     return walk;
@@ -264,7 +264,7 @@ void validate_immediate_dominators_structure_failure(uint block_id)
 public void validate_immediate_dominators(uint block_id, uint block_total, uint function_total)
 {
     if (block_id >= block_total) return;
-    opt_ir_live_predecessor_count_by_block[block_id] = 0u;
+    opt_ir_edge_count_by_block[block_id] = 0u;
 
     OptIrBlock block = opt_ir_blocks[block_id];
     if (block.function_id >= function_total)
@@ -306,7 +306,7 @@ public void count_dominator_children(uint block_id, uint total)
         count_dominator_children_structure_failure(block_id);
         return;
     }
-    InterlockedAdd(opt_ir_live_predecessor_count_by_block[dominator], 1u);
+    InterlockedAdd(opt_ir_edge_count_by_block[dominator], 1u);
 }
 
 // Converts child counts to per-parent scatter cursors. The immutable prefix
@@ -315,8 +315,8 @@ public void count_dominator_children(uint block_id, uint total)
 public void prepare_dominator_child_ranges(uint block_id, uint total)
 {
     if (block_id < total)
-        opt_ir_live_predecessor_count_by_block[block_id] =
-            opt_ir_dominator_child_prefix[block_id];
+        opt_ir_edge_count_by_block[block_id] =
+            opt_ir_predecessor_cursor[block_id];
 }
 
 // Scatters dense child block IDs into their immediate dominator's range.
@@ -342,7 +342,7 @@ public void scatter_dominator_children(uint block_id, uint total)
     }
 
     uint row;
-    InterlockedAdd(opt_ir_live_predecessor_count_by_block[dominator], 1u, row);
+    InterlockedAdd(opt_ir_edge_count_by_block[dominator], 1u, row);
     if (row >= total)
     {
         scatter_dominator_children_structure_failure(block_id);
@@ -369,11 +369,11 @@ public void validate_dominator_child_ranges(uint block_id, uint block_total, uin
     if (block_id >= block_total) return;
     opt_ir_dominator_child_row_by_block[block_id] = OPT_IR_DOMINATOR_INVALID;
 
-    uint start = opt_ir_dominator_child_prefix[block_id];
+    uint start = opt_ir_predecessor_cursor[block_id];
     uint end = block_id + 1u < block_total
-        ? opt_ir_dominator_child_prefix[block_id + 1u] : child_total;
+        ? opt_ir_predecessor_cursor[block_id + 1u] : child_total;
     bool valid = end >= start && end <= child_total &&
-        opt_ir_live_predecessor_count_by_block[block_id] == end;
+        opt_ir_edge_count_by_block[block_id] == end;
 
     if (block_id < child_total)
     {
@@ -383,7 +383,7 @@ public void validate_dominator_child_ranges(uint block_id, uint block_total, uin
         while (lo < hi)
         {
             uint mid = lo + (hi - lo) / 2u;
-            if (opt_ir_dominator_child_prefix[mid] <= row) lo = mid + 1u;
+            if (opt_ir_predecessor_cursor[mid] <= row) lo = mid + 1u;
             else hi = mid;
         }
         uint parent = lo == 0u ? OPT_IR_DOMINATOR_INVALID : lo - 1u;
@@ -430,7 +430,7 @@ void seed_dominator_tour_structure_failure(uint block)
 uint child_range_end(uint block, uint block_total, uint child_total)
 {
     return block + 1u < block_total
-        ? opt_ir_dominator_child_prefix[block + 1u]
+        ? opt_ir_predecessor_cursor[block + 1u]
         : child_total;
 }
 
@@ -456,7 +456,7 @@ public void seed_dominator_tour(uint arc, uint block_total, uint child_total)
         uint child_row = valid
             ? opt_ir_dominator_child_row_by_block[block] : STRUCTURE_INVALID;
         uint sibling_start = valid
-            ? opt_ir_dominator_child_prefix[parent] : STRUCTURE_INVALID;
+            ? opt_ir_predecessor_cursor[parent] : STRUCTURE_INVALID;
         valid = valid && child_row >= sibling_start &&
             child_row < child_range_end(parent, block_total, child_total) &&
             opt_ir_dominator_children[child_row] == block;
@@ -473,7 +473,7 @@ public void seed_dominator_tour(uint arc, uint block_total, uint child_total)
     }
     else
     {
-        uint start = opt_ir_dominator_child_prefix[block];
+        uint start = opt_ir_predecessor_cursor[block];
         uint end = child_range_end(block, block_total, child_total);
         valid = valid && end >= start && end <= child_total;
         if (valid && end != start)
@@ -565,10 +565,10 @@ public void publish_dominator_tour(uint block, uint block_total, uint function_t
     }
     if (parent == block)
     {
-        uint child_total = min(opt_ir_dominator_child_total[0u], block_total);
-        uint start = opt_ir_dominator_child_prefix[block];
+        uint child_total = min(opt_ir_predecessor_total[0u], block_total);
+        uint start = opt_ir_predecessor_cursor[block];
         uint end = block + 1u < block_total
-            ? opt_ir_dominator_child_prefix[block + 1u] : child_total;
+            ? opt_ir_predecessor_cursor[block + 1u] : child_total;
         valid = valid && function.entry_block == block && end >= start &&
             end <= child_total;
         uint descendants = 0u;
