@@ -17,7 +17,7 @@ use super::{
         lowering_compiler_graph_for_artifact,
         lowering_resource_bytes_for_artifact,
     },
-    optimization::GpuOptimizationStage,
+    optimization::{GpuOptimizationStage, OPTIMIZATION_PROGRAM_FAILURE_BYTES, OPTIMIZATION_PROGRAM_SLOTS},
     semantics::{
         GpuSemanticHirInputs,
         GpuSemanticLoweringStage,
@@ -215,7 +215,7 @@ pub(crate) struct GpuLoweringPipeline {
     status_readback: LaniusBuffer<u8>,
     status_base: usize,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
-    program_failed_copy: crate::gpu::operations::CopyBufferOperation,
+    program_failed_copies: Vec<crate::gpu::operations::CopyBufferOperation>,
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
@@ -984,6 +984,7 @@ impl GpuLoweringPipeline {
             TargetStage::X86_64(stage) => stage.object_metadata_readback().cloned(),
             TargetStage::Wasm(_) => None,
         };
+        let status_readback_bytes = status_bytes + 8 + OPTIMIZATION_PROGRAM_FAILURE_BYTES;
         let (status_readback, status_binding, status_base) = match object_readback {
             Some(buffer) => (
                 buffer,
@@ -991,7 +992,7 @@ impl GpuLoweringPipeline {
                 super::lowering_ir::X86_OBJECT_METADATA_BYTES as usize,
             ),
             None => (
-                readback_bytes(device, "lowering.status.readback", status_bytes + 12, status_bytes + 12),
+                readback_bytes(device, "lowering.status.readback", status_readback_bytes, status_readback_bytes),
                 "status_readback",
                 0,
             ),
@@ -1008,17 +1009,21 @@ impl GpuLoweringPipeline {
             status_base as u64,
             status_bytes as u64,
         )?;
-        let program_failed_copy = crate::gpu::operations::CopyBufferOperation::new(
-            &(&graph, &status_allocations),
-            "lowering.step_program_failed.readback",
-            "step_program_sync",
-            optimizer.program_sync(),
-            crate::gpu::operations::StepProgramOperation::failed_offset(0),
-            status_binding,
-            &status_readback,
-            (status_base + status_bytes + 8) as u64,
-            4,
-        )?;
+        let program_failed_copies = (0..OPTIMIZATION_PROGRAM_SLOTS)
+            .map(|slot| {
+                crate::gpu::operations::CopyBufferOperation::new(
+                    &(&graph, &status_allocations),
+                    "lowering.step_program_failed.readback",
+                    "step_program_sync",
+                    optimizer.program_sync(),
+                    crate::gpu::operations::StepProgramOperation::failed_offset(slot as u32),
+                    status_binding,
+                    &status_readback,
+                    (status_base + status_bytes + 8 + slot * 4) as u64,
+                    4,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let target_total = workspace
             .alias::<u32>(
                 &graph,
@@ -1064,7 +1069,7 @@ impl GpuLoweringPipeline {
             status_readback,
             status_base,
             status_readback_copy,
-            program_failed_copy,
+            program_failed_copies,
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             recorded_job: Mutex::new(capacities),
@@ -1171,7 +1176,9 @@ impl GpuLoweringPipeline {
 
     fn record_status_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         self.status_readback_copy.record(encoder);
-        self.program_failed_copy.record(encoder);
+        for copy in &self.program_failed_copies {
+            copy.record(encoder);
+        }
         for copy in &self.job_totals_copies {
             copy.record(encoder);
         }
@@ -1617,10 +1624,12 @@ impl GpuLoweringPipeline {
             first_unsupported_target_op: word(9),
         };
         let totals = std::mem::size_of::<LoweringStatus>() / 4;
-        anyhow::ensure!(
-            word(totals + 2) == 0,
-            "optimizer step program synchronization failed",
-        );
+        for slot in 0..OPTIMIZATION_PROGRAM_SLOTS {
+            anyhow::ensure!(
+                word(totals + 2 + slot) == 0,
+                "optimizer step program {slot} synchronization failed",
+            );
+        }
         let (semantic_rows, target_rows) = (word(totals), word(totals + 1));
         self.check_job_totals(&mut status, semantic_rows, target_rows);
         let mut prefix = words;

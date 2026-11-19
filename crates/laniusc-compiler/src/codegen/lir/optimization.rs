@@ -74,42 +74,6 @@ use crate::gpu::{
     timer::GpuTimer,
 };
 
-pub(super) const OPT_IR_REGION_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationNodes,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.regions.scan.local",
-        apply: "lir.opt.regions.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.total",
-        input: "lir.opt.block_start_flag",
-        output_prefix: "lir.opt.block_prefix",
-        total: "lir.opt.region_total",
-        dispatch_args: "lir.opt.block_scan_dispatch_args",
-        local_prefix: "lir.opt.block_scan_local_prefix",
-        block_sum: "lir.opt.block_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_DOMINATOR_CHILD_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationBlocks,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.dominators.children.scan.local",
-        apply: "lir.opt.dominators.children.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.block_total",
-        input: "lir.opt.edge_count_by_block",
-        output_prefix: "lir.opt.predecessor_cursor",
-        total: "lir.opt.predecessor_total",
-        dispatch_args: "lir.opt.edge_scan_dispatch_args",
-        local_prefix: "lir.opt.edge_scan_local_prefix",
-        block_sum: "lir.opt.edge_scan_block_sum",
-    },
-};
-
 pub(super) const OPT_IR_ACCESS_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::Optimization,
     dispatch_domain: ResourceDomain::OptimizationNodes,
@@ -416,6 +380,9 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
     },
 };
 
+pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 2;
+pub(super) const OPTIMIZATION_PROGRAM_FAILURE_BYTES: usize = OPTIMIZATION_PROGRAM_SLOTS * 4;
+
 const RADIX_ROWS_PER_BLOCK: u32 = 256;
 const RADIX_BUCKET_COUNT: u32 = 256;
 
@@ -433,15 +400,6 @@ mod opt_extent {
     }
     pub(super) fn block(c: LoweringCapacities) -> u32 {
         c.optimization_block_capacity()
-    }
-    pub(super) fn edge(c: LoweringCapacities) -> u32 {
-        c.optimization_edge_capacity()
-    }
-    pub(super) fn dominator_tour_arc(c: LoweringCapacities) -> u32 {
-        block(c).saturating_mul(2)
-    }
-    pub(super) fn region(c: LoweringCapacities) -> u32 {
-        c.optimization_region_capacity()
     }
     pub(super) fn metadata(c: LoweringCapacities) -> u32 {
         c.parameters.max(c.local_capacity()).max(1)
@@ -813,48 +771,7 @@ pub(crate) struct GpuOptimizationStage {
     program_sync: LaniusBuffer<u32>,
     capacities: LoweringCapacities,
     program_groups_override: Option<u32>,
-    structure_function_init: JobSized,
-    structure_function_reduce: JobSized,
-    structure_function_finalize: JobSized,
-    reachability_seed: JobSized,
-    reachability_close: JobSized,
-    reachability_validate: JobSized,
-    dominator_edge_validate: JobSized,
-    dominator_seed: JobSized,
-    dominator_resolve: JobSized,
-    dominator_validate: JobSized,
-    dominator_child_count: JobSized,
-    dominator_child_scan: PrefixScanOperation,
-    dominator_child_prepare: JobSized,
-    dominator_child_scatter: JobSized,
-    dominator_child_validate: JobSized,
-    dominator_tour_child_rows: JobSized,
-    dominator_tour_init: JobSized,
-    dominator_tour_a_to_b: JobSized,
-    dominator_tour_b_to_a: JobSized,
-    dominator_tour_finalize: JobSized,
-    dominator_preorder_inverse_scatter: JobSized,
-    dominator_preorder_validate: JobSized,
-    dominator_depth_a_to_b: JobSized,
-    dominator_depth_b_to_a: JobSized,
-    dominator_depth_finalize: JobSized,
-    dominator_depth_validate: JobSized,
-    region_mark: JobSized,
-    region_scan: PrefixScanOperation,
-    region_function_clear: JobSized,
-    region_scatter: JobSized,
-    region_parent_init: JobSized,
-    region_parent_a_to_b: JobSized,
-    region_parent_b_to_a: JobSized,
-    region_finalize: JobSized,
-    region_function_finalize: JobSized,
-    /// Not job-sized: the interval-stabbing tree puts its leaves at the
-    /// built semantic capacity, so a job's leaves lie past twice its own rows.
-    region_ownership_clear: ComputeOperation,
-    region_ownership_ranges: JobSized,
-    region_ownership_nodes: JobSized,
-    region_ownership_blocks: JobSized,
-    region_validate_edges: JobSized,
+    control_flow_analysis: [[StepProgramOperation; 2]; 2],
     access_mark: JobSized,
     access_scan: PrefixScanOperation,
     access_scatter: JobSized,
@@ -1610,381 +1527,43 @@ impl GpuOptimizationStage {
         resources.register_graph_bindings(graph, &graph_bindings);
         semantic.register(graph, &mut resources)?;
         let program_sync = workspace
-            .alias(graph, resource("step_program_sync")?, STEP_PROGRAM_SYNC_WORDS)
+            .alias(graph, resource("step_program_sync")?, STEP_PROGRAM_SYNC_WORDS * OPTIMIZATION_PROGRAM_SLOTS)
             .map_err(anyhow::Error::msg)?;
         let program_groups_override = std::env::var("LANIUS_LIR_PROGRAM_GROUPS")
             .ok()
             .and_then(|value| value.parse().ok());
         let program_parallel_groups = program_groups_override.unwrap_or(STEP_PROGRAM_MAX_GROUPS);
         resources.buffer("gParams", &params);
-        let pass = kernels.kernel("codegen/lir/optimization/control_flow/build_control_flow");
-        let variant = |groups, validate| {
-            StepProgramOperation::new(
-                device,
-                &(graph, &allocations),
-                &resources,
-                "lir.opt.build_control_flow",
-                pass,
-                &program_sync,
-                0,
-                groups,
-                validate,
-            )
+        let variants = |name, key, slot| -> Result<_> {
+            let pass = kernels.kernel(key);
+            let variant = |groups, validate| {
+                StepProgramOperation::new(
+                    device,
+                    &(graph, &allocations),
+                    &resources,
+                    name,
+                    pass,
+                    &program_sync,
+                    slot,
+                    groups,
+                    validate,
+                )
+            };
+            Ok([
+                [variant(1, 0)?, variant(1, 1)?],
+                [variant(program_parallel_groups, 0)?, variant(program_parallel_groups, 1)?],
+            ])
         };
-        let control_flow = [
-            [variant(1, 0)?, variant(1, 1)?],
-            [variant(program_parallel_groups, 0)?, variant(program_parallel_groups, 1)?],
-        ];
-        let structure_function_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.function_init",
-            kernels.kernel("codegen/lir/optimization/control_flow/seed_control_flow_functions"),
-            &params,
-            capacities.hir_nodes.max(1),
-        )?, opt_extent::hir, capacities)?;
-        let structure_function_reduce = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.function_reduce",
-            kernels.kernel("codegen/lir/optimization/control_flow/summarize_control_flow_functions"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let structure_function_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.structure.function_finalize",
-            kernels.kernel("codegen/lir/optimization/control_flow/finalize_control_flow_functions"),
-            &params,
-            capacities.hir_nodes.max(1),
-        )?, opt_extent::hir, capacities)?;
-        let reachability_seed = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.reachability.seed",
-            kernels.kernel("codegen/lir/optimization/control_flow/seed_control_flow_reachability"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let reachability_close = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.reachability.close",
-            kernels.kernel("codegen/lir/optimization/control_flow/close_control_flow_reachability"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let reachability_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.reachability.validate",
-            kernels.kernel("codegen/lir/optimization/control_flow/validate_control_flow_reachability"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_edge_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.edge_validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_dominator_edges"),
-            &params,
-            edge_capacity,
-        )?, opt_extent::edge, capacities)?;
-        let dominator_seed = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.seed",
-            kernels.kernel("codegen/lir/optimization/dominance/seed_immediate_dominators"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_resolve = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.resolve",
-            kernels.kernel("codegen/lir/optimization/dominance/resolve_immediate_dominators"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_immediate_dominators"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_child_count = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.children.count",
-            kernels.kernel("codegen/lir/optimization/dominance/count_dominator_children"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_child_scan = PrefixScanOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_DOMINATOR_CHILD_SCAN,
+        let control_flow = variants(
+            "lir.opt.build_control_flow",
+            "codegen/lir/optimization/control_flow/build_control_flow",
+            0,
         )?;
-        let dominator_child_prepare = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.children.prepare",
-            kernels.kernel("codegen/lir/optimization/dominance/prepare_dominator_child_ranges"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_child_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.children.scatter",
-            kernels.kernel("codegen/lir/optimization/dominance/scatter_dominator_children"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_child_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.children.validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_dominator_child_ranges"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_tour_child_rows = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.child_rows",
-            kernels.kernel("codegen/lir/optimization/dominance/index_dominator_tour_child_rows"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_tour_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.init",
-            kernels.kernel("codegen/lir/optimization/dominance/seed_dominator_tour"),
-            &params,
-            dominator_tour_arc_capacity,
-        )?, opt_extent::dominator_tour_arc, capacities)?;
-        let dominator_tour_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.step_a_to_b",
-            kernels.kernel("codegen/lir/optimization/dominance/propagate_dominator_tour_ranks"),
-            &params,
-            dominator_tour_arc_capacity,
-        )?, opt_extent::dominator_tour_arc, capacities)?;
-        let dominator_tour_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.step_b_to_a",
-            kernels.kernel("codegen/lir/optimization/dominance/propagate_dominator_tour_ranks"),
-            &params,
-            dominator_tour_arc_capacity,
-        )?, opt_extent::dominator_tour_arc, capacities)?;
-        let dominator_tour_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.finalize",
-            kernels.kernel("codegen/lir/optimization/dominance/publish_dominator_tour"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_preorder_inverse_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.preorder.inverse_scatter",
-            kernels.kernel("codegen/lir/optimization/dominance/invert_dominator_preorder"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_preorder_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.preorder.validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_dominator_preorder"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_depth_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.depth.step_a_to_b",
-            kernels.kernel("codegen/lir/optimization/dominance/propagate_dominator_depths"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_depth_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.depth.step_b_to_a",
-            kernels.kernel("codegen/lir/optimization/dominance/propagate_dominator_depths"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_depth_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.depth.finalize",
-            kernels.kernel("codegen/lir/optimization/dominance/publish_dominator_depths"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_depth_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.depth.validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_dominator_depths"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let region_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.mark",
-            kernels.kernel("codegen/lir/optimization/regions/mark_control_flow_regions"),
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let region_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_REGION_SCAN)?;
-        let region_function_clear = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.function_clear",
-            kernels.kernel("codegen/lir/optimization/regions/clear_function_region_ranges"),
-            &params,
-            capacities.hir_nodes.max(1),
-        )?, opt_extent::hir, capacities)?;
-        let region_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.scatter",
-            kernels.kernel("codegen/lir/optimization/regions/scatter_control_flow_regions"),
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let region_parent_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.parent_init",
-            kernels.kernel("codegen/lir/optimization/regions/seed_region_parents"),
-            &params,
-            region_capacity,
-        )?, opt_extent::region, capacities)?;
-        let region_parent_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.parent_step_a_to_b",
-            kernels.kernel("codegen/lir/optimization/regions/propagate_region_parents"),
-            &params,
-            region_capacity,
-        )?, opt_extent::region, capacities)?;
-        let region_parent_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.parent_step_b_to_a",
-            kernels.kernel("codegen/lir/optimization/regions/propagate_region_parents"),
-            &params,
-            region_capacity,
-        )?, opt_extent::region, capacities)?;
-        let region_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.finalize",
-            kernels.kernel("codegen/lir/optimization/regions/finalize_control_flow_regions"),
-            &params,
-            region_capacity,
-        )?, opt_extent::region, capacities)?;
-        let region_function_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.function_finalize",
-            kernels.kernel("codegen/lir/optimization/regions/finalize_function_region_ranges"),
-            &params,
-            capacities.hir_nodes.max(1),
-        )?, opt_extent::hir, capacities)?;
-        let region_ownership_clear = ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.ownership.clear",
-            kernels.kernel("codegen/lir/optimization/regions/clear_region_owners"),
-            &params,
-            capacities.semantic_instructions.max(1).saturating_mul(2),
+        let control_flow_analysis = variants(
+            "lir.opt.analyze_control_flow",
+            "codegen/lir/optimization/analyze_control_flow",
+            1,
         )?;
-        let region_ownership_ranges = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.ownership.ranges",
-            kernels.kernel("codegen/lir/optimization/regions/write_region_ownership_ranges"),
-            &params,
-            region_capacity,
-        )?, opt_extent::region, capacities)?;
-        let region_ownership_nodes = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.ownership.nodes",
-            kernels.kernel("codegen/lir/optimization/regions/assign_nodes_to_regions"),
-            &params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let region_ownership_blocks = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.ownership.blocks",
-            kernels.kernel("codegen/lir/optimization/regions/assign_blocks_to_regions"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let region_validate_edges = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.regions.validate_edges",
-            kernels.kernel("codegen/lir/optimization/regions/validate_region_edges"),
-            &params,
-            edge_capacity,
-        )?, opt_extent::edge, capacities)?;
         let access_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2693,46 +2272,7 @@ impl GpuOptimizationStage {
             program_sync,
             capacities,
             program_groups_override,
-            structure_function_init,
-            structure_function_reduce,
-            structure_function_finalize,
-            reachability_seed,
-            reachability_close,
-            reachability_validate,
-            dominator_edge_validate,
-            dominator_seed,
-            dominator_resolve,
-            dominator_validate,
-            dominator_child_count,
-            dominator_child_scan,
-            dominator_child_prepare,
-            dominator_child_scatter,
-            dominator_child_validate,
-            dominator_tour_child_rows,
-            dominator_tour_init,
-            dominator_tour_a_to_b,
-            dominator_tour_b_to_a,
-            dominator_tour_finalize,
-            dominator_preorder_inverse_scatter,
-            dominator_preorder_validate,
-            dominator_depth_a_to_b,
-            dominator_depth_b_to_a,
-            dominator_depth_finalize,
-            dominator_depth_validate,
-            region_mark,
-            region_scan,
-            region_function_clear,
-            region_scatter,
-            region_parent_init,
-            region_parent_a_to_b,
-            region_parent_b_to_a,
-            region_finalize,
-            region_function_finalize,
-            region_ownership_clear,
-            region_ownership_ranges,
-            region_ownership_nodes,
-            region_ownership_blocks,
-            region_validate_edges,
+            control_flow_analysis,
             access_mark,
             access_scan,
             access_scatter,
@@ -2941,43 +2481,10 @@ impl GpuOptimizationStage {
         let rows = capacities.semantic_instructions.max(capacities.optimization_edge_capacity());
         let parallel = rows > 4096 || self.program_groups_override.is_some();
         self.control_flow[usize::from(parallel)][usize::from(validate_structure)].record(encoder)?;
-        self.structure_function_init.record_job(encoder, job)?;
-        self.structure_function_reduce.record_job(encoder, job)?;
-        self.structure_function_finalize.record_job(encoder, job)?;
-        self.reachability_seed.record_job(encoder, job)?;
-        self.reachability_close.record_job(encoder, job)?;
-        if validate_structure {
-            self.reachability_validate.record_job(encoder, job)?;
-        }
-        // The dominator tree, its preorder and depth, and the region tree
-        // are read only by validators (ssa.dominance.validate included), so
-        // a copy replay that skips validation skips them too.
-        if validate_structure {
-            self.dominator_edge_validate.record_job(encoder, job)?;
-            self.dominator_seed.record_job(encoder, job)?;
-            self.dominator_resolve.record_job(encoder, job)?;
-            self.dominator_validate.record_job(encoder, job)?;
-            self.dominator_child_count.record_job(encoder, job)?;
-            self.dominator_child_scan.record(encoder)?;
-            self.dominator_child_prepare.record_job(encoder, job)?;
-            self.dominator_child_scatter.record_job(encoder, job)?;
-            self.dominator_child_validate.record_job(encoder, job)?;
-            self.dominator_tour_child_rows.record_job(encoder, job)?;
-            self.dominator_tour_init.record_job(encoder, job)?;
-            for _ in 0..jump_pairs.dominator_tour {
-                self.dominator_tour_a_to_b.record_job(encoder, job)?;
-                self.dominator_tour_b_to_a.record_job(encoder, job)?;
-            }
-            self.dominator_tour_finalize.record_job(encoder, job)?;
-            self.dominator_preorder_inverse_scatter.record_job(encoder, job)?;
-            self.dominator_preorder_validate.record_job(encoder, job)?;
-            for _ in 0..jump_pairs.dominator_depth {
-                self.dominator_depth_a_to_b.record_job(encoder, job)?;
-                self.dominator_depth_b_to_a.record_job(encoder, job)?;
-            }
-            self.dominator_depth_finalize.record_job(encoder, job)?;
-            self.dominator_depth_validate.record_job(encoder, job)?;
-        }
+        let analysis_rows = rows.max(capacities.semantic_instructions.saturating_mul(2));
+        let analysis_parallel = analysis_rows > 4096 || self.program_groups_override.is_some();
+        self.control_flow_analysis[usize::from(analysis_parallel)][usize::from(validate_structure)]
+            .record(encoder)?;
         if let Some(split) = split {
             split.submit_prefix(
                 encoder,
@@ -2985,24 +2492,6 @@ impl GpuOptimizationStage {
                 "lowering.optimizer.submission.begin",
                 timer.as_deref_mut(),
             );
-        }
-        if validate_structure {
-            self.region_mark.record_job(encoder, job)?;
-            self.region_scan.record(encoder)?;
-            self.region_function_clear.record_job(encoder, job)?;
-            self.region_scatter.record_job(encoder, job)?;
-            self.region_parent_init.record_job(encoder, job)?;
-            for _ in 0..jump_pairs.region_parent {
-                self.region_parent_a_to_b.record_job(encoder, job)?;
-                self.region_parent_b_to_a.record_job(encoder, job)?;
-            }
-            self.region_finalize.record_job(encoder, job)?;
-            self.region_function_finalize.record_job(encoder, job)?;
-            self.region_ownership_clear.record(encoder)?;
-            self.region_ownership_ranges.record_job(encoder, job)?;
-            self.region_ownership_nodes.record_job(encoder, job)?;
-            self.region_ownership_blocks.record_job(encoder, job)?;
-            self.region_validate_edges.record_job(encoder, job)?;
         }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");

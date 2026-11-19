@@ -3868,7 +3868,8 @@ fn lowering_compiler_graph_builder(
         "step_program_sync",
         ResourceDomain::OptimizationNodes,
         LoweringCapacities::bytes::<u32>(
-            crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS as u32,
+            (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
+                * super::optimization::OPTIMIZATION_PROGRAM_SLOTS) as u32,
         ),
     ))?;
     let opt_scan_group_sums = graph.add_resource(workspace(
@@ -3876,21 +3877,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationNodes,
         LoweringCapacities::bytes::<u32>(256),
     ))?;
-    let opt_block_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.block_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let _opt_block_scan_workspace = graph.add_prefix_scan_workspace(
-        ResourceDomain::OptimizationNodes,
-        u64::from(capacities.semantic_instructions),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.block_scan_local_prefix",
-            block_sum: "lir.opt.block_scan_block_sum",
-        },
-    )?;
     let opt_edge_count_by_block = graph.add_resource(workspace(
         "lir.opt.edge_count_by_block",
         ResourceDomain::OptimizationBlocks,
@@ -3996,21 +3982,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
     ))?;
-    let opt_edge_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.edge_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let _opt_edge_scan_workspace = graph.add_prefix_scan_workspace(
-        ResourceDomain::OptimizationBlocks,
-        u64::from(capacities.optimization_block_capacity()),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.edge_scan_local_prefix",
-            block_sum: "lir.opt.edge_scan_block_sum",
-        },
-    )?;
     let opt_functions = graph.add_resource(ResourceDesc {
         name: "lir.opt.functions",
         domain: ResourceDomain::OptimizationFunctions,
@@ -4584,7 +4555,7 @@ fn lowering_compiler_graph_builder(
         "lowering.status_readback",
         ResourceDomain::ArtifactBytes,
         ResourceClass::External,
-        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 3]>(1),
+        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + super::optimization::OPTIMIZATION_PROGRAM_SLOTS]>(1),
     )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
@@ -5424,7 +5395,7 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.metadata_readback",
                 ResourceDomain::ArtifactBytes,
                 ResourceClass::External,
-                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 3]>(1),
+                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + super::optimization::OPTIMIZATION_PROGRAM_SLOTS]>(1),
             )?,
         })
     } else {
@@ -5746,7 +5717,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::initialize_read_write("opt_ir_predecessor_cursor", opt_predecessor_cursor),
             PassAccess::initialize_read_write("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
             PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
-            PassAccess::write("opt_ir_edge_scan_dispatch_args", opt_edge_scan_dispatch_args),
             PassAccess::initialize_read_write("step_program_sync", step_program_sync),
         ],
     })?;
@@ -5756,567 +5726,59 @@ fn lowering_compiler_graph_builder(
     )?;
     graph.require_complete_reflection("lir.opt.build_control_flow")?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.structure.function_init",
+        name: "lir.opt.analyze_control_flow",
         phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationFunctions,
+        dispatch_domain: ResourceDomain::OptimizationNodes,
         accesses: vec![
             PassAccess::read("semantic_function_total", semantic_function_total),
             PassAccess::read("semantic_functions", semantic_functions),
-            PassAccess::write("opt_ir_functions", opt_functions),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.function_reduce",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
+            PassAccess::initialize_read_write("opt_ir_functions", opt_functions),
             PassAccess::read("opt_ir_total", opt_total),
             PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
             PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read_write("opt_ir_functions", opt_functions),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.structure.function_finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationFunctions,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
             PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read_write("opt_ir_functions", opt_functions),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.reachability.seed",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::read("opt_ir_edge_total", opt_edge_total),
             PassAccess::read("opt_ir_edges", opt_edges),
             PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
             PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::write("opt_ir_reachable", opt_reachable),
-            PassAccess::write(
-                "opt_ir_live_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.reachability.close",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read_write("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write(
-                "opt_ir_live_predecessor_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::read_write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.reachability.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
-            PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.edge_validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationEdges,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.seed",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.resolve",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
-            PassAccess::read("opt_ir_predecessor_edge_ids", opt_predecessor_edge_ids),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read_write("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::write(
-                "opt_ir_dominator_child_count_by_block",
-                opt_edge_count_by_block,
-            ),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.count",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write(
-                "opt_ir_dominator_child_count_by_block",
-                opt_edge_count_by_block,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    super::optimization::OPT_IR_DOMINATOR_CHILD_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.prepare",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
-            PassAccess::write("opt_ir_dominator_child_cursor", opt_edge_count_by_block),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("opt_ir_dominator_child_cursor", opt_edge_count_by_block),
-            PassAccess::write("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_dominator_child_total", opt_predecessor_total),
-            PassAccess::read("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
-            PassAccess::read("opt_ir_dominator_child_cursor", opt_edge_count_by_block),
-            PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::write(
-                "opt_ir_dominator_child_row_by_block",
-                opt_dominator_child_row_by_block,
-            ),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.tour.child_rows",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_dominator_child_total", opt_predecessor_total),
-            PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::write(
-                "opt_ir_dominator_child_row_by_block",
-                opt_dominator_child_row_by_block,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.tour.init",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_dominator_child_total", opt_predecessor_total),
-            PassAccess::read("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
-            PassAccess::read(
-                "opt_ir_dominator_child_row_by_block",
-                opt_dominator_child_row_by_block,
-            ),
-            PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::write("opt_ir_dominator_tour_link_out", opt_dominator_tour_link_a),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    let dominator_tour_jump_pairs = capacities.jump_pairs().dominator_tour;
-    graph.add_repeated_region(
-        dominator_tour_jump_pairs,
-        vec![
-            PassDesc {
-                name: "lir.opt.dominators.tour.step_a_to_b",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationBlocks,
-                accesses: vec![
-                    PassAccess::read("opt_ir_block_total", opt_block_total),
-                    PassAccess::read("opt_ir_dominator_tour_link_in", opt_dominator_tour_link_a),
-                    PassAccess::write("opt_ir_dominator_tour_link_out", opt_dominator_tour_link_b),
-                    PassAccess::read_write("lowering_status", lowering_status),
-                ],
-            },
-            PassDesc {
-                name: "lir.opt.dominators.tour.step_b_to_a",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationBlocks,
-                accesses: vec![
-                    PassAccess::read("opt_ir_block_total", opt_block_total),
-                    PassAccess::read("opt_ir_dominator_tour_link_in", opt_dominator_tour_link_b),
-                    PassAccess::write("opt_ir_dominator_tour_link_out", opt_dominator_tour_link_a),
-                    PassAccess::read_write("lowering_status", lowering_status),
-                ],
-            },
-        ],
-    )?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.tour.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_dominator_child_total", opt_predecessor_total),
-            PassAccess::read("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
-            PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read("opt_ir_dominator_tour_link", opt_dominator_tour_link_a),
-            PassAccess::write("opt_ir_dominator_preorder", opt_dominator_preorder),
-            PassAccess::write("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::write(
-                "opt_ir_block_by_dominator_preorder",
-                opt_block_by_dominator_preorder,
-            ),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.preorder.inverse_scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_dominator_preorder", opt_dominator_preorder),
-            PassAccess::read_write(
-                "opt_ir_block_by_dominator_preorder",
-                opt_block_by_dominator_preorder,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.preorder.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read("opt_ir_dominator_preorder", opt_dominator_preorder),
-            PassAccess::read("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
-            PassAccess::read(
-                "opt_ir_block_by_dominator_preorder",
-                opt_block_by_dominator_preorder,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-            PassAccess::write(
-                "opt_ir_dominator_depth_link_out",
-                opt_dominator_depth_link_a,
-            ),
-        ],
-    })?;
-    let dominator_jump_pairs = capacities.jump_pairs().dominator_depth;
-    graph.add_repeated_region(
-        dominator_jump_pairs,
-        vec![
-            PassDesc {
-                name: "lir.opt.dominators.depth.step_a_to_b",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationBlocks,
-                accesses: vec![
-                    PassAccess::read("opt_ir_block_total", opt_block_total),
-                    PassAccess::read("opt_ir_dominator_depth_link_in", opt_dominator_depth_link_a),
-                    PassAccess::write(
-                        "opt_ir_dominator_depth_link_out",
-                        opt_dominator_depth_link_b,
-                    ),
-                ],
-            },
-            PassDesc {
-                name: "lir.opt.dominators.depth.step_b_to_a",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationBlocks,
-                accesses: vec![
-                    PassAccess::read("opt_ir_block_total", opt_block_total),
-                    PassAccess::read("opt_ir_dominator_depth_link_in", opt_dominator_depth_link_b),
-                    PassAccess::write(
-                        "opt_ir_dominator_depth_link_out",
-                        opt_dominator_depth_link_a,
-                    ),
-                ],
-            },
-        ],
-    )?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.depth.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read("opt_ir_dominator_depth_link", opt_dominator_depth_link_a),
-            PassAccess::write("opt_ir_dominator_depth", opt_dominator_depth),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.depth.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read("opt_ir_dominator_depth", opt_dominator_depth),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.mark",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
+            PassAccess::initialize_read_write("opt_ir_reachable", opt_reachable),
+            PassAccess::initialize_read_write("opt_ir_live_predecessor_count_by_block", opt_edge_count_by_block),
+            PassAccess::initialize_read_write("opt_ir_dead_claim_by_block", opt_dead_claim_by_block),
+            PassAccess::initialize_read_write("opt_ir_immediate_dominator", opt_immediate_dominator),
+            PassAccess::initialize_read_write("opt_ir_dominator_child_prefix", opt_predecessor_cursor),
+            PassAccess::initialize_read_write("opt_ir_dominator_children", opt_dominator_children),
+            PassAccess::initialize_read_write("opt_ir_dominator_child_total", opt_predecessor_total),
+            PassAccess::initialize_read_write("opt_ir_dominator_child_row_by_block", opt_dominator_child_row_by_block),
+            PassAccess::initialize_read_write("opt_ir_dominator_tour_link_a", opt_dominator_tour_link_a),
+            PassAccess::initialize_read_write("opt_ir_dominator_tour_link_b", opt_dominator_tour_link_b),
+            PassAccess::initialize_read_write("opt_ir_dominator_preorder", opt_dominator_preorder),
+            PassAccess::initialize_read_write("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
+            PassAccess::initialize_read_write("opt_ir_block_by_dominator_preorder", opt_block_by_dominator_preorder),
+            PassAccess::initialize_read_write("opt_ir_dominator_depth_link_a", opt_dominator_depth_link_a),
+            PassAccess::initialize_read_write("opt_ir_dominator_depth_link_b", opt_dominator_depth_link_b),
+            PassAccess::initialize_read_write("opt_ir_dominator_depth", opt_dominator_depth),
             PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::write("opt_ir_region_start_flag", opt_block_start_flag),
-            PassAccess::write(
-                "opt_ir_region_scan_dispatch_args",
-                opt_block_scan_dispatch_args,
-            ),
-        ],
-    })?;
-    super::optimization::OPT_IR_REGION_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.function_clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationFunctions,
-        accesses: vec![
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read_write("opt_ir_functions", opt_functions),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_core", opt_core),
+            PassAccess::initialize_read_write("opt_ir_region_start_flag", opt_block_start_flag),
             PassAccess::read("opt_ir_source_hir", opt_source_hir),
             PassAccess::read("opt_ir_position_by_node", opt_position_by_node),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_region_start_flag", opt_block_start_flag),
-            PassAccess::read("opt_ir_region_prefix", opt_block_prefix),
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
+            PassAccess::initialize_read_write("opt_ir_region_prefix", opt_block_prefix),
+            PassAccess::initialize_read_write("opt_ir_region_total", opt_region_total),
             PassAccess::read_write("opt_ir_control", opt_control),
-            PassAccess::write("opt_ir_regions", opt_regions),
-            PassAccess::read_write("lowering_status", lowering_status),
+            PassAccess::initialize_read_write("opt_ir_regions", opt_regions),
+            PassAccess::initialize_read_write("opt_ir_region_parent_link_a", opt_region_parent_link_a),
+            PassAccess::initialize_read_write("opt_ir_region_parent_link_b", opt_region_parent_link_b),
+            PassAccess::initialize_read_write("opt_ir_region_ownership_tree", opt_region_ownership_tree),
+            PassAccess::initialize_read_write("opt_ir_block_region", opt_block_region),
+            PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
+            PassAccess::read_write("step_program_sync", step_program_sync),
         ],
     })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.parent_init",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationRegions,
-        accesses: vec![
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("opt_ir_regions", opt_regions),
-            PassAccess::write("opt_ir_region_parent_link_a", opt_region_parent_link_a),
-        ],
-    })?;
-    let region_parent_pairs = capacities.jump_pairs().region_parent;
-    graph.add_repeated_region(
-        region_parent_pairs,
-        vec![
-            PassDesc {
-                name: "lir.opt.regions.parent_step_a_to_b",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationRegions,
-                accesses: vec![
-                    PassAccess::read("opt_ir_region_total", opt_region_total),
-                    PassAccess::read("opt_ir_regions", opt_regions),
-                    PassAccess::read("opt_ir_region_parent_link_in", opt_region_parent_link_a),
-                    PassAccess::write("opt_ir_region_parent_link_out", opt_region_parent_link_b),
-                ],
-            },
-            PassDesc {
-                name: "lir.opt.regions.parent_step_b_to_a",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationRegions,
-                accesses: vec![
-                    PassAccess::read("opt_ir_region_total", opt_region_total),
-                    PassAccess::read("opt_ir_regions", opt_regions),
-                    PassAccess::read("opt_ir_region_parent_link_in", opt_region_parent_link_b),
-                    PassAccess::write("opt_ir_region_parent_link_out", opt_region_parent_link_a),
-                ],
-            },
-        ],
+    graph.assign_kernel(
+        "lir.opt.analyze_control_flow",
+        "codegen/lir/optimization/analyze_control_flow",
     )?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationRegions,
-        accesses: vec![
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_region_parent_link", opt_region_parent_link_a),
-            PassAccess::read_write("opt_ir_regions", opt_regions),
-            PassAccess::read_write("opt_ir_functions", opt_functions),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.function_finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationFunctions,
-        accesses: vec![
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_regions", opt_regions),
-            PassAccess::read_write("opt_ir_functions", opt_functions),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.ownership.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![PassAccess::write(
-            "opt_ir_region_ownership_tree",
-            opt_region_ownership_tree,
-        )],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.ownership.ranges",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationRegions,
-        accesses: vec![
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("opt_ir_regions", opt_regions),
-            PassAccess::read_write("opt_ir_region_ownership_tree", opt_region_ownership_tree),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.ownership.nodes",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_regions", opt_regions),
-            PassAccess::read("opt_ir_region_ownership_tree", opt_region_ownership_tree),
-            PassAccess::read_write("opt_ir_control", opt_control),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.ownership.blocks",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_region_total", opt_region_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_regions", opt_regions),
-            PassAccess::read("opt_ir_region_ownership_tree", opt_region_ownership_tree),
-            PassAccess::write("opt_ir_block_region", opt_block_region),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.regions.validate_edges",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationEdges,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_edge_total", opt_edge_total),
-            PassAccess::read("semantic_function_total", semantic_function_total),
-            PassAccess::read("opt_ir_blocks", opt_blocks),
-            PassAccess::read("opt_ir_edges", opt_edges),
-            PassAccess::read("opt_ir_functions", opt_functions),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
+    graph.require_complete_reflection("lir.opt.analyze_control_flow")?;
     graph.add_pass(PassDesc {
         name: "lir.opt.access.mark",
         phase: CompilerPhase::Optimization,
@@ -11458,50 +10920,6 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             (
-                "lir.opt.dominators.tour.child_rows",
-                "codegen/lir/optimization/dominance/index_dominator_tour_child_rows",
-            ),
-            (
-                "lir.opt.dominators.tour.init",
-                "codegen/lir/optimization/dominance/seed_dominator_tour",
-            ),
-            (
-                "lir.opt.dominators.tour.step_a_to_b",
-                "codegen/lir/optimization/dominance/propagate_dominator_tour_ranks",
-            ),
-            (
-                "lir.opt.dominators.tour.step_b_to_a",
-                "codegen/lir/optimization/dominance/propagate_dominator_tour_ranks",
-            ),
-            (
-                "lir.opt.dominators.tour.finalize",
-                "codegen/lir/optimization/dominance/publish_dominator_tour",
-            ),
-            (
-                "lir.opt.dominators.preorder.inverse_scatter",
-                "codegen/lir/optimization/dominance/invert_dominator_preorder",
-            ),
-            (
-                "lir.opt.dominators.preorder.validate",
-                "codegen/lir/optimization/dominance/validate_dominator_preorder",
-            ),
-            (
-                "lir.opt.dominators.depth.step_a_to_b",
-                "codegen/lir/optimization/dominance/propagate_dominator_depths",
-            ),
-            (
-                "lir.opt.dominators.depth.step_b_to_a",
-                "codegen/lir/optimization/dominance/propagate_dominator_depths",
-            ),
-            (
-                "lir.opt.dominators.depth.finalize",
-                "codegen/lir/optimization/dominance/publish_dominator_depths",
-            ),
-            (
-                "lir.opt.dominators.depth.validate",
-                "codegen/lir/optimization/dominance/validate_dominator_depths",
-            ),
-            (
                 "lir.opt.access.mark",
                 "codegen/lir/optimization/accesses/mark_local_accesses",
             ),
@@ -11671,16 +11089,8 @@ mod tests {
                 "codegen/lir/optimization/control_flow/build_control_flow",
             ),
             (
-                "lir.opt.structure.function_init",
-                "codegen/lir/optimization/control_flow/seed_control_flow_functions",
-            ),
-            (
-                "lir.opt.structure.function_reduce",
-                "codegen/lir/optimization/control_flow/summarize_control_flow_functions",
-            ),
-            (
-                "lir.opt.structure.function_finalize",
-                "codegen/lir/optimization/control_flow/finalize_control_flow_functions",
+                "lir.opt.analyze_control_flow",
+                "codegen/lir/optimization/analyze_control_flow",
             ),
             (
                 "lir.opt.access.mark",
@@ -11808,16 +11218,8 @@ mod tests {
                 "codegen/lir/optimization/control_flow/build_control_flow",
             ),
             (
-                "lir.opt.structure.function_init",
-                "codegen/lir/optimization/control_flow/seed_control_flow_functions",
-            ),
-            (
-                "lir.opt.structure.function_reduce",
-                "codegen/lir/optimization/control_flow/summarize_control_flow_functions",
-            ),
-            (
-                "lir.opt.structure.function_finalize",
-                "codegen/lir/optimization/control_flow/finalize_control_flow_functions",
+                "lir.opt.analyze_control_flow",
+                "codegen/lir/optimization/analyze_control_flow",
             ),
             (
                 "lir.opt.access.mark",

@@ -228,7 +228,7 @@ impl GpuX86ObjectStage {
         // pipeline copies after it (`metadata_readback()`).
         let metadata_bytes = crate::codegen::lir::lowering_ir::X86_OBJECT_METADATA_BYTES as usize
             + std::mem::size_of::<crate::codegen::lir::lowering_ir::LoweringStatus>()
-            + 12;
+            + 8 + super::super::optimization::OPTIMIZATION_PROGRAM_FAILURE_BYTES;
         let metadata_readback = readback_bytes(
             device,
             "artifact.x86.object.metadata.readback",

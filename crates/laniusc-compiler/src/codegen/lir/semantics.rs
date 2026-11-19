@@ -2473,7 +2473,11 @@ mod tests {
         owners.write(&gpu.queue, 0, &words(&[owner_rows]));
         let order = alias_u32("lir.semantic.schedule_order", capacity as usize);
         order.write(&gpu.queue, 0, &words(&[[0, 1, 2, 3]]));
-        let sync = alias_u32("step_program_sync", crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS);
+        let sync = alias_u32(
+            "step_program_sync",
+            crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
+                * super::super::optimization::OPTIMIZATION_PROGRAM_SLOTS,
+        );
 
         // Use the production graph bindings as well as the production shader:
         // an omitted status binding must fail this boundary test too.

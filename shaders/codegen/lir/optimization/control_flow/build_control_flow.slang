@@ -12,7 +12,6 @@ struct Launch
 
 ConstantBuffer<Launch> program_launch;
 RWStructuredBuffer<uint> scan_group_sums;
-RWStructuredBuffer<uint> opt_ir_edge_scan_dispatch_args;
 
 [shader("compute")]
 [numthreads(STEP_PROGRAM_GROUP_LANES, 1, 1)]
@@ -34,14 +33,6 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 
     uint block_total = opt_ir_block_total[0u];
     uint blocks = min(block_capacity(), block_total);
-    // The separate dominator child scan still consumes an indirect grid.
-    if (program.lane == 0u)
-    {
-        uint child_scan_groups = max(1u, (blocks + 255u) / 256u);
-        opt_ir_edge_scan_dispatch_args[0u] = min(child_scan_groups, 65535u);
-        opt_ir_edge_scan_dispatch_args[1u] = (child_scan_groups + 65534u) / 65535u;
-        opt_ir_edge_scan_dispatch_args[2u] = 1u;
-    }
     for (uint row = program.lane; row < max(1u, nodes); row += program.lanes)
         scatter_control_flow_blocks(row, nodes, block_total);
     if (!step_barrier(program)) return;
