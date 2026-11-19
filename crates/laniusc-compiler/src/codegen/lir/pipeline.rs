@@ -1314,7 +1314,6 @@ impl GpuLoweringPipeline {
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            jump_pairs,
             self.sized_job(job),
             true,
         )?;
@@ -1402,7 +1401,6 @@ impl GpuLoweringPipeline {
             encoder,
             timer.as_deref_mut(),
             Some(split),
-            jump_pairs,
             self.sized_job(job),
             true,
         )?;

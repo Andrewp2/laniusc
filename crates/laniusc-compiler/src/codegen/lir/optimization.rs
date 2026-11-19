@@ -4,10 +4,8 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::{
-    dispatch_sizing::JobSized,
     lowering_ir::{
         LoweringCapacities,
-        LoweringJumpPairs,
         LoweringStatus,
         SemanticLirAggregateElement,
         SemanticLirCallArg,
@@ -46,25 +44,9 @@ use crate::gpu::{
         CompilerGraph,
         CompilerGraphWorkspace,
         CompilerPhase,
-        PrefixScanGraphPasses,
-        PrefixScanPairSpec,
-        PrefixScanResources,
-        PrefixScanSpec,
-        RadixSortGraphPasses,
-        RadixSortGraphStepPasses,
-        ResourceDomain,
     },
     kernels::KernelRegistry,
     operations::{
-        ComputeOperation,
-        PrefixScanOperation,
-        PrefixScanPairOperation,
-        RadixDispatchDomain,
-        RadixSortDefinition,
-        RadixSortDispatch,
-        RadixSortKernels,
-        RadixSortOperation,
-        RadixSortResources,
         STEP_PROGRAM_MAX_GROUPS,
         STEP_PROGRAM_SYNC_WORDS,
         StepProgramOperation,
@@ -73,261 +55,8 @@ use crate::gpu::{
     timer::GpuTimer,
 };
 
-pub(super) const OPT_IR_SSA_VALUE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
-    left_label: "lir.opt.ssa.node_values",
-    right_label: "lir.opt.ssa.block_argument_values",
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationValues,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.values.scan.local",
-        apply: "lir.opt.ssa.values.scan.apply",
-    },
-    left: PrefixScanResources {
-        count: "lir.opt.total",
-        input: "lir.opt.ssa.node_value_flag",
-        output_prefix: "lir.opt.ssa.node_value_flag",
-        total: "lir.opt.ssa.node_value_total",
-        dispatch_args: "lir.opt.ssa.node_value_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.node_value_flag",
-        block_sum: "lir.opt.ssa.node_value_scan_block_sum",
-    },
-    right: PrefixScanResources {
-        count: "lir.opt.ssa.block_argument_total",
-        input: "lir.opt.ssa.block_argument_value_flag",
-        output_prefix: "lir.opt.ssa.block_argument_value_flag",
-        total: "lir.opt.ssa.surviving_block_argument_total",
-        dispatch_args: "lir.opt.ssa.block_argument_value_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.block_argument_value_flag",
-        block_sum: "lir.opt.ssa.block_argument_value_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_SSA_USE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
-    left_label: "lir.opt.ssa.node_uses",
-    right_label: "lir.opt.ssa.call_uses",
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationNodes,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.uses.scan.local",
-        apply: "lir.opt.ssa.uses.scan.apply",
-    },
-    left: PrefixScanResources {
-        count: "lir.opt.total",
-        input: "lir.opt.ssa.node_use_count",
-        output_prefix: "lir.opt.ssa.node_use_count",
-        total: "lir.opt.ssa.node_use_total",
-        dispatch_args: "lir.opt.ssa.node_use_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.node_use_count",
-        block_sum: "lir.opt.ssa.node_use_scan_block_sum",
-    },
-    right: PrefixScanResources {
-        count: "lir.semantic.call_arg_total",
-        input: "lir.opt.ssa.call_use_flag",
-        output_prefix: "lir.opt.ssa.call_use_flag",
-        total: "lir.opt.ssa.call_use_total",
-        dispatch_args: "lir.opt.ssa.call_use_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.call_use_flag",
-        block_sum: "lir.opt.ssa.call_use_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_SSA_AGGREGATE_USE_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationUses,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.aggregate_uses.scan.local",
-        apply: "lir.opt.ssa.aggregate_uses.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.semantic.aggregate_element_total",
-        input: "lir.opt.ssa.aggregate_use_flag",
-        output_prefix: "lir.opt.ssa.aggregate_use_flag",
-        total: "lir.opt.ssa.aggregate_use_total",
-        dispatch_args: "lir.opt.ssa.aggregate_use_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.aggregate_use_flag",
-        block_sum: "lir.opt.ssa.aggregate_use_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_SSA_USE_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationUses,
-    small_pass: "lir.opt.ssa.uses.sort",
-    passes: RadixSortGraphPasses {
-        order_to_temporary: RadixSortGraphStepPasses {
-            histogram: "lir.opt.ssa.uses.sort.histogram.a",
-            bucket_prefix: "lir.opt.ssa.uses.sort.prefix.a",
-            scatter: "lir.opt.ssa.uses.sort.scatter.a",
-        },
-        temporary_to_order: RadixSortGraphStepPasses {
-            histogram: "lir.opt.ssa.uses.sort.histogram.b",
-            bucket_prefix: "lir.opt.ssa.uses.sort.prefix.b",
-            scatter: "lir.opt.ssa.uses.sort.scatter.b",
-        },
-    },
-    kernels: RadixSortKernels::new(
-        "codegen/lir/optimization/uses/count_ssa_use_sort_buckets",
-        "codegen/lir/optimization/uses/scatter_sorted_ssa_uses",
-    ),
-    resources: RadixSortResources {
-        count: "lir.opt.ssa.use_total",
-        order: "lir.opt.ssa.use_order",
-        temporary_order: "lir.opt.ssa.use_order_tmp",
-        histogram: "lir.opt.ssa.use_radix_histogram",
-        bucket_prefix: "lir.opt.ssa.use_radix_bucket_prefix",
-        bucket_total: "lir.opt.ssa.use_radix_bucket_total",
-    },
-    dispatch_args: "lir.opt.ssa.use_radix_dispatch_args",
-};
-
-pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationUses,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.ssa.use_groups.scan.local",
-        apply: "lir.opt.ssa.use_groups.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.ssa.use_total",
-        input: "lir.opt.ssa.use_group_start_flag",
-        output_prefix: "lir.opt.ssa.use_group_start_flag",
-        total: "lir.opt.ssa.use_group_total",
-        dispatch_args: "lir.opt.ssa.use_group_scan_dispatch_args",
-        local_prefix: "lir.opt.ssa.use_group_start_flag",
-        block_sum: "lir.opt.ssa.use_group_scan_block_sum",
-    },
-};
-
-pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 4;
+pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 5;
 pub(super) const OPTIMIZATION_PROGRAM_FAILURE_BYTES: usize = OPTIMIZATION_PROGRAM_SLOTS * 4;
-
-const RADIX_ROWS_PER_BLOCK: u32 = 256;
-const RADIX_BUCKET_COUNT: u32 = 256;
-
-/// Element counts of the optimizer's direct operations for given
-/// capacities (`JobSized`). Each is the count `GpuOptimizationStage::new`
-/// builds the operation with; the build checks that they agree.
-mod opt_extent {
-    use super::LoweringCapacities;
-
-    pub(super) fn semantic(c: LoweringCapacities) -> u32 {
-        c.semantic_instructions.max(1)
-    }
-    pub(super) fn hir(c: LoweringCapacities) -> u32 {
-        c.hir_nodes.max(1)
-    }
-    pub(super) fn block(c: LoweringCapacities) -> u32 {
-        c.optimization_block_capacity()
-    }
-    pub(super) fn access(c: LoweringCapacities) -> u32 {
-        c.optimization_access_capacity()
-    }
-    pub(super) fn ssa_value_mark(c: LoweringCapacities) -> u32 {
-        c.semantic_instructions.max(c.optimization_ssa_demand_capacity()).max(1)
-    }
-    pub(super) fn value(c: LoweringCapacities) -> u32 {
-        c.optimization_value_capacity()
-    }
-    pub(super) fn ssa_operand(c: LoweringCapacities) -> u32 {
-        c.semantic_instructions
-            .max(c.call_arguments)
-            .max(c.aggregate_elements)
-            .max(1)
-    }
-    pub(super) fn incoming(c: LoweringCapacities) -> u32 {
-        c.optimization_ssa_incoming_capacity()
-    }
-    pub(super) fn ssa_validation(c: LoweringCapacities) -> u32 {
-        ssa_operand(c).max(incoming(c))
-    }
-    pub(super) fn use_rows(c: LoweringCapacities) -> u32 {
-        c.optimization_use_capacity()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OptIrAccessRadixLayout {
-    pub subject_bits: u32,
-    pub steps: u32,
-    pub blocks: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OptIrSsaDemandRadixLayout {
-    pub block_bits: u32,
-    pub declaration_bits: u32,
-    pub steps: u32,
-    pub blocks: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OptIrSsaUseRadixLayout {
-    pub key_bits: u32,
-    pub steps: u32,
-    pub blocks: u32,
-}
-
-/// Capacity-derived key layout for stable access grouping.
-///
-/// Metadata rows precede scheduled instruction rows before sorting, so a
-/// stable `(domain, subject)` order preserves control position without adding
-/// it to the radix key. Declaration and memory subjects occupy distinct
-/// domains even when their numeric IDs coincide.
-pub(super) fn opt_ir_access_radix_layout(capacities: LoweringCapacities) -> OptIrAccessRadixLayout {
-    let subject_capacity = capacities
-        .declaration_capacity()
-        .max(capacities.semantic_instructions)
-        .max(1);
-    let max_subject = subject_capacity - 1;
-    let subject_bits = (u32::BITS - max_subject.leading_zeros()).max(1);
-    let steps = (subject_bits + 1).div_ceil(8);
-    let blocks = capacities
-        .optimization_access_capacity()
-        .div_ceil(RADIX_ROWS_PER_BLOCK)
-        .max(1);
-    OptIrAccessRadixLayout {
-        subject_bits,
-        steps,
-        blocks,
-    }
-}
-
-pub(super) fn opt_ir_ssa_demand_radix_layout(
-    capacities: LoweringCapacities,
-) -> OptIrSsaDemandRadixLayout {
-    let max_block = capacities.optimization_block_capacity() - 1;
-    let max_declaration = capacities.declaration_capacity() - 1;
-    let block_bits = (u32::BITS - max_block.leading_zeros()).max(1);
-    let declaration_bits = (u32::BITS - max_declaration.leading_zeros()).max(1);
-    let steps = (block_bits + declaration_bits).div_ceil(8);
-    let blocks = capacities
-        .optimization_ssa_demand_capacity()
-        .div_ceil(RADIX_ROWS_PER_BLOCK)
-        .max(1);
-    OptIrSsaDemandRadixLayout {
-        block_bits,
-        declaration_bits,
-        steps,
-        blocks,
-    }
-}
-
-pub(super) fn opt_ir_ssa_use_radix_layout(
-    capacities: LoweringCapacities,
-) -> OptIrSsaUseRadixLayout {
-    let max_value = capacities.optimization_value_capacity() - 1;
-    let key_bits = (u32::BITS - max_value.leading_zeros()).max(1);
-    let steps = key_bits.div_ceil(8);
-    let blocks = capacities
-        .optimization_use_capacity()
-        .div_ceil(RADIX_ROWS_PER_BLOCK)
-        .max(1);
-    OptIrSsaUseRadixLayout {
-        key_bits,
-        steps,
-        blocks,
-    }
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -349,15 +78,6 @@ struct AccessParams {
     parameter_capacity: u32,
     local_capacity: u32,
     reserved: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-struct UseRadixParams {
-    item_capacity: u32,
-    key_bits: u32,
-    max_blocks: u32,
-    key_step: u32,
 }
 
 #[repr(C)]
@@ -560,37 +280,11 @@ pub(crate) struct GpuOptimizationStage {
     control_flow_analysis: [[StepProgramOperation; 2]; 2],
     declaration_accesses: [[StepProgramOperation; 2]; 2],
     block_arguments: [[StepProgramOperation; 2]; 2],
-    ssa_value_mark: JobSized,
-    ssa_value_scan: PrefixScanPairOperation,
-    ssa_value_scatter: JobSized,
-    ssa_value_validate: JobSized,
-    ssa_value_resolve_init: JobSized,
-    ssa_value_resolve_reads: JobSized,
-    ssa_value_resolve_a_to_b: JobSized,
-    ssa_value_resolve_b_to_a: JobSized,
-    ssa_value_resolve_finalize: JobSized,
-    ssa_value_resolve_validate: JobSized,
-    ssa_operand_rewrite: JobSized,
-    ssa_operand_validate: JobSized,
-    ssa_incoming_rewrite: JobSized,
-    ssa_dominance_validate: JobSized,
-    ssa_use_mark: JobSized,
-    ssa_use_scan: PrefixScanPairOperation,
-    ssa_aggregate_use_scan: PrefixScanOperation,
-    ssa_use_scatter: JobSized,
-    ssa_use_validate: JobSized,
-    ssa_use_sort: RadixSortOperation<UseRadixParams>,
-    ssa_use_sort_validate: JobSized,
-    ssa_use_group_mark: JobSized,
-    ssa_use_group_scan: PrefixScanOperation,
-    ssa_use_group_scatter: JobSized,
-    ssa_use_group_finalize: JobSized,
-    ssa_use_group_validate: JobSized,
+    ssa_values: [[StepProgramOperation; 2]; 2],
     _params: LaniusBuffer<ProjectionParams>,
     _access_params: LaniusBuffer<AccessParams>,
     _ssa_params: LaniusBuffer<SsaParams>,
     _ssa_value_params: LaniusBuffer<SsaValueParams>,
-    _ssa_use_radix_validate_params: LaniusBuffer<UseRadixParams>,
     count: LaniusBuffer<u32>,
     core: LaniusBuffer<OptIrNodeCore>,
     operands: LaniusBuffer<OptIrNodeOperands>,
@@ -671,13 +365,9 @@ pub(crate) struct GpuOptimizationStage {
     _ssa_use_values: LaniusBuffer<u32>,
     _ssa_use_users: LaniusBuffer<u32>,
     _ssa_use_order: LaniusBuffer<u32>,
-    _ssa_use_radix_dispatch_args: LaniusBuffer<u32>,
     _ssa_use_group_start_flag: LaniusBuffer<u32>,
     _ssa_use_group_total: LaniusBuffer<u32>,
     _ssa_use_groups: LaniusBuffer<OptIrUseGroup>,
-    /// The pairs the graph registers for these capacities; a job records
-    /// at most these.
-    jump_pairs: LoweringJumpPairs,
 }
 
 impl GpuOptimizationStage {
@@ -709,7 +399,6 @@ impl GpuOptimizationStage {
         let ssa_walk_capacity = capacities.optimization_ssa_walk_capacity();
         let value_capacity = capacities.optimization_value_capacity();
         let use_capacity = capacities.optimization_use_capacity();
-        let ssa_use_radix = opt_ir_ssa_use_radix_layout(capacities);
         let count = workspace
             .alias(graph, resource("lir.opt.total")?, 1)
             .map_err(anyhow::Error::msg)?;
@@ -1163,9 +852,6 @@ impl GpuOptimizationStage {
                 use_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let ssa_use_radix_dispatch_args = workspace
-            .alias(graph, resource("lir.opt.ssa.use_radix_dispatch_args")?, 3)
-            .map_err(anyhow::Error::msg)?;
         let ssa_use_group_start_flag = workspace
             .alias(
                 graph,
@@ -1303,259 +989,13 @@ impl GpuOptimizationStage {
             "codegen/lir/optimization/demands/build_block_arguments",
             3,
         )?;
-        let ssa_value_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
+        resources.buffer("gParams", &ssa_value_params);
+        let ssa_values = variants(
             &resources,
-            "lir.opt.ssa.values.mark",
-            kernels.kernel("codegen/lir/optimization/values/mark_ssa_values"),
-            &ssa_value_params,
-            capacities.semantic_instructions.max(demand_capacity).max(1),
-        )?, opt_extent::ssa_value_mark, capacities)?;
-        let ssa_value_scan =
-            PrefixScanPairOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_VALUE_SCAN)?;
-        let ssa_value_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.scatter",
-            kernels.kernel("codegen/lir/optimization/values/scatter_ssa_values"),
-            &ssa_value_params,
-            value_capacity,
-        )?, opt_extent::value, capacities)?;
-        let ssa_value_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.validate",
-            kernels.kernel("codegen/lir/optimization/values/validate_ssa_values"),
-            &ssa_value_params,
-            value_capacity,
-        )?, opt_extent::value, capacities)?;
-        let ssa_value_resolve_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.init",
-            kernels.kernel("codegen/lir/optimization/values/seed_ssa_value_resolution"),
-            &ssa_value_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let ssa_value_resolve_reads = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.reads",
-            kernels.kernel("codegen/lir/optimization/values/resolve_ssa_value_reads"),
-            &ssa_value_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let ssa_value_resolve_a_to_b = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.step_a_to_b",
-            kernels.kernel("codegen/lir/optimization/values/propagate_ssa_value_resolutions"),
-            &ssa_value_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let ssa_value_resolve_b_to_a = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.step_b_to_a",
-            kernels.kernel("codegen/lir/optimization/values/propagate_ssa_value_resolutions"),
-            &ssa_value_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let ssa_value_resolve_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.finalize",
-            kernels.kernel("codegen/lir/optimization/values/publish_ssa_value_resolutions"),
-            &ssa_value_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let ssa_value_resolve_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.values.resolve.validate",
-            kernels.kernel("codegen/lir/optimization/values/validate_ssa_value_resolutions"),
-            &ssa_value_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let ssa_operand_capacity = capacities
-            .semantic_instructions
-            .max(capacities.call_arguments)
-            .max(capacities.aggregate_elements)
-            .max(1);
-        let ssa_operand_rewrite = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.operands.rewrite",
-            kernels.kernel("codegen/lir/optimization/operands/rewrite_operands_to_ssa_values"),
-            &ssa_value_params,
-            ssa_operand_capacity,
-        )?, opt_extent::ssa_operand, capacities)?;
-        let ssa_operand_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.operands.validate",
-            kernels.kernel("codegen/lir/optimization/operands/validate_ssa_operands"),
-            &ssa_value_params,
-            ssa_operand_capacity,
-        )?, opt_extent::ssa_operand, capacities)?;
-        let ssa_incoming_rewrite = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.incoming.rewrite",
-            kernels.kernel("codegen/lir/optimization/operands/rewrite_incoming_block_values"),
-            &ssa_value_params,
-            incoming_capacity,
-        )?, opt_extent::incoming, capacities)?;
-        let ssa_validation_capacity = capacities
-            .semantic_instructions
-            .max(capacities.call_arguments)
-            .max(capacities.aggregate_elements)
-            .max(incoming_capacity)
-            .max(1);
-        let ssa_dominance_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.dominance.validate",
-            kernels.kernel("codegen/lir/optimization/dominance/validate_operand_dominance"),
-            &ssa_value_params,
-            ssa_validation_capacity,
-        )?, opt_extent::ssa_validation, capacities)?;
-        let ssa_use_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.uses.mark",
-            kernels.kernel("codegen/lir/optimization/uses/mark_ssa_value_uses"),
-            &ssa_value_params,
-            capacities
-                .semantic_instructions
-                .max(capacities.call_arguments)
-                .max(capacities.aggregate_elements)
-                .max(1),
-        )?, opt_extent::ssa_operand, capacities)?;
-        let ssa_use_scan =
-            PrefixScanPairOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_USE_SCAN)?;
-        let ssa_aggregate_use_scan = PrefixScanOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_SSA_AGGREGATE_USE_SCAN,
+            "lir.opt.build_ssa_values",
+            "codegen/lir/optimization/build_ssa_values",
+            4,
         )?;
-        let ssa_use_dispatch_capacity = capacities
-            .semantic_instructions
-            .max(capacities.call_arguments)
-            .max(capacities.aggregate_elements)
-            .max(incoming_capacity)
-            .max(1);
-        let ssa_use_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.uses.scatter",
-            kernels.kernel("codegen/lir/optimization/uses/scatter_ssa_value_uses"),
-            &ssa_value_params,
-            ssa_use_dispatch_capacity,
-        )?, opt_extent::ssa_validation, capacities)?;
-        let ssa_use_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.uses.validate",
-            kernels.kernel("codegen/lir/optimization/uses/validate_ssa_value_uses"),
-            &ssa_value_params,
-            ssa_use_dispatch_capacity,
-        )?, opt_extent::ssa_validation, capacities)?;
-        let ssa_use_sort = OPT_IR_SSA_USE_RADIX_SORT.operation(
-            device,
-            kernels,
-            &resources,
-            use_capacity,
-            0,
-            ssa_use_radix.steps,
-            RadixSortDispatch {
-                small: RadixDispatchDomain::Direct(1),
-                rows: RadixDispatchDomain::Indirect(&ssa_use_radix_dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Direct(
-                    RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
-                ),
-            },
-            |key_step| UseRadixParams {
-                item_capacity: use_capacity,
-                key_bits: ssa_use_radix.key_bits,
-                max_blocks: ssa_use_radix.blocks,
-                key_step,
-            },
-        )?;
-        let ssa_use_radix_validate_params = uniform_from_val(
-            device,
-            "lir.opt.ssa.uses.sort.validate.params",
-            &UseRadixParams {
-                item_capacity: use_capacity,
-                key_bits: ssa_use_radix.key_bits,
-                max_blocks: ssa_use_radix.blocks,
-                key_step: 0,
-            },
-        );
-        let ssa_use_sort_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.uses.sort.validate",
-            kernels.kernel("codegen/lir/optimization/uses/validate_sorted_ssa_uses"),
-            &ssa_use_radix_validate_params,
-            use_capacity,
-        )?, opt_extent::use_rows, capacities)?;
-        let ssa_use_group_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.use_groups.mark",
-            kernels.kernel("codegen/lir/optimization/uses/mark_ssa_use_groups"),
-            &ssa_value_params,
-            use_capacity,
-        )?, opt_extent::use_rows, capacities)?;
-        let ssa_use_group_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_SSA_USE_GROUP_SCAN)?;
-        let ssa_use_group_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.use_groups.scatter",
-            kernels.kernel("codegen/lir/optimization/uses/scatter_ssa_use_groups"),
-            &ssa_value_params,
-            use_capacity,
-        )?, opt_extent::use_rows, capacities)?;
-        let ssa_use_group_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.use_groups.finalize",
-            kernels.kernel("codegen/lir/optimization/uses/finalize_ssa_use_groups"),
-            &ssa_value_params,
-            value_capacity,
-        )?, opt_extent::value, capacities)?;
-        let ssa_use_group_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.ssa.use_groups.validate",
-            kernels.kernel("codegen/lir/optimization/uses/validate_ssa_use_groups"),
-            &ssa_value_params,
-            use_capacity,
-        )?, opt_extent::use_rows, capacities)?;
 
         Ok(Self {
             control_flow,
@@ -1565,37 +1005,11 @@ impl GpuOptimizationStage {
             control_flow_analysis,
             declaration_accesses,
             block_arguments,
-            ssa_value_mark,
-            ssa_value_scan,
-            ssa_value_scatter,
-            ssa_value_validate,
-            ssa_value_resolve_init,
-            ssa_value_resolve_reads,
-            ssa_value_resolve_a_to_b,
-            ssa_value_resolve_b_to_a,
-            ssa_value_resolve_finalize,
-            ssa_value_resolve_validate,
-            ssa_operand_rewrite,
-            ssa_operand_validate,
-            ssa_incoming_rewrite,
-            ssa_dominance_validate,
-            ssa_use_mark,
-            ssa_use_scan,
-            ssa_aggregate_use_scan,
-            ssa_use_scatter,
-            ssa_use_validate,
-            ssa_use_sort,
-            ssa_use_sort_validate,
-            ssa_use_group_mark,
-            ssa_use_group_scan,
-            ssa_use_group_scatter,
-            ssa_use_group_finalize,
-            ssa_use_group_validate,
+            ssa_values,
             _params: params,
             _access_params: access_params,
             _ssa_params: ssa_params,
             _ssa_value_params: ssa_value_params,
-            _ssa_use_radix_validate_params: ssa_use_radix_validate_params,
             count,
             core,
             operands,
@@ -1676,11 +1090,9 @@ impl GpuOptimizationStage {
             _ssa_use_values: ssa_use_values,
             _ssa_use_users: ssa_use_users,
             _ssa_use_order: ssa_use_order,
-            _ssa_use_radix_dispatch_args: ssa_use_radix_dispatch_args,
             _ssa_use_group_start_flag: ssa_use_group_start_flag,
             _ssa_use_group_total: ssa_use_group_total,
             _ssa_use_groups: ssa_use_groups,
-            jump_pairs: capacities.jump_pairs(),
         })
     }
 
@@ -1690,32 +1102,19 @@ impl GpuOptimizationStage {
         encoder: &mut wgpu::CommandEncoder,
         timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.record_for_job(encoder, timer, None, self.jump_pairs, None, true)
+        self.record_for_job(encoder, timer, None, None, true)
     }
 
-    /// Records the optimizer with a job's pointer-jump pairs
-    /// (`LoweringCapacities::job_jump_pairs`), capped at the built ones, and
-    /// its direct operations' grids for the job's capacities
-    /// (`LoweringCapacities::for_job`; `None` keeps the built grids).
-    /// `validate_structure: false` leaves out the dispatches that only check
-    /// the optimizer's own results: every `*_validate` pass, and the
-    /// dominator and region trees, which only validators read. A valid
-    /// program lowers to the same bytes either way.
-    ///
-    /// With `split`, everything recorded before the optimizer's region tree
-    /// (the caller's earlier stages included) is submitted as
-    /// `compile.lowering.semantic`, so the GPU runs the first part of the
-    /// optimizer while the host records and finishes the rest.
+    /// Records each program with the active job's group count. The CFG
+    /// programs can be submitted with the earlier semantic lowering work.
     pub(crate) fn record_for_job(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
         split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
-        jump_pairs: LoweringJumpPairs,
         job: Option<LoweringCapacities>,
         validate_structure: bool,
     ) -> Result<()> {
-        let jump_pairs = jump_pairs.min(self.jump_pairs);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Optimization);
         }
@@ -1748,54 +1147,11 @@ impl GpuOptimizationStage {
         let argument_parallel = argument_rows > 4096 || self.program_groups_override.is_some();
         self.block_arguments[usize::from(argument_parallel)][usize::from(validate_structure)]
             .record(encoder)?;
-        self.ssa_value_mark.record_job(encoder, job)?;
-        self.ssa_value_scan.record(encoder)?;
-        self.ssa_value_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_value_validate.record_job(encoder, job)?;
-        }
-        self.ssa_value_resolve_init.record_job(encoder, job)?;
-        self.ssa_value_resolve_reads.record_job(encoder, job)?;
-        for _ in 0..jump_pairs.ssa_value_link {
-            self.ssa_value_resolve_a_to_b.record_job(encoder, job)?;
-            self.ssa_value_resolve_b_to_a.record_job(encoder, job)?;
-        }
-        self.ssa_value_resolve_finalize.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_value_resolve_validate.record_job(encoder, job)?;
-        }
-        self.ssa_operand_rewrite.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_operand_validate.record_job(encoder, job)?;
-        }
-        self.ssa_incoming_rewrite.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_dominance_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.ssa_values.done");
-        }
-        self.ssa_use_mark.record_job(encoder, job)?;
-        self.ssa_use_scan.record(encoder)?;
-        self.ssa_aggregate_use_scan.record(encoder)?;
-        self.ssa_use_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_use_validate.record_job(encoder, job)?;
-        }
-        self.ssa_use_sort.record(encoder)?;
-        if validate_structure {
-            self.ssa_use_sort_validate.record_job(encoder, job)?;
-        }
-        self.ssa_use_group_mark.record_job(encoder, job)?;
-        self.ssa_use_group_scan.record(encoder)?;
-        self.ssa_use_group_scatter.record_job(encoder, job)?;
-        self.ssa_use_group_finalize.record_job(encoder, job)?;
-        if validate_structure {
-            self.ssa_use_group_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.ssa_uses.done");
-        }
+        let value_rows = capacities.optimization_value_capacity()
+            .max(capacities.optimization_use_capacity());
+        let value_parallel = value_rows > 4096 || self.program_groups_override.is_some();
+        self.ssa_values[usize::from(value_parallel)][usize::from(validate_structure)]
+            .record(encoder)?;
         Ok(())
     }
 
@@ -1878,68 +1234,4 @@ pub(super) fn lowering_allocations_with_opt(
     import!("lir.semantic.locals", metadata.locals);
     import!("lir.semantic.local_total", metadata.local_count);
     Ok(allocations)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn capacities(
-        semantic_instructions: u32,
-        tokens: u32,
-        hir_nodes: u32,
-        parameters: u32,
-    ) -> LoweringCapacities {
-        LoweringCapacities {
-            source_bytes: 1,
-            tokens,
-            hir_nodes,
-            semantic_instructions,
-            call_arguments: 1,
-            parameters,
-            aggregate_elements: 1,
-            target_instructions: 1,
-            artifact_bytes: 1,
-        }
-    }
-
-    #[test]
-    fn access_radix_key_uses_only_significant_subject_and_domain_bits() {
-        let seven_subject_bits = opt_ir_access_radix_layout(capacities(128, 1, 1, 1));
-        assert_eq!(seven_subject_bits.subject_bits, 7);
-        assert_eq!(seven_subject_bits.steps, 1);
-
-        let eight_subject_bits = opt_ir_access_radix_layout(capacities(129, 1, 1, 1));
-        assert_eq!(eight_subject_bits.subject_bits, 8);
-        assert_eq!(eight_subject_bits.steps, 2);
-
-        let full_width = opt_ir_access_radix_layout(capacities(u32::MAX, 1, 1, 1));
-        assert_eq!(full_width.subject_bits, 32);
-        assert_eq!(full_width.steps, 5);
-    }
-
-    #[test]
-    fn access_radix_layout_does_not_restore_the_old_4096_block_limit() {
-        let layout = opt_ir_access_radix_layout(capacities(2_000_000, 1, 1, 1));
-        assert!(layout.blocks > 4096);
-        assert_eq!(layout.blocks, 2_000_004u32.div_ceil(256));
-    }
-
-    #[test]
-    fn ssa_use_radix_layout_covers_its_capacity_without_a_block_ceiling() {
-        for semantic_instructions in [1, 257, 2_000_000] {
-            let capacities = capacities(semantic_instructions, 1, 1, 1);
-            let layout = opt_ir_ssa_use_radix_layout(capacities);
-            let value_capacity = capacities.optimization_value_capacity();
-            let max_value = value_capacity - 1;
-            let required_bits = (u32::BITS - max_value.leading_zeros()).max(1);
-            assert_eq!(layout.key_bits, required_bits);
-            assert_eq!(layout.steps, required_bits.div_ceil(8));
-            assert_eq!(
-                layout.blocks,
-                capacities.optimization_use_capacity().div_ceil(256)
-            );
-        }
-        assert!(opt_ir_ssa_use_radix_layout(capacities(2_000_000, 1, 1, 1)).blocks > 4096);
-    }
 }

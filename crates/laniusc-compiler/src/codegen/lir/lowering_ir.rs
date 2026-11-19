@@ -4370,21 +4370,16 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationUses,
         LoweringCapacities::bytes::<u32>(capacities.optimization_use_capacity()),
     ))?;
-    let opt_ssa_use_radix = graph.add_radix_sort_resources(
-        opt_ssa_use_total,
-        vec![opt_ssa_use_values],
+    let opt_ssa_use_radix = add_step_radix_resources(
+        &mut graph,
         ResourceDomain::OptimizationUses,
-        u64::from(capacities.optimization_use_capacity()),
-        256,
-        256,
-        RadixSortGraphResourceNames {
-            order: "lir.opt.ssa.use_order",
-            temporary_order: "lir.opt.ssa.use_order_tmp",
-            dispatch_args: "lir.opt.ssa.use_radix_dispatch_args",
-            histogram: "lir.opt.ssa.use_radix_histogram",
-            bucket_prefix: "lir.opt.ssa.use_radix_bucket_prefix",
-            bucket_total: "lir.opt.ssa.use_radix_bucket_total",
-        },
+        capacities.optimization_use_capacity(),
+        [
+            "lir.opt.ssa.use_order",
+            "lir.opt.ssa.use_order_tmp",
+            "lir.opt.ssa.use_radix_histogram",
+            "lir.opt.ssa.use_radix_bucket_total",
+        ],
     )?;
     let opt_ssa_use_group_start_flag = graph.add_resource(workspace(
         "lir.opt.ssa.use_group_start_flag",
@@ -4401,102 +4396,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationUses,
         LoweringCapacities::bytes::<OptIrUseGroup>(capacities.optimization_value_capacity()),
     ))?;
-    let opt_ssa_use_group_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.use_group_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let _opt_ssa_use_group_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_use_group_start_flag,
-        ResourceDomain::OptimizationUses,
-        u64::from(capacities.optimization_use_capacity()),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.use_group_start_flag",
-            block_sum: "lir.opt.ssa.use_group_scan_block_sum",
-        },
-    )?;
-    let _opt_ssa_node_use_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.node_use_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let opt_ssa_call_use_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.call_use_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let opt_ssa_aggregate_use_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.aggregate_use_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let _opt_ssa_node_use_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_node_use_count,
-        ResourceDomain::OptimizationNodes,
-        u64::from(capacities.semantic_instructions),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.node_use_count",
-            block_sum: "lir.opt.ssa.node_use_scan_block_sum",
-        },
-    )?;
-    let _opt_ssa_call_use_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_call_use_flag,
-        ResourceDomain::CallArguments,
-        u64::from(capacities.call_arguments),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.call_use_flag",
-            block_sum: "lir.opt.ssa.call_use_scan_block_sum",
-        },
-    )?;
-    let _opt_ssa_aggregate_use_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_aggregate_use_flag,
-        ResourceDomain::AggregateElements,
-        u64::from(capacities.aggregate_elements),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.aggregate_use_flag",
-            block_sum: "lir.opt.ssa.aggregate_use_scan_block_sum",
-        },
-    )?;
-    let opt_ssa_node_value_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.node_value_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let opt_ssa_block_argument_value_scan_dispatch_args = graph.add_indirect_storage(
-        "lir.opt.ssa.block_argument_value_scan_dispatch_args",
-        ResourceDomain::DispatchArguments,
-        ResourceClass::Workspace,
-        12,
-    )?;
-    let _opt_ssa_node_value_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_node_value_flag,
-        ResourceDomain::OptimizationNodes,
-        u64::from(capacities.semantic_instructions),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.node_value_flag",
-            block_sum: "lir.opt.ssa.node_value_scan_block_sum",
-        },
-    )?;
-    let _opt_ssa_block_argument_value_scan_workspace = graph.add_in_place_prefix_scan_workspace(
-        opt_ssa_block_argument_value_flag,
-        ResourceDomain::OptimizationSsaBlockArguments,
-        u64::from(capacities.optimization_ssa_demand_capacity()),
-        256,
-        crate::gpu::compiler_graph::PrefixScanWorkspace {
-            local_prefix: "lir.opt.ssa.block_argument_value_flag",
-            block_sum: "lir.opt.ssa.block_argument_value_scan_block_sum",
-        },
-    )?;
     // The status, then the job's semantic and target row totals.
     let lowering_status_readback = graph.add_storage(
         "lowering.status_readback",
@@ -5834,717 +5733,83 @@ fn lowering_compiler_graph_builder(
     )?;
     graph.require_complete_reflection("lir.opt.build_block_arguments")?;
     graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.mark",
+        name: "lir.opt.build_ssa_values",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationValues,
         accesses: vec![
             PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::read("opt_ir_control", opt_control),
             PassAccess::read("opt_ir_reachable", opt_reachable),
+            PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
+            PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
             PassAccess::read("opt_ir_total", opt_total),
             PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::write("opt_ir_ssa_node_value_flag", opt_ssa_node_value_flag),
-            PassAccess::write(
-                "opt_ir_ssa_block_argument_value_flag",
-                opt_ssa_block_argument_value_flag,
-            ),
-            PassAccess::write(
-                "opt_ir_ssa_node_value_scan_dispatch_args",
-                opt_ssa_node_value_scan_dispatch_args,
-            ),
-            PassAccess::write(
-                "opt_ir_ssa_block_argument_value_scan_dispatch_args",
-                opt_ssa_block_argument_value_scan_dispatch_args,
-            ),
+            PassAccess::read("opt_ir_ssa_block_argument_total", opt_ssa_block_argument_total),
+            PassAccess::read("opt_ir_ssa_block_argument_replacement", opt_ssa_block_argument_replacement),
+            PassAccess::initialize_read_write("opt_ir_ssa_node_value_flag", opt_ssa_node_value_flag),
+            PassAccess::initialize_read_write("opt_ir_ssa_block_argument_value_flag", opt_ssa_block_argument_value_flag),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    super::optimization::OPT_IR_SSA_VALUE_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationValues,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
             PassAccess::read("semantic_param_total", semantic_param_total),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read("opt_ir_ssa_node_value_flag", opt_ssa_node_value_flag),
-            PassAccess::read("opt_ir_ssa_node_value_total", opt_ssa_node_value_total),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_value_flag",
-                opt_ssa_block_argument_value_flag,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_surviving_block_argument_total",
-                opt_ssa_surviving_block_argument_total,
-            ),
+            PassAccess::initialize_read_write("opt_ir_ssa_node_value_total", opt_ssa_node_value_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_surviving_block_argument_total", opt_ssa_surviving_block_argument_total),
             PassAccess::read_write("opt_ir_results", opt_results),
-            PassAccess::write("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::write("opt_ir_ssa_value_definitions", opt_ssa_value_definitions),
-            PassAccess::write(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationValues,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("semantic_param_total", semantic_param_total),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_results", opt_results),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::read("opt_ir_ssa_node_value_flag", opt_ssa_node_value_flag),
-            PassAccess::read("opt_ir_ssa_node_value_total", opt_ssa_node_value_total),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_value_flag",
-                opt_ssa_block_argument_value_flag,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_surviving_block_argument_total",
-                opt_ssa_surviving_block_argument_total,
-            ),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read("opt_ir_ssa_value_definitions", opt_ssa_value_definitions),
-            PassAccess::read(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.resolve.init",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_results", opt_results),
-            PassAccess::write("opt_ir_ssa_value_link_out", opt_ssa_value_link_a),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.resolve.reads",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationAccesses,
-        accesses: vec![
-            PassAccess::read("semantic_param_total", semantic_param_total),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
+            PassAccess::initialize_read_write("opt_ir_ssa_value_total", opt_ssa_value_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_value_definitions", opt_ssa_value_definitions),
+            PassAccess::initialize_read_write("opt_ir_ssa_value_by_block_argument", opt_ssa_value_by_block_argument),
+            PassAccess::initialize_read_write("opt_ir_ssa_value_link_a", opt_ssa_value_link_a),
             PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_results", opt_results),
             PassAccess::read("opt_ir_access_total", opt_access_total),
             PassAccess::read("opt_ir_accesses", opt_accesses),
             PassAccess::read("opt_ir_access_source_rows", opt_access_source_rows),
             PassAccess::read("opt_ir_access_kinds", opt_access_kinds),
-            PassAccess::read(
-                "opt_ir_local_definition_by_access",
-                opt_local_definition_by_access,
-            ),
-            PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
-            PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
+            PassAccess::read("opt_ir_local_definition_by_access", opt_local_definition_by_access),
             PassAccess::read("opt_ir_ssa_demand_resolutions", opt_ssa_demand_resolutions),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::read_write("opt_ir_ssa_value_link_out", opt_ssa_value_link_a),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    let value_link_jump_pairs = capacities.jump_pairs().ssa_value_link;
-    graph.add_repeated_region(
-        value_link_jump_pairs,
-        vec![
-            PassDesc {
-                name: "lir.opt.ssa.values.resolve.step_a_to_b",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationNodes,
-                accesses: vec![
-                    PassAccess::read("opt_ir_total", opt_total),
-                    PassAccess::read("opt_ir_ssa_value_link_in", opt_ssa_value_link_a),
-                    PassAccess::write("opt_ir_ssa_value_link_out", opt_ssa_value_link_b),
-                ],
-            },
-            PassDesc {
-                name: "lir.opt.ssa.values.resolve.step_b_to_a",
-                phase: CompilerPhase::Optimization,
-                dispatch_domain: ResourceDomain::OptimizationNodes,
-                accesses: vec![
-                    PassAccess::read("opt_ir_total", opt_total),
-                    PassAccess::read("opt_ir_ssa_value_link_in", opt_ssa_value_link_b),
-                    PassAccess::write("opt_ir_ssa_value_link_out", opt_ssa_value_link_a),
-                ],
-            },
-        ],
-    )?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.resolve.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read("opt_ir_ssa_value_link_in", opt_ssa_value_link_a),
-            PassAccess::read_write("opt_ir_results", opt_results),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.values.resolve.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationAccesses,
-        accesses: vec![
-            PassAccess::read("semantic_param_total", semantic_param_total),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_results", opt_results),
-            PassAccess::read("opt_ir_access_total", opt_access_total),
-            PassAccess::read("opt_ir_accesses", opt_accesses),
-            PassAccess::read("opt_ir_access_source_rows", opt_access_source_rows),
-            PassAccess::read("opt_ir_access_kinds", opt_access_kinds),
-            PassAccess::read(
-                "opt_ir_local_definition_by_access",
-                opt_local_definition_by_access,
-            ),
-            PassAccess::read("opt_ir_ssa_demand_total", opt_ssa_demand_total),
-            PassAccess::read("opt_ir_ssa_demands", opt_ssa_demands),
-            PassAccess::read("opt_ir_ssa_demand_resolutions", opt_ssa_demand_resolutions),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.operands.rewrite",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_results", opt_results),
             PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read(
-                "semantic_lir_call_arg_count_by_hir",
-                semantic_call_arg_counts_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_start_by_hir",
-                semantic_call_arg_prefix_by_hir,
-            ),
+            PassAccess::read("semantic_lir_call_arg_count_by_hir", semantic_call_arg_counts_by_hir),
+            PassAccess::read("semantic_lir_call_arg_start_by_hir", semantic_call_arg_prefix_by_hir),
             PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::write("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::write(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::write(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.operands.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_results", opt_results),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read(
-                "semantic_lir_call_arg_count_by_hir",
-                semantic_call_arg_counts_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_start_by_hir",
-                semantic_call_arg_prefix_by_hir,
-            ),
-            PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::read(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.incoming.rewrite",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationSsaIncomingValues,
-        accesses: vec![
-            PassAccess::read("semantic_param_total", semantic_param_total),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_results", opt_results),
-            PassAccess::read("opt_ir_access_total", opt_access_total),
-            PassAccess::read("opt_ir_access_source_rows", opt_access_source_rows),
-            PassAccess::read("opt_ir_access_kinds", opt_access_kinds),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
-            PassAccess::read("opt_ir_ssa_block_arguments", opt_ssa_block_arguments),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming_total",
-                opt_ssa_block_argument_incoming_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming",
-                opt_ssa_block_argument_incoming,
-            ),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::write("opt_ir_ssa_incoming_values", opt_ssa_incoming_values),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.dominance.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationValues,
-        accesses: vec![
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("semantic_param_total", semantic_param_total),
+            PassAccess::read("semantic_lir_aggregate_element_total", semantic_aggregate_element_total),
+            PassAccess::read("semantic_lir_aggregate_elements", semantic_aggregate_elements),
+            PassAccess::initialize_read_write("opt_ir_ssa_operands", opt_ssa_operands),
+            PassAccess::initialize_read_write("opt_ir_ssa_call_argument_values", opt_ssa_call_argument_values),
+            PassAccess::initialize_read_write("opt_ir_ssa_aggregate_element_values", opt_ssa_aggregate_element_values),
+            PassAccess::read("opt_ir_ssa_block_argument_incoming_total", opt_ssa_block_argument_incoming_total),
+            PassAccess::read("opt_ir_ssa_block_argument_incoming", opt_ssa_block_argument_incoming),
+            PassAccess::initialize_read_write("opt_ir_ssa_incoming_values", opt_ssa_incoming_values),
             PassAccess::read("semantic_params", semantic_params),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_operands", opt_operands),
-            PassAccess::read("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_results", opt_results),
             PassAccess::read("opt_ir_position_by_node", opt_position_by_node),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::read("opt_ir_edges", opt_edges),
             PassAccess::read("opt_ir_dominator_preorder", opt_dominator_preorder),
             PassAccess::read("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
-            PassAccess::read("opt_ir_access_total", opt_access_total),
-            PassAccess::read("opt_ir_access_source_rows", opt_access_source_rows),
-            PassAccess::read("opt_ir_access_kinds", opt_access_kinds),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_total",
-                opt_ssa_block_argument_total,
-            ),
             PassAccess::read("opt_ir_ssa_block_arguments", opt_ssa_block_arguments),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_replacement",
-                opt_ssa_block_argument_replacement,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming_total",
-                opt_ssa_block_argument_incoming_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming",
-                opt_ssa_block_argument_incoming,
-            ),
-            PassAccess::read("opt_ir_ssa_incoming_values", opt_ssa_incoming_values),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read("opt_ir_ssa_value_definitions", opt_ssa_value_definitions),
-            PassAccess::read(
-                "opt_ir_ssa_value_by_block_argument",
-                opt_ssa_value_by_block_argument,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_count_by_hir",
-                semantic_call_arg_counts_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_start_by_hir",
-                semantic_call_arg_prefix_by_hir,
-            ),
-            PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.uses.mark",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationNodes,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
             PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
-            PassAccess::read(
-                "semantic_lir_call_arg_count_by_hir",
-                semantic_call_arg_counts_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_start_by_hir",
-                semantic_call_arg_prefix_by_hir,
-            ),
-            PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::write("opt_ir_ssa_node_use_count", opt_ssa_node_use_count),
-            PassAccess::write(
-                "opt_ir_ssa_node_use_scan_dispatch_args",
-                _opt_ssa_node_use_scan_dispatch_args,
-            ),
-            PassAccess::write("opt_ir_ssa_call_use_flag", opt_ssa_call_use_flag),
-            PassAccess::write(
-                "opt_ir_ssa_call_use_scan_dispatch_args",
-                opt_ssa_call_use_scan_dispatch_args,
-            ),
-            PassAccess::write("opt_ir_ssa_aggregate_use_flag", opt_ssa_aggregate_use_flag),
-            PassAccess::write(
-                "opt_ir_ssa_aggregate_use_scan_dispatch_args",
-                opt_ssa_aggregate_use_scan_dispatch_args,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
+            PassAccess::initialize_read_write("opt_ir_ssa_node_use_count", opt_ssa_node_use_count),
+            PassAccess::initialize_read_write("opt_ir_ssa_call_use_flag", opt_ssa_call_use_flag),
+            PassAccess::initialize_read_write("opt_ir_ssa_aggregate_use_flag", opt_ssa_aggregate_use_flag),
+            PassAccess::initialize_read_write("opt_ir_ssa_node_use_total", opt_ssa_node_use_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_call_use_total", opt_ssa_call_use_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_aggregate_use_total", opt_ssa_aggregate_use_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_total", opt_ssa_use_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_values", opt_ssa_use_values),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_users", opt_ssa_use_users),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_group_start_flag", opt_ssa_use_group_start_flag),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_groups", opt_ssa_use_groups),
+            PassAccess::initialize_read_write("opt_ir_ssa_use_group_total", opt_ssa_use_group_total),
+            PassAccess::initialize_read_write("opt_ir_ssa_value_link_b", opt_ssa_value_link_b),
+            PassAccess::initialize_read_write("use_order_temporary", opt_ssa_use_radix.temporary_order),
+            PassAccess::initialize_read_write("use_histogram", opt_ssa_use_radix.histogram),
+            PassAccess::initialize_read_write("use_bucket_total", opt_ssa_use_radix.bucket_total),
+            PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
+            PassAccess::read_write("step_program_sync", step_program_sync),
         ],
     })?;
-    super::optimization::OPT_IR_SSA_USE_SCAN.register(&mut graph, 1)?;
-    super::optimization::OPT_IR_SSA_AGGREGATE_USE_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.uses.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::read("opt_ir_ssa_node_use_prefix", opt_ssa_node_use_count),
-            PassAccess::read("opt_ir_ssa_node_use_total", opt_ssa_node_use_total),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
-            PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::read("opt_ir_ssa_call_use_prefix", opt_ssa_call_use_flag),
-            PassAccess::read("opt_ir_ssa_call_use_total", opt_ssa_call_use_total),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_use_prefix",
-                opt_ssa_aggregate_use_flag,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_use_total",
-                opt_ssa_aggregate_use_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming_total",
-                opt_ssa_block_argument_incoming_total,
-            ),
-            PassAccess::read("opt_ir_ssa_incoming_values", opt_ssa_incoming_values),
-            PassAccess::write("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::write("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::write("opt_ir_ssa_use_users", opt_ssa_use_users),
-            PassAccess::write(
-                "opt_ir_ssa_use_radix_dispatch_args",
-                opt_ssa_use_radix.dispatch_args,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.uses.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_control", opt_control),
-            PassAccess::read("opt_ir_reachable", opt_reachable),
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("opt_ir_core", opt_core),
-            PassAccess::read("opt_ir_ssa_operands", opt_ssa_operands),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("opt_ir_ssa_node_use_prefix", opt_ssa_node_use_count),
-            PassAccess::read("opt_ir_ssa_node_use_total", opt_ssa_node_use_total),
-            PassAccess::read("opt_ir_ssa_value_total", opt_ssa_value_total),
-            PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
-            PassAccess::read(
-                "semantic_lir_call_arg_count_by_hir",
-                semantic_call_arg_counts_by_hir,
-            ),
-            PassAccess::read(
-                "semantic_lir_call_arg_start_by_hir",
-                semantic_call_arg_prefix_by_hir,
-            ),
-            PassAccess::read("semantic_lir_call_args", semantic_call_args),
-            PassAccess::read(
-                "opt_ir_ssa_call_argument_values",
-                opt_ssa_call_argument_values,
-            ),
-            PassAccess::read("opt_ir_ssa_call_use_prefix", opt_ssa_call_use_flag),
-            PassAccess::read("opt_ir_ssa_call_use_total", opt_ssa_call_use_total),
-            PassAccess::read(
-                "semantic_lir_aggregate_element_total",
-                semantic_aggregate_element_total,
-            ),
-            PassAccess::read(
-                "semantic_lir_aggregate_elements",
-                semantic_aggregate_elements,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_element_values",
-                opt_ssa_aggregate_element_values,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_use_prefix",
-                opt_ssa_aggregate_use_flag,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_aggregate_use_total",
-                opt_ssa_aggregate_use_total,
-            ),
-            PassAccess::read(
-                "opt_ir_ssa_block_argument_incoming_total",
-                opt_ssa_block_argument_incoming_total,
-            ),
-            PassAccess::read("opt_ir_ssa_incoming_values", opt_ssa_incoming_values),
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_users", opt_ssa_use_users),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    let use_radix_layout = super::optimization::opt_ir_ssa_use_radix_layout(capacities);
-    super::optimization::OPT_IR_SSA_USE_RADIX_SORT.register_with_bindings(
-        &mut graph,
-        capacities.optimization_use_capacity(),
-        0,
-        use_radix_layout.steps,
-        "opt_ir_ssa_use_total",
-        &[("opt_ir_ssa_use_values", "lir.opt.ssa.use_values")],
+    graph.assign_kernel(
+        "lir.opt.build_ssa_values",
+        "codegen/lir/optimization/build_ssa_values",
     )?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.uses.sort.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.use_groups.mark",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::write(
-                "opt_ir_ssa_use_group_start_flag",
-                opt_ssa_use_group_start_flag,
-            ),
-            PassAccess::write(
-                "opt_ir_ssa_use_group_scan_dispatch_args",
-                opt_ssa_use_group_scan_dispatch_args,
-            ),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    super::optimization::OPT_IR_SSA_USE_GROUP_SCAN.register(&mut graph, 1)?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.use_groups.scatter",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::read("opt_ir_ssa_use_group_prefix", opt_ssa_use_group_start_flag),
-            PassAccess::write("opt_ir_ssa_use_groups", opt_ssa_use_groups),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.use_groups.finalize",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_group_total", opt_ssa_use_group_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::read_write("opt_ir_ssa_use_groups", opt_ssa_use_groups),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.ssa.use_groups.validate",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationUses,
-        accesses: vec![
-            PassAccess::read("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::read("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::read("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::read("opt_ir_ssa_use_group_prefix", opt_ssa_use_group_start_flag),
-            PassAccess::read("opt_ir_ssa_use_group_total", opt_ssa_use_group_total),
-            PassAccess::read("opt_ir_ssa_use_groups", opt_ssa_use_groups),
-            PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
+    graph.require_complete_reflection("lir.opt.build_ssa_values")?;
     if target == LoweringTarget::X86_64 {
         graph.add_pass(PassDesc {
             name: "lir.x86.analysis.clear",
@@ -10125,6 +9390,10 @@ mod tests {
                 "codegen/lir/optimization/demands/build_block_arguments",
             ),
             (
+                "lir.opt.build_ssa_values",
+                "codegen/lir/optimization/build_ssa_values",
+            ),
+            (
                 "lir.opt.access.sort.histogram.a",
                 "codegen/lir/optimization/accesses/count_access_sort_buckets",
             ),
@@ -10216,6 +9485,10 @@ mod tests {
             (
                 "lir.opt.build_block_arguments",
                 "codegen/lir/optimization/demands/build_block_arguments",
+            ),
+            (
+                "lir.opt.build_ssa_values",
+                "codegen/lir/optimization/build_ssa_values",
             ),
             (
                 "lir.opt.access.sort.histogram.a",
