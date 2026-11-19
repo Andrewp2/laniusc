@@ -234,3 +234,84 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         assert_eq!(output[SYNC_WORDS], expected, "groups {groups}, rows {rows}");
     }
 }
+
+#[test]
+fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
+    #[derive(encase::ShaderType)]
+    struct SortParams {
+        groups: u32,
+        rows: u32,
+        digits: u32,
+    }
+
+    let gpu = device::global();
+    let (device, queue) = (&gpu.device, &gpu.queue);
+    let label = "tests/probe_program_radix_sort";
+    let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
+    for (groups, rows, digits) in [(1, 0, 1), (1, 801, 1), (1, 1219, 2), (64, 18_125, 3)] {
+        let params = uniform_from_val(device, label, &SortParams { groups, rows, digits });
+        let count = rows as usize;
+        let data: Vec<u32> = (0..rows)
+            .map(|row| ((row.wrapping_mul(269) % 713) << 8) | (row % 11))
+            .collect();
+        let mut expected: Vec<u32> = (0..rows).collect();
+        let mask = (1u32 << (digits * 8)) - 1;
+        expected.sort_by_key(|row| data[*row as usize] & mask);
+        let keys = storage_rw_for_array::<u32>(device, label, count.max(1));
+        if !data.is_empty() {
+            let bytes: Vec<u8> = data.iter().flat_map(|value| value.to_le_bytes()).collect();
+            keys.write(queue, 0, &bytes);
+        }
+        let order = storage_rw_for_array::<u32>(device, label, count.max(1));
+        let temporary = storage_rw_for_array::<u32>(device, label, count.max(1));
+        let histogram = storage_rw_for_array::<u32>(device, label, count.max(1).div_ceil(256) * 256);
+        let bucket_total = storage_rw_for_array::<u32>(device, label, 256);
+        let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
+        let entries = [
+            ("gParams", params.as_entire_binding()),
+            ("step_program_sync", sync.as_entire_binding()),
+            ("keys", keys.as_entire_binding()),
+            ("order", order.as_entire_binding()),
+            ("temporary", temporary.as_entire_binding()),
+            ("histogram", histogram.as_entire_binding()),
+            ("bucket_total", bucket_total.as_entire_binding()),
+        ];
+        passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
+        let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+            device, Some(label), &pass, 0, &entries,
+        ).unwrap();
+        let header_bytes = SYNC_WORDS * 4;
+        let size = header_bytes + count * 4;
+        let readback = readback_bytes(device, label, size, size);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        sync.clear(&mut encoder, 0, None);
+        {
+            let mut compute = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
+            );
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, Some(&bindings), &[]);
+            compute.dispatch_workgroups(groups, 1, 1);
+        }
+        sync.copy_to(&mut encoder, 0, &readback, 0, header_bytes as u64);
+        if count != 0 {
+            order.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * 4) as u64);
+        }
+        queue.submit(Some(encoder.finish()));
+        let slice = readback.slice(..);
+        map_readback_blocking(device, &slice, label.into()).unwrap();
+        let mapped = slice.get_mapped_range();
+        let output: Vec<u32> = mapped
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        drop(mapped);
+        readback.unmap();
+        assert_eq!(output[1], 0, "groups {groups}, rows {rows}, digits {digits}");
+        assert_eq!(output[3], groups, "groups {groups}, rows {rows}, digits {digits}");
+        let mismatch = output[SYNC_WORDS..].iter().zip(&expected).position(|(a, b)| a != b);
+        assert_eq!(mismatch, None, "groups {groups}, rows {rows}, digits {digits}");
+    }
+}

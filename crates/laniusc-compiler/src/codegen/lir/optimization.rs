@@ -74,60 +74,6 @@ use crate::gpu::{
     timer::GpuTimer,
 };
 
-pub(super) const OPT_IR_ACCESS_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationNodes,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.access.scan.local",
-        apply: "lir.opt.access.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.total",
-        input: "lir.opt.access_flag",
-        output_prefix: "lir.opt.access_prefix",
-        total: "lir.opt.instruction_access_total",
-        dispatch_args: "lir.opt.access_scan_dispatch_args",
-        local_prefix: "lir.opt.access_scan_local_prefix",
-        block_sum: "lir.opt.access_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_ACCESS_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationAccesses,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.access.groups.scan.local",
-        apply: "lir.opt.access.groups.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.access_total",
-        input: "lir.opt.access_group_start_flag",
-        output_prefix: "lir.opt.access_group_prefix",
-        total: "lir.opt.access_group_total",
-        dispatch_args: "lir.opt.access_radix_dispatch_args",
-        local_prefix: "lir.opt.access_group_scan_local_prefix",
-        block_sum: "lir.opt.access_group_scan_block_sum",
-    },
-};
-
-pub(super) const OPT_IR_DECLARATION_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationAccesses,
-    passes: PrefixScanGraphPasses {
-        local: "lir.opt.access.declaration_blocks.scan.local",
-        apply: "lir.opt.access.declaration_blocks.scan.apply",
-    },
-    resources: PrefixScanResources {
-        count: "lir.opt.declaration_access_total",
-        input: "lir.opt.access_group_start_flag",
-        output_prefix: "lir.opt.access_group_prefix",
-        total: "lir.opt.declaration_block_total",
-        dispatch_args: "lir.opt.access_radix_dispatch_args",
-        local_prefix: "lir.opt.access_group_scan_local_prefix",
-        block_sum: "lir.opt.access_group_scan_block_sum",
-    },
-};
-
 pub(super) const OPT_IR_SSA_DEMAND_SEED_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::Optimization,
     dispatch_domain: ResourceDomain::OptimizationAccessGroups,
@@ -269,37 +215,6 @@ pub(super) const OPT_IR_SSA_AGGREGATE_USE_SCAN: PrefixScanSpec = PrefixScanSpec 
     },
 };
 
-pub(super) const OPT_IR_ACCESS_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
-    phase: CompilerPhase::Optimization,
-    dispatch_domain: ResourceDomain::OptimizationAccesses,
-    small_pass: "lir.opt.access.sort",
-    passes: RadixSortGraphPasses {
-        order_to_temporary: RadixSortGraphStepPasses {
-            histogram: "lir.opt.access.sort.histogram.a",
-            bucket_prefix: "lir.opt.access.sort.prefix.a",
-            scatter: "lir.opt.access.sort.scatter.a",
-        },
-        temporary_to_order: RadixSortGraphStepPasses {
-            histogram: "lir.opt.access.sort.histogram.b",
-            bucket_prefix: "lir.opt.access.sort.prefix.b",
-            scatter: "lir.opt.access.sort.scatter.b",
-        },
-    },
-    kernels: RadixSortKernels::new(
-        "codegen/lir/optimization/accesses/count_access_sort_buckets",
-        "codegen/lir/optimization/accesses/scatter_sorted_accesses",
-    ),
-    resources: RadixSortResources {
-        count: "lir.opt.access_total",
-        order: "lir.opt.access_order",
-        temporary_order: "lir.opt.access_order_tmp",
-        histogram: "lir.opt.access_radix_histogram",
-        bucket_prefix: "lir.opt.access_radix_bucket_prefix",
-        bucket_total: "lir.opt.access_radix_bucket_total",
-    },
-    dispatch_args: "lir.opt.access_radix_dispatch_args",
-};
-
 pub(super) const OPT_IR_SSA_DEMAND_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
     phase: CompilerPhase::Optimization,
     dispatch_domain: ResourceDomain::OptimizationSsaDemands,
@@ -380,7 +295,7 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
     },
 };
 
-pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 2;
+pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
 pub(super) const OPTIMIZATION_PROGRAM_FAILURE_BYTES: usize = OPTIMIZATION_PROGRAM_SLOTS * 4;
 
 const RADIX_ROWS_PER_BLOCK: u32 = 256;
@@ -401,14 +316,8 @@ mod opt_extent {
     pub(super) fn block(c: LoweringCapacities) -> u32 {
         c.optimization_block_capacity()
     }
-    pub(super) fn metadata(c: LoweringCapacities) -> u32 {
-        c.parameters.max(c.local_capacity()).max(1)
-    }
     pub(super) fn access(c: LoweringCapacities) -> u32 {
         c.optimization_access_capacity()
-    }
-    pub(super) fn access_group(c: LoweringCapacities) -> u32 {
-        c.optimization_access_group_capacity()
     }
     pub(super) fn declaration_block(c: LoweringCapacities) -> u32 {
         c.optimization_declaration_block_capacity()
@@ -772,24 +681,7 @@ pub(crate) struct GpuOptimizationStage {
     capacities: LoweringCapacities,
     program_groups_override: Option<u32>,
     control_flow_analysis: [[StepProgramOperation; 2]; 2],
-    access_mark: JobSized,
-    access_scan: PrefixScanOperation,
-    access_scatter: JobSized,
-    access_metadata: JobSized,
-    access_validate: JobSized,
-    access_sort: RadixSortOperation<AccessRadixParams>,
-    access_sort_validate: JobSized,
-    access_group_mark: JobSized,
-    access_group_scan: PrefixScanOperation,
-    declaration_block_mark: JobSized,
-    declaration_block_scan: PrefixScanOperation,
-    access_group_scatter: JobSized,
-    declaration_block_scatter: JobSized,
-    access_group_finalize: JobSized,
-    access_local_definitions: ComputeOperation,
-    access_local_definitions_validate: JobSized,
-    declaration_block_finalize: JobSized,
-    declaration_block_validate: JobSized,
+    declaration_accesses: [[StepProgramOperation; 2]; 2],
     demand_seed_mark: JobSized,
     demand_seed_scan: PrefixScanOperation,
     demand_seed_scatter: JobSized,
@@ -847,7 +739,6 @@ pub(crate) struct GpuOptimizationStage {
     ssa_use_group_validate: JobSized,
     _params: LaniusBuffer<ProjectionParams>,
     _access_params: LaniusBuffer<AccessParams>,
-    _access_radix_validate_params: LaniusBuffer<AccessRadixParams>,
     _ssa_params: LaniusBuffer<SsaParams>,
     _ssa_value_params: LaniusBuffer<SsaValueParams>,
     _ssa_use_radix_validate_params: LaniusBuffer<UseRadixParams>,
@@ -1161,18 +1052,12 @@ impl GpuOptimizationStage {
                 access_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let access_radix_dispatch_args = workspace
-            .alias(graph, resource("lir.opt.access_radix_dispatch_args")?, 3)
-            .map_err(anyhow::Error::msg)?;
         let access_groups = workspace
             .alias(
                 graph,
                 resource("lir.opt.access_groups")?,
                 access_group_capacity as usize,
             )
-            .map_err(anyhow::Error::msg)?;
-        let access_group_dispatch_args = workspace
-            .alias(graph, resource("lir.opt.access_group_dispatch_args")?, 3)
             .map_err(anyhow::Error::msg)?;
         let local_definition_by_access = workspace
             .alias(
@@ -1534,13 +1419,13 @@ impl GpuOptimizationStage {
             .and_then(|value| value.parse().ok());
         let program_parallel_groups = program_groups_override.unwrap_or(STEP_PROGRAM_MAX_GROUPS);
         resources.buffer("gParams", &params);
-        let variants = |name, key, slot| -> Result<_> {
+        let variants = |resources: &ResourceMap<'_>, name, key, slot| -> Result<_> {
             let pass = kernels.kernel(key);
             let variant = |groups, validate| {
                 StepProgramOperation::new(
                     device,
                     &(graph, &allocations),
-                    &resources,
+                    resources,
                     name,
                     pass,
                     &program_sync,
@@ -1555,185 +1440,24 @@ impl GpuOptimizationStage {
             ])
         };
         let control_flow = variants(
+            &resources,
             "lir.opt.build_control_flow",
             "codegen/lir/optimization/control_flow/build_control_flow",
             0,
         )?;
         let control_flow_analysis = variants(
+            &resources,
             "lir.opt.analyze_control_flow",
             "codegen/lir/optimization/analyze_control_flow",
             1,
         )?;
-        let access_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
+        resources.buffer("gParams", &access_params);
+        let declaration_accesses = variants(
             &resources,
-            "lir.opt.access.mark",
-            kernels.kernel("codegen/lir/optimization/accesses/mark_local_accesses"),
-            &access_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let access_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_ACCESS_SCAN)?;
-        let access_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.scatter",
-            kernels.kernel("codegen/lir/optimization/accesses/scatter_local_accesses"),
-            &access_params,
-            capacities.semantic_instructions.max(1),
-        )?, opt_extent::semantic, capacities)?;
-        let metadata_capacity = capacities
-            .parameters
-            .max(capacities.local_capacity())
-            .max(1);
-        let access_metadata = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.metadata",
-            kernels.kernel("codegen/lir/optimization/accesses/local_access_layout"),
-            &access_params,
-            metadata_capacity,
-        )?, opt_extent::metadata, capacities)?;
-        let access_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.validate",
-            kernels.kernel("codegen/lir/optimization/accesses/validate_local_accesses"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let access_sort = OPT_IR_ACCESS_RADIX_SORT.operation(
-            device,
-            kernels,
-            &resources,
-            access_capacity,
-            0,
-            access_radix.steps,
-            RadixSortDispatch {
-                small: RadixDispatchDomain::Direct(1),
-                rows: RadixDispatchDomain::Indirect(&access_radix_dispatch_args),
-                bucket_prefix: RadixDispatchDomain::Direct(
-                    RADIX_BUCKET_COUNT * RADIX_ROWS_PER_BLOCK,
-                ),
-            },
-            |key_step| AccessRadixParams {
-                item_capacity: access_capacity,
-                subject_bits: access_radix.subject_bits,
-                max_blocks: access_radix.blocks,
-                key_step,
-            },
+            "lir.opt.build_declaration_accesses",
+            "codegen/lir/optimization/accesses/build_declaration_accesses",
+            2,
         )?;
-        let access_radix_validate_params = uniform_from_val(
-            device,
-            "lir.opt.access.sort.validate.params",
-            &AccessRadixParams {
-                item_capacity: access_capacity,
-                subject_bits: access_radix.subject_bits,
-                max_blocks: access_radix.blocks,
-                key_step: 0,
-            },
-        );
-        let access_sort_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.sort.validate",
-            kernels.kernel("codegen/lir/optimization/accesses/validate_sorted_accesses"),
-            &access_radix_validate_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let access_group_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.groups.mark",
-            kernels.kernel("codegen/lir/optimization/accesses/mark_access_groups"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let access_group_scan =
-            PrefixScanOperation::from_spec(device, kernels, &resources, OPT_IR_ACCESS_GROUP_SCAN)?;
-        let declaration_block_mark = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.declaration_blocks.mark",
-            kernels.kernel("codegen/lir/optimization/accesses/mark_access_declaration_blocks"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let declaration_block_scan = PrefixScanOperation::from_spec(
-            device,
-            kernels,
-            &resources,
-            OPT_IR_DECLARATION_BLOCK_SCAN,
-        )?;
-        let access_group_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.groups.scatter",
-            kernels.kernel("codegen/lir/optimization/accesses/scatter_access_groups"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let declaration_block_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.declaration_blocks.scatter",
-            kernels.kernel("codegen/lir/optimization/accesses/scatter_access_declaration_blocks"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let access_group_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.groups.finalize",
-            kernels.kernel("codegen/lir/optimization/accesses/finalize_access_groups"),
-            &access_params,
-            access_group_capacity,
-        )?, opt_extent::access_group, capacities)?;
-        let access_local_definitions = ComputeOperation::indirect(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.local_definitions",
-            kernels.kernel("codegen/lir/optimization/accesses/find_access_local_definitions"),
-            &access_group_dispatch_args,
-        )?;
-        let access_local_definitions_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.local_definitions.validate",
-            kernels.kernel("codegen/lir/optimization/accesses/validate_access_local_definitions"),
-            &access_params,
-            access_capacity,
-        )?, opt_extent::access, capacities)?;
-        let declaration_block_finalize = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.declaration_blocks.finalize",
-            kernels.kernel("codegen/lir/optimization/accesses/finalize_access_declaration_blocks"),
-            &access_params,
-            declaration_block_capacity,
-        )?, opt_extent::declaration_block, capacities)?;
-        let declaration_block_validate = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.access.declaration_blocks.validate",
-            kernels.kernel("codegen/lir/optimization/accesses/validate_access_declaration_blocks"),
-            &access_params,
-            declaration_block_capacity,
-        )?, opt_extent::declaration_block, capacities)?;
         let demand_seed_mark = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -2273,24 +1997,7 @@ impl GpuOptimizationStage {
             capacities,
             program_groups_override,
             control_flow_analysis,
-            access_mark,
-            access_scan,
-            access_scatter,
-            access_metadata,
-            access_validate,
-            access_sort,
-            access_sort_validate,
-            access_group_mark,
-            access_group_scan,
-            declaration_block_mark,
-            declaration_block_scan,
-            access_group_scatter,
-            declaration_block_scatter,
-            access_group_finalize,
-            access_local_definitions,
-            access_local_definitions_validate,
-            declaration_block_finalize,
-            declaration_block_validate,
+            declaration_accesses,
             demand_seed_mark,
             demand_seed_scan,
             demand_seed_scatter,
@@ -2348,7 +2055,6 @@ impl GpuOptimizationStage {
             ssa_use_group_validate,
             _params: params,
             _access_params: access_params,
-            _access_radix_validate_params: access_radix_validate_params,
             _ssa_params: ssa_params,
             _ssa_value_params: ssa_value_params,
             _ssa_use_radix_validate_params: ssa_use_radix_validate_params,
@@ -2496,35 +2202,11 @@ impl GpuOptimizationStage {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
         }
-        self.access_mark.record_job(encoder, job)?;
-        self.access_scan.record(encoder)?;
-        self.access_metadata.record_job(encoder, job)?;
-        self.access_scatter.record_job(encoder, job)?;
-        if validate_structure {
-            self.access_validate.record_job(encoder, job)?;
-        }
-        self.access_sort.record(encoder)?;
-        if validate_structure {
-            self.access_sort_validate.record_job(encoder, job)?;
-        }
-        self.access_group_mark.record_job(encoder, job)?;
-        self.access_group_scan.record(encoder)?;
-        self.access_group_scatter.record_job(encoder, job)?;
-        self.access_group_finalize.record_job(encoder, job)?;
-        self.access_local_definitions.record(encoder)?;
-        if validate_structure {
-            self.access_local_definitions_validate.record_job(encoder, job)?;
-        }
-        if let Some(timer) = timer.as_deref_mut() {
-            timer.stamp(encoder, "optimization.accesses.done");
-        }
-        self.declaration_block_mark.record_job(encoder, job)?;
-        self.declaration_block_scan.record(encoder)?;
-        self.declaration_block_scatter.record_job(encoder, job)?;
-        self.declaration_block_finalize.record_job(encoder, job)?;
-        if validate_structure {
-            self.declaration_block_validate.record_job(encoder, job)?;
-        }
+        let access_rows = capacities.optimization_access_capacity()
+            .max(capacities.optimization_access_group_capacity());
+        let access_parallel = access_rows > 4096 || self.program_groups_override.is_some();
+        self.declaration_accesses[usize::from(access_parallel)][usize::from(validate_structure)]
+            .record(encoder)?;
         self.demand_seed_mark.record_job(encoder, job)?;
         self.demand_seed_scan.record(encoder)?;
         self.demand_seed_scatter.record_job(encoder, job)?;
