@@ -272,7 +272,7 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
         }
         let order = storage_rw_for_array::<u32>(device, label, count.max(1));
         let temporary = storage_rw_for_array::<u32>(device, label, count.max(1));
-        let histogram = storage_rw_for_array::<u32>(device, label, count.max(1).div_ceil(256) * 256);
+        let histogram = storage_rw_for_array::<u32>(device, label, (count.max(1).div_ceil(256) + groups as usize) * 256);
         let bucket_total = storage_rw_for_array::<u32>(device, label, 256);
         let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
         let entries = [

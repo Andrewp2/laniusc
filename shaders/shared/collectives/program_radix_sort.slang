@@ -13,7 +13,8 @@ groupshared uint step_radix_lanes_by_key[8][256];
 // Orders row IDs by consecutive low-to-high byte digits. A tile holds 256
 // consecutive positions. Prefixing tile histograms in position order and
 // ranking equal keys in lane order preserves stability across tiles too.
-// histogram needs ceil(rows / 256) * 256 words, and bucket_total needs 256.
+// histogram needs (ceil(rows / 256) + program.groups) * 256 words.
+// bucket_total needs 256 words.
 // digits must be positive and TKey.digit must return a byte.
 // The caller ends the last scatter step before reading the resulting order.
 public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
@@ -31,11 +32,16 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
     uint tiles = rows / size + uint(rows % size != 0u);
     if (tiles == 0u) return true;
 
+    uint tiles_per_group = tiles / program.groups + uint(tiles % program.groups != 0u);
+    uint first_tile = min(tiles, group * tiles_per_group);
+    uint end_tile = min(tiles, first_tile + tiles_per_group);
+
     // Start on the side that leaves the last digit in order.
     for (uint digit = 0u; digit < digits; ++digit)
     {
         bool source_is_order = ((digits - digit) & 1u) == 0u;
-        for (uint tile = group; tile < tiles; tile += program.groups)
+        uint count = 0u;
+        for (uint tile = first_tile; tile < end_tile; ++tile)
         {
             step_radix_histogram[lane] = 0u;
             GroupMemoryBarrierWithGroupSync();
@@ -47,32 +53,42 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
                 InterlockedAdd(step_radix_histogram[TKey.digit(row, digit)], 1u);
             }
             GroupMemoryBarrierWithGroupSync();
-            histogram[tile * size + lane] = step_radix_histogram[lane];
+            // This lane owns the same bucket in every tile of the group.
+            histogram[tile * size + lane] = count;
+            count += step_radix_histogram[lane];
             GroupMemoryBarrierWithGroupSync();
         }
+
+        uint group_slot = (tiles + group) * size;
+        histogram[group_slot + lane] = count;
         if (!step_barrier(program)) return false;
 
-        for (uint bucket = program.lane; bucket < size; bucket += program.lanes)
+        if (program.groups > 1u)
         {
-            uint sum = 0u;
-            for (uint tile = 0u; tile < tiles; ++tile)
+            // Only the group totals need a global prefix. The per-tile
+            // offsets are already relative to each group's first tile.
+            if (group == 0u)
             {
-                uint slot = tile * size + bucket;
-                uint count = histogram[slot];
-                histogram[slot] = sum;
-                sum += count;
+                uint sum = 0u;
+                for (uint group_i = 0u; group_i < program.groups; ++group_i)
+                {
+                    uint slot = (tiles + group_i) * size + lane;
+                    uint group_count = histogram[slot];
+                    histogram[slot] = sum;
+                    sum += group_count;
+                }
+                bucket_total[lane] = sum;
             }
-            bucket_total[bucket] = sum;
+            if (!step_barrier(program)) return false;
+            if (first_tile < end_tile) count = bucket_total[lane];
         }
-        if (!step_barrier(program)) return false;
 
-        if (group < tiles)
+        if (first_tile < end_tile)
         {
-            uint count = bucket_total[lane];
             step_radix_bucket_base[lane] = prefix_scan_u32_256(lane, count) - count;
             GroupMemoryBarrierWithGroupSync();
         }
-        for (uint tile = group; tile < tiles; tile += program.groups)
+        for (uint tile = first_tile; tile < end_tile; ++tile)
         {
             for (uint chunk = 0u; chunk < 8u; ++chunk)
                 step_radix_lanes_by_key[chunk][lane] = 0u;
@@ -100,7 +116,8 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
                 uint rank = countbits(step_radix_lanes_by_key[chunk][key] & (bit - 1u));
                 for (uint prior = 0u; prior < chunk; ++prior)
                     rank += countbits(step_radix_lanes_by_key[prior][key]);
-                uint destination = step_radix_bucket_base[key]
+                uint carry = program.groups > 1u ? histogram[group_slot + key] : 0u;
+                uint destination = step_radix_bucket_base[key] + carry
                     + histogram[tile * size + key] + rank;
                 if (source_is_order) temporary[destination] = row;
                 else order[destination] = row;

@@ -31,6 +31,7 @@ use crate::gpu::{
     },
     kernels::KernelRegistry,
     operations::{
+        ClearBuffersOperation,
         STEP_PROGRAM_MAX_GROUPS,
         STEP_PROGRAM_SYNC_WORDS,
         StepProgramOperation,
@@ -260,6 +261,7 @@ pub(crate) struct GpuOptimizationStage {
     control_flow: [[StepProgramOperation; 2]; 2],
     program_sync: LaniusBuffer<u32>,
     capacities: LoweringCapacities,
+    clear_sparse_demands: ClearBuffersOperation,
     block_arguments: [[StepProgramOperation; 2]; 2],
     ssa_values: [[StepProgramOperation; 2]; 2],
     _params: LaniusBuffer<ProjectionParams>,
@@ -461,6 +463,20 @@ impl GpuOptimizationStage {
         )?;
         resources.buffer("access_params", &access_params);
         resources.buffer("demand_params", &ssa_params);
+        let clear_sparse_demands = ClearBuffersOperation::new(
+            &(graph, &allocations),
+            "lir.opt.clear_sparse_demands",
+            &[
+                (
+                    "opt_ir_ssa_sparse_declaration",
+                    resources.tracked_view("lir.opt.ssa.sparse_declaration")?,
+                ),
+                (
+                    "opt_ir_ssa_sparse_block",
+                    resources.tracked_view("lir.opt.ssa.sparse_block")?,
+                ),
+            ],
+        )?;
         let block_arguments = variants(
             &resources,
             "lir.opt.build_block_arguments",
@@ -479,6 +495,7 @@ impl GpuOptimizationStage {
             control_flow,
             program_sync,
             capacities,
+            clear_sparse_demands,
             block_arguments,
             ssa_values,
             _params: params,
@@ -528,8 +545,8 @@ impl GpuOptimizationStage {
             .max(capacities.optimization_edge_capacity())
             .max(capacities.hir_nodes);
         let validate = usize::from(validate_structure);
-        // CFG ownership and sparse admission clear tables across the built
-        // workspace. Keep those clears parallel when a large arena is reused.
+        // CFG ownership clears across the built workspace. Keep the clear
+        // parallel when a large arena is reused.
         let large_workspace = self.capacities.semantic_instructions > 4096;
         self.control_flow[usize::from(rows > 4096 || large_workspace)][validate]
             .record(encoder)?;
@@ -547,7 +564,10 @@ impl GpuOptimizationStage {
         let argument_rows = capacities.optimization_ssa_walk_capacity()
             .max(capacities.optimization_ssa_incoming_capacity())
             .max(capacities.optimization_access_group_capacity());
-        self.block_arguments[usize::from(argument_rows > 4096 || large_workspace)][validate]
+        // Hardware fills clear the full sparse tables before the program's
+        // resident workgroups start walking the active demand rows.
+        self.clear_sparse_demands.record(encoder);
+        self.block_arguments[usize::from(argument_rows > 4096)][validate]
             .record(encoder)?;
         let value_rows = capacities.optimization_value_capacity()
             .max(capacities.optimization_use_capacity());

@@ -1355,13 +1355,14 @@ fn add_step_radix_resources(
 ) -> Result<StepRadixResources, String> {
     let rows = u64::from(capacity.max(1));
     let tiles = rows.div_ceil(256);
+    let group_sums = u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS);
     let mut storage = |name, words| {
         graph.add_storage(name, domain, ResourceClass::Workspace, words * 4)
     };
     Ok(StepRadixResources {
         order: storage(order, rows)?,
         temporary_order: storage(temporary_order, rows)?,
-        histogram: storage(histogram, tiles * 256)?,
+        histogram: storage(histogram, (tiles + group_sums) * 256)?,
         bucket_total: storage(bucket_total, 256)?,
     })
 }
@@ -5580,6 +5581,15 @@ fn lowering_compiler_graph_builder(
     )?;
     graph.require_complete_reflection("lir.opt.build_control_flow")?;
     graph.add_pass(PassDesc {
+        name: "lir.opt.clear_sparse_demands",
+        phase: CompilerPhase::Optimization,
+        dispatch_domain: ResourceDomain::OptimizationSsaDemands,
+        accesses: vec![
+            PassAccess::logical_write("opt_ir_ssa_sparse_declaration", opt_ssa_sparse_declaration),
+            PassAccess::logical_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
         name: "lir.opt.build_block_arguments",
         phase: CompilerPhase::Optimization,
         dispatch_domain: ResourceDomain::OptimizationAccesses,
@@ -5677,7 +5687,7 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_ssa_sparse_declaration",
                 opt_ssa_sparse_declaration,
             ),
-            PassAccess::initialize_read_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
+            PassAccess::read_write("opt_ir_ssa_sparse_block", opt_ssa_sparse_block),
             PassAccess::read("opt_ir_edge_total", opt_edge_total),
             PassAccess::read("opt_ir_edges", opt_edges),
             PassAccess::read("opt_ir_predecessor_prefix", opt_edge_prefix),
