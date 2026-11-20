@@ -173,7 +173,7 @@ public SolverStatus pps_substitution_feed_goal(inout PpsSubstitutionWalk walk,
             walk.all_closed = conclusion_closed;
             bool candidate;
             status = ts_begin_implementation_goal(walk.row.x, walk.row.w, walk.limits,
-                owned_constraint_frame(0u), walk.state, call.match, candidate, false);
+                owned_constraint_frame(0u), walk.state, call.match, candidate);
             if (status.state != TS_VALID) return status;
             if (!candidate) return ts_invalid(68u, walk.substitution, walk.row.x);
             call.kind = PPS_CALL_ROOTS; walk.phase = PPS_WALK_HEAD;

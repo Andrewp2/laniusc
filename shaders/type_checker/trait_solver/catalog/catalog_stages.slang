@@ -120,13 +120,13 @@ public void ts_catalog_build_implementations(uint local)
     if (!ts_catalog_is_building()) return;
     uint implementations; uint row;
     if (!ts_catalog_count(9u, implementations) || !ts_dispatch_row(local, implementations, row)) return;
-    uint admitted; uint coarse_hash = 0u; uint exact_hash = 0u; bool exact = false;
+    uint admitted; uint coarse_hash = 0u; uint exact_hash = 0u; uint shape = 0u; bool exact = false;
     SolverStatus status;
     if (!ts_output_read(1u, row, 0u, admitted) || admitted != TS_VALID)
         status = ts_invalid(15u, row, TS_INVALID);
     else
     {
-        if (ts_bind_scratch(local, row, status)) status = ts_hash_coarse_implementation(row, coarse_hash);
+        if (ts_bind_scratch(local, row, status)) status = ts_hash_coarse_implementation(row, coarse_hash, shape);
         if (status.state == TS_VALID) status = ts_exact_implementation_eligible(row, exact);
         if (status.state == TS_VALID && exact) status = ts_hash_admitted_implementation(row, exact_hash);
         if (status.state != TS_VALID) ts_write_status(1u, row, status);
@@ -139,7 +139,7 @@ public void ts_catalog_build_implementations(uint local)
     for (uint index = 0u; ; index++)
     {
         if (index < publications)
-            status = ts_publish_implementation_index(row, index, index == 0u ? coarse_hash : exact_hash);
+            status = ts_publish_implementation_index(row, index, index == 0u ? coarse_hash : exact_hash, shape);
         ts_catalog_failure(status);
         if (index + 1u >= max(publications, 1u)) return;
     }

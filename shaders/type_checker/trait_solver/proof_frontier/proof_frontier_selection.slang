@@ -51,14 +51,29 @@ public SolverStatus pps_find_implementation(uint goal, bool coarse,
     uint hash = coarse ? ts_coarse_implementation_hash(low.x, high.x) : high.y;
     if (!ts_output_read(coarse ? 12u : 7u, hash & (buckets - 1u), 0u, candidate))
         return ts_invalid(1u, goal, table);
+    uint shape = 0u;
+    uint nodes; uint atoms;
+    if (coarse && candidate != TS_INVALID && high.x <= 32u && high.z <= 1u && high.w == 0u &&
+        pps_count(PPS_TERM_NODES, nodes) && ts_table_count(1u, atoms))
+        shape = ts_self_shape<SolverProofTermGraph>(low.yz, nodes, atoms);
+
+    // The directory is fixed throughout the chain. Check it once before
+    // using the bounded links in the catalog arena.
+    SolverOutputTable index;
+    bool described = candidate == TS_INVALID || ts_output_descriptor(table, index);
     [loop]
     for (uint examined = 0u; candidate != TS_INVALID; examined++)
     {
         if (examined == TS_CHAIN_LIMIT) return ts_limit(8u, goal, examined + 1u, TS_CHAIN_LIMIT);
-        uint4 link;
-        if (candidate >= implementations || !ts_output_read4(table, candidate, 0u, link) ||
-            link.z != candidate || link.w != 1u) return ts_invalid(70u, goal, candidate);
-        if (link.x == hash)
+        if (!described || candidate >= implementations || candidate >= index.count)
+            return ts_invalid(70u, goal, candidate);
+        uint address = index.offset + candidate * 4u;
+        uint4 link = uint4(trait_solver_catalog[address], trait_solver_catalog[address + 1u],
+            trait_solver_catalog[address + 2u], trait_solver_catalog[address + 3u]);
+        if (link.z != candidate || (coarse ? (link.w & 1u) == 0u : link.w != 1u))
+            return ts_invalid(70u, goal, candidate);
+        uint candidate_shape = link.w >> 1u;
+        if (link.x == hash && (shape == 0u || candidate_shape == 0u || shape == candidate_shape))
         {
             // A candidate never matches into the frame the selected state holds.
             bool matches; OwnedConstraintState current;

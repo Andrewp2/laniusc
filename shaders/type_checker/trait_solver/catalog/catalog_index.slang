@@ -7,6 +7,8 @@ import type_checker.trait_solver.owned_type_constraint_contract;
 import type_checker.scoped_types.scoped_type_hash;
 import type_checker.scoped_types.scoped_type_equality;
 import type_checker.trait_solver.scoped_type_scratch;
+import type_checker.trait_solver.type_constraint_structure;
+import type_checker.concrete_types.concrete_type_equality;
 
 public uint ts_atom_hash(uint row)
 {
@@ -83,12 +85,37 @@ public uint ts_coarse_implementation_hash(uint trait_atom, uint argument_count)
 {
     return scoped_type_hash_mix(scoped_type_hash_mix(2166136261u, trait_atom), argument_count);
 }
-public SolverStatus ts_hash_coarse_implementation(uint implementation, out uint hash)
+// The upper bits of a coarse link's admission word identify the first
+// unification step's type shape. Zero means the matcher must inspect the
+// root. Equal fingerprints still require full unification.
+public uint ts_self_shape<Graph : ITypeIdentityGraph>(uint2 root, uint nodes, uint atoms)
 {
-    hash = 0u; uint4 low; uint4 args;
+    if (root.x == 1u && root.y < 128u && ts_scalar_is_valid(root.y))
+        return root.y;
+    ConstraintNodeHeader header;
+    if (root.x != 3u || !constraint_node_header<Graph>(root.y, nodes, atoms, header))
+        return 0u;
+    if (header.kind != 1u) return 128u + header.kind;
+    uint hash = scoped_type_hash_mix(2166136261u, header.arity);
+    hash = scoped_type_hash_mix(hash, header.local_nominal);
+    if (header.local_nominal == TS_INVALID)
+    {
+        hash = scoped_type_hash_mix(hash, header.external_nominal.x);
+        hash = scoped_type_hash_mix(hash, header.external_nominal.y);
+        hash = scoped_type_hash_mix(hash, header.external_nominal.z);
+    }
+    return 256u | (hash & 0x7ffffeffu);
+}
+
+public SolverStatus ts_hash_coarse_implementation(uint implementation, out uint hash, out uint shape)
+{
+    hash = 0u; shape = 0u; uint4 low; uint4 args;
     if (!ts_read4(9u, implementation, 0u, low) || !ts_read4(9u, implementation, 4u, args) ||
         args.y > 32u) return ts_invalid(1u, implementation, TS_INVALID);
     hash = ts_coarse_implementation_hash(low.z, args.y);
+    uint2 root; uint nodes; uint atoms;
+    if (ts_read_root(low.w, root) && ts_catalog_count(5u, nodes) && ts_catalog_count(1u, atoms))
+        shape = ts_self_shape<CatalogImplementationPatternGraph>(root, nodes, atoms);
     return ts_ok();
 }
 public SolverStatus ts_exact_implementation_eligible(uint implementation, out bool eligible)
@@ -107,14 +134,14 @@ public SolverStatus ts_exact_implementation_eligible(uint implementation, out bo
 // Publication returns its failure; the caller owns its stage's one catalog
 // failure report site.
 SolverStatus ts_publish_catalog_index(uint index_table, uint bucket_table,
-    uint row, uint hash, uint admitted_row, uint rows, uint buckets)
+    uint row, uint hash, uint admitted_row, uint admission, uint rows, uint buckets)
 {
     if (row >= rows || buckets == 0u) return ts_invalid(1u, row, index_table);
     uint arena; uint address;
     if (!ts_output_address(bucket_table, hash & (buckets - 1u), 0u, arena, address) || arena != 0u ||
         !ts_output_write(index_table, row, 0u, hash) ||
         !ts_output_write(index_table, row, 2u, admitted_row) ||
-        !ts_output_write(index_table, row, 3u, 1u))
+        !ts_output_write(index_table, row, 3u, admission))
         return ts_invalid(1u, row, bucket_table);
     // Lookup never overlaps this dispatch. A barrier before readers ensures
     // every head/link is complete even when the CAS publishes the head first.
@@ -142,11 +169,11 @@ public void ts_publish_index(uint row, uint hash, uint admitted_row)
     uint rows; uint buckets;
     SolverStatus status = ts_invalid(1u, row, 6u);
     if (ts_work_counts(rows, buckets))
-        status = ts_publish_catalog_index(6u, 7u, row, hash, admitted_row, rows, buckets);
+        status = ts_publish_catalog_index(6u, 7u, row, hash, admitted_row, 1u, rows, buckets);
     ts_catalog_failure(status);
 }
 // Index 0 is the coarse implementation index, index 1 the exact one.
-public SolverStatus ts_publish_implementation_index(uint implementation, uint index, uint hash)
+public SolverStatus ts_publish_implementation_index(uint implementation, uint index, uint hash, uint shape)
 {
     bool coarse = index == 0u;
     uint catalog_rows = 0u; uint work_rows; uint buckets;
@@ -154,7 +181,8 @@ public SolverStatus ts_publish_implementation_index(uint implementation, uint in
     if (coarse) counted = ts_catalog_count(9u, catalog_rows) && counted;
     if (!counted) return ts_invalid(1u, implementation, coarse ? 11u : 6u);
     return ts_publish_catalog_index(coarse ? 11u : 6u, coarse ? 12u : 7u, implementation, hash,
-        implementation, coarse ? catalog_rows : work_rows, buckets);
+        implementation, coarse ? (shape << 1u) | 1u : 1u,
+        coarse ? catalog_rows : work_rows, buckets);
 }
 
 public SolverStatus ts_check_atom_unique(uint atom)
@@ -211,7 +239,7 @@ uint ts_coherence_pair(uint implementation, uint4 own_index, uint buckets, uint 
 {
     head = 0u;
     uint4 other;
-    if (!ts_output_read4(11u, candidate, 0u, other) || other.z != candidate || other.w != 1u)
+    if (!ts_output_read4(11u, candidate, 0u, other) || other.z != candidate || (other.w & 1u) == 0u)
         return TS_PAIR_INVALID;
     if (((other.x ^ own_index.x) & (buckets - 1u)) == 0u) chain++;
     if (candidate >= implementation || own_index.x != other.x) return TS_PAIR_NONE;
@@ -259,7 +287,7 @@ public void ts_catalog_check_coherence_group(uint group, uint lane)
         if (ts_catalog_is_building() && ts_catalog_count(9u, implementation_count) &&
             implementation < implementation_count)
             state = select(ts_work_counts(rows, buckets) && ts_output_read4(11u, implementation, 0u, own_index) &&
-                own_index.z == implementation && own_index.w == 1u &&
+                own_index.z == implementation && (own_index.w & 1u) != 0u &&
                 ts_output_read(12u, own_index.x & (buckets - 1u), 0u, head), 1u, 2u);
         ts_coherence_state = state;
         ts_coherence_own = own_index;
