@@ -2,7 +2,19 @@ import type_checker.retention.discovery.discovery_admission;
 public RWStructuredBuffer<uint4> sb_requests;
 public RWStructuredBuffer<uint> sb_request_count;
 
-public void collect_discovery_requests(uint lane)
+public struct DiscoveryFrontier
+{
+    public uint lo;
+    public uint hi;
+    public uint edge;
+};
+
+public DiscoveryFrontier configured_frontier()
+{
+    return { dg_config[1], dg_config[2], dg_config[3] };
+}
+
+public void collect_discovery_requests(uint lane, DiscoveryFrontier frontier)
 {
     uint root = dg_config[4]; uint use = lane; uint owner = RT_INVALID;
     if (lane == 0u && (rt_counts[RT_C_READY] == 0u || rt_counts[RT_C_GENERATION] != dg_config[15]))
@@ -17,17 +29,17 @@ public void collect_discovery_requests(uint lane)
     }
     else
     {
-        if (lane >= dg_status[2] - dg_config[3]) return;
-        uint lo = 0u; uint hi = dg_config[2] - dg_config[1];
+        if (lane >= dg_status[2] - frontier.edge) return;
+        uint lo = 0u; uint hi = frontier.hi - frontier.lo;
         while (lo < hi)
         {
             uint mid = lo + (hi - lo) / 2u;
             if (dg_scan(mid) <= lane) lo = mid + 1u; else hi = mid;
         }
-        owner = dg_config[1] + lo;
+        owner = frontier.lo + lo;
         uint4 i1 = dg_instances[2u * owner + 1u];
         uint entry = dg_entry(dg_instances[2u * owner].x);
-        uint edge = dg_config[3] + lane;
+        uint edge = frontier.edge + lane;
         use = rt_dir[entry * RT_DIR_WORDS + 2u].w + edge - i1.x;
         dg_edge_owner[edge] = uint2(owner, use);
         dg_edges[edge] = uint4(0u,0u,0u,0u);

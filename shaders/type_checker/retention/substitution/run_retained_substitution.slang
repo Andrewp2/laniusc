@@ -18,7 +18,7 @@ public interface ISubstitutionRequests
 }
 
 public bool run_retained_substitution<R : ISubstitutionRequests>(
-    inout StepProgram program, uint options, R source)
+    inout StepProgram program, uint options, uint run, R source)
 {
     if (sb_counts[SB_C_SYNC_FAILED] != 0u)
     {
@@ -30,7 +30,7 @@ public bool run_retained_substitution<R : ISubstitutionRequests>(
 
     if ((options & 1u) != 0u)
     {
-        if (program.lane == 0u) begin_retained_substitution(source.count(), source.capacity());
+        if (program.lane == 0u) begin_retained_substitution(source.count(), source.capacity(), run);
         if (!step_barrier(program)) return false;
         uint requests = sb_request_total();
         for (uint row = program.lane; row < requests; row += program.lanes)

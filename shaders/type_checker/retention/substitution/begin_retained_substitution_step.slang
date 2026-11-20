@@ -15,9 +15,9 @@
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.retained_substitution_workspace;
 
-public void begin_retained_substitution(uint requests, uint request_capacity)
+public void begin_retained_substitution(uint requests, uint request_capacity, uint run)
 {
-    sb_counts[SB_C_RUN] = sb_config[SB_CFG_RUN];
+    sb_counts[SB_C_RUN] = run;
     sb_counts[SB_C_GENERATION] = rt_counts[RT_C_GENERATION];
     uint capacity = sb_request_capacity(request_capacity);
     sb_counts[SB_C_REQUEST_CAPACITY] = capacity;

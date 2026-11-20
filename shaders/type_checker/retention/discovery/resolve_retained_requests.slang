@@ -25,7 +25,7 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     {
         uint requests = sb_counts[SB_C_REQUESTS];
         for (uint row = program.lane; row < requests; row += program.lanes)
-            resolve_discovery_request(row, sb_results[row * SB_RESULT_WORDS], sb_result_current(run, row));
+            resolve_discovery_request(row, sb_results[row * SB_RESULT_WORDS], sb_result_current(run, row), dg_config[6]);
     }
     if (!step_barrier(program)) return;
     if (program.lane == 0u) finish_discovery_requests();

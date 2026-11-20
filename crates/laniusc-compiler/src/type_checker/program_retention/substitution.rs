@@ -794,7 +794,13 @@ impl RetainedSubstitution {
     pub(super) fn chain_bindings(&self) -> Result<Vec<(&'static str, &wgpu::Buffer)>> {
         let (_, results, roots) = self.results.as_ref()
             .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
-        let mut bindings = vec![("sb_results", results), ("sb_req_root", roots)];
+        let runs = self.chain_runs.as_ref()
+            .ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
+        let mut bindings = vec![
+            ("sb_results", results),
+            ("sb_req_root", roots),
+            ("sb_chain_runs", runs),
+        ];
         bindings.extend(self.scratch.iter().map(|(&name, buffer)| (name, buffer)));
         Ok(bindings)
     }

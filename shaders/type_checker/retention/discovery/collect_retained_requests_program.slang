@@ -15,7 +15,7 @@ uint use_count(uint instance)
 }
 
 
-public bool collect_retained_requests(inout StepProgram program)
+public bool collect_retained_requests(inout StepProgram program, DiscoveryFrontier frontier)
 {
     if (dg_status[29] != 0u)
     {
@@ -41,9 +41,9 @@ public bool collect_retained_requests(inout StepProgram program)
     }
     else
     {
-        uint lo = dg_config[1];
-        uint count = dg_config[2] - lo;
-        uint edge_base = dg_config[3];
+        uint lo = frontier.lo;
+        uint count = frontier.hi - lo;
+        uint edge_base = frontier.edge;
         for (uint row = program.lane; row < count; row += program.lanes)
             dg_scan_b[row] = use_count(lo + row);
         if (!step_barrier(program)) return false;
@@ -77,7 +77,7 @@ public bool collect_retained_requests(inout StepProgram program)
     }
 
     for (uint row = program.lane; row < uses; row += program.lanes)
-        collect_discovery_requests(row);
+        collect_discovery_requests(row, frontier);
     if (!step_barrier(program)) return false;
     if (program.lane == 0u) finish_discovery_requests();
     return true;

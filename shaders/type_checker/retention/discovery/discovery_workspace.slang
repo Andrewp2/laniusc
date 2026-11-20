@@ -54,7 +54,7 @@ public void dg_fail(uint root, uint index, uint use, uint code, uint detail)
     dg_errors[error] = uint4(code, use, detail, root != 0u ? RT_INVALID : dg_edge_owner[index].x);
     InterlockedMin(dg_status[6], error);
 }
-public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
+public uint dg_insert_at_depth(uint decl, uint env, uint root, uint index, uint use, uint depth)
 {
     uint capacity; uint stride; dg_instances.GetDimensions(capacity, stride); capacity /= 2u;
     uint slots; dg_slots.GetDimensions(slots, stride);
@@ -65,7 +65,7 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
         uint value = dg_slots[slot].x;
         if (value == 0u)
         {
-            if (dg_config[6] > 64u) { dg_fail(root, index, use, 7u, dg_config[6]); return RT_INVALID; }
+            if (depth > 64u) { dg_fail(root, index, use, 7u, depth); return RT_INVALID; }
             InterlockedCompareExchange(dg_slots[slot].x, 0u, env, value);
             if (value == 0u)
             {
@@ -74,7 +74,7 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
                 InterlockedMax(dg_status[4], candidate + 1u);
                 if (candidate >= capacity) { InterlockedOr(dg_status[3], 1u); return RT_INVALID; }
                 dg_instances[2u * candidate] = uint4(decl, env, dg_config[15], 0u);
-                dg_instances[2u * candidate + 1u] = uint4(0u, 0u, dg_config[6], 0u);
+                dg_instances[2u * candidate + 1u] = uint4(0u, 0u, depth, 0u);
                 dg_slots[slot].y = candidate;
                 InterlockedAdd(dg_status[1], 1u);
                 // Instances whose closed predicates need a solver wave.
@@ -89,6 +89,12 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
     InterlockedOr(dg_status[3], 1u);
     return RT_INVALID;
 }
+
+public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
+{
+    return dg_insert_at_depth(decl, env, root, index, use, dg_config[6]);
+}
+
 public uint dg_scan(uint index) { return dg_scan_a[index]; }
 public uint4 dg_native(uint decl)
 {
