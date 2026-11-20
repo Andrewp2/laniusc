@@ -39,6 +39,7 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/attach_discovered_method_routes",
 ];
 const STATUS_WORDS: usize = 32;
+const METHOD_ROUTES_SYNC_FAILED: usize = 31;
 /// Route header words 8-10 of a retained trait publication: status (1
 /// valid), route failures, first failure (retained_route_abi.slang).
 const PUBLICATION_STATUS_WORD: u64 = 8;
@@ -1058,7 +1059,7 @@ impl RetainedDiscovery {
         let levels_buffer = self.scratch["dg_levels"].clone();
         let receipt_buffer = self.scratch["dg_receipt"].clone();
         let indirect = self.scratch["dg_indirect"].clone();
-        let route_args = self.scratch["dg_route_args"].clone();
+        let route_gate = self.scratch["dg_route_gate"].clone();
         let bound_args = self.scratch["dg_bound_args"].clone();
         let metadata = self.scratch["dg_req_meta"].clone();
         let instances = self.scratch["dg_instances"].clone();
@@ -1130,12 +1131,9 @@ impl RetainedDiscovery {
             let nodes_bound = proofs.as_ref().map_or(0, |p| p.proof_node_bound());
             if closed {
                 routes.prepare(request_lanes, nodes_bound)?;
-                let [proof_groups, request_groups, slot_groups] = routes.gated_groups(&guard, request_lanes, nodes_bound);
                 let mut check = config;
                 check[0] = 4;
-                check[10] = proof_groups;
-                check[12] = request_groups;
-                check[13] = slot_groups;
+                check[12] = request_lanes.div_ceil(256).max(1);
                 self.record(&mut encoder, &guard, 5, check, extra, 1, report)?;
             }
             for mode in [3, 4, 2] {
@@ -1183,7 +1181,7 @@ impl RetainedDiscovery {
                     (&receipt_buffer, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, nodes_bound),
                     &metadata,
                     &instances,
-                    Some(&route_args),
+                    Some(&route_gate),
                 )?;
                 let mut bound = extra.to_vec();
                 bound.push(("mr_out", routes.output()));
@@ -1325,6 +1323,7 @@ impl RetainedDiscovery {
         };
         report.substitution_dispatches += sub.dispatches;
         if let Some(words) = words {
+            check_method_routes_sync(&words)?;
             report.readbacks += 1;
             return Ok(Some((words, true)));
         }
@@ -1530,7 +1529,7 @@ impl RetainedDiscovery {
         ] {
             self.ensure(name, bytes)?;
         }
-        for (name, bytes) in [("dg_indirect", 16), ("dg_route_args", 21 * 4), ("dg_bound_args", 16)] {
+        for (name, bytes) in [("dg_indirect", 16), ("dg_route_gate", 16), ("dg_bound_args", 16)] {
             if !self.scratch.contains_key(name) {
                 self.scratch.insert(name, storage(&self.device, name, bytes, true));
             }
@@ -1713,12 +1712,19 @@ impl RetainedDiscovery {
         self.queue.submit(Some(encoder.finish()));
         let slice = rb.slice(..);
         map_readback_blocking(&self.device, &slice, crate::readback_label!("discovery.status"))?;
-        let data = slice
+        let data: Vec<u32> = slice
             .get_mapped_range()
             .chunks_exact(4)
             .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
             .collect();
         rb.unmap();
+        let mut offset = 0;
+        for &(buffer, words) in parts {
+            if buffer == &self.scratch["dg_status"] {
+                check_method_routes_sync(&data[offset..offset + words])?;
+            }
+            offset += words;
+        }
         Ok(data)
     }
 }
@@ -1795,6 +1801,13 @@ fn closed_receipt_failure(
         Closed::Accepted
     })
 }
+fn check_method_routes_sync(status: &[u32]) -> Result<()> {
+    if status.get(METHOD_ROUTES_SYNC_FAILED).copied() == Some(1) {
+        bail!("retained method routes failed to synchronize");
+    }
+    Ok(())
+}
+
 fn failure(s: &[u32]) -> Option<DiscoveryError> {
     if s[10] != 0 {
         Some(DiscoveryError {

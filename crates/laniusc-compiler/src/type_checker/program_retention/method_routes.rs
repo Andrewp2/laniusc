@@ -6,6 +6,7 @@ use anyhow::{Result, anyhow, bail, ensure};
 
 use super::{
     ProgramRetention,
+    METHOD_ROUTES_SYNC_SLOT,
     Store,
     counts,
     grown_capacity,
@@ -16,22 +17,14 @@ use super::{
 };
 use crate::{
     compiler::{ClosedTraitPublication, RetainedTraitPublication, RetainedTraitView},
-    gpu::passes_core::{self, PassData, make_pass_data_from_shader_key},
+    gpu::{
+        operations::{StepProgramOperation, step_program_group_counts, step_program_group_variant},
+        passes_core::{self, PassData, make_pass_data_from_shader_key},
+    },
 };
-const KEYS: [&str; 7] = [
-    "type_checker/retention/method_routes/begin_retained_method_routing",
-    "type_checker/retention/method_routes/select_retained_method_bindings",
-    "type_checker/retention/method_routes/expand_retained_method_binding_terms",
-    "type_checker/retention/method_routes/intern_retained_method_binding_terms",
-    "type_checker/retention/method_routes/intern_retained_method_environments",
-    "type_checker/retention/method_routes/publish_retained_method_routes",
-    "type_checker/retention/method_routes/roll_back_retained_method_routes",
-];
+const PROGRAM: &str = "type_checker/retention/method_routes/build_retained_method_routes";
+const SYNC_FAILED: usize = 29;
 
-/// Config buffers: the begin config, which the fixed-point passes also
-/// bind, and the final config.
-const BEGIN_CONFIG: usize = 0;
-const FINAL_CONFIG: usize = 1;
 const CONFIG_WORDS: usize = 12;
 /// mr_state word that would ask for more rounds (common.slang MR_PENDING).
 /// The fixed-point passes run to their bound in one dispatch, so it stays
@@ -41,25 +34,20 @@ pub(super) const MR_PENDING: usize = 28;
 pub(super) struct MethodRoutes {
     device: std::sync::Arc<wgpu::Device>,
     queue: std::sync::Arc<wgpu::Queue>,
-    passes: Vec<PassData>,
+    pass: PassData,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
-    configs: Vec<wgpu::Buffer>,
+    config: wgpu::Buffer,
 }
 impl MethodRoutes {
     pub fn new_with_device(gpu: &crate::gpu::device::GpuDevice) -> Result<Self> {
-        let passes = KEYS
-            .iter()
-            .map(|name| {
-                let key = *name;
-                make_pass_data_from_shader_key(&gpu.device, key, "main", key)
-            })
-            .collect::<Result<_>>()?;
+        let pass = make_pass_data_from_shader_key(&gpu.device, PROGRAM, "main", PROGRAM)?;
+        let config = storage(&gpu.device, "mr_config", CONFIG_WORDS as u64 * 4, false);
         Ok(Self {
             device: gpu.device.clone(),
             queue: gpu.queue.clone(),
-            passes,
+            pass,
             buffers: BTreeMap::new(),
-            configs: Vec::new(),
+            config,
         })
     }
     fn ensure(&mut self, name: &'static str, bytes: u64) -> Result<()> {
@@ -100,25 +88,14 @@ impl MethodRoutes {
         ] {
             self.ensure(name, bytes)?;
         }
-        if self.configs.is_empty() {
-            for _ in 0..=FINAL_CONFIG {
-                self.configs
-                    .push(storage(&self.device, "mr_config", CONFIG_WORDS as u64 * 4, false));
-            }
-        }
         Ok(())
     }
-    /// Writes the round and begin configs of one run.
-    fn write_configs(&self, words: &Config) {
-        // Selection marks before level 0, whose predecessor flag is round 2's.
-        self.queue.write_buffer_counted(&self.configs[BEGIN_CONFIG], 0, &words_bytes(&words.at(0, 2)));
-        // Both value buffers are equal at a fixed point; at the level bound
-        // the last level (64, parity 0) wrote buffer b.
-        self.queue.write_buffer_counted(&self.configs[FINAL_CONFIG], 0, &words_bytes(&words.at(1, 1)));
+
+    fn write_config(&self, words: &Config) {
+        // Selection marks before level 0, whose predecessor is round 2.
+        self.queue.write_buffer_counted(&self.config, 0, &words_bytes(&words.at(0, 2)));
     }
-    /// Records one run: the begin and selection passes, each fixed-point
-    /// loop as one workgroup that runs its levels (expand_retained_method_binding_terms, intern_retained_method_binding_terms),
-    /// and the environment, finish and rollback passes.
+
     #[allow(clippy::too_many_arguments)]
     fn record_batch(
         &self,
@@ -132,25 +109,44 @@ impl MethodRoutes {
         requests: u32,
         gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
-        let record = |encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, slot: usize| {
-            let bind = self.bind_group(kernel, slot, guard, view, sub, metadata, instances)?;
-            match gate {
-                Some(args) => self.dispatch_gated(encoder, kernel, &bind, args),
-                None => self.dispatch(encoder, kernel, lanes, &bind),
-            }
-            Ok::<(), anyhow::Error>(())
-        };
-        let nodes = config.nodes;
-        record(encoder, 0, requests.max(nodes).max(1), BEGIN_CONFIG)?;
-        record(encoder, 1, requests, BEGIN_CONFIG)?;
-        // Reachability marking, then bottom-up evaluation, each to its
-        // fixed point (at most 65 levels) in one workgroup.
-        record(encoder, 2, 1, BEGIN_CONFIG)?;
-        record(encoder, 3, 1, BEGIN_CONFIG)?;
-        record(encoder, 4, requests, FINAL_CONFIG)?;
-        record(encoder, 5, 1, FINAL_CONFIG)?;
-        record(encoder, 6, (guard.buffers["rt_term_slot"].size() / 4) as u32, FINAL_CONFIG)
+        let names = reflected_names(&self.pass);
+        let mut entries = Vec::with_capacity(names.len());
+        for name in &names {
+            let binding = match name.as_str() {
+                "step_program_sync" | "program_launch" => continue,
+                "mr_routes" => view.routes.whole_binding(),
+                "mr_catalog" => view.catalog.binding(),
+                "mr_proof" => view.proof.binding(),
+                "mr_instances" => instances.as_entire_binding(),
+                "mr_requests" => metadata.as_entire_binding(),
+                "mr_config" => self.config.as_entire_binding(),
+                "mr_gate" => gate.unwrap_or(&self.config).as_entire_binding(),
+                "sb_results" => sub.0.as_entire_binding(),
+                "sb_counts" => sub.1.as_entire_binding(),
+                n => self.buffers.get(n).or_else(|| guard.buffers.get(n))
+                    .ok_or_else(|| anyhow!("method routes missing buffer {n}"))?
+                    .as_entire_binding(),
+            };
+            entries.push((name.as_str(), binding));
+        }
+        let rows = u64::from(requests.max(config.nodes));
+        let groups = step_program_group_counts()[step_program_group_variant(rows)];
+        let program = StepProgramOperation::new_reflected(
+            &self.device, PROGRAM, &self.pass, &entries, &guard.step_program_sync,
+            METHOD_ROUTES_SYNC_SLOT, groups, u32::from(gate.is_some()),
+        )?;
+        program.record(encoder)?;
+        passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_counted(
+            &guard.step_program_sync,
+            StepProgramOperation::failed_offset(METHOD_ROUTES_SYNC_SLOT),
+            self.state(),
+            (SYNC_FAILED * 4) as u64,
+            4,
+        );
+        Ok(())
     }
+
     /// Records the first batch of a run whose request and proof node counts
     /// are still on the GPU: the 4-byte words at `requests.1` and
     /// `nodes.1` are copied into every config before the passes. Lanes and
@@ -172,23 +168,10 @@ impl MethodRoutes {
         gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let config = Config::new(run, guard.generation, 0, nodes.2, view.identity);
-        self.write_configs(&config);
-        for target in &self.configs {
-            encoder.copy_buffer_counted(requests.0, requests.1, target, 8, 4);
-            encoder.copy_buffer_counted(nodes.0, nodes.1, target, 12, 4);
-        }
+        self.write_config(&config);
+        encoder.copy_buffer_counted(requests.0, requests.1, &self.config, 8, 4);
+        encoder.copy_buffer_counted(nodes.0, nodes.1, &self.config, 12, 4);
         self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2, gate)
-    }
-    /// The workgroups of each kernel of `record_batch`, in its order, for
-    /// a batch the GPU gates (`record_first_batch` with a gate): the
-    /// proof-sized kernel, the request-sized ones and the term-slot one.
-    pub fn gated_groups(&self, guard: &Store, requests: u32, nodes: u32) -> [u32; 3] {
-        let groups = |lanes: u32| lanes.div_ceil(256).max(1);
-        [
-            groups(requests.max(nodes).max(1)),
-            groups(requests),
-            groups((guard.buffers["rt_term_slot"].size() / 4) as u32),
-        ]
     }
     /// Runs the routes. Every batch also records `then(encoder, store,
     /// mr_state, mr_out)` after the routes, and its one readback returns
@@ -212,7 +195,7 @@ impl MethodRoutes {
         let requests = sub.id.requests;
         self.prepare(requests, nodes)?;
         let config = Config::new(sub.id.run, sub.id.generation, requests, nodes, view.identity);
-        self.write_configs(&config);
+        self.write_config(&config);
         let buffers = (sub.results, sub.counts);
         let mut guard = store.store.lock().unwrap();
         let result = (|| {
@@ -233,6 +216,7 @@ impl MethodRoutes {
                 parts.extend_from_slice(also);
                 let status =
                     super::substitution::read_many_labeled(&self.device, &self.queue, &parts, crate::readback_label!("method_routes.state"))?;
+                ensure!(status[SYNC_FAILED] == 0, "retention program {PROGRAM} failed to synchronize");
                 ensure!(status[MR_PENDING] == 0, "method routes pending after the level bound");
                 if status[0] != 3 {
                     return Ok(status);
@@ -257,79 +241,6 @@ impl MethodRoutes {
             self.queue.submit(None);
         }
         result
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn bind_group(
-        &self,
-        kernel: usize,
-        config: usize,
-        store: &Store,
-        view: &RetainedTraitView<'_>,
-        sub: (&wgpu::Buffer, &wgpu::Buffer),
-        metadata: &wgpu::Buffer,
-        instances: &wgpu::Buffer,
-    ) -> Result<wgpu::BindGroup> {
-        let pass = &self.passes[kernel];
-        let names = reflected_names(pass);
-        let mut entries = Vec::new();
-        for name in &names {
-            let binding = match name.as_str() {
-                // The route header bounds every read; the whole arena keeps
-                // the bind group across builds whose route counts differ.
-                "mr_routes" => view.routes.whole_binding(),
-                "mr_catalog" => view.catalog.binding(),
-                "mr_proof" => view.proof.binding(),
-                "mr_instances" => instances.as_entire_binding(),
-                "mr_requests" => metadata.as_entire_binding(),
-                "mr_config" => self.configs[config].as_entire_binding(),
-                "sb_results" => sub.0.as_entire_binding(),
-                "sb_counts" => sub.1.as_entire_binding(),
-                n => self
-                    .buffers
-                    .get(n)
-                    .or_else(|| store.buffers.get(n))
-                    .ok_or_else(|| anyhow!("method routes missing buffer {n}"))?
-                    .as_entire_binding(),
-            };
-            entries.push((name.as_str(), binding));
-        }
-        passes_core::bind_group::create_bind_group_from_bindings(
-            &self.device,
-            Some(&pass.shader_id),
-            pass,
-            0,
-            &entries,
-        )
-    }
-    /// Records `kernel` with the workgroups at `args` (one triple per
-    /// kernel, in kernel order), which the GPU wrote.
-    fn dispatch_gated(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, bind: &wgpu::BindGroup, args: &wgpu::Buffer) {
-        let pass = &self.passes[kernel];
-        let args = crate::gpu::buffers::LaniusBuffer::<u32>::new((args.clone(), args.size()), args.size() as usize / 4);
-        passes_core::record_or_defer_compute_indirect_offset(
-            encoder,
-            pass,
-            bind,
-            "retained method routes",
-            &args,
-            kernel as u64 * 12,
-        );
-    }
-    /// Records `kernel` with a bind group from `bind_group` for it.
-    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, bind: &wgpu::BindGroup) {
-        let pass = &self.passes[kernel];
-        let groups = if kernel == 5 {
-            1
-        } else {
-            lanes.div_ceil(256).max(1)
-        };
-        passes_core::record_or_defer_compute_direct(
-            encoder,
-            pass,
-            bind,
-            "retained method routes",
-            (groups.min(65535), groups.div_ceil(65535), 1),
-        );
     }
 }
 

@@ -56,13 +56,7 @@ void evaluate(uint i,uint parity,uint round)
     if (value!=old) mr_state[MR_TERMS_CHANGED+round]=1u;
     if (parity==0u) mr_values_b[i]=value; else mr_values_a[i]=value;
 }
-struct Terms : IMrLevel
+public struct Terms : IMrLevel
 {
-    void run(uint lane,uint level) { for (uint i=lane;i<mr_config[3];i+=256u) evaluate(i,level%2u,level%3u); }
-}
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 local:SV_GroupThreadID)
-{
-    Terms terms; mr_levels(local.x,MR_TERMS_CHANGED,terms);
+    public void run(uint lane,uint lanes,uint level) { for (uint i=lane;i<mr_config[3];i+=lanes) evaluate(i,level%2u,level%3u); }
 }

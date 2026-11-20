@@ -2,11 +2,8 @@
 // facts and expression parent before the edges (4b) and the check (5).
 import type_checker.retention.projection.retained_projection_workspace;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void clear_projected_row_errors(uint g)
 {
-    uint g = pj_lane(dtid);
     if (g >= pj_total(PJ_C_ROWS)) return;
     pj_row_errors[g] = uint2(0u, 0u);
     pj_g_facts[g] = uint4(0u, RT_INVALID, RT_INVALID, 0u);

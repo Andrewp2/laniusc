@@ -1,9 +1,7 @@
 import type_checker.retention.method_routes.retained_method_route_workspace;
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id:SV_DispatchThreadID)
+public void begin_retained_method_routing(uint i)
 {
-    uint i=mr_lane(id);
+
     uint lanes=max(mr_config[2],mr_config[3]);
     if (mr_config[2]!=0u && i<lanes)
     {

@@ -18,7 +18,6 @@ public globallycoherent RWStructuredBuffer<uint> mr_args; // 64 terms per reques
 public globallycoherent RWStructuredBuffer<uint> mr_env_slots; // key owner request plus one
 // Target, ENV (or RT_PARAM_BIT | winning request), receiver mode, and status.
 public RWStructuredBuffer<uint4> mr_out;
-public uint mr_lane(uint3 id) { return id.x+id.y*16776960u; }
 public uint mr_h(uint h) { return mr_routes[h]; }
 public uint mr_entry(uint d)
 {
@@ -95,20 +94,5 @@ public uint mr_value_in(uint2 r,uint parity)
     return parity==0u ? mr_values_a[r.y] : mr_values_b[r.y];
 }
 public uint mr_value(uint2 r) { return mr_value_in(r,mr_config[4]); }
-// Runs `level` once per fixed-point level in one 256-lane workgroup, with a
-// workgroup barrier between levels, until a level's predecessor changed
-// nothing or after MR_LEVELS levels.
-groupshared uint mr_go;
-public interface IMrLevel { void run(uint lane,uint level); }
-public void mr_levels<L:IMrLevel>(uint lane,uint base,L level)
-{
-    for (uint r=0u;r<MR_LEVELS;r++)
-    {
-        if (lane==0u) { mr_state[base+(r+1u)%3u]=0u; mr_go=mr_state[base+(r+2u)%3u]; }
-        AllMemoryBarrierWithGroupSync();
-        if (mr_go==0u) break;
-        level.run(lane,r);
-        AllMemoryBarrierWithGroupSync();
-    }
-}
+public interface IMrLevel { void run(uint lane, uint lanes, uint level); }
 public struct MrArgs : IRtArgs { public uint base; public uint arg(uint k) { return mr_args[base+k]; } }

@@ -1,7 +1,5 @@
 import type_checker.retention.method_routes.retained_method_route_workspace;
-[shader("compute")]
-[numthreads(1,1,1)]
-void main(uint3 id:SV_DispatchThreadID)
+public void publish_retained_method_routes()
 {
     if (mr_state[MR_PENDING]!=0u) return; // more rounds follow
     uint failure=mr_state[2];

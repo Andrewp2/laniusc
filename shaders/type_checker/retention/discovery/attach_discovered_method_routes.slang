@@ -7,6 +7,11 @@ StructuredBuffer<uint> mr_state;
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
+    if (mr_state[29] != 0u)
+    {
+        if (dg_lane(id) == 0u) dg_status[31] = 1u;
+        return;
+    }
     // It may also share resolution's submit: then it runs only when
     // resolution left no failure or overflow (status 12).
     // In a chain (config 8 set), routes that did not finish or failed

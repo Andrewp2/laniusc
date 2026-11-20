@@ -46,7 +46,8 @@ use crate::{
     compiler::GpuCompiler,
     gpu::{
         buffers::LaniusBuffer,
-        passes_core::{
+        operations::{StepProgramOperation, step_program_group_counts, step_program_group_variant},
+    passes_core::{
             self,
             PassData,
             make_pass_data_from_shader_key,
@@ -163,6 +164,8 @@ const CFG_ROW_CAP: usize = 5;
 const CFG_TOKEN_CAP: usize = 6;
 const CFG_SIDE_CAP: usize = 7;
 const CFG_GATE: usize = 8;
+const CFG_LAYOUT_ROUNDS: usize = 9;
+const CFG_PATTERN_ROUNDS: usize = 10;
 const GATE_ON: u32 = 1;
 const GATE_FORCE_FAIL: u32 = 2;
 const VERDICT_PASSED: u32 = 1;
@@ -184,6 +187,7 @@ const S_BATCHES: usize = 9;
 const S_LAYOUT_CHANGED: usize = 10;
 const S_PATTERN_CHANGED: usize = 11;
 const S_GATE: usize = 60;
+const S_PROGRAM_FAILED: usize = 61;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
 const STATE_CHECKED: u32 = 1;
@@ -195,14 +199,12 @@ const LAYOUT_ROUNDS: u32 = 16;
 const PATTERN_ROUNDS: u32 = 4;
 const CALL_WORDS: u64 = 22;
 
+const PREPARE_VALIDATION: &str = "type_checker/retention/projection/prepare_retained_validation";
 const KERNELS: &[&str] = &[
     "type_checker/retention/projection/plan_retained_instance_projection",
     "type_checker/retention/projection/scan_retained_projection_sizes",
     "type_checker/retention/projection/emit_retained_projection_substitution_requests",
-    "type_checker/retention/projection_rows/clear_projected_type_tables",
-    "type_checker/retention/projection_rows/compute_closed_type_layouts",
-    "type_checker/retention/projection_rows/clear_projected_row_errors",
-    "type_checker/retention/projection_rows/project_retained_expression_edges",
+    PREPARE_VALIDATION,
     "type_checker/retention/projection/validate_projected_semantic_rows",
     "type_checker/retention/projection/report_retained_projection_errors",
     "type_checker/retention/projection/plan_retained_lowering_batches",
@@ -213,32 +215,23 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/finalize_retained_native_abi",
     "type_checker/retention/projection_rows/scan_projected_string_word_counts",
     "type_checker/retention/projection_rows/project_retained_string_bytes",
-    "type_checker/retention/projection_rows/project_retained_pattern_roots",
-    "type_checker/retention/projection_rows/project_retained_pattern_payloads",
-    "type_checker/retention/projection_rows/project_closed_type_arguments",
     "type_checker/retention/projection/validate_projected_call_routes",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
 const K_REQUESTS: usize = 2;
-const K_LAYOUT_INIT: usize = 3;
-const K_LAYOUT: usize = 4;
-const K_ROWS_INIT: usize = 5;
-const K_EDGES: usize = 6;
-const K_CHECK: usize = 7;
-const K_REPORT: usize = 8;
-const K_BATCH_PLAN: usize = 9;
-const K_ROWS: usize = 10;
-const K_SIDE: usize = 11;
-const K_BATCH_FINISH: usize = 12;
-const K_CERTIFY: usize = 13;
-const K_CERTIFY_FINISH: usize = 14;
-const K_STRING_SCAN: usize = 15;
-const K_STRING_BYTES: usize = 16;
-const K_PATTERN_ROOTS: usize = 17;
-const K_PATTERN_PAYLOADS: usize = 18;
-const K_TYPE_ARGUMENTS: usize = 19;
-const K_CALLS: usize = 20;
+const K_PREPARE_VALIDATION: usize = 3;
+const K_CHECK: usize = 4;
+const K_REPORT: usize = 5;
+const K_BATCH_PLAN: usize = 6;
+const K_ROWS: usize = 7;
+const K_SIDE: usize = 8;
+const K_BATCH_FINISH: usize = 9;
+const K_CERTIFY: usize = 10;
+const K_CERTIFY_FINISH: usize = 11;
+const K_STRING_SCAN: usize = 12;
+const K_STRING_BYTES: usize = 13;
+const K_CALLS: usize = 14;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -1267,27 +1260,8 @@ impl RetainedProjection {
         let mut entries = Vec::with_capacity(names.len());
         for name in &names {
             let n = name.as_str();
-            let buffer = match n {
-                "pj_config" => Some(&self.config),
-                "pj_status" => Some(&self.status),
-                "pj_layout" => self.layout.as_ref(),
-                "pj_batches" => self.batches.as_ref(),
-                _ => None,
-            }
-            .or_else(|| self.ranks.get(n))
-            .or_else(|| self.rows.get(n))
-            .or_else(|| self.schema.binding(n))
-            .or_else(|| {
-                inputs
-                    .buffers()
-                    .into_iter()
-                    .find(|(k, _)| *k == n)
-                    .map(|(_, b)| b)
-            })
-            .or_else(|| extra.iter().find(|(k, _)| *k == n).map(|(_, b)| *b))
-            .or_else(|| self.columns.as_ref().and_then(|c| c.binding(n)))
-            .or_else(|| store.buffers.get(n))
-            .ok_or_else(|| anyhow!("{} binds unknown buffer {n}", pass.shader_id))?;
+            let buffer = self.bound_buffer(store, inputs, extra, n)
+                .ok_or_else(|| anyhow!("{} binds unknown buffer {n}", pass.shader_id))?;
             entries.push((n, buffer.as_entire_binding()));
         }
         passes_core::bind_group::create_bind_group_from_bindings(
@@ -1297,6 +1271,35 @@ impl RetainedProjection {
             0,
             &entries,
         )
+    }
+
+    fn bound_buffer<'a>(
+        &'a self,
+        store: &'a Store,
+        inputs: &'a ProjectionInputs,
+        extra: &[(&str, &'a wgpu::Buffer)],
+        n: &str,
+    ) -> Option<&'a wgpu::Buffer> {
+        match n {
+            "pj_config" => Some(&self.config),
+            "pj_status" => Some(&self.status),
+            "pj_layout" => self.layout.as_ref(),
+            "pj_batches" => self.batches.as_ref(),
+            _ => None,
+        }
+        .or_else(|| self.ranks.get(n))
+        .or_else(|| self.rows.get(n))
+        .or_else(|| self.schema.binding(n))
+        .or_else(|| {
+            inputs
+                .buffers()
+                .into_iter()
+                .find(|(k, _)| *k == n)
+                .map(|(_, b)| b)
+        })
+        .or_else(|| extra.iter().find(|(k, _)| *k == n).map(|(_, b)| *b))
+        .or_else(|| self.columns.as_ref().and_then(|c| c.binding(n)))
+        .or_else(|| store.buffers.get(n))
     }
 
     /// Records the root-call certification (certify_retained_native_abi) against this run's
@@ -1347,6 +1350,8 @@ impl RetainedProjection {
         words[CFG_BATCH_ROWS] = options.batch_rows.max(1);
         words[CFG_BATCH] = batch;
         words[CFG_IDENTITY_MASK] = options.identity_mask;
+        words[CFG_LAYOUT_ROUNDS] = self.layout_rounds;
+        words[CFG_PATTERN_ROUNDS] = self.pattern_rounds;
         self.queue
             .write_buffer_counted(&self.config, 0, &words_bytes(&words));
     }
@@ -1358,6 +1363,8 @@ impl RetainedProjection {
         words[CFG_RUN] = run;
         words[CFG_BATCH_ROWS] = options.batch_rows.max(1);
         words[CFG_IDENTITY_MASK] = options.identity_mask;
+        words[CFG_LAYOUT_ROUNDS] = self.layout_rounds;
+        words[CFG_PATTERN_ROUNDS] = self.pattern_rounds;
         words[CFG_ROW_CAP] = caps[0];
         words[CFG_TOKEN_CAP] = caps[1];
         words[CFG_SIDE_CAP] = caps[2];
@@ -1641,28 +1648,9 @@ impl RetainedProjection {
             let extra = [("sb_results", &results), ("sb_counts", &counts)];
             let mut r = self.recorder();
             trace("check: recording");
-            r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
-            r.dispatch(K_TYPE_ARGUMENTS, &guard, inputs, &extra, self.type_capacity)?;
-            for _ in 1..self.layout_rounds {
-                r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
-            }
-            r.dispatch(K_ROWS_INIT, &guard, inputs, &extra, report.rows.max(1))?;
-            r.dispatch(K_EDGES, &guard, inputs, &extra, report.rows.max(1))?;
-            let arms = totals[S_TOTALS + 4];
             let payloads = totals[S_TOTALS + 5];
-            if arms != 0 || payloads != 0 {
-                r.dispatch(K_PATTERN_ROOTS, &guard, inputs, &extra, arms.max(payloads))?;
-                if payloads != 0 {
-                    // The last round runs after its status word is cleared, as
-                    // the last layout round does.
-                    for _ in 1..self.pattern_rounds {
-                        r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
-                    }
-                    r.encoder()
-                        .clear_buffer_counted(&self.status, S_PATTERN_CHANGED as u64 * 4, Some(4));
-                    r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
-                }
-            }
+            let rows = self.type_capacity.max(report.rows).max(payloads);
+            r.prepare_validation(&guard, inputs, &extra, rows)?;
             if totals[S_TOTALS + 7] != 0 {
                 let mut input = 0u32;
                 let mut distance = 0u32;
@@ -1698,11 +1686,6 @@ impl RetainedProjection {
                 r.encoder()
                     .clear_buffer_counted(&self.rows["pj_string_offsets"], 0, None);
             }
-            // The row, edge, pattern and string kernels above do not read
-            // layouts, so the last layout round is recorded after them.
-            r.encoder()
-                .clear_buffer_counted(&self.status, S_LAYOUT_CHANGED as u64 * 4, Some(4));
-            r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
             r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
             r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
             r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
@@ -1787,6 +1770,9 @@ impl RetainedProjection {
             let cert = read.pop().unwrap();
             let status = read.pop().unwrap();
             trace(&format!("check: {status:?}"));
+            if status[S_PROGRAM_FAILED] != 0 {
+                bail!("retention program {PREPARE_VALIDATION} failed to synchronize");
+            }
             if status[S_LAYOUT_CHANGED] == 0 && status[S_PATTERN_CHANGED] == 0 {
                 break (table, cert, status);
             }
@@ -1976,6 +1962,46 @@ impl RetainedProjection {
 }
 
 impl Recorder<'_> {
+    fn prepare_validation(
+        &mut self,
+        store: &Store,
+        inputs: &ProjectionInputs,
+        extra: &[(&str, &wgpu::Buffer)],
+        rows: u32,
+    ) -> Result<()> {
+        let projection = self.projection;
+        let pass = &projection.passes[K_PREPARE_VALIDATION];
+        let names = reflected_names(pass);
+        let mut bindings = Vec::with_capacity(names.len());
+        for name in &names {
+            if matches!(name.as_str(), "step_program_sync" | "program_launch") {
+                continue;
+            }
+            let buffer = projection.bound_buffer(store, inputs, extra, name)
+                .ok_or_else(|| anyhow!("{PREPARE_VALIDATION} binds unknown buffer {name}"))?;
+            bindings.push((name.as_str(), buffer.as_entire_binding()));
+        }
+        let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+        let slot = super::VALIDATION_SYNC_SLOT;
+        let program = StepProgramOperation::new_reflected(
+            &projection.device, PREPARE_VALIDATION, pass, &bindings,
+            &store.step_program_sync, slot, groups, 0,
+        )?;
+        let encoder = self.encoder();
+        program.record(encoder)?;
+        passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_counted(
+            &store.step_program_sync,
+            StepProgramOperation::failed_offset(slot),
+            &projection.status,
+            (S_PROGRAM_FAILED * 4) as u64,
+            4,
+        );
+        self.dispatches += 1;
+        Ok(())
+    }
+
+
     fn dispatch(
         &mut self,
         kernel: usize,

@@ -45,6 +45,8 @@ public static const uint PJ_CFG_SIDE_CAP = 7u;
 // PJ_GATE_*: whether publish_retained_lowering_batch gates the batch on the check and the
 // capacities above.
 public static const uint PJ_CFG_GATE = 8u;
+public static const uint PJ_CFG_LAYOUT_ROUNDS = 9u;
+public static const uint PJ_CFG_PATTERN_ROUNDS = 10u;
 public static const uint PJ_CFG_WORDS = 12u;
 
 public static const uint PJ_GATE_OFF = 0u;
@@ -137,3 +139,6 @@ public static const uint PJ_IMPORTED_COMPLETE = 0x80000000u;
 // Per global row facts (pj_g_facts): (ref tag, ref payload, native words,
 // scalar code or 0). pj_g_member: (field word offset, field word count).
 public static const uint PJ_EXPR_DEPTH = 256u;
+
+public static const uint PJ_S_PROGRAM_FAILED = 61u;
+public static const uint PJ_S_PROGRAM_CHANGED = 62u; // two alternating round counters

@@ -5,11 +5,8 @@
 // its parent's realized variant schema, never the outer scrutinee's type.
 import type_checker.retention.projection_rows.retained_pattern_projection;
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_retained_pattern_payloads(uint lane, uint changed)
 {
-    uint lane = pj_lane(dtid);
     uint column = PJ_C_SIDE+PJ_SIDE_MATCH_PAYLOADS;
     if (lane >= pj_total(column)) return;
     uint rank = pj_rank_of(column,lane,0u,pj_instance_count());
@@ -23,5 +20,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (schema.x == RT_INVALID || payload.z >= schema.z)
     { pj_row_fail(base+payload.y,PJ_E_FIELD,payload.z); return; }
     pj_g_aux[base+payload.y].w = pj_schema_type(parent,schema.w+payload.z);
-    pj_status[PJ_S_PATTERN_CHANGED] = 1u;
+    InterlockedOr(pj_status[changed], 1u);
 }

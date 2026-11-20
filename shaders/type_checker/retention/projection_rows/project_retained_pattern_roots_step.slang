@@ -2,11 +2,8 @@
 // records membership and contributes to its parent's exact payload arity.
 import type_checker.retention.projection_rows.retained_pattern_projection;
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_retained_pattern_roots(uint lane)
 {
-    uint lane = pj_lane(dtid);
     uint column = PJ_C_SIDE+PJ_SIDE_MATCH_ARMS;
     if (lane < pj_total(column))
     {

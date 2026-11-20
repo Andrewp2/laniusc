@@ -9,11 +9,8 @@ import type_checker.retention.projection_schema.retained_schema_projection;
 
 static const uint DIR_STRUCT = 5u;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void compute_closed_type_layouts(uint t, uint changed)
 {
-    uint t = pj_lane(dtid);
     uint terms = min(rt_counts[RT_A_TERMS], rt_capacity(RT_A_TERMS));
     if (t < RT_FIRST_TERM || t >= min(terms, pj_type_rows())) return;
     if (pj_layout[t].x != RT_INVALID) return;
@@ -50,7 +47,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         DeviceMemoryBarrier();
         pj_layout[t] = uint4(width, native_kind, count, 0u);
-        InterlockedAdd(pj_status[PJ_S_LAYOUT_CHANGED], 1u);
+        InterlockedAdd(pj_status[changed], 1u);
         return;
     }
     if (kind != RT_KIND_NAMED) return;
@@ -116,5 +113,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     ob_ext_unit[t] = key.y;
     ob_ext_local[t] = key.w;
     ob_imported_layout_kind[t] = (d0.y == 6u ? 7u : PJ_IMPORTED_STRUCT) | PJ_IMPORTED_COMPLETE;
-    InterlockedAdd(pj_status[PJ_S_LAYOUT_CHANGED], 1u);
+    InterlockedAdd(pj_status[changed], 1u);
 }

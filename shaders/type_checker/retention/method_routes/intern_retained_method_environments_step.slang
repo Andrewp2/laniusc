@@ -4,7 +4,7 @@ uint selected_binding(uint4 selected,uint param)
     for (uint b=0u;b<selected.z;b++)
     {
         uint at=mr_h(RP_H_PROOF_BINDINGS)+(selected.y+b)*8u;
-        if (mr_id(mr_proof[at+1u],RP_ID_PARAM)==param) return mr_value(uint2(mr_proof[at+2u],mr_proof[at+3u]));
+        if (mr_id(mr_proof[at+1u],RP_ID_PARAM)==param) return mr_final_value(uint2(mr_proof[at+2u],mr_proof[at+3u]));
     }
     return RT_UNKNOWN;
 }
@@ -35,14 +35,12 @@ uint intern_environment(uint request, RtTermKey key, MrArgs args, uint arity)
     return RT_UNKNOWN;
 }
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id:SV_DispatchThreadID)
+uint mr_final_value(uint2 reference) { return mr_value_in(reference, 1u); }
+public void intern_retained_method_environments(uint i)
 {
     // Both loops ran to their fixed point or to the level bound in the
     // passes before this one.
-    if (mr_lane(id)==0u) mr_state[MR_PENDING]=0u;
-    uint i=mr_lane(id); if (i>=mr_config[2]) return;
+    if (i>=mr_config[2]) return;
     uint4 selected=mr_selected[i]; if (selected.x==RT_INVALID || mr_out[i].w!=0u) return;
     uint4 request=mr_requests[i]; uint required_decl=rt_uses[request.z*RT_USE_WORDS].w;
     uint required=mr_entry(required_decl); uint target=mr_entry(selected.x);

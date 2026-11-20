@@ -281,7 +281,9 @@ const EXPORT_PROGRAMS: [&str; 5] = [
     "type_checker/retention/commit_retained_job",
 ];
 const SUBSTITUTION_SYNC_SLOT: u32 = EXPORT_PROGRAMS.len() as u32;
-const RETENTION_SYNC_SLOTS: usize = EXPORT_PROGRAMS.len() + 1;
+const VALIDATION_SYNC_SLOT: u32 = SUBSTITUTION_SYNC_SLOT + 1;
+const METHOD_ROUTES_SYNC_SLOT: u32 = VALIDATION_SYNC_SLOT + 1;
+const RETENTION_SYNC_SLOTS: usize = METHOD_ROUTES_SYNC_SLOT as usize + 1;
 const EXPORT_SYNC_FAILURE: usize = 200;
 const RETENTION_SYNC: &str = "type_check.retention.step_program_sync";
 

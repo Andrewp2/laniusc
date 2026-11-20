@@ -3,11 +3,8 @@
 // disjoint ranges provide placement; no token-sized or fixed-slot expansion.
 import type_checker.retention.projection_rows.retained_projection_type_tables;
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_closed_type_arguments(uint t)
 {
-    uint t = pj_lane(dtid);
     if (t >= pj_type_rows()) return;
     ob_ti_arg_row_start[t] = RT_INVALID;
     if (t == 0u) ob_ti_arg_row_count[0u] = rt_counts[RT_A_TERM_ARGS];

@@ -26,11 +26,8 @@ void publish(uint g, uint rows, uint base, uint child)
     if (old != RT_INVALID && old != g) pj_row_fail(g, PJ_E_FORM, 0xffu);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_retained_expression_edges(uint g)
 {
-    uint g = pj_lane(dtid);
     uint n = pj_instance_count();
     // Every array-element record owns a distinct value row, so the element
     // count is bounded by the row dispatch. No array-sized lane walk.

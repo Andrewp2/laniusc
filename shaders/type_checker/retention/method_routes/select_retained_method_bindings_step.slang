@@ -18,11 +18,9 @@ bool matches_bound(uint record,uint required,uint env,uint subject)
     }
     return self && a==rt_term_arity(fact.w);
 }
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id:SV_DispatchThreadID)
+public void select_retained_method_bindings(uint i)
 {
-    uint i=mr_lane(id); if (i>=mr_config[2]) return;
+     if (i>=mr_config[2]) return;
     uint4 request=mr_requests[i];
     uint4 use=rt_uses[request.z*RT_USE_WORDS];
     uint required=mr_entry(use.w);

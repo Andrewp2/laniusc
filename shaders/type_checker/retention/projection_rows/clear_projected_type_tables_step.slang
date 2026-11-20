@@ -2,11 +2,8 @@
 // the layouts and writes the lowering type tables' "no instance" values.
 import type_checker.retention.projection_rows.retained_projection_type_tables;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void clear_projected_type_tables(uint t)
 {
-    uint t = pj_lane(dtid);
     if (t >= pj_type_rows()) return;
     pj_layout[t] = uint4(RT_INVALID, 0u, 0u, 0u);
     ob_ti_kind[t] = 0u;

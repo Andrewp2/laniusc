@@ -9,19 +9,11 @@ RWStructuredBuffer<uint4> dg_root_readiness;
 // word 3 the instances with closed predicates before it, then (lo, hi) of
 // chained wave i at 4 + 2i.
 RWStructuredBuffer<uint> dg_wave;
-// Mode 4: a chained closed solve's receipt (route header, solver state,
-// batch receipt), and the workgroups of its method routes (seven kernels)
-// and of the bound routes, which the receipt gates. Mode 5: the source
-// publication's status, which gates the roots pass (dg_bound_args).
+// Mode 4: the closed-solve receipt gates method and bound routes.
+// Mode 5: the source publication's status gates the roots pass.
 StructuredBuffer<uint> dg_receipt;
-RWStructuredBuffer<uint> dg_route_args;
+RWStructuredBuffer<uint> dg_route_gate;
 RWStructuredBuffer<uint> dg_bound_args;
-void write_groups(uint at, uint groups, bool run)
-{
-    dg_route_args[at]=run ? min(groups,65535u) : 0u;
-    dg_route_args[at+1u]=run ? (groups+65534u)/65535u : 0u;
-    dg_route_args[at+2u]=run ? 1u : 0u;
-}
 uint4 route_of(uint4 route,bool root)
 {
     if(route.x==1u) return uint4(0xfffffffeu,0xffff0002u,dg_rank[dg_slots[route.y].y],dg_config[15]);
@@ -63,8 +55,6 @@ void main(uint3 id: SV_DispatchThreadID)
         // without it. A skipped solve (producer word 16) has no proofs, so
         // the wave's method and bound routes dispatch no workgroups, as do
         // those of a failed one. Config words 10, 12 and 13 are the
-        // workgroups of the routes' proof-sized, request-sized and
-        // term-slot-sized kernels (words 1 to 3 hold the frontier).
         if(lane==0u)
         {
             uint producer=dg_receipt[31];
@@ -72,13 +62,7 @@ void main(uint3 id: SV_DispatchThreadID)
             if(producer!=16u && !solved && dg_status[10]==0u) dg_status[10]=12u;
             bool run=solved && dg_status[10]==0u && dg_status[12]==0u;
             uint requests=dg_config[12];
-            write_groups(0u,dg_config[10],run);
-            write_groups(3u,requests,run);
-            write_groups(6u,1u,run);
-            write_groups(9u,1u,run);
-            write_groups(12u,requests,run);
-            write_groups(15u,1u,run);
-            write_groups(18u,dg_config[13],run);
+            dg_route_gate[0u] = run ? 1u : 0u;
             dg_bound_args[0]=run ? min(requests,65535u) : 0u;
             dg_bound_args[1]=run ? (requests+65534u)/65535u : 0u;
             dg_bound_args[2]=run ? 1u : 0u;
