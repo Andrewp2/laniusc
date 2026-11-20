@@ -33,7 +33,10 @@ void copy(Batch b, uint k, uint index)
             // Substitution can make a slice field borrow a fixed array.
             // Record the same capture mode as a checked non-generic field.
             if (expected != value.y && pj_argument_compatible(expected, value.y, 2u))
-                ob_argument_mode[pj_abs_row(m, record.z)] = 4u;
+            {
+                uint prior_mode;
+                InterlockedExchange(ob_argument_mode[pj_abs_row(m, record.z)], 4u, prior_mode);
+            }
         }
     }
     else if (k == PJ_SIDE_PARAMS)
@@ -62,11 +65,8 @@ void copy(Batch b, uint k, uint index)
     }
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_retained_body_side_tables(uint index)
 {
-    uint index = pj_lane(dtid);
     Batch b = pj_batch();
     if (b.lo >= b.hi) return;
     copy(b, PJ_SIDE_CALL_ARGS, index);

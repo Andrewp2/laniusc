@@ -3,14 +3,10 @@
 // published (bit 0) and certify_retained_native_abi rejected no use.
 import type_checker.retention.projection.retained_projection_workspace;
 
-RWStructuredBuffer<uint4> rr_readiness;
-globallycoherent RWStructuredBuffer<uint> nc_cert;
+import type_checker.retention.projection.certify_retained_native_abi_step;
 
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void finalize_retained_native_abi()
 {
-    if (dtid.x != 0u) return;
     uint4 readiness = rr_readiness[0u];
     if (readiness.x != rt_counts[RT_C_GENERATION] || (readiness.y & 1u) == 0u)
     {

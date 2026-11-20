@@ -15,6 +15,8 @@ import type_checker.retention.export_types.scatter_retained_types_by_height_step
 import type_checker.retention.export_types.translate_retained_canonical_types_step;
 import type_checker.retention.export_types.reserve_retained_export_rows_step;
 
+import type_checker.retention.export_rows.stage_retained_declarations_step;
+import type_checker.retention.export_rows.retained_body_rows_step;
 [shader("compute")]
 [numthreads(STEP_PROGRAM_GROUP_LANES, 1, 1)]
 void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
@@ -59,5 +61,12 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     if (!scan_export_rows(program, rows, rt_x_flags, rt_x_scan, rt_x_counts, RT_X_SCAN_TOTAL)) return;
     if (!step_barrier(program)) return;
     if (program.lane == 0u) reserve_retained_export_rows();
+    if (!step_barrier(program)) return;
+
+    for (uint row = program.lane; row < rows; row += program.lanes)
+        stage_retained_declarations(row);
+    if (!step_barrier(program)) return;
+    for (uint row = program.lane; row < rows; row += program.lanes)
+        write_retained_body_rows(row);
     step_program_end(program);
 }

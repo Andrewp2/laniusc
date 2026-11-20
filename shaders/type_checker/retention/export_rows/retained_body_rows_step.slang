@@ -27,7 +27,6 @@ import type_checker.retention.export_rows.retained_body_source_tables;
 StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_count;
-StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> semantic_iterable_kind_by_hir;
 StructuredBuffer<uint> semantic_member_field_ordinal_by_hir;

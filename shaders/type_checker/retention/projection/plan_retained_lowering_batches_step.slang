@@ -25,11 +25,8 @@ uint first_rank_at(uint g)
 
 uint span(uint lo, uint hi, uint column) { return pj_base_at(hi, column) - pj_base_at(lo, column); }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void plan_retained_lowering_batches(uint b)
 {
-    uint b = pj_lane(dtid);
     uint rows = pj_total(PJ_C_ROWS);
     uint c = max(pj_config[PJ_CFG_BATCH_ROWS], 1u);
     uint batches = (rows + c - 1u) / c;

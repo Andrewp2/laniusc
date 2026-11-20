@@ -26,9 +26,7 @@ uint verdict(Batch b, uint string_words)
     return fits ? PJ_VERDICT_PASSED : PJ_VERDICT_CAPACITY;
 }
 
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void main()
+public void publish_retained_lowering_batch()
 {
     Batch b = pj_batch();
     uint string_words = pj_string_offsets[pj_base_at(b.hi,PJ_C_ROWS)] -

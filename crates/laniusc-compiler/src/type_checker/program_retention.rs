@@ -273,12 +273,10 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_jobs", Sized::Arena(A_JOBS, 16)),
 ];
 
-const EXPORT_PROGRAMS: [&str; 5] = [
+const EXPORT_PROGRAMS: [&str; 3] = [
     "type_checker/retention/prepare_retained_export",
-    "type_checker/retention/stage_retained_bodies",
     "type_checker/retention/write_retained_body_tables",
-    "type_checker/retention/classify_retained_traits",
-    "type_checker/retention/commit_retained_job",
+    "type_checker/retention/export_retained_traits",
 ];
 const SUBSTITUTION_SYNC_SLOT: u32 = EXPORT_PROGRAMS.len() as u32;
 const VALIDATION_SYNC_SLOT: u32 = SUBSTITUTION_SYNC_SLOT + 1;
@@ -288,7 +286,10 @@ const DISCOVERY_COLLECT_SYNC_SLOT: u32 = DISCOVERY_RANK_SYNC_SLOT + 1;
 const DISCOVERY_RESOLVE_SYNC_SLOT: u32 = DISCOVERY_COLLECT_SYNC_SLOT + 1;
 const PREPARE_SCHEMA_SYNC_SLOT: u32 = DISCOVERY_RESOLVE_SYNC_SLOT + 1;
 const PUBLISH_SCHEMA_SYNC_SLOT: u32 = PREPARE_SCHEMA_SYNC_SLOT + 1;
-const RETENTION_SYNC_SLOTS: usize = PUBLISH_SCHEMA_SYNC_SLOT as usize + 1;
+const PROJECTION_CALLS_SYNC_SLOT: u32 = PUBLISH_SCHEMA_SYNC_SLOT + 1;
+const MATERIALIZE_SYNC_SLOT: u32 = PROJECTION_CALLS_SYNC_SLOT + 1;
+const PROJECTION_CERTIFY_SYNC_SLOT: u32 = MATERIALIZE_SYNC_SLOT + 1;
+const RETENTION_SYNC_SLOTS: usize = PROJECTION_CERTIFY_SYNC_SLOT as usize + 1;
 const EXPORT_SYNC_FAILURE: usize = 200;
 const RETENTION_SYNC: &str = "type_check.retention.step_program_sync";
 

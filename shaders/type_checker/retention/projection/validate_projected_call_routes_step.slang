@@ -330,11 +330,8 @@ void check_call(Row at, uint4 p, uint t, uint use)
 }
 
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 dtid:SV_DispatchThreadID)
+public void validate_projected_call_routes(uint g)
 {
-    uint g = pj_lane(dtid);
     if (g >= pj_total(PJ_C_ROWS) || pj_row_errors[g].x != 0u) return;
     Row at;
     at.g = g; at.rank = pj_rank_of(PJ_C_ROWS,g,0u,pj_instance_count());

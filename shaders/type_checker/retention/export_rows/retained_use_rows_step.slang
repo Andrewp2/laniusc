@@ -30,7 +30,6 @@ StructuredBuffer<uint> semantic_call_native_abi_by_hir;
 StructuredBuffer<uint> semantic_function_native_abi_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
 StructuredBuffer<uint2> call_env_ct;
-StructuredBuffer<uint> semantic_value_decl_by_hir;
 
 public static const uint RT_USE_DIRECT = 1u;
 public static const uint RT_USE_METHOD = 2u;

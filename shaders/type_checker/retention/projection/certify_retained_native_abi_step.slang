@@ -15,11 +15,11 @@
 // failure bit to nc_cert[2]. finalize_retained_native_abi sets READY_ABI.
 import type_checker.retention.projection.retained_projection_workspace;
 
-StructuredBuffer<uint4> nc_use_abi;
+public StructuredBuffer<uint4> nc_use_abi;
 StructuredBuffer<uint2> nc_use_args;
 StructuredBuffer<uint4> rr_routes;
-RWStructuredBuffer<uint4> rr_readiness;
-globallycoherent RWStructuredBuffer<uint> nc_cert;
+public RWStructuredBuffer<uint4> rr_readiness;
+public RWStructuredBuffer<uint> nc_cert;
 
 static const uint USE_DIRECT = 1u;
 
@@ -49,11 +49,8 @@ bool compatible_argument(uint expected, uint2 argument)
         pj_argument_compatible(expected, argument.x, argument.y & ~RT_CALL_ARG_NULL_LITERAL);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void certify_retained_native_abi(uint use)
 {
-    uint use = pj_lane(dtid);
     uint n; uint s;
     nc_use_abi.GetDimensions(n, s);
     uint routes; rr_routes.GetDimensions(routes, s);

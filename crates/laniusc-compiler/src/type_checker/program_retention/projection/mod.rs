@@ -188,6 +188,7 @@ const S_LAYOUT_CHANGED: usize = 10;
 const S_PATTERN_CHANGED: usize = 11;
 const S_GATE: usize = 60;
 const S_PROGRAM_FAILED: usize = 61;
+const S_CALL_PROGRAM_FAILED: usize = 47;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
 const STATE_CHECKED: u32 = 1;
@@ -206,32 +207,20 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/emit_retained_projection_substitution_requests",
     PREPARE_VALIDATION,
     "type_checker/retention/projection/validate_projected_semantic_rows",
-    "type_checker/retention/projection/report_retained_projection_errors",
-    "type_checker/retention/projection/plan_retained_lowering_batches",
-    "type_checker/retention/projection_rows/project_retained_body_rows",
-    "type_checker/retention/projection_rows/project_retained_body_side_tables",
-    "type_checker/retention/projection/publish_retained_lowering_batch",
-    "type_checker/retention/projection/certify_retained_native_abi",
-    "type_checker/retention/projection/finalize_retained_native_abi",
+    "type_checker/retention/projection/materialize_retained_batch",
+    "type_checker/retention/projection/certify_retained_root_calls",
     "type_checker/retention/projection_rows/scan_projected_string_word_counts",
-    "type_checker/retention/projection_rows/project_retained_string_bytes",
-    "type_checker/retention/projection/validate_projected_call_routes",
+    "type_checker/retention/projection/validate_retained_call_routes",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
 const K_REQUESTS: usize = 2;
 const K_PREPARE_VALIDATION: usize = 3;
 const K_CHECK: usize = 4;
-const K_REPORT: usize = 5;
-const K_BATCH_PLAN: usize = 6;
-const K_ROWS: usize = 7;
-const K_SIDE: usize = 8;
-const K_BATCH_FINISH: usize = 9;
-const K_CERTIFY: usize = 10;
-const K_CERTIFY_FINISH: usize = 11;
-const K_STRING_SCAN: usize = 12;
-const K_STRING_BYTES: usize = 13;
-const K_CALLS: usize = 14;
+const K_MATERIALIZE: usize = 5;
+const K_CERTIFY: usize = 6;
+const K_STRING_SCAN: usize = 7;
+const K_CALLS: usize = 8;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -1326,8 +1315,7 @@ impl RetainedProjection {
             ("rr_readiness", roots.readiness),
             ("nc_cert", cert),
         ];
-        r.dispatch(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())?;
-        r.dispatch_groups(K_CERTIFY_FINISH, guard, inputs, &extra, 1)
+        r.program(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())
     }
 
     fn recorder(&self) -> Recorder<'_> {
@@ -1497,9 +1485,11 @@ impl RetainedProjection {
                     &self.no_results,
                     &self.no_counts,
                 )?;
-                let (dispatches, mut read) = r.finish_read(&[(&self.cert, 3)], &mut report)?;
+                let (dispatches, mut read) = r.finish_read(&[(&self.cert, 4)], &mut report)?;
                 report.dispatches += dispatches;
-                if let Some(error) = cert_error(&read.pop().unwrap_or_default()) {
+                let cert = read.pop().unwrap_or_default();
+                check_certification_sync(&cert)?;
+                if let Some(error) = cert_error(&cert) {
                     return Ok(ProjectionOutcome::Rejected { error, report });
                 }
             }
@@ -1650,7 +1640,7 @@ impl RetainedProjection {
             trace("check: recording");
             let payloads = totals[S_TOTALS + 5];
             let rows = self.type_capacity.max(report.rows).max(payloads);
-            r.prepare_validation(&guard, inputs, &extra, rows)?;
+            r.program(K_PREPARE_VALIDATION, &guard, inputs, &extra, rows)?;
             if totals[S_TOTALS + 7] != 0 {
                 let mut input = 0u32;
                 let mut distance = 0u32;
@@ -1687,9 +1677,7 @@ impl RetainedProjection {
                     .clear_buffer_counted(&self.rows["pj_string_offsets"], 0, None);
             }
             r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
-            r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
-            r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
-            r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
+            r.program(K_CALLS, &guard, inputs, &extra, report.rows.max(batches))?;
             // The certification and the batch table are read with the status;
             // they are used only when the check passed.
             if let Some(roots) = &roots {
@@ -1697,15 +1685,12 @@ impl RetainedProjection {
             }
             if early {
                 let string_words = self.columns.as_ref().unwrap().shape.string_words as u32;
-                r.dispatch(K_ROWS, &guard, inputs, &extra, early_rows)?;
-                r.dispatch(K_SIDE, &guard, inputs, &extra, early_side)?;
-                r.dispatch(K_STRING_BYTES, &guard, inputs, &extra, string_words)?;
-                r.dispatch_groups(K_BATCH_FINISH, &guard, inputs, &extra, 1)?;
+                r.materialize(&guard, inputs, &extra, early_rows.max(early_side).max(string_words))?;
             }
             let schema_status = self.schema.status_buffer().clone();
             let mut parts = vec![
                 (&self.status, STATUS_WORDS),
-                (&self.cert, if roots.is_some() { 3 } else { 0 }),
+                (&self.cert, if roots.is_some() { 4 } else { 0 }),
                 (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
             ];
             if chain {
@@ -1773,6 +1758,10 @@ impl RetainedProjection {
             if status[S_PROGRAM_FAILED] != 0 {
                 bail!("retention program {PREPARE_VALIDATION} failed to synchronize");
             }
+            if status[S_CALL_PROGRAM_FAILED] != 0 {
+                bail!("retention program {} failed to synchronize", KERNELS[K_CALLS]);
+            }
+            check_certification_sync(&cert)?;
             if status[S_LAYOUT_CHANGED] == 0 && status[S_PATTERN_CHANGED] == 0 {
                 break (table, cert, status);
             }
@@ -1898,12 +1887,7 @@ impl RetainedProjection {
             self.write_config(run, options, b as u32);
             let side = batch.side.iter().copied().max().unwrap_or(0).max(1);
             let mut r = self.recorder();
-            r.dispatch(K_ROWS, &guard, inputs, &extra, batch.rows)?;
-            r.dispatch(K_SIDE, &guard, inputs, &extra, side)?;
-            if batch.string_words != 0 {
-                r.dispatch(K_STRING_BYTES, &guard, inputs, &extra, batch.string_words)?;
-            }
-            r.dispatch_groups(K_BATCH_FINISH, &guard, inputs, &extra, 1)?;
+            r.materialize(&guard, inputs, &extra, batch.rows.max(side).max(batch.string_words))?;
             report.dispatches += r.finish();
             trace(&format!("lowering batch {b}: {batch:?}"));
             let columns = self.columns.as_ref().unwrap();
@@ -1962,15 +1946,39 @@ impl RetainedProjection {
 }
 
 impl Recorder<'_> {
-    fn prepare_validation(
+    fn materialize(
         &mut self,
         store: &Store,
         inputs: &ProjectionInputs,
         extra: &[(&str, &wgpu::Buffer)],
         rows: u32,
     ) -> Result<()> {
+        let argument_modes = self.projection.columns.as_ref().unwrap().w("ob_argument_mode");
+        self.encoder().clear_buffer_counted(argument_modes, 0, None);
+        self.program(K_MATERIALIZE, store, inputs, extra, rows)
+    }
+
+    fn program(
+        &mut self,
+        kernel: usize,
+        store: &Store,
+        inputs: &ProjectionInputs,
+        extra: &[(&str, &wgpu::Buffer)],
+        rows: u32,
+    ) -> Result<()> {
         let projection = self.projection;
-        let pass = &projection.passes[K_PREPARE_VALIDATION];
+        let pass = &projection.passes[kernel];
+        let key = KERNELS[kernel];
+        let status = &projection.status;
+        let (slot, failure) = match kernel {
+            K_PREPARE_VALIDATION => (super::VALIDATION_SYNC_SLOT, Some((status, S_PROGRAM_FAILED))),
+            K_CALLS => (super::PROJECTION_CALLS_SYNC_SLOT, Some((status, S_CALL_PROGRAM_FAILED))),
+            K_CERTIFY => (super::PROJECTION_CERTIFY_SYNC_SLOT, Some((&projection.cert, 3))),
+            // The body and side steps publish disjoint rows, except for the
+            // atomic argument-mode override. The program has no global wait.
+            K_MATERIALIZE => (super::MATERIALIZE_SYNC_SLOT, None),
+            _ => bail!("unknown retention program {key}"),
+        };
         let names = reflected_names(pass);
         let mut bindings = Vec::with_capacity(names.len());
         for name in &names {
@@ -1978,25 +1986,26 @@ impl Recorder<'_> {
                 continue;
             }
             let buffer = projection.bound_buffer(store, inputs, extra, name)
-                .ok_or_else(|| anyhow!("{PREPARE_VALIDATION} binds unknown buffer {name}"))?;
+                .ok_or_else(|| anyhow!("{key} binds unknown buffer {name}"))?;
             bindings.push((name.as_str(), buffer.as_entire_binding()));
         }
         let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
-        let slot = super::VALIDATION_SYNC_SLOT;
         let program = StepProgramOperation::new_reflected(
-            &projection.device, PREPARE_VALIDATION, pass, &bindings,
+            &projection.device, key, pass, &bindings,
             &store.step_program_sync, slot, groups, 0,
         )?;
         let encoder = self.encoder();
         program.record(encoder)?;
         passes_core::flush_deferred_compute(encoder);
-        encoder.copy_buffer_counted(
-            &store.step_program_sync,
-            StepProgramOperation::failed_offset(slot),
-            &projection.status,
-            (S_PROGRAM_FAILED * 4) as u64,
-            4,
-        );
+        if let Some((status, word)) = failure {
+            encoder.copy_buffer_counted(
+                &store.step_program_sync,
+                StepProgramOperation::failed_offset(slot),
+                status,
+                (word * 4) as u64,
+                4,
+            );
+        }
         self.dispatches += 1;
         Ok(())
     }
@@ -2089,6 +2098,13 @@ impl Recorder<'_> {
 
 /// The certification's error, or `None` when every recorded root call
 /// matches its target.
+fn check_certification_sync(words: &[u32]) -> Result<()> {
+    if words.get(3).copied() == Some(1) {
+        bail!("retention program {} failed to synchronize", KERNELS[K_CERTIFY]);
+    }
+    Ok(())
+}
+
 fn cert_error(cert: &[u32]) -> Option<ProjectionError> {
     trace(&format!("certify: {cert:?}"));
     if cert[0] == 0 && cert[2] == 0 {

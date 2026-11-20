@@ -25,7 +25,6 @@ void defaults(uint row)
     ob_value_type[row] = 0u;
     ob_value_const[row] = uint2(0u, 0u);
     ob_value_const_present[row] = 0u;
-    ob_argument_mode[row] = 0u;
     ob_enclosing_fn[row] = 0u;
     ob_function_return_type[row] = 0u;
     ob_function_entrypoint[row] = 0u;
@@ -112,11 +111,8 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     ob_calls[b + 21u] = 0u;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void project_retained_body_rows(uint row)
 {
-    uint row = pj_lane(dtid);
     Batch b = pj_batch();
     uint capacity; uint s;
     ob_core.GetDimensions(capacity, s);
@@ -217,7 +213,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ob_value_const_present[row] = 0u;
         ob_value_const[row] = uint2(0u, 0u);
     }
-    ob_argument_mode[row] = r6.x & 0xffu;
+    // A slice field can replace the row's argument mode with 4. A field
+    // that wrote its mode first owns this cell.
+    uint prior_mode;
+    InterlockedCompareExchange(ob_argument_mode[row], 0u, r6.x & 0xffu, prior_mode);
     ob_iterable_kind[row] = (r6.x >> 8u) & 0xffu;
     ob_member_field_ordinal[row] = r5.w;
     if (kind == RT_HIR_MEMBER_EXPR)

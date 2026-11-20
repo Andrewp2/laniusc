@@ -9,6 +9,7 @@ public StructuredBuffer<uint> semantic_type_ref_payload_by_hir;
 public StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 public StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 public StructuredBuffer<uint> semantic_value_const_present_by_hir;
+public StructuredBuffer<uint> semantic_value_decl_by_hir;
 public StructuredBuffer<uint2> semantic_value_const_by_hir;
 
 public uint type_row_term(uint row)

@@ -6,9 +6,7 @@
 // becomes CHECKED or FAILED.
 import type_checker.retention.projection.retained_projection_workspace;
 
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void main()
+public void report_retained_projection_errors()
 {
     uint n = pj_instance_count();
     uint r = pj_status[PJ_S_ERROR_RANK];

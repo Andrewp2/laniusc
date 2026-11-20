@@ -9,8 +9,7 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.retained_row_classes;
 
-StructuredBuffer<uint> semantic_value_decl_by_hir;
-StructuredBuffer<uint> semantic_value_const_present_by_hir;
+import type_checker.retention.export_types.retained_export_type_rows;
 
 // Whether body row `row` is a use (docs/compiler-program-retention.md,
 // "Uses"), by its HIR kind: every call; every struct literal; and a name or

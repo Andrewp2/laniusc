@@ -3,11 +3,8 @@
 // no lane walks the bytes of a long string.
 import type_checker.retention.projection.retained_lowering_columns;
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void project_retained_string_bytes(uint word)
 {
-    uint word = pj_lane(id);
     Batch b = pj_batch();
     uint start = pj_base_at(b.lo,PJ_C_ROWS);
     uint end = pj_base_at(b.hi,PJ_C_ROWS);
