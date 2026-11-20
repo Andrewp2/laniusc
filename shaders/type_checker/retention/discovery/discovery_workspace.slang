@@ -23,7 +23,6 @@ public RWStructuredBuffer<uint> dg_term_order;
 public RWStructuredBuffer<uint> dg_term_rank;
 public globallycoherent RWStructuredBuffer<uint> dg_levels;
 // Workgroups of the wave's request pass, written by the scan.
-public RWStructuredBuffer<uint> dg_indirect;
 // config: mode, lo, hi, edge base, root phase, subst run, depth, hash mask,
 //         unused, scan input (0: dg_scan_a), sort k, sort j, sort base, sort count,
 //         level, generation.
@@ -90,7 +89,7 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
     InterlockedOr(dg_status[3], 1u);
     return RT_INVALID;
 }
-public uint dg_scan(uint index) { return dg_config[9] == 0u ? dg_scan_a[index] : dg_scan_b[index]; }
+public uint dg_scan(uint index) { return dg_scan_a[index]; }
 public uint4 dg_native(uint decl)
 {
     uint4 key = rt_decl_key[decl];

@@ -1,12 +1,9 @@
 import type_checker.retention.discovery.discovery_admission;
-RWStructuredBuffer<uint4> sb_requests;
-globallycoherent RWStructuredBuffer<uint> sb_request_count;
+public RWStructuredBuffer<uint4> sb_requests;
+public RWStructuredBuffer<uint> sb_request_count;
 
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void collect_discovery_requests(uint lane)
 {
-    uint lane = dg_lane(id);
     uint root = dg_config[4]; uint use = lane; uint owner = RT_INVALID;
     if (lane == 0u && (rt_counts[RT_C_READY] == 0u || rt_counts[RT_C_GENERATION] != dg_config[15]))
         dg_status[10] = 1u;

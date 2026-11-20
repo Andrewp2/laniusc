@@ -1,10 +1,10 @@
 import type_checker.retention.discovery.discovery_admission;
+import type_checker.retention.discovery.discovery_request_status;
 // A chain of waves (mode 3): words 0-2 the current wave's (lo, hi, edges),
 // word 3 the instances with closed predicates before it, then (lo, hi) of
 // chained wave i at 4 + 2i.
 RWStructuredBuffer<uint> dg_wave;
 // Mode 4: the closed-solve receipt gates method and bound routes.
-// Mode 5: the source publication's status gates the roots pass.
 StructuredBuffer<uint> dg_receipt;
 RWStructuredBuffer<uint> dg_route_gate;
 RWStructuredBuffer<uint> dg_bound_args;
@@ -57,41 +57,5 @@ void main(uint3 id: SV_DispatchThreadID)
         }
         return;
     }
-    if(dg_config[0]==5u)
-    {
-        // The roots' gate: the source publication's status words (route
-        // header 8 to 10, copied into dg_receipt words 0 to 2). Its solve
-        // ran without a host readback, so it publishes as valid only when
-        // it finished and its catalog was admitted (header words 45 to 47).
-        // The roots pass dispatches config word 10's workgroups for a valid
-        // publication and none otherwise: nothing requests a substitution
-        // and nothing is appended to the store. The roots' readback returns
-        // the status, and the host rejects or checks again.
-        if(lane==0u)
-        {
-            bool run=dg_receipt[0]==1u && dg_receipt[1]==0u;
-            uint groups=dg_config[10];
-            dg_bound_args[0]=run ? min(groups,65535u) : 0u;
-            dg_bound_args[1]=run ? (groups+65534u)/65535u : 0u;
-            dg_bound_args[2]=run ? 1u : 0u;
-        }
-        return;
-    }
-    if(dg_config[0]==0u)
-    {
-        if(lane==0u)
-        {
-            if(dg_status[6]!=RT_INVALID) dg_status[16]=dg_errors[dg_status[6]].x;
-            if(dg_status[6]!=RT_INVALID)
-            {
-                uint4 e=dg_errors[dg_status[6]];
-                dg_status[17]=e.y; dg_status[18]=e.z; dg_status[19]=e.w;
-            }
-            if(rt_counts[RT_C_READY]==0u || rt_counts[RT_C_GENERATION]!=dg_config[15]) dg_status[10]=1u;
-            // Resolution follows requests without a host check; it does
-            // nothing after a failure or overflow, which the host reports.
-            dg_status[12]=dg_status[3]!=0u || dg_status[6]!=RT_INVALID || dg_status[10]!=0u ? 1u : 0u;
-        }
-        return;
-    }
+    if (dg_config[0] == 0u && lane == 0u) finish_discovery_requests();
 }

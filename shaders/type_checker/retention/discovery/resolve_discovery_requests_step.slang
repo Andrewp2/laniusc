@@ -1,10 +1,7 @@
 import type_checker.retention.discovery.discovery_workspace;
 import type_checker.retention.substitution.retained_substitution_results;
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void resolve_discovery_requests(uint lane)
 {
-    uint lane = dg_lane(id);
     // Recorded after the substitution's first batch: nothing before its
     // publication of this run commits (the host then records it again).
     // A chained wave (config 8 nonzero) cannot be recorded again: it fails
