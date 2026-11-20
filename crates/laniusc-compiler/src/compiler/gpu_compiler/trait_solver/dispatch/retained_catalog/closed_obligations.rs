@@ -1,6 +1,12 @@
 //! Hard obligations for concrete discovery instances, filled entirely on the
 //! GPU against the already admitted catalog. No lexical assumptions enter.
-use crate::gpu::copies::CountedCommands;
+use crate::gpu::{
+    copies::CountedCommands,
+    operations::{
+        STEP_PROGRAM_SYNC_WORDS, StepProgramOperation, step_program_group_counts,
+        step_program_group_variant,
+    },
+};
 use super::*;
 
 /// Receipt words after the route header: a deferred solve's wave state and
@@ -23,35 +29,29 @@ const RP_H_OBLIGATIONS: u64 = 12;
 const RP_H_CALLS: u64 = 30;
 const RP_H_PRODUCER: usize = 31;
 
-const CLOSED_KEYS: [&str; 12] = [
-    "type_checker/trait_solver/closed_obligations/clear_closed_obligation_workspace",
-    "type_checker/trait_solver/closed_obligations/index_closed_obligation_catalog",
-    "type_checker/trait_solver/closed_obligations/mark_closed_obligation_roots",
-    "type_checker/trait_solver/closed_obligations/expand_closed_obligation_terms",
-    "type_checker/trait_solver/closed_obligations/intern_closed_obligation_constants",
-    "type_checker/trait_solver/closed_obligations/count_closed_obligation_rows",
-    "type_checker/trait_solver/closed_obligations/scan_closed_obligation_row_counts",
+const PREPARE_PASS: usize = 0;
+const COUNT_PASS: usize = 1;
+const FILL_PASS: usize = 2;
+const PUBLISH_PASS: usize = 3;
+const FINISH_PASS: usize = 4;
+const PLAN_PASS: usize = 5;
+const CLOSED_KEYS: [&str; 6] = [
+    "type_checker/trait_solver/closed_obligations/prepare_closed_obligation_rows",
     "type_checker/trait_solver/closed_obligations/publish_closed_obligation_batch_counts",
     "type_checker/trait_solver/closed_obligations/fill_closed_obligation_batch",
     "type_checker/trait_solver/retained_rows/publish_retained_trait_routes",
     "type_checker/trait_solver/retained_rows/finalize_retained_trait_publication",
     "type_checker/trait_solver/closed_obligations/plan_closed_obligation_dispatches",
 ];
-/// The plan pass of a chained closed solve (plan_closed_obligation_dispatches.slang).
-const PLAN_PASS: usize = 11;
-/// cw_config words of plan_closed_obligation_dispatches: the obligation bound of the publication
-/// pass, the catalog pass's lanes and the cw_wave word counting the solves
-/// that ran.
 const CW_CFG_OBLIGATIONS: usize = 20;
-const CW_CFG_CATALOG_LANES: usize = 21;
 const CW_CFG_RAN_WORD: usize = 22;
-/// plan_closed_obligation_dispatches's workgroup triples (cw_indirect), one per producer dispatch in
-/// recording order: passes 0 to 5, the three scan steps, 7, 8 (the fill),
-/// 9 and 10 (the publication).
-const CW_ARG_SLOTS: u32 = 13;
-const CW_ARG_FILL: u32 = 10;
-const CW_ARG_PUBLISH: u32 = 11;
-const CW_ARG_FINISH: u32 = 12;
+const CW_ARG_SLOTS: u32 = 4;
+const CW_ARG_COUNT: u32 = 0;
+const CW_ARG_FILL: u32 = 1;
+const CW_ARG_PUBLISH: u32 = 2;
+const CW_ARG_FINISH: u32 = 3;
+const CW_PROGRAM_FAILED: u64 = 6;
+const CW_PROGRAM_FAULT: u32 = 32;
 
 /// What a chained closed solve takes from the GPU and the bounds that size
 /// it (`RetainedTraitPublication::record_chained`).
@@ -136,6 +136,10 @@ impl ClosedTraitPublication {
     /// incomplete and the caller solves again eagerly.
     pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<Option<[u32; 3]>> {
         ensure!(receipt.len() >= RP_HEADER_WORDS as usize, "closed publication receipt is short");
+        ensure!(
+            receipt[RP_H_PRODUCER] & CW_PROGRAM_FAULT == 0,
+            "closed obligation step program failed its barrier"
+        );
         // A deferred batch the producer could not place (publish_closed_obligation_batch_counts): the
         // solve ran on no rows, and the eager check reports why.
         if receipt[RP_H_PRODUCER] != 0 {
@@ -217,11 +221,36 @@ impl ClosedProducer {
         lanes: u32,
         store: &BTreeMap<&'static str, wgpu::Buffer>,
         external: &[(&str, wgpu::BindingResource<'_>)],
-        step: u32,
     ) -> Result<()> {
-        let bind = self.bind_group(pass, store, external, step)?;
+        let bind = self.bind_group(pass, store, external)?;
         self.dispatch(encoder, pass, lanes, &bind);
         Ok(())
+    }
+
+    fn bindings<'a>(
+        &'a self,
+        names: &'a [String],
+        store: &'a BTreeMap<&'static str, wgpu::Buffer>,
+        external: &'a [(&str, wgpu::BindingResource<'a>)],
+    ) -> Result<Vec<(&'a str, wgpu::BindingResource<'a>)>> {
+        let mut entries = Vec::new();
+        for name in names {
+            if matches!(name.as_str(), "program_launch" | "step_program_sync") {
+                continue;
+            }
+            let binding = if let Some((_, resource)) = external.iter().find(|(n, _)| n == name) {
+                resource.clone()
+            } else if let Some(b) = self.buffers.get(name.as_str()) {
+                b.as_entire_binding()
+            } else {
+                store
+                    .get(name.strip_prefix("closed_").unwrap_or(name))
+                    .ok_or_else(|| anyhow!("closed trait producer missing {name}"))?
+                    .as_entire_binding()
+            };
+            entries.push((name.as_str(), binding));
+        }
+        Ok(entries)
     }
 
     fn bind_group(
@@ -229,33 +258,10 @@ impl ClosedProducer {
         pass: usize,
         store: &BTreeMap<&'static str, wgpu::Buffer>,
         external: &[(&str, wgpu::BindingResource<'_>)],
-        step: u32,
     ) -> Result<wgpu::BindGroup> {
         let data = &self.reader.passes[pass];
         let names = reflected_names(data);
-        let mut entries = Vec::new();
-        for name in &names {
-            let binding = if let Some((_, resource)) = external.iter().find(|(n, _)| n == name) {
-                resource.clone()
-            } else if name == "cw_step" {
-                let b = &self.buffers["cw_step"];
-                wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &b.buffer,
-                    offset: b.byte_offset + u64::from(step) * STAGE_STRIDE,
-                    size: std::num::NonZeroU64::new(8),
-                })
-            } else if matches!(name.as_str(), "cw_batch" | "cw_routes") {
-                self.buffers["idle"].as_entire_binding()
-            } else if let Some(b) = self.buffers.get(name.as_str()) {
-                b.as_entire_binding()
-            } else {
-                store
-                    .get(name.as_str())
-                    .ok_or_else(|| anyhow!("closed trait producer missing {name}"))?
-                    .as_entire_binding()
-            };
-            entries.push((name.as_str(), binding));
-        }
+        let entries = self.bindings(&names, store, external)?;
         passes_core::bind_group::create_bind_group_from_bindings(
             &self.reader.device,
             Some(&data.shader_id),
@@ -265,7 +271,42 @@ impl ClosedProducer {
         )
     }
 
-    /// Records `pass` with a bind group from `bind_group` for the same pass.
+    fn record_prepare(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        external: &[(&str, wgpu::BindingResource<'_>)],
+        rows: u32,
+        chained: bool,
+    ) -> Result<()> {
+        let pass = &self.reader.passes[PREPARE_PASS];
+        let names = reflected_names(pass);
+        let resources = self.bindings(&names, store, external)?;
+        let sync = &self.buffers["closed_program_sync"];
+        let make = |groups| StepProgramOperation::new_reflected(
+            &self.reader.device,
+            CLOSED_KEYS[PREPARE_PASS],
+            pass,
+            &resources,
+            sync,
+            0,
+            groups,
+            u32::from(chained),
+        );
+        let [small, large] = step_program_group_counts().map(make);
+        let programs = [small?, large?];
+        programs[step_program_group_variant(u64::from(rows))].record(encoder)?;
+        passes_core::flush_deferred_compute(encoder);
+        sync.copy_to(
+            encoder,
+            StepProgramOperation::failed_offset(0),
+            &self.buffers["cw_state"],
+            CW_PROGRAM_FAILED * 4,
+            4,
+        );
+        Ok(())
+    }
+
     /// Records `pass` with the workgroups plan_closed_obligation_dispatches wrote at `slot` of
     /// `args`.
     fn record_gated(
@@ -276,9 +317,8 @@ impl ClosedProducer {
         slot: u32,
         store: &BTreeMap<&'static str, wgpu::Buffer>,
         external: &[(&str, wgpu::BindingResource<'_>)],
-        step: u32,
     ) -> Result<()> {
-        let bind = self.bind_group(pass, store, external, step)?;
+        let bind = self.bind_group(pass, store, external)?;
         passes_core::record_or_defer_compute_indirect_offset(
             encoder,
             &self.reader.passes[pass],
@@ -293,7 +333,7 @@ impl ClosedProducer {
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.reader.passes[pass];
         let label = "trait_solver.closed_instances";
-        let (x, y) = if matches!(pass, 3 | 7 | 10) {
+        let (x, y) = if matches!(pass, COUNT_PASS | FINISH_PASS | PLAN_PASS) {
             (1, 1)
         } else {
             groups(lanes)
@@ -492,10 +532,6 @@ impl RetainedTraitPublication {
             .checked_mul(2)
             .and_then(|n| n.max(1).checked_next_power_of_two())
             .ok_or_else(|| anyhow!("closed atom slots overflow"))?;
-        // The count scan is a block scan: block-local scans, one workgroup
-        // over the block totals, then the block prefixes added (07_scan
-        // modes 0, 1, 2). The result is in cw_scan_a (config word 7 = 0).
-        let steps = [0u32, 1, 2];
         let mut config = vec![0; CW_CONFIG_WORDS];
         config[..8].copy_from_slice(&[
             terms,
@@ -522,10 +558,6 @@ impl RetainedTraitPublication {
             Some(rows) => Some(self.place_closed(rows, end, &mut config)?),
             None => None,
         };
-        let mut step_words = vec![0; steps.len().max(1) * STAGE_STRIDE as usize / 4];
-        for (i, mode) in steps.iter().enumerate() {
-            step_words[i * 64] = *mode;
-        }
         for (name, size) in [
             ("cw_config", CW_CONFIG_WORDS as u32),
             ("cw_state", CW_STATE_WORDS),
@@ -535,15 +567,13 @@ impl RetainedTraitPublication {
             // Term-sized buffers grow by powers of two (see `pow2`).
             ("cw_reach", pow2(terms)),
             ("cw_front", pow2(terms)),
-            ("cw_scan_a", pow2(mul(lanes, 8, "closed scan")?)),
-            ("cw_scan_b", pow2(mul(lanes, 8, "closed scan")?)),
-            ("cw_blocks", pow2(mul(lanes.div_ceil(256), 8, "closed scan blocks")?)),
-            ("cw_step", step_words.len() as u32),
-            ("idle", 4),
+            ("cw_scan_low", pow2(mul(lanes, 4, "closed low scan")?)),
+            ("cw_scan_high", pow2(mul(lanes, 4, "closed high scan")?)),
+            ("cw_scan_group_sums", step_program_group_counts()[1] * 4),
+            ("closed_program_sync", STEP_PROGRAM_SYNC_WORDS as u32),
         ] {
             let initial = match name {
                 "cw_config" => Some(config.as_slice()),
-                "cw_step" => Some(step_words.as_slice()),
                 _ => None,
             };
             let use_flags = usage;
@@ -566,42 +596,8 @@ impl RetainedTraitPublication {
             passes_core::compute_pass_batching_allowed(false),
             "trait_solver.closed_instances",
         );
-        producer.record(
-            &mut encoder,
-            0,
-            slots
-                .max(terms)
-                .max(status[A_DECLS])
-                .max(status[A_PARAMS])
-                .max(CW_STATE_WORDS),
-            store,
-            &ext,
-            0,
-        )?;
-        producer.record(
-            &mut encoder,
-            1,
-            catalog.slices[1]
-                .count
-                .max(catalog.slices[2].count)
-                .max(catalog.slices[4].count),
-            store,
-            &ext,
-            0,
-        )?;
-        producer.record(&mut encoder, 2, end - first, store, &ext, 0)?;
-        // One workgroup expands the term closure level by level (expand_closed_obligation_terms).
-        // Retained type height is bounded by 64, so its 65 levels consume
-        // any valid frontier; the count pass reports a frontier still
-        // pending in cw_state[5], which is a producer failure (code 7).
-        producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
-        producer.record(&mut encoder, 4, terms, store, &ext, 0)?;
-        producer.record(&mut encoder, 5, lanes, store, &ext, 0)?;
-        for (i, mode) in steps.iter().enumerate() {
-            let scan_lanes = if *mode == 1 { 1 } else { lanes };
-            producer.record(&mut encoder, 6, scan_lanes, store, &ext, i as u32)?;
-        }
-        producer.record(&mut encoder, 7, 1, store, &ext, 0)?;
+        producer.record_prepare(&mut encoder, store, &ext, slots.max(lanes), false)?;
+        producer.record(&mut encoder, COUNT_PASS, 1, store, &ext)?;
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));
@@ -617,6 +613,10 @@ impl RetainedTraitPublication {
                 let mut state = producer
                     .reader
                     .read(&producer.buffers["cw_state"], 32, crate::readback_label!("closed trait demand"))?;
+                ensure!(
+                    state[CW_PROGRAM_FAILED as usize] == 0,
+                    "closed obligation step program failed its barrier"
+                );
                 if state[5] != 0 {
                     state[0] |= 1 << 7;
                     state[1] = 0;
@@ -673,7 +673,7 @@ impl RetainedTraitPublication {
                         ("cw_batch", input.buffer.as_entire_binding()),
                         ("cw_routes", routes.buffer.as_entire_binding()),
                     ];
-                    producer.record(encoder, 8, lanes, store, &ext, 0)
+                    producer.record(encoder, FILL_PASS, lanes, store, &ext)
                 })?;
         report.batch_status = readback.map(|r| r.batch_status);
         let solver = if defer_solve.is_some() {
@@ -762,13 +762,12 @@ impl RetainedTraitPublication {
         );
         producer.record(
             &mut encoder,
-            9,
+            PUBLISH_PASS,
             add(uses, submission.obligation_span.count, "closed publication lanes")?,
             store,
             &ext,
-            0,
         )?;
-        producer.record(&mut encoder, 10, 1, store, &ext, 0)?;
+        producer.record(&mut encoder, FINISH_PASS, 1, store, &ext)?;
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));
@@ -858,7 +857,6 @@ impl RetainedTraitPublication {
             .checked_mul(2)
             .and_then(|n| n.max(1).checked_next_power_of_two())
             .ok_or_else(|| anyhow!("closed atom slots overflow"))?;
-        let steps = [0u32, 1, 2];
         let mut config = vec![0; CW_CONFIG_WORDS];
         // Words 0, 3 and 4 (terms, frontier) are plan_closed_obligation_dispatches's.
         config[..8].copy_from_slice(&[terms, status[A_PARAMS], status[A_DECLS], 0, 0, generation, slots, 0]);
@@ -872,12 +870,7 @@ impl RetainedTraitPublication {
         let ClosedPlacement { mut packet, submission, routes, uses, atom_ids, use_map, route_rows, route_words } =
             self.place_closed(bounds, end, &mut config)?;
         config[CW_CFG_OBLIGATIONS] = submission.obligation_span.count;
-        config[CW_CFG_CATALOG_LANES] = catalog.slices[1].count.max(catalog.slices[2].count).max(catalog.slices[4].count);
         config[CW_CFG_RAN_WORD] = inputs.ran_word;
-        let mut step_words = vec![0; steps.len() * STAGE_STRIDE as usize / 4];
-        for (i, mode) in steps.iter().enumerate() {
-            step_words[i * 64] = *mode;
-        }
         let mut producer = producer;
         for (name, size) in [
             ("cw_config", CW_CONFIG_WORDS as u32),
@@ -887,16 +880,14 @@ impl RetainedTraitPublication {
             ("cw_atom_slots", slots),
             ("cw_reach", pow2(terms)),
             ("cw_front", pow2(terms)),
-            ("cw_scan_a", pow2(mul(lanes, 8, "closed scan")?)),
-            ("cw_scan_b", pow2(mul(lanes, 8, "closed scan")?)),
-            ("cw_blocks", pow2(mul(lanes.div_ceil(256), 8, "closed scan blocks")?)),
-            ("cw_step", step_words.len() as u32),
+            ("cw_scan_low", pow2(mul(lanes, 4, "closed low scan")?)),
+            ("cw_scan_high", pow2(mul(lanes, 4, "closed high scan")?)),
+            ("cw_scan_group_sums", step_program_group_counts()[1] * 4),
+            ("closed_program_sync", STEP_PROGRAM_SYNC_WORDS as u32),
             ("cw_indirect", CW_ARG_SLOTS * 3),
-            ("idle", 4),
         ] {
             let initial = match name {
                 "cw_config" => Some(config.as_slice()),
-                "cw_step" => Some(step_words.as_slice()),
                 _ => None,
             };
             let flags = if name == "cw_indirect" { usage | wgpu::BufferUsages::INDIRECT } else { usage };
@@ -916,14 +907,9 @@ impl RetainedTraitPublication {
             passes_core::compute_pass_batching_allowed(false),
             "trait_solver.closed_instances",
         );
-        producer.record(&mut encoder, PLAN_PASS, 1, store, &ext, 0)?;
-        for (slot, pass) in [(0u32, 0usize), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)] {
-            producer.record_gated(&mut encoder, pass, &args, slot, store, &ext, 0)?;
-        }
-        for (i, _) in steps.iter().enumerate() {
-            producer.record_gated(&mut encoder, 6, &args, 6 + i as u32, store, &ext, i as u32)?;
-        }
-        producer.record_gated(&mut encoder, 7, &args, 9, store, &ext, 0)?;
+        producer.record(&mut encoder, PLAN_PASS, 1, store, &ext)?;
+        producer.record_prepare(&mut encoder, store, &ext, slots.max(lanes), true)?;
+        producer.record_gated(&mut encoder, COUNT_PASS, &args, CW_ARG_COUNT, store, &ext)?;
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));
@@ -946,7 +932,7 @@ impl RetainedTraitPublication {
                 ("cw_batch", input.buffer.as_entire_binding()),
                 ("cw_routes", routes.buffer.as_entire_binding()),
             ];
-            producer.record_gated(encoder, 8, &args, CW_ARG_FILL, store, &ext, 0)
+            producer.record_gated(encoder, FILL_PASS, &args, CW_ARG_FILL, store, &ext)
         })?;
         let state = self
             .gpu
@@ -1021,8 +1007,8 @@ impl RetainedTraitPublication {
             passes_core::compute_pass_batching_allowed(false),
             "trait_solver.closed_instances",
         );
-        producer.record_gated(&mut encoder, 9, &args, CW_ARG_PUBLISH, store, &ext, 0)?;
-        producer.record_gated(&mut encoder, 10, &args, CW_ARG_FINISH, store, &ext, 0)?;
+        producer.record_gated(&mut encoder, PUBLISH_PASS, &args, CW_ARG_PUBLISH, store, &ext)?;
+        producer.record_gated(&mut encoder, FINISH_PASS, &args, CW_ARG_FINISH, store, &ext)?;
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));

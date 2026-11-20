@@ -1,5 +1,5 @@
 // One lane, first in a chained closed solve (closed_obligations.rs record_chained):
-// the gate and the workgroup counts of the producer passes after it.
+// the gate and the workgroup counts for the remaining passes.
 //
 // The host records a chained solve before it reads the status of the wave
 // before. The wave's frontier (cw_wave words 0 and 1) and the discovery
@@ -25,13 +25,12 @@ StructuredBuffer<uint> cw_discovery;
 static const uint CW_FAULT = 53u;
 static const uint CW_STATE_WORDS = 64u;
 static const uint CW_SKIPPED = 16u;
-static const uint CW_ARG_SLOTS = 13u;
-// cw_config words the host writes for this kernel: lanes of the catalog
-// pass, the obligation bound of the publication pass, and the cw_wave word
+static const uint CW_ARG_SLOTS = 4u;
+// The obligation bound of the publication pass and the cw_wave word
 // that counts the waves whose solve ran.
-static const uint CW_CFG_CATALOG_LANES = 21u;
 static const uint CW_CFG_OBLIGATIONS = 20u;
 static const uint CW_CFG_RAN_WORD = 22u;
+static const uint CW_CFG_RUN = 23u;
 
 void write_lanes(uint slot, uint lanes)
 {
@@ -51,6 +50,7 @@ void main(uint3 id: SV_DispatchThreadID)
         && cw_discovery[10] == 0u && cw_discovery[12] == 0u;
     bool run = clean && hi > lo && cw_discovery[11] != cw_wave[3];
     cw_wave[3] = cw_discovery[11];
+    cw_config[CW_CFG_RUN] = run ? 1u : 0u;
     if (!run)
     {
         for (uint w = 0u; w < CW_ARG_SLOTS * 3u; w++) cw_indirect[w] = 0u;
@@ -61,20 +61,20 @@ void main(uint3 id: SV_DispatchThreadID)
     cw_wave[cw_config[CW_CFG_RAN_WORD]] += 1u;
     uint terms = rt_counts[RT_A_TERMS];
     cw_config[0] = terms;
+    // The allocation covers the store's capacity. The live term and catalog
+    // rows bound how many entries can actually be inserted this wave.
+    uint atoms = cw_config[51];
+    uint capacity = cw_config[6];
+    if (atoms <= capacity / 2u && terms <= capacity / 2u - atoms)
+    {
+        uint required = max(1u, 2u * (terms + atoms));
+        cw_config[6] = 1u << uint(firstbithigh(required - 1u) + 1);
+    }
     cw_config[3] = lo;
     cw_config[4] = hi;
     uint lanes = terms + hi - lo;
-    write_lanes(0u, max(max(cw_config[6], terms), max(max(cw_config[1], cw_config[2]), CW_STATE_WORDS)));
-    write_lanes(1u, cw_config[CW_CFG_CATALOG_LANES]);
-    write_lanes(2u, hi - lo);
+    write_lanes(0u, 1u);
+    write_lanes(1u, lanes);
+    write_lanes(2u, hi + cw_config[CW_CFG_OBLIGATIONS]);
     write_lanes(3u, 1u);
-    write_lanes(4u, terms);
-    write_lanes(5u, lanes);
-    write_lanes(6u, lanes);
-    write_lanes(7u, 1u);
-    write_lanes(8u, lanes);
-    write_lanes(9u, 1u);
-    write_lanes(10u, lanes);
-    write_lanes(11u, hi + cw_config[CW_CFG_OBLIGATIONS]);
-    write_lanes(12u, 1u);
 }

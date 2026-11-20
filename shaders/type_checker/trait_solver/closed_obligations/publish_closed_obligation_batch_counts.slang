@@ -21,8 +21,10 @@ uint table_rows(uint t)
 [numthreads(1,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
-    for (uint k=0u;k<8u;k++) cw_state[8u+k]=cw_rank(cw_lanes(),k);
+    bool program_failed = cw_state[CW_PROGRAM_FAILED] != 0u;
+    if (program_failed) cw_fail(8u, 0u);
     uint fault=(cw_state[0]!=0u ? 1u : 0u) | (cw_state[5]!=0u ? 2u : 0u) | (cw_state[12]==0u ? 4u : 0u);
+    if (program_failed) fault |= 32u;
     for (uint t=0u;t<18u;t++) if (table_rows(t)>cw_config[CW_BOUNDS+t]) fault|=8u;
     for (uint t=0u;t<18u;t++) cw_state[CW_COUNTS+t]=fault==0u ? table_rows(t) : 0u;
     cw_state[CW_PUBLISH]=fault==0u ? table_rows(16u) : 0u;

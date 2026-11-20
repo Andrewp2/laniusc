@@ -3,22 +3,40 @@
 // carry no assumptions; the existing solver owns implementation selection.
 __exported import type_checker.retention.retention_store;
 __exported import type_checker.trait_solver.retained_catalog.retained_route_abi;
+// Discovery finished writing these tables before the closed batch starts.
+public StructuredBuffer<uint> closed_rt_counts;
+public StructuredBuffer<uint> closed_rt_decl_def;
+public StructuredBuffer<uint4> closed_rt_dir;
+public StructuredBuffer<uint4> closed_rt_dir_trait;
+public StructuredBuffer<uint4> closed_rt_term_head;
+public StructuredBuffer<uint4> closed_rt_term_meta;
+public StructuredBuffer<uint> closed_rt_term_args;
+
+public uint cw_term_kind(uint term) { return closed_rt_term_head[term].x & 0xffu; }
+public uint cw_term_arity(uint term) { return (closed_rt_term_head[term].x >> 8u) & 0xffu; }
+public uint3 cw_term_words(uint term) { return closed_rt_term_head[term].yzw; }
+public uint cw_term_arg(uint term, uint index)
+{
+    if (index >= cw_term_arity(term)) return RT_NONE;
+    return closed_rt_term_args[closed_rt_term_meta[term].x + index];
+}
+public bool cw_term_closed(uint term)
+{
+    return (closed_rt_term_meta[term].y & (RTF_TYPE_PARAM | RTF_CONST_PARAM | RTF_SLOT)) == 0u;
+}
+
 public StructuredBuffer<uint> cw_config;
 public StructuredBuffer<uint4> cw_instances;
 public StructuredBuffer<uint> cw_source_routes;
 public StructuredBuffer<uint> cw_catalog;
-public globallycoherent RWStructuredBuffer<uint> cw_state;
+public RWStructuredBuffer<uint> cw_state;
 public RWStructuredBuffer<uint4> cw_decl; // nominal atom, owner row, callable row, reserved
 public RWStructuredBuffer<uint> cw_param;
 public globallycoherent RWStructuredBuffer<uint> cw_atom_slots;
 public globallycoherent RWStructuredBuffer<uint> cw_reach;
 public globallycoherent RWStructuredBuffer<uint> cw_front;
-public RWStructuredBuffer<uint4> cw_scan_a;
-public RWStructuredBuffer<uint4> cw_scan_b;
-// Per 256-lane block of the count scan: its two totals, then their
-// exclusive prefixes.
-public RWStructuredBuffer<uint4> cw_blocks;
-public StructuredBuffer<uint2> cw_step;
+public RWStructuredBuffer<uint4> cw_scan_low;
+public RWStructuredBuffer<uint4> cw_scan_high;
 public RWStructuredBuffer<uint> cw_batch;
 public RWStructuredBuffer<uint> cw_routes;
 
@@ -29,6 +47,8 @@ public static const uint CW_COUNTS = 32u;
 public static const uint CW_PUBLISH = 50u;
 public static const uint CW_FAULT = 53u;
 public static const uint CW_STATE_WORDS = 64u;
+public static const uint CW_PROGRAM_FAILED = 6u;
+public static const uint CW_CFG_RUN = 23u;
 public static const uint CW_BOUNDS = 104u;
 public uint cw_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint cw_terms() { return cw_config[0]; }
@@ -48,17 +68,17 @@ public uint cw_id(uint atom,uint kind)
 public uint cw_entry(uint decl)
 {
     if (decl==0u || decl>=cw_config[2]) return RT_INVALID;
-    uint def=rt_decl_def[decl];
-    if (def==0u || def>rt_counts[RT_A_DIR]) return RT_INVALID;
+    uint def=closed_rt_decl_def[decl];
+    if (def==0u || def>closed_rt_counts[RT_A_DIR]) return RT_INVALID;
     uint e=def-1u;
-    return rt_dir[e*RT_DIR_WORDS].x==decl && rt_dir[e*RT_DIR_WORDS].w==RT_DIR_COMMITTED &&
-        rt_dir[e*RT_DIR_WORDS+3u].w==0u ? e : RT_INVALID;
+    return closed_rt_dir[e*RT_DIR_WORDS].x==decl && closed_rt_dir[e*RT_DIR_WORDS].w==RT_DIR_COMMITTED &&
+        closed_rt_dir[e*RT_DIR_WORDS+3u].w==0u ? e : RT_INVALID;
 }
 public uint cw_predicates(uint entry)
 {
-    uint count=rt_dir_trait[entry].y;
-    uint parent=cw_entry(rt_dir[entry*RT_DIR_WORDS].z);
-    return count+(parent==RT_INVALID ? 0u : rt_dir_trait[parent].y);
+    uint count=closed_rt_dir_trait[entry].y;
+    uint parent=cw_entry(closed_rt_dir[entry*RT_DIR_WORDS].z);
+    return count+(parent==RT_INVALID ? 0u : closed_rt_dir_trait[parent].y);
 }
 public bool cw_selected(uint instance)
 {
@@ -74,15 +94,15 @@ public void cw_fail(uint code,uint lane)
 public void cw_mark(uint term)
 {
     if (term>0u && term<RT_FIRST_TERM) return;
-    if (!rt_is_stored_term(term) || term>=cw_terms() || !rt_term_closed(term))
+    if (!rt_is_stored_term(term) || term>=cw_terms() || !cw_term_closed(term))
     { cw_fail(2u,term); return; }
     uint old; InterlockedCompareExchange(cw_reach[term],0u,1u,old);
     if (old==0u) { uint at; InterlockedAdd(cw_state[2],1u,at); cw_front[at]=term; }
 }
 public uint4 cw_constant(uint term)
 {
-    uint3 w=rt_term_words(term);
-    return rt_term_kind(term)==RT_KIND_CC_COUNT ? uint4(12u,12u,w.x,0u) : uint4(12u,w);
+    uint3 w=cw_term_words(term);
+    return cw_term_kind(term)==RT_KIND_CC_COUNT ? uint4(12u,12u,w.x,0u) : uint4(12u,w);
 }
 public uint4 cw_atom_key(uint id)
 {
@@ -120,16 +140,16 @@ public void cw_insert_atom(uint id)
     }
     cw_fail(3u,id);
 }
-public uint4 cw_scan(uint lane,uint part)
+public uint cw_rank(uint lane, uint column)
 {
-    return cw_config[7]==0u ? cw_scan_a[lane*2u+part] : cw_scan_b[lane*2u+part];
+    uint4 prefix = column < 4u ? cw_scan_low[lane] : cw_scan_high[lane];
+    return prefix[column & 3u];
 }
-public uint cw_rank(uint lane,uint c) { return lane==0u ? 0u : cw_scan(lane-1u,c/4u)[c&3u]; }
 public uint2 cw_ref(uint t)
 {
     if (t>0u && t<RT_FIRST_TERM) return uint2(1u,t);
     if (!rt_is_stored_term(t) || t>=cw_terms() || cw_reach[t]==0u) return uint2(RT_INVALID,RT_INVALID);
-    uint kind=rt_term_kind(t);
+    uint kind=cw_term_kind(t);
     if (kind==RT_KIND_CC_VALUE || kind==RT_KIND_CC_COUNT)
     {
         uint slot=cw_atom_slot(cw_constant(t));
