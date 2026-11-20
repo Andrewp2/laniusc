@@ -1,4 +1,4 @@
-// One thread: the sizes, indirect dispatches and kernel parameters of the
+// One group: the sizes, indirect dispatches and kernel parameters of the
 // next stage of one round of the desugaring, from the counts the stage
 // before it wrote (desugaring_layout.slang). The host records each mode once
 // per round, in order, with the round's slices of `sizes`, `args` and
@@ -206,12 +206,6 @@ void expand(uint fpieces)
 // before it. False when the round has nothing to do.
 bool start_round()
 {
-    for (uint i = 0u; i < SIZE_WORDS; i += 1u)
-        sizes[gPlan.slot * SIZE_WORDS + i] = 0u;
-    for (uint i = 0u; i < ARG_TRIPLES * 3u; i += 1u)
-        args[i] = 0u;
-    for (uint i = 0u; i < BLOCKS; i += 1u)
-        block(i, 0u, 0u, 0u, 0u);
     // Four bytes past the padded source (desugar.rs).
     uint first_base = ((gLex.n + 3u) & ~3u) + 4u;
     uint base = first_base;
@@ -434,11 +428,27 @@ void plan_machine_pieces()
     expand(fpieces);
 }
 
+static const uint PLAN_LANES = 256u;
+
 [shader("compute")]
-[numthreads(1, 1, 1)]
-void main()
+[numthreads(PLAN_LANES, 1, 1)]
+void main(uint lane: SV_GroupIndex)
 {
     uint mode = gPlan.mode;
+    if (mode == PLAN_START)
+    {
+        // A previous job can leave the round's indirect args and params live.
+        // Clear them together before lane zero publishes this round's plan.
+        if (lane < SIZE_WORDS)
+            sizes[gPlan.slot * SIZE_WORDS + lane] = 0u;
+        if (lane < ARG_TRIPLES * 3u)
+            args[lane] = 0u;
+        for (uint i = lane; i < BLOCKS * BLOCK_WORDS; i += PLAN_LANES)
+            blocks[i] = 0u;
+        DeviceMemoryBarrierWithGroupSync();
+    }
+    if (lane != 0u)
+        return;
     if (mode == PLAN_START)
     {
         if (!start_round())
