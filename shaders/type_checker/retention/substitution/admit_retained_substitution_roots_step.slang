@@ -6,10 +6,9 @@
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.retained_substitution_workspace;
 
-public void admit_retained_substitution_roots(uint request)
+public void admit_retained_substitution_roots(uint request, uint4 r)
 {
     if (request >= sb_request_total()) return;
-    uint4 r = sb_requests[request];
     SbCheck check = sb_validate(r.x, r.y, r.z);
     sb_req_root[request * SB_ROOT_WORDS + 1u] = uint4(check.status, check.cause, check.node, check.value);
     if (check.status != SB_OK)

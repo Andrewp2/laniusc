@@ -38,10 +38,6 @@ import shared.semantics.constant_value;
 import type_checker.retention.retention_store;
 __exported import type_checker.retention.substitution.retained_substitution_layout;
 
-// Requests (producer-owned): (DeclId, ENV TermId, term reference, tag).
-public StructuredBuffer<uint4> sb_requests;
-public StructuredBuffer<uint> sb_request_count;
-
 public globallycoherent RWStructuredBuffer<uint> sb_counts;     // SB_C_* status words
 public RWStructuredBuffer<uint> sb_config;                      // SB_CFG_*
 // Per request, two uint4: (term edge, environment edge) and the request
@@ -99,11 +95,12 @@ public uint sb_task_capacity()
 
 public uint sb_edge_capacity() { uint n; uint s; sb_edges.GetDimensions(n, s); return n; }
 
-public uint sb_request_capacity()
+public uint sb_request_capacity(uint requests)
 {
-    uint a; uint b; uint c; uint s;
-    sb_requests.GetDimensions(a, s); sb_req_root.GetDimensions(b, s); sb_results.GetDimensions(c, s);
-    return min(min(a, b / SB_ROOT_WORDS), c / SB_RESULT_WORDS);
+    uint roots; uint results; uint stride;
+    sb_req_root.GetDimensions(roots, stride);
+    sb_results.GetDimensions(results, stride);
+    return min(requests, min(roots / SB_ROOT_WORDS, results / SB_RESULT_WORDS));
 }
 
 public uint sb_request_total() { return sb_counts[SB_C_REQUESTS]; }

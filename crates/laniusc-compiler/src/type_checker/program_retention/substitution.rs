@@ -171,7 +171,7 @@ pub mod words {
     pub const GENERATION: usize = 964;
     pub const REQUEST_CAPACITY: usize = 965;
     pub const COUNT: usize = 1024;
-    pub(super) const SYNC_FAILED: usize = 966;
+    pub(in crate::type_checker::program_retention) const SYNC_FAILED: usize = 966;
 
     pub const PHASE_FINAL: u32 = 6;
     pub const STATE_PUBLISHED: u32 = 2;
@@ -212,6 +212,7 @@ pub const CONSUMER_KERNEL: &str = "tests/check_retained_substitution_publication
 /// an attempt with `e` nonempty expansion rounds and `v` nonempty levels
 /// needs `e + v + 2` rounds. The settings app's runs need at most 7.
 const FIRST_BATCH_ROUNDS: u32 = 8;
+pub(super) const FIRST_BATCH_OPTIONS: u32 = (FIRST_BATCH_ROUNDS << 1) | 1;
 /// Rounds one attempt can need: every expansion round lowers the frontier's
 /// largest level and every evaluation round raises the level, so each side
 /// has at most `LEVELS` nonempty rounds plus the round that ends it (the
@@ -759,6 +760,24 @@ impl RetainedSubstitution {
         run: u32,
         consumer: &mut Consumer<'_>,
     ) -> Result<u32> {
+        self.record_chain_prelude(encoder, index)?;
+        let mut dispatches = 0;
+        self.record_batch(encoder, guard, requests, true, FIRST_BATCH_ROUNDS, &mut dispatches)?;
+        let (_, results, _) = self
+            .results
+            .as_ref()
+            .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
+        consumer(encoder, guard, run, results, &self.scratch["sb_counts"])?;
+        passes_core::flush_deferred_compute(encoder);
+        Ok(dispatches)
+    }
+
+    /// Resets one run's working tables after the preceding consumer.
+    pub(super) fn record_chain_prelude(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+    ) -> Result<()> {
         let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
         encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
         encoder.clear_buffer_counted(&self.scratch["sb_term_slots"], 0, None);
@@ -769,15 +788,15 @@ impl RetainedSubstitution {
             &self.scratch["sb_counts"], 0, (index != 0).then_some(count_bytes),
         );
         encoder.copy_buffer_counted(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
-        let mut dispatches = 0;
-        self.record_batch(encoder, guard, requests, true, FIRST_BATCH_ROUNDS, &mut dispatches)?;
-        let (_, results, _) = self
-            .results
-            .as_ref()
+        Ok(())
+    }
+
+    pub(super) fn chain_bindings(&self) -> Result<Vec<(&'static str, &wgpu::Buffer)>> {
+        let (_, results, roots) = self.results.as_ref()
             .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
-        consumer(encoder, guard, run, results, &self.scratch["sb_counts"])?;
-        passes_core::flush_deferred_compute(encoder);
-        Ok(dispatches)
+        let mut bindings = vec![("sb_results", results), ("sb_req_root", roots)];
+        bindings.extend(self.scratch.iter().map(|(&name, buffer)| (name, buffer)));
+        Ok(bindings)
     }
 
     /// The status words a chain's readback returns for its last run.

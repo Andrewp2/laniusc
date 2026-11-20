@@ -33,12 +33,14 @@ use crate::gpu::{
 const RANK_INSTANCES_PROGRAM: &str = "type_checker/retention/discovery/rank_retained_instances";
 const COLLECT_PROGRAM: &str = "type_checker/retention/discovery/collect_retained_requests";
 const RESOLVE_PROGRAM: &str = "type_checker/retention/discovery/resolve_retained_requests";
+const WAVE_PROGRAM: &str = "type_checker/retention/discovery/expand_retained_discovery_wave";
 const COLLECT: usize = 0;
 const RESOLVE: usize = 1;
 const COUNT_TERMS: usize = 2;
 const RANK_INSTANCES: usize = 3;
 const PUBLISH_WAVE: usize = 4;
 const ATTACH_METHOD_ROUTES: usize = 5;
+const EXPAND_WAVE: usize = 6;
 const KERNELS: &[&str] = &[
     COLLECT_PROGRAM,
     RESOLVE_PROGRAM,
@@ -46,6 +48,7 @@ const KERNELS: &[&str] = &[
     RANK_INSTANCES_PROGRAM,
     "type_checker/retention/discovery/publish_discovery_wave",
     "type_checker/retention/discovery/attach_discovered_method_routes",
+    WAVE_PROGRAM,
 ];
 const STATUS_WORDS: usize = 32;
 const METHOD_ROUTES_SYNC_FAILED: usize = 31;
@@ -794,6 +797,8 @@ impl RetainedDiscovery {
         let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
         let status_buffer = self.scratch["dg_status"].clone();
         let levels_buffer = self.scratch["dg_levels"].clone();
+        let mut bindings = extra.to_vec();
+        bindings.extend(engine.chain_bindings()?);
         let request_lanes = requests.capacity();
         let instance_lanes = self.capacity.instances;
         self.config_cursor = 0;
@@ -811,36 +816,20 @@ impl RetainedDiscovery {
             if i > 0 {
                 config[0] = 3;
                 self.record(&mut encoder, &guard, PUBLISH_WAVE, config, extra, 1, report)?;
-                // Collection and resolution bind the GPU frontier.
+                // The program binds the GPU frontier.
                 let first = self.config_cursor;
-                while self.configs.len() < first + 2 {
+                if self.configs.len() == first {
                     self.configs.push(self.buffer("dg_config", 64)?);
                 }
-                for slot in first..first + 2 {
-                    self.flush(&mut encoder);
-                    encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[slot], 4, 12);
-                }
+                self.flush(&mut encoder);
+                encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[first], 4, 12);
             }
             config[0] = 0;
+            config[5] = runs[i as usize];
             let rows = if i == 0 { hi - lo } else { instance_lanes };
-            self.record(&mut encoder, &guard, COLLECT, config, extra, rows, report)?;
             self.flush(&mut encoder);
-            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
-                                guard: &Store,
-                                run: u32,
-                                results: &wgpu::Buffer,
-                                counts: &wgpu::Buffer|
-             -> Result<()> {
-                let mut config = config;
-                config[5] = run;
-                let mut bindings = extra.to_vec();
-                bindings.extend([("sb_results", results), ("sb_counts", counts)]);
-                self.record(encoder, guard, RESOLVE, config, &bindings, request_lanes, report)?;
-                self.flush(encoder);
-                Ok(())
-            };
-            let dispatches = engine.record_chained(&mut encoder, &guard, requests, i as usize, runs[i as usize], &mut consumer)?;
-            report.substitution_dispatches += dispatches;
+            engine.record_chain_prelude(&mut encoder, i as usize)?;
+            self.record(&mut encoder, &guard, EXPAND_WAVE, config, &bindings, rows.max(request_lanes), report)?;
         }
         // Level counts for term ranking, valid when the chain ends
         // discovery and nothing interns after it.
@@ -975,6 +964,8 @@ impl RetainedDiscovery {
         let metadata = self.scratch["dg_req_meta"].clone();
         let instances = self.scratch["dg_instances"].clone();
         let instance_buffer = LaniusBuffer::new((instances.clone(), instances.size()), instances.size() as usize / 4);
+        let mut bindings = extra.to_vec();
+        bindings.extend(engine.chain_bindings()?);
         let request_lanes = requests.capacity();
         let instance_lanes = self.capacity.instances;
         let term_capacity = store.store.lock().unwrap().capacity.arenas[super::A_TERMS];
@@ -1024,7 +1015,7 @@ impl RetainedDiscovery {
             // A chained wave reads its frontier from the GPU.
             if i > 0 {
                 let first = self.config_cursor;
-                let count = if closed { 5 } else { 2 };
+                let count = if closed { 4 } else { 1 };
                 while self.configs.len() < first + count {
                     self.configs.push(self.buffer("dg_config", 64)?);
                 }
@@ -1042,29 +1033,18 @@ impl RetainedDiscovery {
                 self.record(&mut encoder, &guard, PUBLISH_WAVE, check, extra, 1, report)?;
             }
             config[0] = 0;
+            let run = runs[i as usize];
+            config[5] = run;
             let rows = if i == 0 { hi - lo } else { instance_lanes };
-            self.record(&mut encoder, &guard, COLLECT, config, extra, rows, report)?;
             self.flush(&mut encoder);
-            let routes = &*routes;
-            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
-                                guard: &Store,
-                                run: u32,
-                                results: &wgpu::Buffer,
-                                counts: &wgpu::Buffer|
-             -> Result<()> {
-                let mut config = config;
-                config[5] = run;
-                let mut bindings = extra.to_vec();
-                bindings.extend([("sb_results", results), ("sb_counts", counts)]);
-                self.record(encoder, guard, RESOLVE, config, &bindings, request_lanes, report)?;
-                self.flush(encoder);
-                let Some(view) = &view else { return Ok(()) };
-                // The routes and bound routes dispatch what the receipt
-                // check wrote: nothing unless this wave's solve ran and
-                // finished.
+            engine.record_chain_prelude(&mut encoder, i as usize)?;
+            self.record(&mut encoder, &guard, EXPAND_WAVE, config, &bindings, rows.max(request_lanes), report)?;
+            if let Some(view) = &view {
+                let (results, counts) = engine.chain_buffers()
+                    .ok_or_else(|| anyhow!("retained substitution buffers are not allocated"))?;
                 routes.record_first_batch(
-                    encoder,
-                    guard,
+                    &mut encoder,
+                    &guard,
                     view,
                     run,
                     (results, counts),
@@ -1077,13 +1057,9 @@ impl RetainedDiscovery {
                 let mut bound = extra.to_vec();
                 bound.push(("mr_out", routes.output()));
                 bound.push(("mr_state", routes.state()));
-                self.record_with(encoder, guard, ATTACH_METHOD_ROUTES, config, &bound, Dispatch::Indirect(&bound_args), report)?;
-                self.record(encoder, guard, PUBLISH_WAVE, config, extra, 1, report)?;
-                self.flush(encoder);
-                Ok(())
-            };
-            let dispatches = engine.record_chained(&mut encoder, &guard, requests, i as usize, runs[i as usize], &mut consumer)?;
-            report.substitution_dispatches += dispatches;
+                self.record_with(&mut encoder, &guard, ATTACH_METHOD_ROUTES, config, &bound, Dispatch::Indirect(&bound_args), report)?;
+                self.record(&mut encoder, &guard, PUBLISH_WAVE, config, extra, 1, report)?;
+            }
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             // The next solve may reuse this one's buffers: the GPU runs
@@ -1445,6 +1421,7 @@ impl RetainedDiscovery {
             RANK_INSTANCES => Some((RANK_INSTANCES_PROGRAM, super::DISCOVERY_RANK_SYNC_SLOT, RANK_SYNC_FAILED)),
             COLLECT => Some((COLLECT_PROGRAM, super::DISCOVERY_COLLECT_SYNC_SLOT, COLLECT_SYNC_FAILED)),
             RESOLVE => Some((RESOLVE_PROGRAM, super::DISCOVERY_RESOLVE_SYNC_SLOT, RESOLVE_SYNC_FAILED)),
+            EXPAND_WAVE => Some((WAVE_PROGRAM, super::DISCOVERY_WAVE_SYNC_SLOT, super::substitution::words::SYNC_FAILED)),
             _ => None,
         };
         if program.is_some() {
@@ -1492,20 +1469,32 @@ impl RetainedDiscovery {
                 bail!("{key} requires a direct launch");
             };
             let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+            let (status, options) = if kernel == EXPAND_WAVE {
+                let counts = extra.iter().find(|(name, _)| *name == "sb_counts")
+                    .map(|(_, buffer)| *buffer)
+                    .ok_or_else(|| anyhow!("{key} has no substitution status"))?;
+                (counts, super::substitution::FIRST_BATCH_OPTIONS)
+            } else {
+                (&self.scratch["dg_status"], 0)
+            };
             let program = StepProgramOperation::new_reflected(
                 &self.device, key, pass, &entries,
-                &store.step_program_sync, slot, groups, 0,
+                &store.step_program_sync, slot, groups, options,
             )?;
             program.record(encoder)?;
             passes_core::flush_deferred_compute(encoder);
             encoder.copy_buffer_counted(
                 &store.step_program_sync,
                 StepProgramOperation::failed_offset(slot),
-                &self.scratch["dg_status"],
+                status,
                 (failure_word * 4) as u64,
                 4,
             );
-            report.dispatches += 1;
+            if kernel == EXPAND_WAVE {
+                report.substitution_dispatches += 1;
+            } else {
+                report.dispatches += 1;
+            }
             return Ok(());
         }
         let bind = passes_core::bind_group::create_bind_group_from_bindings(

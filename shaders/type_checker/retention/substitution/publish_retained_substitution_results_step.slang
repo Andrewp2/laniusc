@@ -28,12 +28,11 @@ void edge_result(uint2 edge, uint env, out uint4 out, out uint2 fail)
     else out = uint4(RT_UNKNOWN, edge.y, edge.x, env);
 }
 
-public void publish_retained_substitution_results(uint request)
+public void publish_retained_substitution_results(uint request, uint4 r)
 {
     uint phase = sb_counts[SB_C_PHASE];
     if (phase != SB_PHASE_DONE && phase != SB_PHASE_OVERFLOW) return;
     if (request >= sb_request_total()) return;
-    uint4 r = sb_requests[request];
     uint4 out = uint4(RT_UNKNOWN, SB_CAPACITY, RT_NONE, 0u);
     uint fail_value = RT_NONE;
     uint3 cause = uint3(SB_ENV_NONE, SB_OK, SB_ENV_NONE);
