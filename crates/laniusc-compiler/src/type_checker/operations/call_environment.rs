@@ -4,14 +4,14 @@
 //! bindings at every step. Producers publish them; these passes record the
 //! validated outcome next to the evidence, so readers only load it:
 //! - `validate_explicit_constants` admits rows after `bind_explicit_applications`.
-//! - `publish_call_environment` selects and checks each `(callee, slot)` argument
+//! - `build_call_claim_indexes` selects and checks each `(callee, slot)` argument
 //!   claim group after the claim index is rebuilt.
 //! - `admit_context_constants` admits contextual constants after result
 //!   comparisons, record contexts and explicit application validation.
 //!   Method receiver binding and dependency result validation admit inline.
 
 use super::super::*;
-use crate::gpu::compiler_graph::{AccessMode, ReflectedComputeSpec};
+use crate::gpu::compiler_graph::ReflectedComputeSpec;
 
 pub(in crate::type_checker) const CALLS_EXPLICIT_CONSTANTS_ADMIT: ReflectedComputeSpec =
     typecheck_pass!(
@@ -21,17 +21,6 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_CONSTANTS_ADMIT: ReflectedCompu
     )
     // Applications that reserved binding rows in bind_explicit_applications.
     .with_indirect_dispatch("call_explicit_admission_args");
-
-pub(in crate::type_checker) const CALLS_CONST_ENVIRONMENT_PUBLISH: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.calls.const_claims.environment",
-        CallArguments,
-        "type_checker/calls/claims/publish_call_environment"
-    )
-    // Each group's first chain row stores its outcome; readers stop at that
-    // row, so cells of other rows are never read.
-    .with_modes(&[("call_const_env_binding", AccessMode::Write)])
-    .with_indirect_dispatch("call_const_claim_index_dispatch_args");
 
 pub(in crate::type_checker) const CALLS_CONTEXT_CONSTANTS_ADMIT: ReflectedComputeSpec =
     typecheck_pass!(

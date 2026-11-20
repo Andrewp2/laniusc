@@ -389,7 +389,6 @@ pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/re
 pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_PASS: &str = "type_check.calls.struct_literal_rows.args";
 pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/results/write_struct_literal_dispatch_args";
 pub(super) const CALLS_CALL_ROOTS_COUNT_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_count";
-pub(super) const CALLS_CALL_ROOTS_ARGS_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_args";
 pub(super) const CALLS_CALL_ROOTS_LIST_PASS: &str = "type_check.substitution.call_roots.list";
 pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/list_call_field_closure_roots";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
@@ -3149,12 +3148,16 @@ fn build_graph(
         _inference_arg_list_args as "inference_arg_list_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_method_key_args as "inference_method_key_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_explicit_args as "inference_explicit_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_index_program_args as "inference_index_program_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_field_program_args as "inference_field_program_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_program_sync as "call_inference_step_program_sync" in Calls =>
+            (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
+                * super::call_inference_program::PROGRAM_SLOTS * 4) as u64;
         _inference_full_arg_args as "inference_full_arg_args" in DispatchArguments [StorageIndirect] => 12;
         // The locations of the call field closure's roots
         // (list_call_field_closure_roots.slang): two per HIR row at most.
         _call_root_list as "call_root_list" in HirNodes => (2 * hir_rows).max(1) * 16;
         call_root_count as "call_root_count" in Calls => 4;
-        call_root_args as "call_root_args" in DispatchArguments [StorageIndirect] => 12;
         // The rows of the rounds' struct-literal passes
         // (list_struct_literal_rows.slang).
         _struct_literal_field_rows as "struct_literal_field_rows" in Tokens => token_rows * 4;
@@ -4007,8 +4010,8 @@ fn build_graph(
         scalar_a as "compact_expr_scalar_type.a" in HirNodes => hir_rows * 4;
     });
     graph_resources!(graph, External {
-        _status as "status" in Bytes => 16;
-        _status_readback as "status_readback" in Bytes => 16;
+        _status as "status" in Bytes => super::call_inference_program::STATUS_BYTES;
+        _status_readback as "status_readback" in Bytes => super::call_inference_program::STATUS_BYTES;
         status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
         call_inference_round as "call_inference_round" in Calls => 8;
@@ -5713,12 +5716,6 @@ fn build_graph(
         "call_root_count",
         call_root_count,
     )?;
-    graph.add_buffer_clear_pass(
-        CALLS_CALL_ROOTS_ARGS_CLEAR_PASS,
-        CompilerPhase::TypeCheck,
-        "call_root_args",
-        call_root_args,
-    )?;
     graph.add_kernel_pass_by_name(
         CALLS_CALL_ROOTS_LIST_PASS,
         CompilerPhase::TypeCheck,
@@ -5822,6 +5819,8 @@ fn build_graph(
             "inference_token_list_args",
             "inference_arg_list_args",
             "inference_full_arg_args",
+            "inference_field_program_args",
+            "inference_index_program_args",
             "inference_method_key_args",
             "inference_explicit_args",
         ],
@@ -5908,9 +5907,7 @@ fn build_graph(
             "call_const_claim_lookup_head",
         ],
     )?;
-    CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
+    super::call_inference_program::BUILD_CALL_CLAIM_INDEXES.register_kernel(&mut graph, kernels)?;
     // Recorded before each 03a4b invocation and before the final validation
     // passes (resident.rs).
     graph.add_buffer_copy_pass(
@@ -6065,15 +6062,7 @@ fn build_graph(
             super::substitution::register_call_env_pass(&mut graph, kernels)?;
         }
         if name == CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS {
-            // The field closure of the return types and argument contexts.
-            super::substitution::register_field_closure_passes(
-                &mut graph,
-                kernels,
-                &super::substitution::CALL_FIELD_CLOSURE,
-                ResourceDomain::HirNodes,
-                "call_root_args",
-                &application_bindings[..],
-            )?;
+            super::call_inference_program::EXPAND_CALL_FIELDS.register_kernel(&mut graph, kernels)?;
         }
         if name == CALLS_MATERIALIZE_RETURN_TYPES_PASS && struct_init_passes_required(parser_feature_flags) {
             graph.add_kernel_pass_by_name(
@@ -8741,7 +8730,7 @@ mod tests {
         );
         assert!(
             graph
-                .pass_id(CALLS_GENERIC_CLAIM_INDEX_BUILD.name)
+                .pass_id(super::super::call_inference_program::BUILD_CALL_CLAIM_INDEXES.name)
                 .unwrap()
                 .index()
                 < aggregate_publish.index()
@@ -8789,7 +8778,6 @@ mod tests {
         );
         for (producer, admission) in [
             (CALLS_EXPLICIT_APPLICATIONS_BIND, CALLS_EXPLICIT_CONSTANTS_ADMIT),
-            (CALLS_CONST_CLAIM_INDEX_BUILD, CALLS_CONST_ENVIRONMENT_PUBLISH),
             (CALLS_CONTEXTUAL_RESULT_REQUESTS, CALLS_CONTEXT_CONSTANTS_ADMIT),
             (CALLS_CONTEXTUAL_RESULTS_FINAL, CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT),
             (CALLS_EXPLICIT_APPLICATIONS_VALIDATE, CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT),

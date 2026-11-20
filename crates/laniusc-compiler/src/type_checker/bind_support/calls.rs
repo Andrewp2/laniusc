@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{*, call_inference_program::*};
 
 /// Builds bind groups for call collection, argument matching, and claim validation.
 pub(in crate::type_checker) fn create_call_bind_groups(
@@ -115,27 +115,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             reserved1: 0,
         },
     );
-    let generic_claim_index = CallClaimIndexOperation::new(
-        device,
-        passes,
-        CallClaimIndexBuild {
-            kind: CallClaimKind::Generic,
-            dispatch_args: &call_generic_claim_index_dispatch_args,
-            graph,
-            resources,
-        },
-    )?;
-    let const_claim_index = CallClaimIndexOperation::new(
-        device,
-        passes,
-        CallClaimIndexBuild {
-            kind: CallClaimKind::Const,
-            dispatch_args: &call_const_claim_index_dispatch_args,
-            graph,
-            resources,
-        },
-    )?;
-
     let listed_arg_args = typed_buffer_from_resources(resources, "inference_arg_list_args")?;
     let full_arg_args = typed_buffer_from_resources(resources, "inference_full_arg_args")?;
     let argument_matching = CallArgumentMatchingOperation::new(
@@ -174,9 +153,11 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 passes,
                 CALLS_GENERIC_CLAIM_VALIDATE,
-                generic_claim_index.dispatch_args(),
+                &call_generic_claim_index_dispatch_args,
             )?,
-            generic_index: generic_claim_index,
+            build_indexes: build_program(
+                device, graph, resources, passes, BUILD_CALL_CLAIM_INDEXES, 0,
+            )?,
             mark_required: indirect(CALLS_REQUIRED_GENERIC_MARK)?,
             required_scan: PrefixScanOperation::from_spec_with_total_dispatch(
                 device,
@@ -201,19 +182,16 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 passes,
                 CALLS_CONST_CLAIM_VALIDATE,
-                const_claim_index.dispatch_args(),
+                &call_const_claim_index_dispatch_args,
             )?,
-            publish_const_environment: ComputeOperation::indirect_spec(
-                device,
-                graph,
-                resources,
-                passes,
-                CALLS_CONST_ENVIRONMENT_PUBLISH,
-                const_claim_index.dispatch_args(),
-            )?,
-            const_index: const_claim_index,
         });
 
+    let [_, field_groups] = crate::gpu::operations::step_program_group_counts();
+    let program_limits = uniform_from_val(
+        device,
+        "type_check.calls.inference_program_limits",
+        &ProgramLimits { field_groups },
+    );
     Ok(CallBindGroups {
         clear: direct(CALLS_CLEAR, lookup_work)?,
         clear_entrypoints: direct(CALLS_ENTRYPOINT_CLEAR, hir_capacity)?,
@@ -313,13 +291,8 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
             "type_checker/calls/results/materialize_return_types",
         )?,
-        call_field_closure: crate::type_checker::substitution::FieldClosureOperations::new(
-            device,
-            graph,
-            resources,
-            passes,
-            &crate::type_checker::substitution::CALL_FIELD_CLOSURE,
-            &typed_buffer_from_resources(resources, "call_root_args")?,
+        call_field_closure: build_program(
+            device, graph, resources, passes, EXPAND_CALL_FIELDS, 1,
         )?,
         project_argument_contexts: Some(crate::type_checker::substitution::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
@@ -359,12 +332,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 "call_root_count",
                 &typed_buffer_from_resources::<u32>(resources, "call_root_count")?,
             )?,
-            clear_args: crate::gpu::operations::ClearBufferOperation::entire(
-                graph,
-                compiler_graph::CALLS_CALL_ROOTS_ARGS_CLEAR_PASS,
-                "call_root_args",
-                &typed_buffer_from_resources::<u32>(resources, "call_root_args")?,
-            )?,
             list: ComputeOperation::indirect(
                 device,
                 graph,
@@ -394,13 +361,15 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 &passes.kernel(compiler_graph::CALLS_INFERENCE_LIST_ARGS_KERNEL),
                 1,
             )?,
-            list: ComputeOperation::indirect(
+            list: ComputeOperation::indirect_with_uniform(
                 device,
                 graph,
                 resources,
                 compiler_graph::CALLS_INFERENCE_BLOCK_LIST_PASS,
                 &passes.kernel(compiler_graph::CALLS_INFERENCE_BLOCK_LIST_KERNEL),
                 &typed_buffer_from_resources(resources, "inference_list_writer_args")?,
+                "inference_program_limits",
+                &program_limits,
             )?,
         },
         type_row_list: if generic_param_record_passes_required(parser_feature_flags)

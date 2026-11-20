@@ -459,13 +459,13 @@ impl GpuTypeChecker {
         let status_buf = typed_storage_u32_rw(
             device,
             "type_check.resident.status",
-            4,
+            super::call_inference_program::STATUS_WORDS,
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
         let status_readback = readback_u32s(
             device,
             "rb.type_check.resident.status",
-            4 + super::module_path::MODULE_PROGRAM_SLOTS,
+            super::call_inference_program::STATUS_WORDS + super::module_path::MODULE_PROGRAM_SLOTS,
         );
         let status_prior = typed_storage_u32_rw(
             device,
@@ -1943,7 +1943,7 @@ impl GpuTypeChecker {
                 }
                 Ok(())
             };
-            let record_returns = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+            let record_returns = |encoder: &mut wgpu::CommandEncoder, strict| -> Result<()> {
                 // The round's active blocks, for the listed passes; every row
                 // outside the rounds.
                 bind_groups.calls.inference_blocks.list.record(encoder)?;
@@ -2020,7 +2020,7 @@ impl GpuTypeChecker {
                 if let Some(pass) = &bind_groups.calls.materialize_array_literals {
                     pass.record(encoder)?;
                 }
-                if let Some(pass) = &bind_groups.calls.validate_array_literals {
+                if strict && let Some(pass) = &bind_groups.calls.validate_array_literals {
                     pass.record(encoder)?;
                 }
                 if let Some(infer) = &bind_groups.calls.infer_return_bindings {
@@ -2035,7 +2035,7 @@ impl GpuTypeChecker {
                         infer.record(encoder)?;
                     }
                 }
-                if methods_required {
+                if strict && methods_required {
                     bind_groups
                         .methods
                         .resolve
@@ -2155,7 +2155,7 @@ impl GpuTypeChecker {
                             .calls
                             .inference_round_number
                             .record_shifted(encoder, (u64::from(round) + slot as u64 + 1) * 4);
-                        record_returns(encoder)?;
+                        record_returns(encoder, false)?;
                         bind_groups.calls.inference_readback[slot].record(encoder);
                         bind_groups.calls.inference_status_readback[slot].record(encoder);
                     }
@@ -2287,7 +2287,7 @@ impl GpuTypeChecker {
                         ContextConstantProducer::FinalResultRequests,
                     )?;
                 }
-                record_returns(encoder)?;
+                record_returns(encoder, true)?;
                 if let Some(unwaited) = unwaited_inference
                     .as_ref()
                     .filter(|unwaited| unwaited.final_pass_confirms)
@@ -2304,7 +2304,7 @@ impl GpuTypeChecker {
                 self.call_inference_round.write(queue, 0, &[0; 8]);
                 // Even jobs with no materializer require current argument
                 // claims and a final method selection before strict checks.
-                record_returns(encoder)?;
+                record_returns(encoder, true)?;
             }
             if enums_required || dependency_types_present {
                 module_path.bind_groups.consume_value_enum_units.record_as(
@@ -2878,12 +2878,21 @@ impl GpuTypeChecker {
         let words = read_status_words(&mapped)?;
         let module_failures = crate::gpu::readback::read_u32_words::<
             { super::module_path::MODULE_PROGRAM_SLOTS },
-        >(&mapped[16..], "module step program");
+        >(&mapped[super::call_inference_program::STATUS_BYTES as usize..], "module step program");
+        let inference_failed = crate::gpu::readback::read_u32_words::<1>(
+            &mapped[16..],
+            "call inference step program",
+        );
         drop(mapped);
         self.status_readback.unmap();
         if module_failures?.iter().any(|&failed| failed != 0) {
             return Err(GpuTypeCheckError::Gpu(anyhow::anyhow!(
                 "a module step program ran out of spins at a barrier"
+            )));
+        }
+        if inference_failed?[0] != 0 {
+            return Err(GpuTypeCheckError::Gpu(anyhow::anyhow!(
+                "a call inference step program ran out of spins at a barrier"
             )));
         }
         // When an error ended call inference, the passes after it ran on facts

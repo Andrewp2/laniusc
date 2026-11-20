@@ -1,10 +1,10 @@
 // Lists, once per job before the inference rounds, the locations that can
-// hold a root of the call field closure (queue_call_field_closure_roots): each call
+// hold a root of the call field closure (expand_call_fields): each call
 // row with a call token (its result) and each argument row's context root
 // (its expected type). Both depend only on the HIR and the argument rows, which
 // are complete before the rounds. An entry is (HIR row, token | family << 31,
 // the instance row last pushed from it, 0). One lane per HIR row and per
-// argument row; call_root_count and call_root_args were cleared before.
+// argument row. The host clears call_root_count before the dispatch.
 import shared.syntax.hir_records;
 import type_checker.expression_contexts.argument_context;
 
@@ -18,7 +18,6 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 RWStructuredBuffer<uint4> call_root_list;
 RWStructuredBuffer<uint> call_root_count;
-RWStructuredBuffer<uint> call_root_args;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -34,9 +33,6 @@ void list_root(uint node, uint token, uint family)
     call_root_list.GetDimensions(capacity, stride);
     if (slot >= capacity) return; // Two entries per HIR row at most.
     call_root_list[slot] = uint4(node, token | (family << 31u), INVALID, 0u);
-    uint groups = slot / 256u + 1u;
-    InterlockedMax(call_root_args[0u], min(groups, 65535u));
-    InterlockedMax(call_root_args[1u], (groups + 65534u) / 65535u);
 }
 
 [shader("compute")]
@@ -44,13 +40,6 @@ void list_root(uint node, uint token, uint family)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = dtid.x + dtid.y * 16776960u;
-    // At least one workgroup: 04 also re-queues deferred imported IDs.
-    if (lane == 0u)
-    {
-        InterlockedMax(call_root_args[0u], 1u);
-        InterlockedMax(call_root_args[1u], 1u);
-        call_root_args[2u] = 1u;
-    }
     if (lane >= hir_count()) return;
     list_root(lane, call_token(lane), 0u);
     if (lane < min(call_arg_row_count_out[0u], gParams.n_hir_nodes))

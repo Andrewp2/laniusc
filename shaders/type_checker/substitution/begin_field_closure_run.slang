@@ -3,12 +3,11 @@
 // indirect dispatch arguments are written. Each level round's last
 // workgroup then advances the run itself.
 import type_checker.substitution.field_closure;
-import type_checker.calls.inference_activity;
+import type_checker.substitution.field_closure_progress;
 
 RWStructuredBuffer<uint> ct_expand_args;
 // The other level rounds' arguments, written only for a run without input.
 RWStructuredBuffer<uint> ct_expand_args_b;
-RWStructuredBuffer<uint> call_inference_state;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
@@ -26,15 +25,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint i = 0u; i < 3u; i++) { ct_expand_args[i] = none[i]; ct_expand_args_b[i] = none[i]; }
         return;
     }
-    bool progress;
-    uint3 args = ct_expand_advance(progress);
-    if (progress)
-    {
-        uint ignored;
-        InterlockedAdd(call_inference_state[1u], 1u, ignored);
-        // Field closure has no owning function.
-        inference_note_global_change();
-    }
+    uint3 args = advance_field_closure();
     ct_expand_args[0u] = args.x;
     ct_expand_args[1u] = args.y;
     ct_expand_args[2u] = args.z;

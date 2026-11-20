@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 mod bind_groups;
 pub mod program_retention;
 mod bind_models;
+mod call_inference_program;
 mod bind_support;
 mod canonicalization;
 mod closure;

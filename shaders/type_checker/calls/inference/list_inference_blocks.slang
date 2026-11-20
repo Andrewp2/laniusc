@@ -10,6 +10,33 @@
 // an owning function: the passes then visit every row.
 #include "../inference_block_layout.slang"
 
+struct ProgramLimits
+{
+    uint field_groups;
+};
+
+ConstantBuffer<ProgramLimits> inference_program_limits;
+RWStructuredBuffer<uint> inference_field_program_args;
+RWStructuredBuffer<uint> inference_index_program_args;
+
+void write_program_grid(uint hir_tiles)
+{
+    // Large rounds need more resident lanes to queue the field closure.
+    // An empty or small round keeps a single group.
+    uint groups = hir_tiles <= 16u ? 1u :
+        min((hir_tiles + 1u) / 2u, inference_program_limits.field_groups);
+    inference_field_program_args[0u] = groups;
+    inference_field_program_args[1u] = 1u;
+    inference_field_program_args[2u] = 1u;
+
+    // Indexing visits compact claim rows even in rounds where every HIR row
+    // is active. Keep enough lanes to rebuild those indexes in later rounds.
+    inference_index_program_args[0u] = hir_tiles <= 16u ? 1u :
+        clamp((hir_tiles + 7u) / 8u, 16u, 32u);
+    inference_index_program_args[1u] = 1u;
+    inference_index_program_args[2u] = 1u;
+}
+
 StructuredBuffer<uint> call_inference_round;
 StructuredBuffer<uint> call_inference_fn_stamp;
 StructuredBuffer<uint> hir_active_dispatch_args;
@@ -106,7 +133,11 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     uint round = call_inference_round[0u];
     if (round <= 1u || call_inference_round[1u] + 1u >= round)
     {
-        if (lane == 0u) copy_full_grid(full_argument_grid());
+        if (lane == 0u)
+        {
+            copy_full_grid(full_argument_grid());
+            write_program_grid(hir_active_dispatch_args[0u] * hir_active_dispatch_args[1u]);
+        }
         return;
     }
     uint stamps; uint hir_list; uint token_list; uint arg_list; uint stride;
@@ -168,6 +199,7 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     uint3 hir = listed_grid(inference_hir_blocks, full_hir, listed_hir, 1u);
     uint3 tokens = listed_grid(inference_token_blocks, full_tokens, listed_tokens, 1u);
     uint3 args = listed_grid(inference_arg_blocks, full_argument_grid(), listed_args, 8u);
+    write_program_grid(hir.x * hir.y);
     bool method_keys = method_token_hir_dispatch_args[0u] != 0u;
     bool explicit_apps = explicit_application_dispatch_args[0u] != 0u;
     [unroll]

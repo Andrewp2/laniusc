@@ -328,11 +328,13 @@ impl GpuTypeChecker {
         resources.buffer("hir_active_count", &hir_active_count);
         register_hir_resources(&mut resources, hir_items);
         resources.buffer("status", &self.status_buf);
-        let status_readback_words: LaniusBuffer<u32> =
-            self.status_readback.subrange(0, 16, 4).map_err(anyhow::Error::msg)?;
+        let status_bytes = super::call_inference_program::STATUS_BYTES;
+        let status_readback_words: LaniusBuffer<u32> = self.status_readback
+            .subrange(0, status_bytes, super::call_inference_program::STATUS_WORDS)
+            .map_err(anyhow::Error::msg)?;
         let module_program_slots = super::module_path::MODULE_PROGRAM_SLOTS;
         let module_program_failed: LaniusBuffer<u32> = self.status_readback
-            .subrange(16, (module_program_slots * 4) as u64, module_program_slots)
+            .subrange(status_bytes, (module_program_slots * 4) as u64, module_program_slots)
             .map_err(anyhow::Error::msg)?;
         resources.buffer("status_readback", &status_readback_words);
         resources.buffer("module_step_program_failed", &module_program_failed);
@@ -472,7 +474,7 @@ impl GpuTypeChecker {
             "status_readback",
             &status_readback_words,
             0,
-            16,
+            status_bytes,
         )?;
         let language_name_bind_groups = create_language_name_bind_groups(
             device,

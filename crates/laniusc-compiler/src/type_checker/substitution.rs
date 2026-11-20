@@ -96,18 +96,6 @@ pub(super) const BODY_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     ],
 };
 
-/// Call results and argument contexts, in each inference round after the
-/// return types (in place of calls/03e1).
-pub(super) const CALL_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
-    roots: "type_check.substitution.expand.call_roots",
-    roots_kernel: "type_checker/substitution/queue_call_field_closure_roots",
-    advance: "type_check.substitution.expand.call_advance",
-    levels: [
-        "type_check.substitution.expand.call_level.a_to_b",
-        "type_check.substitution.expand.call_level.b_to_a",
-    ],
-};
-
 /// Canonical records and argument words the substitution producers add to
 /// a job beyond the candidates' own: per call, a value and an expected
 /// environment for each change of its bindings and the substituted nodes of

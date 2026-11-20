@@ -1,11 +1,12 @@
 use super::super::*;
+use crate::gpu::operations::StepProgramOperation;
 
 pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
     /// Generic and constant claim offsets, one paired scan. Its apply writes
     /// both claim indexes' dispatch arguments.
     pub claim_scans: PrefixScanPairOperation,
     pub emit_claims: ComputeOperation,
-    pub generic_index: CallClaimIndexOperation,
+    pub build_indexes: StepProgramOperation,
     pub validate_generic: ComputeOperation,
     pub mark_required: ComputeOperation,
     /// Its apply writes the required-binding dispatch arguments.
@@ -13,8 +14,6 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
     /// The dispatch uniforms of the claim and required-binding scan applies.
     pub dispatch_params: [LaniusBuffer<CountDispatchParams>; 2],
     pub validate_required: ComputeOperation,
-    pub const_index: CallClaimIndexOperation,
-    pub publish_const_environment: ComputeOperation,
     pub validate_const: ComputeOperation,
 }
 
@@ -28,14 +27,12 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
 pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
     claim_scans: PrefixScanPairOperation,
     emit_claims: ComputeOperation,
-    generic_index: CallClaimIndexOperation,
+    build_indexes: StepProgramOperation,
     validate_generic: ComputeOperation,
     mark_required: ComputeOperation,
     required_scan: PrefixScanOperation,
     _dispatch_params: [LaniusBuffer<CountDispatchParams>; 2],
     validate_required: ComputeOperation,
-    const_index: CallClaimIndexOperation,
-    publish_const_environment: ComputeOperation,
     validate_const: ComputeOperation,
 }
 
@@ -44,14 +41,12 @@ impl CallGenericClaimValidationOperation {
         Self {
             claim_scans: build.claim_scans,
             emit_claims: build.emit_claims,
-            generic_index: build.generic_index,
+            build_indexes: build.build_indexes,
             validate_generic: build.validate_generic,
             mark_required: build.mark_required,
             required_scan: build.required_scan,
             _dispatch_params: build.dispatch_params,
             validate_required: build.validate_required,
-            const_index: build.const_index,
-            publish_const_environment: build.publish_const_environment,
             validate_const: build.validate_const,
         }
     }
@@ -63,10 +58,8 @@ impl CallGenericClaimValidationOperation {
     ) -> Result<()> {
         self.claim_scans.record(encoder)?;
         pages.record(encoder, |encoder| self.emit_claims.record(encoder))?;
-        self.generic_index.record(encoder)?;
-        self.const_index.record(encoder)?;
-        // Every reader of argument constant bindings loads this selection.
-        self.publish_const_environment.record(encoder)
+        self.build_indexes.record(encoder)
+
     }
 
     pub(in crate::type_checker) fn record_required(

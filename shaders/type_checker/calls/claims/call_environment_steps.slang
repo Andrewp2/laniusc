@@ -10,29 +10,33 @@ import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
 import type_checker.constants.constant_atoms_identity;
 
-StructuredBuffer<uint> call_const_claim_count_out;
-StructuredBuffer<uint> call_const_claim_callee;
-StructuredBuffer<uint> call_const_claim_slot;
+public StructuredBuffer<uint> call_const_claim_count_out;
+public StructuredBuffer<uint> call_const_claim_callee;
+public StructuredBuffer<uint> call_const_claim_slot;
 StructuredBuffer<uint> call_const_claim_ref_kind;
 StructuredBuffer<uint> call_const_claim_ref_payload;
 StructuredBuffer<uint> call_const_claim_identity_mode;
-StructuredBuffer<uint> call_const_claim_lookup_head;
-StructuredBuffer<uint> call_const_claim_lookup_next;
 // x=kind, y=value, z=identity mode | ACCEPTED, w=selected row.
 RWStructuredBuffer<uint4> call_const_env_binding;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ACCEPTED = 0x80000000u;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public interface IConstantClaimChain
 {
-    uint row = dtid.x + dtid.y * 16776960u;
+    static uint head(uint bucket);
+    static uint next(uint row);
+}
+
+public uint constant_claim_count()
+{
     uint capacity; uint stride;
     call_const_claim_callee.GetDimensions(capacity, stride);
-    uint count = min(call_const_claim_count_out[0u], capacity);
-    if (row >= count) return;
+    return min(call_const_claim_count_out[0u], capacity);
+}
+
+public void publish_call_environment_row<TChain : IConstantClaimChain>(uint row, uint count)
+{
     uint callee = call_const_claim_callee[row];
     uint slot = call_const_claim_slot[row];
     if (slot >= 32u) return;
@@ -40,7 +44,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint kind = 0u; uint value = INVALID; uint identity_mode = 0u; uint selected_row = INVALID;
     ConstantReferenceDescriptor selected; uint selected_scalar = 0u;
     bool first = true;
-    uint link = call_const_claim_lookup_head[call_claim_lookup_bucket(callee, slot, count)];
+    uint link = TChain.head(call_claim_lookup_bucket(callee, slot, count));
     [loop]
     for (uint step = 0u; step < count && link != 0u; step++)
     {
@@ -74,7 +78,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 }
             }
         }
-        link = call_const_claim_lookup_next[candidate_row];
+        link = TChain.next(candidate_row);
     }
     if (first) return;
     bool accepted = link == 0u && selected_row != INVALID;

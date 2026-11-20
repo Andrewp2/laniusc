@@ -2,7 +2,7 @@ use super::*;
 
 /// Encodes the accepted sentinel used to initialize the type-check status word.
 pub(super) fn status_init_bytes() -> Vec<u8> {
-    [1u32, u32::MAX, 0, 0]
+    [1u32, u32::MAX, 0, 0, 0]
         .into_iter()
         .flat_map(u32::to_le_bytes)
         .collect()

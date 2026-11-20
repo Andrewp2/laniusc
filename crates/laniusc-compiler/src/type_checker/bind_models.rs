@@ -173,7 +173,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) bind_method_receiver_environment: Option<ComputeOperation>,
     pub(in crate::type_checker) materialize_return_types: Option<ComputeOperation>,
     /// The field closure of the call results and argument contexts.
-    pub(in crate::type_checker) call_field_closure: super::substitution::FieldClosureOperations,
+    pub(in crate::type_checker) call_field_closure: crate::gpu::operations::StepProgramOperation,
     pub(in crate::type_checker) project_argument_contexts:
         Option<super::substitution::ArgumentContextOperations>,
     pub(in crate::type_checker) substitution: super::substitution::SubstitutionOperations,
@@ -226,14 +226,12 @@ pub(in crate::type_checker) struct CallBindGroups {
 /// The call field closure's root locations, listed once per job.
 pub(in crate::type_checker) struct CallRootListOperations {
     pub(in crate::type_checker) clear_count: crate::gpu::operations::ClearBufferOperation,
-    pub(in crate::type_checker) clear_args: crate::gpu::operations::ClearBufferOperation,
     pub(in crate::type_checker) list: ComputeOperation,
 }
 
 impl CallRootListOperations {
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.clear_count.record(encoder);
-        self.clear_args.record(encoder);
         self.list.record(encoder)
     }
 }

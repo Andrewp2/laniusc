@@ -206,21 +206,6 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_EMIT: ReflectedComputeSpec
     typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
 ])
 .with_indirect_dispatch("inference_full_arg_args");
-pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComputeSpec =
-    call_pass!(
-        "generic_claims.index.build",
-        CallArguments,
-        "type_checker/calls/claims/build_claim_lookup"
-    )
-    .with_aliases(&[
-        typecheck_resource!("claim_count_in" => "call_generic_claim_count_out", Read),
-        typecheck_resource!("claim_callee" => "call_generic_claim_callee", Read),
-        typecheck_resource!("claim_slot" => "call_generic_claim_slot", Read),
-        typecheck_resource!("claim_lookup_head" => "call_generic_claim_lookup_head", ReadWrite),
-        typecheck_resource!("claim_lookup_next" => "call_generic_claim_lookup_next", Write),
-        typecheck_resource!("claim_slot_mask" => "call_generic_claim_slot_mask", ReadWrite),
-    ])
-    .with_indirect_dispatch("call_generic_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_VALIDATE: ReflectedComputeSpec = call_pass!(
     "generic_claims.validate",
     CallArguments,
@@ -257,20 +242,6 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_VALIDATE: ReflectedComputeSp
     CallArguments,
     "type_checker/calls/claims/validate_const_claims"
 )
-.with_indirect_dispatch("call_const_claim_index_dispatch_args");
-pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComputeSpec = call_pass!(
-    "const_claims.index.build",
-    CallArguments,
-    "type_checker/calls/claims/build_claim_lookup"
-)
-.with_aliases(&[
-    typecheck_resource!("claim_count_in" => "call_const_claim_count_out", Read),
-    typecheck_resource!("claim_callee" => "call_const_claim_callee", Read),
-    typecheck_resource!("claim_slot" => "call_const_claim_slot", Read),
-    typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", ReadWrite),
-    typecheck_resource!("claim_lookup_next" => "call_const_claim_lookup_next", Write),
-    typecheck_resource!("claim_slot_mask" => "call_const_claim_slot_mask", ReadWrite),
-])
 .with_indirect_dispatch("call_const_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_ARRAY_STATE_CONSUME: ReflectedComputeSpec = call_pass!(
     "array_state.consume",

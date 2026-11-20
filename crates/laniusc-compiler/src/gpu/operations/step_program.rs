@@ -118,6 +118,34 @@ impl StepProgramOperation {
         })
     }
 
+    /// The shader reads its group count from the same grid used by the dispatch.
+    pub(crate) fn new_indirect(
+        device: &wgpu::Device,
+        graph: &impl ComputeGraph,
+        resources: &ResourceMap<'_>,
+        name: &'static str,
+        pass: &PassData,
+        sync: &LaniusBuffer<u32>,
+        slot: u32,
+        args: &LaniusBuffer<u32>,
+    ) -> Result<Self> {
+        let offset = Self::validate_launch(name, pass, sync, slot, 1)?;
+        let launch = uniform_from_val(
+            device,
+            name,
+            &Launch { groups: 0, slot, options: 0, reserved: 0 },
+        );
+        let operation = ComputeOperation::indirect_with_uniform(
+            device, graph, resources, name, pass, args, "program_launch", &launch,
+        )?;
+        Ok(Self {
+            dispatch: ProgramDispatch::Graph(operation),
+            sync: sync.clone(),
+            offset,
+            _launch: launch,
+        })
+    }
+
     /// Binds a program over stage-owned storage with no graph slot reuse.
     /// The sync and launch bindings are owned by the operation.
     #[allow(clippy::too_many_arguments)]
