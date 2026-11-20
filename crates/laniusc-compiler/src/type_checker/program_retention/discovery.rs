@@ -26,26 +26,28 @@ use super::{
 use crate::compiler::{ClosedChainInputs, ClosedTraitPublication, RetainedTraitPublication};
 use crate::gpu::{
     buffers::LaniusBuffer,
+    operations::{StepProgramOperation, step_program_group_counts, step_program_group_variant},
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
+const RANK_INSTANCES_PROGRAM: &str = "type_checker/retention/discovery/rank_retained_instances";
+const RANK_INSTANCES: usize = 4;
 const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/collect_discovery_requests",
     "type_checker/retention/discovery/resolve_discovery_requests",
     "type_checker/retention/discovery/scan_discovery_use_counts",
-    "type_checker/retention/discovery/rank_discovered_terms",
-    "type_checker/retention/discovery/rank_discovered_instances",
+    "type_checker/retention/discovery/count_discovered_terms",
+    RANK_INSTANCES_PROGRAM,
     "type_checker/retention/discovery/publish_discovery_wave",
     "type_checker/retention/discovery/attach_discovered_method_routes",
 ];
 const STATUS_WORDS: usize = 32;
 const METHOD_ROUTES_SYNC_FAILED: usize = 31;
+const RANK_SYNC_FAILED: usize = 30;
 /// Route header words 8-10 of a retained trait publication: status (1
 /// valid), route failures, first failure (retained_route_abi.slang).
 const PUBLICATION_STATUS_WORD: u64 = 8;
 const PUBLICATION_STATUS_WORDS: usize = 3;
-/// Keys one workgroup sorts in shared memory (discovery_workspace.slang DG_SORT_BLOCK).
-const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
 /// Words of dg_levels holding the closed terms per height.
 const LEVELS: usize = 128;
@@ -706,46 +708,7 @@ impl RetainedDiscovery {
             }
             // Rank by full structure, height by height. Hashes never decide
             // equality or output order, even with forced table collisions.
-            self.rank_terms(store, status[STATUS_WORDS + super::A_TERMS], levels, &extra, config, &mut report)?;
-            self.config_cursor = 0;
-            let guard = store.store.lock().unwrap();
-            let mut encoder = self.encoder();
-            config[13] = status[0].max(1).next_power_of_two();
-            config[0] = 0;
-            self.record(
-                &mut encoder,
-                &guard,
-                4,
-                config,
-                &extra,
-                config[13],
-                &mut report,
-            )?;
-            self.sort(&mut encoder, &guard, 4, 1, 3, config, &extra, &mut report)?;
-            config[0] = 2;
-            self.record(
-                &mut encoder,
-                &guard,
-                4,
-                config,
-                &extra,
-                config[13],
-                &mut report,
-            )?;
-            config[0] = 1;
-            self.record(
-                &mut encoder,
-                &guard,
-                5,
-                config,
-                &extra,
-                uses.max(status[1]).max(status[2]),
-                &mut report,
-            )?;
-            config[0] = 2;
-            self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
-            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
-            drop(guard);
+            self.rank_instances(store, &status, uses, levels, &extra, config, &mut report)?;
             if !self.defer_final_status {
                 let status = self.read_status(&mut report)?;
                 if let Some(error) = failure(&status) {
@@ -1323,7 +1286,7 @@ impl RetainedDiscovery {
         };
         report.substitution_dispatches += sub.dispatches;
         if let Some(words) = words {
-            check_method_routes_sync(&words)?;
+            check_discovery_sync(&words)?;
             report.readbacks += 1;
             return Ok(Some((words, true)));
         }
@@ -1356,19 +1319,20 @@ impl RetainedDiscovery {
         self.read_status_counts(store, also_read.as_slice(), report)
             .map(|words| Some((words, false)))
     }
-    /// `terms` is the store's term count, read with the last status.
     /// `levels` are the closed terms per height when the last readback
-    /// carried a current count (`rank_discovered_terms` mode 6, which also left the
+    /// carried a current count (`count_discovered_terms` mode 6, which also left the
     /// rest of dg_levels clear); otherwise this counts and reads them.
-    fn rank_terms(
+    fn rank_instances(
         &mut self,
         store: &ProgramRetention,
-        terms: u32,
+        status: &[u32],
+        uses: u32,
         levels: Option<Vec<u32>>,
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
+        let terms = status[STATUS_WORDS + super::A_TERMS];
         self.ensure("dg_term_rank", terms.max(1) as u64 * 4)?;
         self.ensure("dg_term_order", terms.max(1) as u64 * 8)?;
         let levels = match levels {
@@ -1409,76 +1373,15 @@ impl RetainedDiscovery {
         let mut encoder = self.encoder();
         self.flush(&mut encoder);
         encoder.clear_buffer_counted(&self.scratch["dg_term_rank"], 0, None);
-        config[0] = 4;
-        config[13] = end;
-        self.record(&mut encoder, &guard, 3, config, extra, end, report)?;
-        config[0] = 1;
-        self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
-        for height in 1..128 {
-            if sizes[height] == 0 {
-                continue;
-            }
-            config[12] = bases[height];
-            config[13] = sizes[height];
-            config[14] = height as u32;
-            self.sort(&mut encoder, &guard, 3, 2, 5, config, extra, report)?;
-            config[0] = 3;
-            self.record(
-                &mut encoder,
-                &guard,
-                3,
-                config,
-                extra,
-                sizes[height],
-                report,
-            )?;
-        }
-        // The instance ranking follows in the next submit, and the final
-        // status readback reports any failure.
-        { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
-        drop(guard);
+        config[13] = status[0].max(1).next_power_of_two();
+        config[14] = end;
+        let rows = terms.max(end).max(config[13]).max(uses).max(status[2]);
+        self.record(&mut encoder, &guard, RANK_INSTANCES, config, extra, rows, report)?;
+        let commands = self.finish(encoder);
+        self.queue.submit(Some(commands));
         Ok(())
     }
-    /// Bitonic sort of `config[13]` (a power of two) keys. Steps with
-    /// j < SORT_BLOCK / 2 run inside one workgroup in shared memory
-    /// (`local_mode`), so a stage costs one dispatch per global step plus
-    /// one: 10 dispatches for 4096 keys instead of 78.
-    fn sort(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        store: &Store,
-        kernel: usize,
-        mode: u32,
-        local_mode: u32,
-        mut config: [u32; 16],
-        extra: &[(&str, &wgpu::Buffer)],
-        report: &mut DiscoveryReport,
-    ) -> Result<()> {
-        let count = config[13];
-        if count < 2 {
-            return Ok(());
-        }
-        let local_lanes = (count / 2).max(1);
-        config[0] = local_mode;
-        config[10] = 0;
-        self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
-        let mut k = SORT_BLOCK * 2;
-        while k <= count {
-            config[0] = mode;
-            let mut j = k / 2;
-            while j >= SORT_BLOCK {
-                config[10] = k;
-                config[11] = j;
-                self.record(encoder, store, kernel, config, extra, count, report)?;
-                j /= 2;
-            }
-            config[0] = local_mode;
-            config[10] = k;
-            self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
-            k *= 2;
-        }
-        Ok(())
-    }
+
     fn grow(&mut self, s: &[u32]) -> Result<bool> {
         if s[3] == 0 {
             return Ok(false);
@@ -1611,6 +1514,9 @@ impl RetainedDiscovery {
         dispatch: Dispatch<'_>,
         report: &mut DiscoveryReport,
     ) -> Result<()> {
+        if kernel == RANK_INSTANCES {
+            self.flush(encoder);
+        }
         if self.config_cursor == self.configs.len() {
             self.configs.push(self.buffer("dg_config", 64)?);
         }
@@ -1623,6 +1529,9 @@ impl RetainedDiscovery {
         let mut entries = Vec::new();
         for name in &names {
             let n = name.as_str();
+            if matches!(n, "program_launch" | "step_program_sync") {
+                continue;
+            }
             if n == "dg_proofs" {
                 let binding = self.admission.as_ref().map_or_else(
                     || self.scratch["dg_no_proofs"].as_entire_binding(),
@@ -1644,6 +1553,28 @@ impl RetainedDiscovery {
             .or_else(|| store.buffers.get(n))
             .ok_or_else(|| anyhow!("{} binds unknown {n}", pass.shader_id))?;
             entries.push((n, buffer.as_entire_binding()));
+        }
+        if kernel == RANK_INSTANCES {
+            let Dispatch::Lanes(rows) = dispatch else {
+                bail!("instance ranking requires a direct launch");
+            };
+            let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+            let slot = super::DISCOVERY_RANK_SYNC_SLOT;
+            let program = StepProgramOperation::new_reflected(
+                &self.device, RANK_INSTANCES_PROGRAM, pass, &entries,
+                &store.step_program_sync, slot, groups, 0,
+            )?;
+            program.record(encoder)?;
+            passes_core::flush_deferred_compute(encoder);
+            encoder.copy_buffer_counted(
+                &store.step_program_sync,
+                StepProgramOperation::failed_offset(slot),
+                &self.scratch["dg_status"],
+                (RANK_SYNC_FAILED * 4) as u64,
+                4,
+            );
+            report.dispatches += 1;
+            return Ok(());
         }
         let bind = passes_core::bind_group::create_bind_group_from_bindings(
             &self.device,
@@ -1721,7 +1652,7 @@ impl RetainedDiscovery {
         let mut offset = 0;
         for &(buffer, words) in parts {
             if buffer == &self.scratch["dg_status"] {
-                check_method_routes_sync(&data[offset..offset + words])?;
+                check_discovery_sync(&data[offset..offset + words])?;
             }
             offset += words;
         }
@@ -1801,7 +1732,10 @@ fn closed_receipt_failure(
         Closed::Accepted
     })
 }
-fn check_method_routes_sync(status: &[u32]) -> Result<()> {
+fn check_discovery_sync(status: &[u32]) -> Result<()> {
+    if status.get(RANK_SYNC_FAILED).copied() == Some(1) {
+        bail!("retention program {RANK_INSTANCES_PROGRAM} failed to synchronize");
+    }
     if status.get(METHOD_ROUTES_SYNC_FAILED).copied() == Some(1) {
         bail!("retained method routes failed to synchronize");
     }
