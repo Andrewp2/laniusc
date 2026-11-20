@@ -701,11 +701,6 @@ fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
 }
 const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
-        40,
-        "type_checker/trait_solver/proof_publication/initialize_proof_store",
-        256,
-    ),
-    (
         41,
         "type_checker/trait_solver/normalization/normalize_original_obligations",
         256,
@@ -832,43 +827,20 @@ impl ProofKernels {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
     }
-    /// Records one stage outside the solver rounds over `span`: store
-    /// initialization (40) or Work initialization (48). The rounds' stages
-    /// and the finish record through wave templates.
-    pub fn record(
+    /// Records Work initialization before the solver rounds.
+    pub fn record_initialize_frontier(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        phase: u32,
         span: Span,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        ensure!(matches!(phase, 40 | 48), "proof stage {phase} records through a wave template");
-        let index = PROOF_KEYS
-            .iter()
-            .position(|(entry, _, _)| *entry == phase)
-            .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
-        self.record_index(device, encoder, index, span, catalog, input, output, proof)
-    }
-    fn record_index(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        index: usize,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
+        let index =
+            proof_key_index("type_checker/trait_solver/proof_frontier/initialize_proof_frontier")?;
         let (phase, _, threads) = PROOF_KEYS[index];
-        ensure!(
-            threads != 1 || (span.first == 0 && span.count == 1),
-            "singleton proof stage needs exactly one dispatch"
-        );
         record_phase_with_proof(
             device,
             encoder,

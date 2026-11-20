@@ -14,7 +14,7 @@ public void pps_store_failure(SolverStatus status)
     ts_batch_failure(status);
 }
 
-// Store initialization over one workgroup (initialize_proof_store): the
+// Store initialization over one workgroup (initialize_trait_batch): the
 // layout admission and the goal bucket clear run on every lane, the checks
 // and directory writes on lane 0.
 groupshared uint4 pps_init_buckets;

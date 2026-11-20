@@ -571,19 +571,6 @@ impl GpuTraitSolver {
             )?;
             attempt_plan.assumption_index = Span::new(0, layout.input_suffix_counts[14])?;
         }
-        let record = |packet: &GpuPacket, commands: &mut wgpu::CommandEncoder, phase: u32, span: Span| {
-            solver.record(
-                &self.device,
-                commands,
-                phase,
-                span,
-                &self.storage,
-                &packet.input,
-                &packet.output,
-                packet.proof_resources(submission),
-            )
-        };
-        let one = Span::new(0, 1)?;
         // The setup dispatches share one compute pass, flushed by
         // submit_wave; no copy or clear is recorded among them.
         let deferred = passes_core::DeferredComputeBatchGuard::begin(
@@ -598,7 +585,6 @@ impl GpuTraitSolver {
             &packet.output,
             packet.proof_resources(submission),
         )?;
-        record(packet, &mut commands, 40, one)?;
         batch.record_before_solver(
             &self.device,
             &mut commands,
@@ -608,7 +594,15 @@ impl GpuTraitSolver {
             &packet.output,
             packet.proof_resources(submission),
         )?;
-        record(packet, &mut commands, 48, plan.obligations)?;
+        solver.record_initialize_frontier(
+            &self.device,
+            &mut commands,
+            plan.obligations,
+            &self.storage,
+            &packet.input,
+            &packet.output,
+            packet.proof_resources(submission),
+        )?;
         let state = solver_kernels::wave_state(&self.device, &self.storage, plan.calls)?;
         let demand = solver_kernels::proof_demand(&self.storage)?;
         *self.last_wave_state.lock().unwrap() = Some(state.clone());
