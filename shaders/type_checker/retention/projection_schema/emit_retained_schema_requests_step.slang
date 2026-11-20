@@ -1,5 +1,4 @@
-// One substitution request per schema record of the round's terms. The
-// round's request-lane dispatch sizes this pass; size_retained_schema_dispatches wrote the count.
+// One substitution request per schema record of the round's terms.
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.projection_schema.retained_schema_round_state;
 public RWStructuredBuffer<uint4> sb_requests;

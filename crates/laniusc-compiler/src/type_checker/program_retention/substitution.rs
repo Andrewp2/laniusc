@@ -47,9 +47,8 @@ use crate::gpu::{
 
 /// How one recorded dispatch launches.
 #[derive(Clone, Copy)]
-pub(super) enum Launch<'a> {
+pub(super) enum Launch {
     Groups(u32, u32, u32),
-    Indirect(&'a wgpu::Buffer, u64),
 }
 
 /// Records `steps` in order, in one compute pass, with the one timestamp
@@ -58,23 +57,18 @@ pub(super) enum Launch<'a> {
 pub(super) fn record_timed(
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,
-    steps: &[(&PassData, &wgpu::BindGroup, Launch<'_>)],
+    steps: &[(&PassData, &wgpu::BindGroup, Launch)],
 ) {
     if steps.is_empty() {
         return;
     }
     passes_core::flush_deferred_compute(encoder);
-    let dispatch = |compute: &mut wgpu::ComputePass<'_>, pass: &PassData, bind: &wgpu::BindGroup, launch: Launch<'_>| {
+    let dispatch = |compute: &mut wgpu::ComputePass<'_>, pass: &PassData, bind: &wgpu::BindGroup, launch: Launch| {
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, bind, &[]);
         passes_core::record_compute_dispatch();
-        match launch {
-            Launch::Groups(x, y, z) => compute.dispatch_workgroups(x, y, z),
-            Launch::Indirect(buffer, offset) => {
-                passes_core::record_indirect_compute_dispatch();
-                compute.dispatch_workgroups_indirect(buffer, offset);
-            }
-        }
+        let Launch::Groups(x, y, z) = launch;
+        compute.dispatch_workgroups(x, y, z);
     };
     let descriptor = wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None };
     if crate::gpu::timer::operation_capture_requires_split_passes() {
@@ -739,8 +733,7 @@ impl RetainedSubstitution {
         Ok(())
     }
 
-    /// Starts a chain of `runs` runs that one submit records back to back
-    /// (`record_chained`), with one readback after the last. Ends the
+    /// Starts a chain of `runs` runs, with one readback after the last. Ends the
     /// current publication and returns the runs' numbers.
     pub(super) fn begin_chain(&mut self, requests: &SubstitutionRequests, runs: usize) -> Result<Vec<u32>> {
         self.published = None;
@@ -755,33 +748,6 @@ impl RetainedSubstitution {
         self.queue.write_buffer_counted(chain_runs, 0, &words_bytes(&numbers));
         self.queue.write_buffer_counted(&self.scratch["sb_config"], 0, &words_bytes(&[self.hash_mask, 0, 0, 0]));
         Ok(numbers)
-    }
-
-    /// Records chained run `index` of `begin_chain`: the memo and status
-    /// words cleared, its run number, the first batch, then `consumer`
-    /// (which must check on the GPU that this run published and stop the
-    /// chain otherwise). Returns the dispatches of the batch. A run that is
-    /// not final after the first batch is not continued: its consumer sees
-    /// no publication.
-    pub(super) fn record_chained(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        guard: &Store,
-        requests: &SubstitutionRequests,
-        index: usize,
-        run: u32,
-        consumer: &mut Consumer<'_>,
-    ) -> Result<u32> {
-        self.record_chain_prelude(encoder, index)?;
-        let mut dispatches = 0;
-        self.record_batch(encoder, guard, requests, true, FIRST_BATCH_ROUNDS, &mut dispatches)?;
-        let (_, results, _) = self
-            .results
-            .as_ref()
-            .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
-        consumer(encoder, guard, run, results, &self.scratch["sb_counts"])?;
-        passes_core::flush_deferred_compute(encoder);
-        Ok(dispatches)
     }
 
     /// Resets one run's working tables after the preceding consumer.
@@ -828,7 +794,6 @@ impl RetainedSubstitution {
     }
 
     /// `finish_chain`, with the report of the run when it published.
-    /// `dispatches` are those `record_chained` returned for it.
     pub(super) fn finish_chain_report(
         &mut self,
         counts: &[u32],

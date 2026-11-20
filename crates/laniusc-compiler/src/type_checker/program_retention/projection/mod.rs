@@ -1973,11 +1973,10 @@ impl Recorder<'_> {
 
     /// `finish_read` up to the submission.
     fn finish_read_begin(
-        mut self,
+        self,
         parts: &[(&wgpu::Buffer, usize)],
         report: &mut ProjectionReport,
     ) -> (u32, PendingRead) {
-        self.encoder();
         let read = self.projection.submit_read_begin(self.encoder, parts, report);
         (self.dispatches, read)
     }
@@ -1985,11 +1984,10 @@ impl Recorder<'_> {
     /// Submits the recording with a readback of `parts` (see
     /// [`RetainedProjection::submit_read`]); returns the dispatch count.
     fn finish_read(
-        mut self,
+        self,
         parts: &[(&wgpu::Buffer, usize)],
         report: &mut ProjectionReport,
     ) -> Result<(u32, Vec<Vec<u32>>)> {
-        self.encoder();
         let read = self.projection.submit_read(self.encoder, parts, report)?;
         Ok((self.dispatches, read))
     }

@@ -1,9 +1,7 @@
 // One lane. Mode 0 opens a round, mode 1 closes the last one.
 //
-// Every later pass of a round is sized by the indirect arguments written
-// here and by size_retained_schema_dispatches, so a stopped round dispatches no workgroups. The
-// gate: when ps_config names a run, the previous round's substitution must
-// have published it (bound as sb_counts); otherwise the rounds stop with
+// The previous round's substitution must have published its run before the
+// next round can start. Otherwise the rounds stop with
 // PS_STOP_UNPUBLISHED and the armed round stays in ps_round for the host,
 // which substitutes it again. A gate that passes commits that round: its
 // fields join the base.

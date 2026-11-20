@@ -1,6 +1,6 @@
 // One lane, after the scan. Sizes the round's requests from the scan's
-// total: it writes the substitution's request count and the request-lane
-// dispatch, or zero of both when the round is not armed. A round without
+// total: it writes the substitution's request count, or zero when the
+// round is not armed. A round without
 // schema records converges. A round whose requests or fields exceed their
 // buffers stops with PS_STOP_CAPACITY and its demands; the host grows the
 // buffers and resumes the round (mode 1, which runs while the round is
