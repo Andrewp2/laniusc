@@ -38,9 +38,8 @@ mod object_extent {
 
 use {crate::codegen::{
         lir::{
-            counted_scans::{GpuResidentExclusiveScan, GraphScanContract},
             lowering_ir::{
-                LoweringCapacities,
+                LOWERING_PROGRAM_SLOTS, LoweringCapacities, X86_OBJECT_PROGRAM_SLOT,
                 X86ObjectDefinitionRow,
                 X86ObjectRelocationRow,
                 X86ObjectUndefinedRow,
@@ -62,7 +61,10 @@ use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
-    operations::{ComputeOperation, CopyBufferOperation},
+    operations::{
+        ComputeOperation, CopyBufferOperation, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     passes_core::PassData,
     readback::{PagedReadback, ReadbackRegion},
     resource_registry::ResourceMap,
@@ -74,7 +76,7 @@ struct X86ObjectParams {
     target_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
-    reserved: u32,
+    semantic_capacity: u32,
 }
 
 #[repr(C)]
@@ -91,27 +93,10 @@ pub(crate) struct GpuX86ObjectStage {
     runtime_relocation_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
-    normalize_status: ComputeOperation,
-    relocation_flags: JobSized,
-    definition_flags_op: JobSized,
-    relocations_op: JobSized,
-    runtime_relocations_op: JobSized,
-    definitions_op: JobSized,
+    compact_records: [StepProgramOperation; 2],
     bytes_op: JobSized,
-    relocation_scan: GpuResidentExclusiveScan,
-    symbol_scan: GpuResidentExclusiveScan,
-    definition_scan: GpuResidentExclusiveScan,
-    runtime_relocation_scan: GpuResidentExclusiveScan,
     _params: LaniusBuffer<X86ObjectParams>,
     identity: LaniusBuffer<X86ObjectIdentity>,
-    _relocation_flags: LaniusBuffer<u32>,
-    _relocation_prefix: LaniusBuffer<u32>,
-    _symbol_flags: LaniusBuffer<u32>,
-    _symbol_prefix: LaniusBuffer<u32>,
-    _definition_flags: LaniusBuffer<u32>,
-    _definition_prefix: LaniusBuffer<u32>,
-    _runtime_reference_flags: LaniusBuffer<u32>,
-    _runtime_relocation_prefix: LaniusBuffer<u32>,
     relocations: LaniusBuffer<X86ObjectRelocationRow>,
     runtime_relocations: LaniusBuffer<X86ObjectRelocationRow>,
     undefined_symbols: LaniusBuffer<X86ObjectUndefinedRow>,
@@ -146,7 +131,6 @@ impl GpuX86ObjectStage {
         opt: GpuOptIrView<'_>,
         artifact: GpuX86ArtifactObjectView<'_>,
     ) -> Result<Self> {
-        let metadata = opt.metadata;
         let target_capacity = capacities.target_instructions.max(1);
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let runtime_relocation_capacity = capacities.target_instructions.max(1);
@@ -162,26 +146,9 @@ impl GpuX86ObjectStage {
                 .alias(graph, resource(name)?, rows.max(1) as usize)
                 .map_err(anyhow::Error::msg)
         };
-        let relocation_flags =
-            alias_u32("artifact.x86.object.relocation_flags", relocation_capacity)?;
-        let relocation_prefix =
-            alias_u32("artifact.x86.object.relocation_prefix", relocation_capacity)?;
         let relocation_total = alias_u32("artifact.x86.object.relocation_total", 1)?;
-        let symbol_flags = alias_u32("artifact.x86.object.symbol_flags", relocation_capacity)?;
-        let symbol_prefix = alias_u32("artifact.x86.object.symbol_prefix", relocation_capacity)?;
         let symbol_total = alias_u32("artifact.x86.object.symbol_total", 1)?;
-        let definition_flags =
-            alias_u32("artifact.x86.object.definition_flags", function_capacity)?;
-        let definition_prefix =
-            alias_u32("artifact.x86.object.definition_prefix", function_capacity)?;
         let definition_total = alias_u32("artifact.x86.object.definition_total", 1)?;
-        let target_total = alias_u32("lir.x86.total", 1)?;
-        let runtime_reference_flags =
-            alias_u32("lir.x86.runtime_reference_flag", runtime_relocation_capacity)?;
-        let runtime_relocation_prefix = alias_u32(
-            "artifact.x86.object.runtime_relocation_prefix",
-            runtime_relocation_capacity,
-        )?;
         let runtime_relocation_total =
             alias_u32("artifact.x86.object.runtime_relocation_total", 1)?;
         let runtime_relocations = workspace
@@ -261,7 +228,7 @@ impl GpuX86ObjectStage {
                 target_capacity,
                 function_capacity,
                 artifact_capacity,
-                reserved: 0,
+                semantic_capacity: relocation_capacity,
             },
         );
         let identity = uniform_from_val(
@@ -275,37 +242,6 @@ impl GpuX86ObjectStage {
             },
         );
 
-        let normalize_status_pass = load(
-            kernels,
-            "artifact.x86.object.normalize_status",
-            "codegen/lir/x86/objects/normalize_x86_object_status",
-        )?;
-
-        let relocation_flags_pass = load(
-            kernels,
-            "artifact.x86.object.relocation_flags",
-            "codegen/lir/x86/objects/mark_x86_object_relocations",
-        )?;
-        let definition_flags_pass = load(
-            kernels,
-            "artifact.x86.object.definition_flags",
-            "codegen/lir/x86/objects/mark_x86_object_definitions",
-        )?;
-        let relocations_pass = load(
-            kernels,
-            "artifact.x86.object.relocations",
-            "codegen/lir/x86/objects/write_x86_object_relocations",
-        )?;
-        let runtime_relocations_pass = load(
-            kernels,
-            "artifact.x86.object.runtime_relocations",
-            "codegen/lir/x86/objects/write_x86_object_runtime_relocations",
-        )?;
-        let definitions_pass = load(
-            kernels,
-            "artifact.x86.object.definitions",
-            "codegen/lir/x86/objects/write_x86_object_definitions",
-        )?;
         let bytes_pass = load(
             kernels,
             "artifact.x86.object.bytes",
@@ -317,123 +253,28 @@ impl GpuX86ObjectStage {
         resources.register_graph_bindings(graph, &graph_bindings);
         opt.register(graph, &mut resources)?;
         let context = (graph, allocations);
-        let normalize_status = ComputeOperation::direct(
-            device,
-            &context,
-            &resources,
-            "artifact.x86.object.normalize_status",
-            &normalize_status_pass,
-            1,
+        let sync = alias_u32(
+            "step_program_sync",
+            (STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS) as u32,
         )?;
-        let relocation_flags_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "artifact.x86.object.relocation_flags",
-            &relocation_flags_pass,
-            &params,
-            relocation_capacity,
-        )?;
-        let relocation_flags_op =
-            JobSized::new(relocation_flags_op, object_extent::relocations, capacities)?;
-        let relocation_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            scan_contract("relocation", "lir.opt.total"),
-            relocation_capacity,
-            opt.count,
-            &relocation_flags,
-            &relocation_prefix,
-            &relocation_total,
-        )?;
-        let symbol_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            scan_contract("symbol", "lir.opt.total"),
-            relocation_capacity,
-            opt.count,
-            &symbol_flags,
-            &symbol_prefix,
-            &symbol_total,
-        )?;
-        let definition_flags_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "artifact.x86.object.definition_flags",
-            &definition_flags_pass,
-            &params,
-            function_capacity,
-        )?;
-        let definition_flags_op =
-            JobSized::new(definition_flags_op, object_extent::functions, capacities)?;
-        let definition_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            scan_contract("definition", "lir.semantic.function_total"),
-            function_capacity,
-            metadata.function_count,
-            &definition_flags,
-            &definition_prefix,
-            &definition_total,
-        )?;
-        let mut identity_resources = resources.clone();
-        identity_resources.buffer("gParams", &params);
-        identity_resources.buffer("gIdentity", &identity);
-        let relocations_op = ComputeOperation::direct(
-            device,
-            &context,
-            &identity_resources,
-            "artifact.x86.object.relocations",
-            &relocations_pass,
-            relocation_capacity,
-        )?;
-        let relocations_op = JobSized::new(relocations_op, object_extent::relocations, capacities)?;
-        let runtime_relocation_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            scan_contract("runtime_relocation", "lir.x86.total"),
-            runtime_relocation_capacity,
-            &target_total,
-            &runtime_reference_flags,
-            &runtime_relocation_prefix,
-            &runtime_relocation_total,
-        )?;
-        let runtime_relocations_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "artifact.x86.object.runtime_relocations",
-            &runtime_relocations_pass,
-            &params,
-            runtime_relocation_capacity,
-        )?;
-        let runtime_relocations_op = JobSized::new(
-            runtime_relocations_op,
-            object_extent::target_rows,
-            capacities,
-        )?;
-        let definitions_op = ComputeOperation::direct(
-            device,
-            &context,
-            &identity_resources,
-            "artifact.x86.object.definitions",
-            &definitions_pass,
-            function_capacity,
-        )?;
-        let definitions_op = JobSized::new(definitions_op, object_extent::functions, capacities)?;
+        resources.buffer("gParams", &params);
+        resources.buffer("gIdentity", &identity);
+        let compact = kernels.kernel("codegen/lir/x86/objects/compact_x86_object_records");
+        let variant = |groups| {
+            StepProgramOperation::new(
+                device,
+                &context,
+                &resources,
+                "artifact.x86.object.compact_records",
+                compact,
+                &sync,
+                X86_OBJECT_PROGRAM_SLOT,
+                groups,
+                0,
+            )
+        };
+        let [small, large] = step_program_group_counts();
+        let compact_records = [variant(small)?, variant(large)?];
         let bytes_op = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -527,27 +368,10 @@ impl GpuX86ObjectStage {
             runtime_relocation_capacity,
             function_capacity,
             artifact_capacity,
-            normalize_status,
-            relocation_flags: relocation_flags_op,
-            definition_flags_op,
-            relocations_op,
-            runtime_relocations_op,
-            definitions_op,
+            compact_records,
             bytes_op,
-            relocation_scan,
-            symbol_scan,
-            definition_scan,
-            runtime_relocation_scan,
             _params: params,
             identity,
-            _relocation_flags: relocation_flags,
-            _relocation_prefix: relocation_prefix,
-            _symbol_flags: symbol_flags,
-            _symbol_prefix: symbol_prefix,
-            _definition_flags: definition_flags,
-            _definition_prefix: definition_prefix,
-            _runtime_reference_flags: runtime_reference_flags,
-            _runtime_relocation_prefix: runtime_relocation_prefix,
             relocations,
             runtime_relocations,
             undefined_symbols,
@@ -576,13 +400,6 @@ impl GpuX86ObjectStage {
         self.identity.write(queue, 0, bytes.as_ref());
     }
 
-    pub(crate) fn record_status_normalization(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> Result<()> {
-        self.normalize_status.record(encoder)
-    }
-
     /// Records the object projection; with `job`, its direct operations
     /// dispatch the job's grids (`JobSized`).
     pub(crate) fn record_projection(
@@ -590,15 +407,10 @@ impl GpuX86ObjectStage {
         encoder: &mut wgpu::CommandEncoder,
         job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.relocation_flags.record_job(encoder, job)?;
-        self.relocation_scan.record(encoder)?;
-        self.symbol_scan.record(encoder)?;
-        self.definition_flags_op.record_job(encoder, job)?;
-        self.definition_scan.record(encoder)?;
-        self.relocations_op.record_job(encoder, job)?;
-        self.runtime_relocation_scan.record(encoder)?;
-        self.runtime_relocations_op.record_job(encoder, job)?;
-        self.definitions_op.record_job(encoder, job)?;
+        let rows = job.map_or(self.runtime_relocation_capacity, |job| {
+            job.target_instructions.max(job.semantic_instructions)
+        });
+        self.compact_records[step_program_group_variant(u64::from(rows))].record(encoder)?;
         self.bytes_op.record_job(encoder, job)?;
         for copy in &self.metadata_readback_copies {
             copy.record(encoder);
@@ -1063,52 +875,6 @@ fn push_symbol(
         size,
         flags,
     });
-}
-
-fn scan_contract(kind: &'static str, count: &'static str) -> GraphScanContract {
-    match kind {
-        "relocation" => GraphScanContract {
-            local_pass: "artifact.x86.object.relocation_scan.local",
-            apply_pass: "artifact.x86.object.relocation_scan.apply",
-            count,
-            input: "artifact.x86.object.relocation_flags",
-            local: "artifact.x86.object.relocation_scan_local",
-            block_sum: "artifact.x86.object.relocation_scan_block_sum",
-            output: "artifact.x86.object.relocation_prefix",
-            total: "artifact.x86.object.relocation_total",
-        },
-        "symbol" => GraphScanContract {
-            local_pass: "artifact.x86.object.symbol_scan.local",
-            apply_pass: "artifact.x86.object.symbol_scan.apply",
-            count,
-            input: "artifact.x86.object.symbol_flags",
-            local: "artifact.x86.object.symbol_scan_local",
-            block_sum: "artifact.x86.object.symbol_scan_block_sum",
-            output: "artifact.x86.object.symbol_prefix",
-            total: "artifact.x86.object.symbol_total",
-        },
-        "runtime_relocation" => GraphScanContract {
-            local_pass: "artifact.x86.object.runtime_relocation_scan.local",
-            apply_pass: "artifact.x86.object.runtime_relocation_scan.apply",
-            count,
-            input: "lir.x86.runtime_reference_flag",
-            local: "artifact.x86.object.runtime_relocation_scan_local",
-            block_sum: "artifact.x86.object.runtime_relocation_scan_block_sum",
-            output: "artifact.x86.object.runtime_relocation_prefix",
-            total: "artifact.x86.object.runtime_relocation_total",
-        },
-        "definition" => GraphScanContract {
-            local_pass: "artifact.x86.object.definition_scan.local",
-            apply_pass: "artifact.x86.object.definition_scan.apply",
-            count,
-            input: "artifact.x86.object.definition_flags",
-            local: "artifact.x86.object.definition_scan_local",
-            block_sum: "artifact.x86.object.definition_scan_block_sum",
-            output: "artifact.x86.object.definition_prefix",
-            total: "artifact.x86.object.definition_total",
-        },
-        _ => unreachable!(),
-    }
 }
 
 fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {

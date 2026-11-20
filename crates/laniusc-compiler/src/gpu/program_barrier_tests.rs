@@ -169,25 +169,28 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
     struct ScanParams {
         groups: u32,
         rows: u32,
-        in_place: u32,
+        mode: u32,
     }
 
     let gpu = device::global();
     let (device, queue) = (&gpu.device, &gpu.queue);
     let label = "tests/probe_program_scan";
     let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
-    for (groups, rows, in_place) in [
+    for (groups, rows, mode) in [
         (1, 0, 0),
         (1, 4099, 1),
         (64, 0, 0),
         (64, 257, 0),
         (64, 131_075, 1),
         (64, 131_075, 2),
+        (64, 131_075, 3),
     ] {
-        let params = uniform_from_val(device, label, &ScanParams { groups, rows, in_place });
+        let params = uniform_from_val(device, label, &ScanParams { groups, rows, mode });
         let count = rows as usize;
-        let (stride, column, total_word) = if in_place == 2 { (3, 1, 1) } else { (1, 0, 0) };
+        // Mode 3 scans column 1 of rows three words wide, in place.
+        let (stride, column, total_word) = if mode == 3 { (3, 1, 1) } else { (1, 0, 0) };
         let input = storage_rw_for_array::<u32>(device, label, (count * stride).max(1));
+        let input_read_only = storage_rw_for_array::<u32>(device, label, count.max(1));
         let prefix = storage_rw_for_array::<u32>(device, label, count.max(1));
         let total = storage_rw_for_array::<u32>(device, label, total_word + 1);
         let sums = storage_rw_for_array::<u32>(device, label, groups as usize);
@@ -200,12 +203,14 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
                 words[row * stride + column] = value;
             }
             let bytes: Vec<u8> = words.iter().flat_map(|value| value.to_le_bytes()).collect();
-            input.write(queue, 0, &bytes);
+            let source = if mode == 2 { &input_read_only } else { &input };
+            source.write(queue, 0, &bytes);
         }
         let entries = [
             ("gParams", params.as_entire_binding()),
             ("step_program_sync", sync.as_entire_binding()),
             ("input_words", input.as_entire_binding()),
+            ("input_read_only", input_read_only.as_entire_binding()),
             ("prefix", prefix.as_entire_binding()),
             ("total", total.as_entire_binding()),
             ("sums", sums.as_entire_binding()),
@@ -232,7 +237,7 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         sync.copy_to(&mut encoder, 0, &readback, 0, (SYNC_WORDS * 4) as u64);
         total.copy_to(&mut encoder, (total_word * 4) as u64, &readback, (SYNC_WORDS * 4) as u64, 4);
         if count != 0 {
-            let scanned = if in_place == 0 { &prefix } else { &input };
+            let scanned = if mode == 1 || mode == 3 { &input } else { &prefix };
             scanned.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * stride * 4) as u64);
         }
         queue.submit(Some(encoder.finish()));
@@ -515,10 +520,12 @@ fn benchmark_step_program_collectives() {
                 device, Some(label), pass, 0, entries,
             ).unwrap()
         };
+        let scan_unused_input = storage(1);
         let scan_bind = bind(scan, &[
             ("gParams", probe_scan_params.as_entire_binding()),
             ("step_program_sync", sync.as_entire_binding()),
             ("input_words", keys.as_entire_binding()),
+            ("input_read_only", scan_unused_input.as_entire_binding()),
             ("prefix", prefix.as_entire_binding()),
             ("total", total.as_entire_binding()),
             ("sums", sums.as_entire_binding()),

@@ -4,9 +4,8 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use crate::codegen::lir::{
-    counted_scans::{GpuResidentExclusiveScan, GraphScanContract},
     lowering_ir::{
-        LoweringCapacities,
+        LOWERING_PROGRAM_SLOTS, LoweringCapacities, X86_LAYOUT_PROGRAM_SLOT,
         TARGET_LIR_PAGE_ROWS,
         X86ArtifactLayout,
         X86LirCore,
@@ -19,7 +18,10 @@ use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
-    operations::{ComputeOperation, CopyBufferOperation},
+    operations::{
+        ComputeOperation, CopyBufferOperation, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     passes_core::{PassData, map_readback_blocking},
     readback::PagedReadback,
     resource_registry::ResourceMap,
@@ -48,19 +50,16 @@ pub(crate) struct GpuX86ArtifactStage {
     artifact_capacity: u32,
     byte_counts: Vec<ComputeOperation>,
     integer_byte_counts: Vec<ComputeOperation>,
-    entrypoint_clear: ComputeOperation,
-    entrypoint_reduce: ComputeOperation,
-    layout_op: ComputeOperation,
+    target_capacity: u32,
+    plan_layout: [StepProgramOperation; 2],
     clear: ComputeOperation,
     safety_emits: Vec<ComputeOperation>,
     emits: Vec<ComputeOperation>,
     runtime_dispatch_args: ComputeOperation,
     runtime_emit: ComputeOperation,
-    byte_scan: GpuResidentExclusiveScan,
     _params: Vec<LaniusBuffer<X86ArtifactParams>>,
     _byte_lengths: LaniusBuffer<u32>,
     _byte_offsets: LaniusBuffer<u32>,
-    _entrypoint_state: LaniusBuffer<u32>,
     layout: LaniusBuffer<X86ArtifactLayout>,
     words: LaniusBuffer<u32>,
     length_readback: LaniusBuffer<u8>,
@@ -100,8 +99,6 @@ impl GpuX86ArtifactStage {
         debug_assert_eq!(artifact_capacity.div_ceil(4), Self::clear_words(capacities));
         let byte_lengths = alias_u32("lir.x86.byte_lengths", target_capacity)?;
         let byte_offsets = alias_u32("lir.x86.byte_offsets", target_capacity)?;
-        let body_length = alias_u32("lir.x86.body_length", 1)?;
-        let entrypoint_state = alias_u32("lir.x86.entrypoint_state", 2)?;
         let layout = workspace
             .alias(graph, resource("lir.x86.artifact_layout")?, 1)
             .map_err(anyhow::Error::msg)?;
@@ -143,21 +140,6 @@ impl GpuX86ArtifactStage {
 
         let byte_count_pass = load(kernels, "lir.x86.byte_count", "codegen/lir/x86/emission/count_x86_instruction_bytes")?;
         let integer_byte_count_pass = load(kernels, "lir.x86.integer_byte_count", "codegen/lir/x86/emission/count_x86_integer_literal_bytes")?;
-        let entrypoint_clear_pass = load(
-            kernels,
-            "lir.x86.entrypoint.clear",
-            "codegen/lir/x86/emission/clear_x86_entrypoint_state",
-        )?;
-        let entrypoint_reduce_pass = load(
-            kernels,
-            "lir.x86.entrypoint.reduce",
-            "codegen/lir/x86/emission/select_x86_entrypoint",
-        )?;
-        let layout_pass = load(
-            kernels,
-            "lir.x86.artifact.layout",
-            "codegen/lir/x86/emission/plan_x86_artifact_bytes",
-        )?;
         let clear_pass = load(
             kernels,
             "lir.x86.artifact.clear",
@@ -227,54 +209,28 @@ impl GpuX86ArtifactStage {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        let byte_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            GraphScanContract {
-                local_pass: "lir.target.byte_scan.local",
-                apply_pass: "lir.target.byte_scan.apply",
-                count: "lir.x86.total",
-                input: "lir.x86.byte_lengths",
-                local: "lir.target.byte_scan_local",
-                block_sum: "lir.target.byte_scan_block_sum",
-                output: "lir.x86.byte_offsets",
-                total: "lir.x86.body_length",
-            },
-            target_capacity,
-            total,
-            &byte_lengths,
-            &byte_offsets,
-            &body_length,
+        let sync = alias_u32(
+            "step_program_sync",
+            (STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS) as u32,
         )?;
-        let entrypoint_clear = ComputeOperation::direct(
-            device,
-            &context,
-            &resources,
-            "lir.x86.entrypoint.clear",
-            &entrypoint_clear_pass,
-            1,
-        )?;
-        let entrypoint_reduce = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.entrypoint.reduce",
-            &entrypoint_reduce_pass,
-            fixed_params,
-            capacities.hir_nodes.max(1),
-        )?;
-        let layout_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.artifact.layout",
-            &layout_pass,
-            fixed_params,
-            1,
-        )?;
+        let mut layout_resources = resources.clone();
+        layout_resources.buffer("gParams", fixed_params);
+        let layout_pass = kernels.kernel("codegen/lir/x86/emission/plan_x86_artifact_layout");
+        let variant = |groups| {
+            StepProgramOperation::new(
+                device,
+                &context,
+                &layout_resources,
+                "lir.x86.plan_artifact_layout",
+                layout_pass,
+                &sync,
+                X86_LAYOUT_PROGRAM_SLOT,
+                groups,
+                u32::from(runtime_reference_capacity != 0),
+            )
+        };
+        let [small, large] = step_program_group_counts();
+        let plan_layout = [variant(small)?, variant(large)?];
         let clear = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -366,19 +322,16 @@ impl GpuX86ArtifactStage {
             artifact_capacity,
             byte_counts,
             integer_byte_counts,
-            entrypoint_clear,
-            entrypoint_reduce,
-            layout_op,
+            target_capacity,
+            plan_layout,
             clear,
             safety_emits,
             emits,
             runtime_dispatch_args,
             runtime_emit,
-            byte_scan,
             _params: params,
             _byte_lengths: byte_lengths,
             _byte_offsets: byte_offsets,
-            _entrypoint_state: entrypoint_state,
             layout,
             words,
             length_readback,
@@ -405,12 +358,10 @@ impl GpuX86ArtifactStage {
     pub(crate) fn record_layout_after_byte_counts(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.byte_scan.record(encoder)?;
-        self.entrypoint_clear.record(encoder)?;
-        self.entrypoint_reduce.record(encoder)?;
-        self.layout_op.record(encoder)?;
-        Ok(())
+        let rows = job.map_or(self.target_capacity, |job| job.target_instructions);
+        self.plan_layout[step_program_group_variant(u64::from(rows))].record(encoder)
     }
 
     /// The artifact words the clear zeroes for `capacities`.
@@ -470,7 +421,7 @@ impl GpuX86ArtifactStage {
     #[cfg(test)]
     fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.record_byte_count(encoder, 0)?;
-        self.record_layout_after_byte_counts(encoder)?;
+        self.record_layout_after_byte_counts(encoder, None)?;
         self.record_clear(encoder, None)?;
         self.record_emit(encoder, 0)?;
         self.record_extra_emits(encoder, 1)?;

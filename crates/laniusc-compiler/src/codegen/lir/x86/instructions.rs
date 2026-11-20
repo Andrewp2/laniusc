@@ -899,16 +899,9 @@ impl GpuX86LirStage {
     pub(crate) fn record_between_target_pages(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        object: bool,
         job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.artifact.record_layout_after_byte_counts(encoder)?;
-        if object {
-            self.object
-                .as_ref()
-                .context("x86 object projection was not allocated for this lowering job")?
-                .record_status_normalization(encoder)?;
-        }
+        self.artifact.record_layout_after_byte_counts(encoder, job)?;
         self.artifact.record_clear(encoder, job)?;
         Ok(())
     }

@@ -157,7 +157,7 @@ impl TargetStage {
         job: Option<LoweringCapacities>,
     ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_between_target_pages(encoder, object, job),
+            Self::X86_64(stage) => stage.record_between_target_pages(encoder, job),
             Self::Wasm(stage) => stage.record_between_target_pages(encoder, object),
         }
     }
@@ -985,6 +985,12 @@ impl GpuLoweringPipeline {
             TargetStage::X86_64(stage) => stage.object_metadata_readback().cloned(),
             TargetStage::Wasm(_) => None,
         };
+        let program_slots = if object_readback.is_some() {
+            LOWERING_PROGRAM_SLOTS
+        } else {
+            super::lowering_ir::X86_LAYOUT_PROGRAM_SLOT as usize
+                + usize::from(matches!(target, TargetStage::X86_64(_)))
+        };
         let status_readback_bytes = status_bytes + 8 + LOWERING_PROGRAM_FAILURE_BYTES;
         let (status_readback, status_binding, status_base) = match object_readback {
             Some(buffer) => (
@@ -1010,7 +1016,7 @@ impl GpuLoweringPipeline {
             status_base as u64,
             status_bytes as u64,
         )?;
-        let program_failed_copies = (0..LOWERING_PROGRAM_SLOTS)
+        let program_failed_copies = (0..program_slots)
             .map(|slot| {
                 crate::gpu::operations::CopyBufferOperation::new(
                     &(&graph, &status_allocations),
@@ -1640,7 +1646,7 @@ impl GpuLoweringPipeline {
             first_unsupported_target_op: word(9),
         };
         let totals = std::mem::size_of::<LoweringStatus>() / 4;
-        for slot in 0..LOWERING_PROGRAM_SLOTS {
+        for slot in 0..self.program_failed_copies.len() {
             anyhow::ensure!(
                 word(totals + 2 + slot) == 0,
                 "lowering step program {slot} synchronization failed",

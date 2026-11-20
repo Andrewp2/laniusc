@@ -2,26 +2,46 @@ import codegen.lir.lowering_ir;
 import codegen.lir.x86.runtime.native_runtime_abi;
 import codegen.lir.x86.runtime.crt_entry;
 
-struct Params { uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity; };
-ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> x86_body_length;
-StructuredBuffer<uint> x86_entrypoint_state;
-StructuredBuffer<uint> target_function_count;
-StructuredBuffer<TargetLirFunction> target_functions;
-StructuredBuffer<uint> target_function_index_by_semantic;
-StructuredBuffer<uint> target_byte_offset;
-StructuredBuffer<uint> semantic_lir_string_pool_len;
-StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
-RWStructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
-RWStructuredBuffer<uint> x86_artifact_length;
-RWStructuredBuffer<LoweringStatus> lowering_status;
+public struct Params { public uint target_capacity; public uint token_capacity; public uint function_capacity; public uint artifact_capacity; };
+public ConstantBuffer<Params> gParams;
+public RWStructuredBuffer<uint> x86_entrypoint_state;
+public StructuredBuffer<uint> semantic_lir_function_total;
+public StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+public RWStructuredBuffer<uint> x86_body_length;
+public StructuredBuffer<uint> target_function_count;
+public StructuredBuffer<TargetLirFunction> target_functions;
+public StructuredBuffer<uint> target_function_index_by_semantic;
+public RWStructuredBuffer<uint> target_byte_offset;
+public StructuredBuffer<uint> semantic_lir_string_pool_len;
+public RWStructuredBuffer<X86ArtifactLayout> x86_artifact_layout;
+public RWStructuredBuffer<uint> x86_artifact_length;
+public RWStructuredBuffer<LoweringStatus> lowering_status;
+public StructuredBuffer<uint> target_byte_length;
+public StructuredBuffer<uint> target_lir_total;
+public RWStructuredBuffer<uint> scan_group_sums;
 
+static const uint FUNCTION_ENTRYPOINT = 1u;
 static const uint ELF_TEXT_OFFSET = 0x78u;
 static const uint ENTRY_WRAPPER_BYTES = 17u;
 
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void main()
+public void clear_entrypoint()
+{
+    x86_entrypoint_state[0u] = 0u;
+    x86_entrypoint_state[1u] = 0xffffffffu;
+    x86_entrypoint_state[2u] = 0u;
+}
+
+public void select_entrypoint(uint function_id)
+{
+    if ((semantic_lir_functions[function_id].flags & FUNCTION_ENTRYPOINT) != 0u)
+    {
+        InterlockedAdd(x86_entrypoint_state[0u], 1u);
+        InterlockedMin(x86_entrypoint_state[1u], function_id);
+        InterlockedMax(x86_entrypoint_state[2u], function_id);
+    }
+}
+
+public void plan_layout()
 {
     X86ArtifactLayout layout;
     layout.body_length = x86_body_length[0u];
@@ -89,4 +109,19 @@ void main()
     }
     x86_artifact_layout[0u] = layout;
     x86_artifact_length[0u] = layout.file_length;
+}
+
+public void normalize_object_status()
+{
+    X86ArtifactLayout layout = x86_artifact_layout[0u];
+    if (x86_entrypoint_state[0u] == 0u && layout.status == 1u)
+    {
+        lowering_status[0u].flags &= ~LOWERING_STATUS_MISSING_ENTRYPOINT;
+        // The layout publishes this reason with the flag. Left behind, it
+        // would read as a diagnostic and stop a capacity retry.
+        if (lowering_status[0u].diagnostic_reason == LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT)
+            lowering_status[0u].diagnostic_reason = LOWERING_DIAGNOSTIC_NONE;
+        layout.status = 0u;
+        x86_artifact_layout[0u] = layout;
+    }
 }

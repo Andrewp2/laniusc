@@ -163,7 +163,9 @@ pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 10;
 
 pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
 pub(super) const SCHEDULE_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
-pub(super) const LOWERING_PROGRAM_SLOTS: usize = SCHEDULE_PROGRAM_SLOT as usize + 1;
+pub(super) const X86_LAYOUT_PROGRAM_SLOT: u32 = SCHEDULE_PROGRAM_SLOT + 1;
+pub(super) const X86_OBJECT_PROGRAM_SLOT: u32 = X86_LAYOUT_PROGRAM_SLOT + 1;
+pub(super) const LOWERING_PROGRAM_SLOTS: usize = X86_OBJECT_PROGRAM_SLOT as usize + 1;
 pub(super) const LOWERING_PROGRAM_FAILURE_BYTES: usize = LOWERING_PROGRAM_SLOTS * 4;
 
 /// Capacity-derived bit layout for the semantic schedule key.
@@ -309,22 +311,14 @@ pub(crate) const X86_OBJECT_METADATA_BYTES: u64 = 80;
 struct X86ObjectGraphResources {
     relocation_flags: ResourceId,
     relocation_prefix: ResourceId,
-    relocation_scan_local: ResourceId,
-    relocation_scan_block_sum: ResourceId,
     relocation_total: ResourceId,
     symbol_flags: ResourceId,
     symbol_prefix: ResourceId,
-    symbol_scan_local: ResourceId,
-    symbol_scan_block_sum: ResourceId,
     symbol_total: ResourceId,
     definition_flags: ResourceId,
     definition_prefix: ResourceId,
-    definition_scan_local: ResourceId,
-    definition_scan_block_sum: ResourceId,
     definition_total: ResourceId,
     runtime_relocation_prefix: ResourceId,
-    runtime_relocation_scan_local: ResourceId,
-    runtime_relocation_scan_block_sum: ResourceId,
     runtime_relocation_total: ResourceId,
     relocations: ResourceId,
     runtime_relocations: ResourceId,
@@ -4796,16 +4790,22 @@ fn lowering_compiler_graph_builder(
         LoweringCapacities::bytes::<u32>(capacities.target_instructions),
     ))?;
     let byte_scan_blocks = capacities.target_instructions.max(1).div_ceil(256);
-    let byte_scan_local = graph.add_resource(workspace(
-        "lir.target.byte_scan_local",
-        target_domain,
-        LoweringCapacities::bytes::<u32>(capacities.target_instructions),
-    ))?;
-    let byte_scan_block_sum = graph.add_resource(workspace(
-        "lir.target.byte_scan_block_sum",
-        target_domain,
-        LoweringCapacities::bytes::<u32>(byte_scan_blocks),
-    ))?;
+    let byte_scan = if target == LoweringTarget::Wasm {
+        Some((
+            graph.add_resource(workspace(
+                "lir.target.byte_scan_local",
+                target_domain,
+                LoweringCapacities::bytes::<u32>(capacities.target_instructions),
+            ))?,
+            graph.add_resource(workspace(
+                "lir.target.byte_scan_block_sum",
+                target_domain,
+                LoweringCapacities::bytes::<u32>(byte_scan_blocks),
+            ))?,
+        ))
+    } else {
+        None
+    };
     let body_length = graph.add_resource(ResourceDesc {
         name: match target {
             LoweringTarget::X86_64 => "lir.x86.body_length",
@@ -4894,10 +4894,7 @@ fn lowering_compiler_graph_builder(
     let x86_object = if target == LoweringTarget::X86_64 && include_object {
         let relocation_capacity = capacities.semantic_instructions.max(1);
         let target_row_capacity = capacities.target_instructions.max(1);
-        let target_row_blocks = target_row_capacity.div_ceil(256);
         let function_capacity = capacities.hir_nodes.max(1);
-        let relocation_blocks = relocation_capacity.div_ceil(256);
-        let function_blocks = function_capacity.div_ceil(256);
         let u32_rows = |graph: &mut CompilerGraphBuilder,
                         name: &'static str,
                         domain: ResourceDomain,
@@ -4922,18 +4919,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_capacity,
             )?,
-            relocation_scan_local: u32_rows(
-                &mut graph,
-                "artifact.x86.object.relocation_scan_local",
-                ResourceDomain::SemanticInstructions,
-                relocation_capacity,
-            )?,
-            relocation_scan_block_sum: u32_rows(
-                &mut graph,
-                "artifact.x86.object.relocation_scan_block_sum",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.relocation_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -4952,18 +4937,6 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.symbol_prefix",
                 ResourceDomain::SemanticInstructions,
                 relocation_capacity,
-            )?,
-            symbol_scan_local: u32_rows(
-                &mut graph,
-                "artifact.x86.object.symbol_scan_local",
-                ResourceDomain::SemanticInstructions,
-                relocation_capacity,
-            )?,
-            symbol_scan_block_sum: u32_rows(
-                &mut graph,
-                "artifact.x86.object.symbol_scan_block_sum",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
             )?,
             symbol_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.symbol_total",
@@ -4984,18 +4957,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Declarations,
                 function_capacity,
             )?,
-            definition_scan_local: u32_rows(
-                &mut graph,
-                "artifact.x86.object.definition_scan_local",
-                ResourceDomain::Declarations,
-                function_capacity,
-            )?,
-            definition_scan_block_sum: u32_rows(
-                &mut graph,
-                "artifact.x86.object.definition_scan_block_sum",
-                ResourceDomain::Declarations,
-                function_blocks,
-            )?,
             definition_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.definition_total",
                 domain: ResourceDomain::Declarations,
@@ -5008,18 +4969,6 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.runtime_relocation_prefix",
                 ResourceDomain::X86Instructions,
                 target_row_capacity,
-            )?,
-            runtime_relocation_scan_local: u32_rows(
-                &mut graph,
-                "artifact.x86.object.runtime_relocation_scan_local",
-                ResourceDomain::X86Instructions,
-                target_row_capacity,
-            )?,
-            runtime_relocation_scan_block_sum: u32_rows(
-                &mut graph,
-                "artifact.x86.object.runtime_relocation_scan_block_sum",
-                ResourceDomain::X86Instructions,
-                target_row_blocks,
             )?,
             runtime_relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.runtime_relocation_total",
@@ -7134,29 +7083,31 @@ fn lowering_compiler_graph_builder(
             LoweringTarget::Wasm => "lir.wasm.byte_count",
         },
     )?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.byte_scan.local",
-        phase: target_phase,
-        dispatch_domain: target_domain,
-        accesses: vec![
-            PassAccess::read("scan_count", target_total),
-            PassAccess::read("scan_input", byte_lengths),
-            PassAccess::write("scan_local_prefix", byte_scan_local),
-            PassAccess::write("scan_block_sum", byte_scan_block_sum),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.byte_scan.apply",
-        phase: target_phase,
-        dispatch_domain: target_domain,
-        accesses: vec![
-            PassAccess::read("scan_count", target_total),
-            PassAccess::read("scan_local_prefix", byte_scan_local),
-            PassAccess::read("scan_block_sum", byte_scan_block_sum),
-            PassAccess::write("scan_output_prefix", byte_offsets),
-            PassAccess::write("scan_total", body_length),
-        ],
-    })?;
+    if let Some((byte_scan_local, byte_scan_block_sum)) = byte_scan {
+        graph.add_pass(PassDesc {
+            name: "lir.target.byte_scan.local",
+            phase: target_phase,
+            dispatch_domain: target_domain,
+            accesses: vec![
+                PassAccess::read("scan_count", target_total),
+                PassAccess::read("scan_input", byte_lengths),
+                PassAccess::write("scan_local_prefix", byte_scan_local),
+                PassAccess::write("scan_block_sum", byte_scan_block_sum),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.target.byte_scan.apply",
+            phase: target_phase,
+            dispatch_domain: target_domain,
+            accesses: vec![
+                PassAccess::read("scan_count", target_total),
+                PassAccess::read("scan_local_prefix", byte_scan_local),
+                PassAccess::read("scan_block_sum", byte_scan_block_sum),
+                PassAccess::write("scan_output_prefix", byte_offsets),
+                PassAccess::write("scan_total", body_length),
+            ],
+        })?;
+    }
     if let Some(wasm) = wasm_abi {
         graph.add_pass(PassDesc {
             name: "lir.wasm.abi.attach_bodies",
@@ -7204,57 +7155,31 @@ fn lowering_compiler_graph_builder(
     }
     if let Some(x86) = x86_artifact {
         graph.add_pass(PassDesc {
-            name: "lir.x86.entrypoint.clear",
+            name: "lir.x86.plan_artifact_layout",
             phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![PassAccess::write(
-                "x86_entrypoint_state",
-                x86.entrypoint_state,
-            )],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.entrypoint.reduce",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::Declarations,
+            dispatch_domain: target_domain,
             accesses: vec![
+                PassAccess::read("target_lir_total", target_total),
+                PassAccess::read("target_byte_length", byte_lengths),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::read_write("x86_entrypoint_state", x86.entrypoint_state),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.artifact.layout",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::ArtifactBytes,
-            accesses: vec![
-                PassAccess::read("x86_body_length", x86.body_length),
-                PassAccess::read("x86_entrypoint_state", x86.entrypoint_state),
+                PassAccess::initialize_read_write("x86_body_length", x86.body_length),
+                PassAccess::initialize_read_write("x86_entrypoint_state", x86.entrypoint_state),
                 PassAccess::read("target_function_count", function_count),
                 PassAccess::read("target_functions", functions),
                 PassAccess::read(
                     "target_function_index_by_semantic",
                     function_index_by_semantic,
                 ),
-                PassAccess::read("target_byte_offset", byte_offsets),
+                PassAccess::initialize_read_write("target_byte_offset", byte_offsets),
                 PassAccess::read("semantic_lir_string_pool_len", semantic_string_pool_len),
-                PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::write("x86_artifact_layout", x86.layout),
+                PassAccess::initialize_read_write("x86_artifact_layout", x86.layout),
                 PassAccess::write("x86_artifact_length", x86.artifact_length),
                 PassAccess::read_write("lowering_status", lowering_status),
+                PassAccess::read_write("step_program_sync", step_program_sync),
+                PassAccess::read_write("scan_group_sums", opt_scan_group_sums),
             ],
         })?;
-        if x86_object.is_some() {
-            graph.add_pass(PassDesc {
-                name: "artifact.x86.object.normalize_status",
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::ArtifactBytes,
-                accesses: vec![
-                    PassAccess::read("x86_entrypoint_state", x86.entrypoint_state),
-                    PassAccess::read_write("x86_artifact_layout", x86.layout),
-                    PassAccess::read_write("lowering_status", lowering_status),
-                ],
-            })?;
-        }
         graph.add_pass(PassDesc {
             name: "lir.x86.artifact.clear",
             phase: CompilerPhase::Artifact,
@@ -7465,7 +7390,7 @@ fn lowering_compiler_graph_builder(
 
     if let (Some(artifact), Some(object)) = (x86_artifact, x86_object) {
         graph.add_pass(PassDesc {
-            name: "artifact.x86.object.relocation_flags",
+            name: "artifact.x86.object.compact_records",
             phase: CompilerPhase::Artifact,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
@@ -7473,205 +7398,45 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::read("opt_ir_core", opt_core),
                 PassAccess::read("target_lir_count", target_counts),
-                PassAccess::write("x86_object_relocation_flag", object.relocation_flags),
-                PassAccess::write("x86_object_symbol_flag", object.symbol_flags),
-            ],
-        })?;
-        for (name, accesses) in [
-            (
-                "artifact.x86.object.relocation_scan.local",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_input", object.relocation_flags),
-                    PassAccess::write("scan_local_prefix", object.relocation_scan_local),
-                    PassAccess::write("scan_block_sum", object.relocation_scan_block_sum),
-                ],
-            ),
-            (
-                "artifact.x86.object.relocation_scan.apply",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_local_prefix", object.relocation_scan_local),
-                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
-                    PassAccess::write("scan_output_prefix", object.relocation_prefix),
-                    PassAccess::write("scan_total", object.relocation_total),
-                ],
-            ),
-            (
-                "artifact.x86.object.symbol_scan.local",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_input", object.symbol_flags),
-                    PassAccess::write("scan_local_prefix", object.symbol_scan_local),
-                    PassAccess::write("scan_block_sum", object.symbol_scan_block_sum),
-                ],
-            ),
-            (
-                "artifact.x86.object.symbol_scan.apply",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_local_prefix", object.symbol_scan_local),
-                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
-                    PassAccess::write("scan_output_prefix", object.symbol_prefix),
-                    PassAccess::write("scan_total", object.symbol_total),
-                ],
-            ),
-        ] {
-            graph.add_pass(PassDesc {
-                name,
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::SemanticInstructions,
-                accesses,
-            })?;
-        }
-        graph.add_pass(PassDesc {
-            name: "artifact.x86.object.definition_flags",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
+                PassAccess::initialize_read_write("x86_object_relocation_flag", object.relocation_flags),
+                PassAccess::initialize_read_write("x86_object_symbol_flag", object.symbol_flags),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
                 PassAccess::read("target_function_count", function_count),
-                PassAccess::read(
-                    "target_function_index_by_semantic",
-                    function_index_by_semantic,
-                ),
-                PassAccess::write("x86_object_definition_flag", object.definition_flags),
-            ],
-        })?;
-        for (name, accesses) in [
-            (
-                "artifact.x86.object.definition_scan.local",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read("scan_input", object.definition_flags),
-                    PassAccess::write("scan_local_prefix", object.definition_scan_local),
-                    PassAccess::write("scan_block_sum", object.definition_scan_block_sum),
-                ],
-            ),
-            (
-                "artifact.x86.object.definition_scan.apply",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read("scan_local_prefix", object.definition_scan_local),
-                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
-                    PassAccess::write("scan_output_prefix", object.definition_prefix),
-                    PassAccess::write("scan_total", object.definition_total),
-                ],
-            ),
-        ] {
-            graph.add_pass(PassDesc {
-                name,
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::Declarations,
-                accesses,
-            })?;
-        }
-        graph.add_pass(PassDesc {
-            name: "artifact.x86.object.relocations",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
+                PassAccess::read("target_function_index_by_semantic", function_index_by_semantic),
+                PassAccess::initialize_read_write("x86_object_definition_flag", object.definition_flags),
                 PassAccess::read("target_lir_total", target_total),
-                PassAccess::read("opt_ir_core", opt_core),
                 PassAccess::read("opt_ir_operands", opt_operands),
-                PassAccess::read("opt_ir_total", opt_total),
-                PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read("semantic_to_target_start", semantic_to_target_start),
                 PassAccess::read("target_lir_core", target_core),
                 PassAccess::read("target_lir_operands", target_operands.unwrap()),
                 PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
-                PassAccess::read("target_function_count", function_count),
                 PassAccess::read("target_functions", functions),
-                PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::read(
-                    "x86_saved_gpr_mask_by_function",
-                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
-                ),
-                PassAccess::read(
-                    "target_function_index_by_semantic",
-                    function_index_by_semantic,
-                ),
+                PassAccess::read("x86_saved_gpr_mask_by_function", x86_saved_gpr_mask_by_function.expect("x86 saved-register resource")),
                 PassAccess::read("target_byte_length", byte_lengths),
                 PassAccess::read("target_byte_offset", byte_offsets),
                 PassAccess::read("x86_artifact_layout", artifact.layout),
                 PassAccess::read("semantic_lir_string_total", semantic_string_total),
                 PassAccess::read("semantic_lir_strings", semantic_strings),
-                PassAccess::read("x86_object_relocation_flag", object.relocation_flags),
-                PassAccess::read("x86_object_relocation_prefix", object.relocation_prefix),
-                PassAccess::read("x86_object_symbol_prefix", object.symbol_prefix),
+                PassAccess::initialize_read_write("x86_object_relocation_prefix", object.relocation_prefix),
+                PassAccess::initialize_read_write("x86_object_symbol_prefix", object.symbol_prefix),
                 PassAccess::write("x86_object_relocations", object.relocations),
                 PassAccess::write("x86_object_undefined_symbols", object.undefined_symbols),
                 PassAccess::write("x86_object_call_hir_by_symbol", object.call_hir_by_symbol),
-            ],
-        })?;
-        for (name, accesses) in [
-            (
-                "artifact.x86.object.runtime_relocation_scan.local",
-                vec![
-                    PassAccess::read("scan_count", target_total),
-                    PassAccess::read("scan_input", artifact.runtime_reference_flag),
-                    PassAccess::write("scan_local_prefix", object.runtime_relocation_scan_local),
-                    PassAccess::write("scan_block_sum", object.runtime_relocation_scan_block_sum),
-                ],
-            ),
-            (
-                "artifact.x86.object.runtime_relocation_scan.apply",
-                vec![
-                    PassAccess::read("scan_count", target_total),
-                    PassAccess::read("scan_local_prefix", object.runtime_relocation_scan_local),
-                    PassAccess::read(
-                        "scan_block_sum",
-                        object.runtime_relocation_scan_block_sum,
-                    ),
-                    PassAccess::write("scan_output_prefix", object.runtime_relocation_prefix),
-                    PassAccess::write("scan_total", object.runtime_relocation_total),
-                ],
-            ),
-        ] {
-            graph.add_pass(PassDesc {
-                name,
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::X86Instructions,
-                accesses,
-            })?;
-        }
-        graph.add_pass(PassDesc {
-            name: "artifact.x86.object.runtime_relocations",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::X86Instructions,
-            accesses: vec![
-                PassAccess::read("target_lir_total", target_total),
                 PassAccess::read("x86_runtime_reference", artifact.runtime_reference),
-                PassAccess::read(
-                    "x86_runtime_relocation_prefix",
-                    object.runtime_relocation_prefix,
-                ),
-                PassAccess::read("x86_artifact_layout", artifact.layout),
+                PassAccess::initialize_read_write("x86_runtime_relocation_prefix", object.runtime_relocation_prefix),
                 PassAccess::write("x86_object_runtime_relocations", object.runtime_relocations),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "artifact.x86.object.definitions",
-            phase: CompilerPhase::Artifact,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("semantic_lir_function_total", semantic_function_total),
-                PassAccess::read("semantic_lir_functions", semantic_functions),
-                PassAccess::read("target_function_count", function_count),
-                PassAccess::read("target_functions", functions),
-                PassAccess::read(
-                    "target_function_index_by_semantic",
-                    function_index_by_semantic,
-                ),
-                PassAccess::read("target_byte_length", byte_lengths),
-                PassAccess::read("target_byte_offset", byte_offsets),
-                PassAccess::read("x86_artifact_layout", artifact.layout),
-                PassAccess::read("x86_object_definition_flag", object.definition_flags),
-                PassAccess::read("x86_object_definition_prefix", object.definition_prefix),
+                PassAccess::initialize_read_write("x86_object_definition_prefix", object.definition_prefix),
                 PassAccess::write("x86_object_definitions", object.definitions),
+                PassAccess::write("x86_object_relocation_total", object.relocation_total),
+                PassAccess::write("x86_object_symbol_total", object.symbol_total),
+                PassAccess::write("x86_object_definition_total", object.definition_total),
+                PassAccess::read("x86_runtime_reference_flag", artifact.runtime_reference_flag),
+                PassAccess::write("x86_object_runtime_relocation_total", object.runtime_relocation_total),
+                PassAccess::read_write("scan_group_sums", opt_scan_group_sums),
+                PassAccess::read_write("step_program_sync", step_program_sync),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -9377,17 +9142,10 @@ mod tests {
             ("lir.x86.frame.finalize", "codegen/lir/x86/allocation/publish_x86_function_frames"),
             ("lir.x86.byte_count", "codegen/lir/x86/emission/count_x86_instruction_bytes"),
             ("lir.x86.integer_byte_count", "codegen/lir/x86/emission/count_x86_integer_literal_bytes"),
-            ("lir.target.byte_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.target.byte_scan.apply", "scan/words/apply_counted_word_carries"),
             (
-                "lir.x86.entrypoint.clear",
-                "codegen/lir/x86/emission/clear_x86_entrypoint_state",
+                "lir.x86.plan_artifact_layout",
+                "codegen/lir/x86/emission/plan_x86_artifact_layout",
             ),
-            (
-                "lir.x86.entrypoint.reduce",
-                "codegen/lir/x86/emission/select_x86_entrypoint",
-            ),
-            ("lir.x86.artifact.layout", "codegen/lir/x86/emission/plan_x86_artifact_bytes"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/emission/clear_x86_artifact_bytes"),
             ("lir.x86.emit", "codegen/lir/x86/emission/emit_x86_artifact_bytes"),
             (
@@ -9396,28 +9154,8 @@ mod tests {
             ),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime/emit_x86_runtime_bytes"),
             (
-                "artifact.x86.object.normalize_status",
-                "codegen/lir/x86/objects/normalize_x86_object_status",
-            ),
-            (
-                "artifact.x86.object.relocation_flags",
-                "codegen/lir/x86/objects/mark_x86_object_relocations",
-            ),
-            (
-                "artifact.x86.object.definition_flags",
-                "codegen/lir/x86/objects/mark_x86_object_definitions",
-            ),
-            (
-                "artifact.x86.object.relocations",
-                "codegen/lir/x86/objects/write_x86_object_relocations",
-            ),
-            (
-                "artifact.x86.object.runtime_relocations",
-                "codegen/lir/x86/objects/write_x86_object_runtime_relocations",
-            ),
-            (
-                "artifact.x86.object.definitions",
-                "codegen/lir/x86/objects/write_x86_object_definitions",
+                "artifact.x86.object.compact_records",
+                "codegen/lir/x86/objects/compact_x86_object_records",
             ),
             ("artifact.x86.object.bytes", "codegen/lir/x86/objects/write_x86_object_section_bytes"),
         ] {

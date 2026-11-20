@@ -3,13 +3,30 @@ import shared.collectives.step_program;
 
 groupshared uint step_program_scan_carry;
 
+interface IProgramScanInput
+{
+    uint load(uint row);
+}
+
+struct ReadWriteScanInput : IProgramScanInput
+{
+    RWStructuredBuffer<uint> words;
+    uint load(uint row) { return words[row]; }
+}
+
+struct ReadOnlyScanInput : IProgramScanInput
+{
+    StructuredBuffer<uint> words;
+    uint load(uint row) { return words[row]; }
+}
+
 // Each lane scans a contiguous range. Only the lane totals participate in the
 // workgroup scan. In-place scans are safe because both passes touch only the
 // lane's own input range. The caller ends the final step before reusing sums.
-public bool step_program_prefix_scan_strided(
+bool step_program_prefix_scan_impl<TInput : IProgramScanInput>(
     inout StepProgram program,
     uint rows,
-    RWStructuredBuffer<uint> input,
+    TInput input,
     RWStructuredBuffer<uint> prefix,
     RWStructuredBuffer<uint> total,
     RWStructuredBuffer<uint> group_sums,
@@ -36,7 +53,7 @@ public bool step_program_prefix_scan_strided(
     if (group < active_groups)
     {
         for (uint row = first; row < end; ++row)
-            sum += input[row * stride + column];
+            sum += input.load(row * stride + column);
         inclusive = prefix_scan_u32_256(lane, sum);
         if (lane == size - 1u)
         {
@@ -76,7 +93,7 @@ public bool step_program_prefix_scan_strided(
     {
         for (uint row = first; row < end; ++row)
         {
-            uint value = input[row * stride + column];
+            uint value = input.load(row * stride + column);
             prefix[row * stride + column] = offset;
             offset += value;
         }
@@ -92,7 +109,41 @@ public bool step_program_prefix_scan(
     RWStructuredBuffer<uint> total,
     RWStructuredBuffer<uint> group_sums)
 {
-    return step_program_prefix_scan_strided(program, rows, input, prefix, total, group_sums, 0u, 1u, 0u);
+    ReadWriteScanInput source;
+    source.words = input;
+    return step_program_prefix_scan_impl(program, rows, source, prefix, total, group_sums, 0u, 1u, 0u);
+}
+
+public bool step_program_prefix_scan(
+    inout StepProgram program,
+    uint rows,
+    StructuredBuffer<uint> input,
+    RWStructuredBuffer<uint> prefix,
+    RWStructuredBuffer<uint> total,
+    RWStructuredBuffer<uint> group_sums)
+{
+    ReadOnlyScanInput source;
+    source.words = input;
+    return step_program_prefix_scan_impl(program, rows, source, prefix, total, group_sums, 0u, 1u, 0u);
+}
+
+// Scans column `column` of rows that are `stride` words wide, in `input` and
+// `prefix` alike, and writes the total to word `total_word` of `total`.
+public bool step_program_prefix_scan_strided(
+    inout StepProgram program,
+    uint rows,
+    RWStructuredBuffer<uint> input,
+    RWStructuredBuffer<uint> prefix,
+    RWStructuredBuffer<uint> total,
+    RWStructuredBuffer<uint> group_sums,
+    uint column,
+    uint stride,
+    uint total_word)
+{
+    ReadWriteScanInput source;
+    source.words = input;
+    return step_program_prefix_scan_impl(
+        program, rows, source, prefix, total, group_sums, column, stride, total_word);
 }
 
 struct PrefixScanU32x4Add : IPrefixScanOp<uint4>
