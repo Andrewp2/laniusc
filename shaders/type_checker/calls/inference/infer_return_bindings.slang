@@ -144,6 +144,7 @@ static const uint PLAN_NONE = 0u;
 static const uint PLAN_FOR = 1u;
 static const uint PLAN_LET = 2u;
 static const uint PLAN_TRY = 3u;
+static const uint PLAN_LET_TRY = 4u;
 // ReturnMismatch details of a `?` (typecheck.rs try_diagnostic).
 static const uint TRY_NOT_RESULT = 0x3f01u;
 static const uint TRY_RETURN_MISMATCH = 0x3f02u;
@@ -164,7 +165,7 @@ struct BindingPlan
     bool call_result;
     uint initializer;
     uint initializer_kind;
-    // PLAN_TRY: the operand's and the function result's error types (scalar
+    // For a try: the operand's and the function result's error types (scalar
     // never for Option, which has none).
     uint2 error;
     uint2 expected_error;
@@ -403,9 +404,15 @@ BindingPlan plan_try(uint node, uint count)
     plan.node = node;
     plan.token = token;
     plan.value = uint2(value_tag, value);
-    plan.previous = uint2(decl_type_ref_tag[token], decl_type_ref_payload[token]);
     plan.initializer = operand;
     return plan;
+}
+
+bool try_types_complete(BindingPlan plan, uint4 ids)
+{
+    return (plan.value.x != 3u || ct_is_resolved(ids.x)) &&
+        (plan.error.x != 3u || ct_is_resolved(ids.z)) &&
+        (plan.expected_error.x != 3u || ct_is_resolved(ids.w));
 }
 
 // The payload type at the `?` token, once the operand and the error types
@@ -415,10 +422,7 @@ void publish_try(BindingPlan plan, uint4 ids)
     uint token = plan.token;
     // Instance rows may contain type parameters: a generic body's `value?`
     // on an Option<Option<T>> has the payload type Option<T>.
-    bool complete = (plan.value.x != 3u || ct_is_resolved(ids.x)) &&
-        (plan.error.x != 3u || ct_is_resolved(ids.z)) &&
-        (plan.expected_error.x != 3u || ct_is_resolved(ids.w));
-    if (!complete) { clear_unavailable_inferred_declaration(token); return; }
+    if (!try_types_complete(plan, ids)) { clear_unavailable_inferred_declaration(token); return; }
     if (!same_type(plan.error, ids.z, plan.expected_error, ids.w))
     {
         record_try_error(token, TRY_RETURN_MISMATCH);
@@ -472,6 +476,31 @@ BindingPlan plan_let_binding(uint node, uint kind, HirPayload statement, uint co
         plan.call_result = true;
     }
     plan.mode = PLAN_LET;
+    if (initializer_kind == 36u && (tag == 0u || tag == 2u) && call_inference_state[0u] != 0u)
+    {
+        uint operand = compact_hir_payload[initializer].b;
+        if (operand < count && compact_hir_core[operand].kind == 19u)
+        {
+            // The call result is already in the dispatch's input snapshot.
+            // Check it here so the binding can use the payload in this
+            // round, before expression projection replaces the empty or
+            // symbolic slot. The question-mark token has its own writer.
+            BindingPlan attempt = plan_try(initializer, count);
+            uint row = attempt.value.y;
+            // A scalar or an argument-free local nominal needs no
+            // recursive validation by the expression projection.
+            bool simple = attempt.value.x == 1u || (attempt.value.x == 3u &&
+                row < checked_type_capacity() && type_instance_kind[row] == 1u &&
+                type_instance_arg_count[row] == 0u && type_instance_decl_token[row] < gParams.n_tokens);
+            if (attempt.mode == PLAN_TRY && simple)
+            {
+                plan = attempt;
+                plan.mode = PLAN_LET_TRY;
+                tag = plan.value.x;
+                payload = plan.value.y;
+            }
+        }
+    }
     plan.node = node;
     plan.token = statement.b;
     plan.value = uint2(tag, payload);
@@ -534,13 +563,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind == 30u || (kind == 7u && statement.a == 7u))
         plan = plan_for_binding(node, statement, count);
     else if (kind == 36u)
+    {
         plan = plan_try(node, count);
+        if (plan.mode == PLAN_TRY)
+            plan.previous = uint2(decl_type_ref_tag[plan.token], decl_type_ref_payload[plan.token]);
+    }
     else
         plan = plan_let_binding(node, kind, statement, count);
     if (plan.mode == PLAN_NONE) return;
     uint spare = CT_NONE;
     uint4 ids = uint4(CT_UNKNOWN, CT_UNKNOWN, CT_UNKNOWN, CT_UNKNOWN);
-    uint operands = plan.mode == PLAN_TRY ? 4u : 2u;
+    uint operands = plan.mode >= PLAN_TRY ? 4u : 2u;
     [loop]
     for (uint index = 0u; index < operands; index++)
     {
@@ -554,5 +587,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (plan.mode == PLAN_FOR) publish_for_binding(plan, ids.x, ids.y);
     else if (plan.mode == PLAN_TRY) publish_try(plan, ids);
-    else publish_let_binding(plan, ids.x, ids.y, count);
+    else
+    {
+        if (plan.mode == PLAN_LET_TRY && (!try_types_complete(plan, ids) ||
+            !same_type(plan.error, ids.z, plan.expected_error, ids.w)))
+        {
+            // Keep the input snapshot's reference while the payload is pending.
+            plan.value = uint2(call_inference_result_tag[plan.initializer],
+                call_inference_result_payload[plan.initializer]);
+            ids.x = ct_ref(plan.value.x, plan.value.y);
+        }
+        publish_let_binding(plan, ids.x, ids.y, count);
+    }
 }

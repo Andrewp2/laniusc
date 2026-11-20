@@ -42,6 +42,7 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint NAME_ROLE_SELF = 1u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -144,6 +145,24 @@ bool slot_ref(uint node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID; payload = INVALID;
     if (!valid_hir(node)) return false;
+    // A try can publish its payload after expression projection. An
+    // argument-free local nominal is complete at its question-mark token,
+    // so the member pass can use that type before the projected slot catches up.
+    HirCore core = compact_hir_core[node];
+    if (core.kind == HIR_TRY_EXPR && call_inference_round[0u] != 0u &&
+        core.token_end != 0u && valid_token(core.token_end - 1u))
+    {
+        uint token = core.token_end - 1u;
+        uint row = decl_type_ref_payload[token];
+        if (decl_type_ref_tag[token] == TYPE_REF_INSTANCE && valid_instance(row) &&
+            type_instance_kind[row] == 1u && type_instance_arg_count[row] == 0u &&
+            valid_token(type_instance_decl_token[row]))
+        {
+            tag = TYPE_REF_INSTANCE;
+            payload = row;
+            return true;
+        }
+    }
     tag = call_inference_result_tag[node]; payload = call_inference_result_payload[node];
     if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
     tag = TYPE_REF_INVALID; payload = INVALID;
