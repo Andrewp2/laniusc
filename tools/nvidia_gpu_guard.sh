@@ -6,7 +6,6 @@ usage() {
 Usage: tools/nvidia_gpu_guard.sh [--log PATH] -- COMMAND [ARG...]
 
 Runs one NVIDIA GPU workload with conservative desktop-safety guardrails:
-- refuses to start after NVIDIA mapping/Xid errors in the current boot;
 - refuses overlapping guarded runs;
 - allows unrelated desktop and compute clients to keep using the GPU;
 - records framebuffer use and temperature while the command runs;
@@ -19,7 +18,6 @@ Environment:
   LANIUS_GPU_GUARD_MAX_INITIAL_MEMORY_PERCENT   default 30
   LANIUS_GPU_GUARD_MAX_MEMORY_PERCENT           default 80
   LANIUS_GPU_GUARD_MAX_TEMPERATURE_C            default 83
-  LANIUS_GPU_GUARD_ALLOW_DIRTY_BOOT             default 0
   LANIUS_GPU_GUARD_LOCK_PATH                     default under XDG_RUNTIME_DIR
   LANIUS_GPU_GUARD_NVIDIA_SMI                    default nvidia-smi
   LANIUS_GPU_GUARD_JOURNALCTL                    default journalctl
@@ -35,13 +33,6 @@ die() {
 
 is_unsigned_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
-}
-
-is_enabled() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
 }
 
 kernel_error_pattern='x86/PAT: .*conflicting memory types|memtype_reserve failed|ioremap memtype_reserve failed|Failed to ioremap_wc NvKmsKapiMemory|Failed to map NvKmsKapiMemory|NVRM: Xid'
@@ -110,7 +101,6 @@ timeout_seconds="${LANIUS_GPU_GUARD_TIMEOUT_SECONDS:-300}"
 max_initial_memory_percent="${LANIUS_GPU_GUARD_MAX_INITIAL_MEMORY_PERCENT:-30}"
 max_memory_percent="${LANIUS_GPU_GUARD_MAX_MEMORY_PERCENT:-80}"
 max_temperature_c="${LANIUS_GPU_GUARD_MAX_TEMPERATURE_C:-83}"
-allow_dirty_boot="${LANIUS_GPU_GUARD_ALLOW_DIRTY_BOOT:-0}"
 nvidia_smi="${LANIUS_GPU_GUARD_NVIDIA_SMI:-nvidia-smi}"
 journalctl="${LANIUS_GPU_GUARD_JOURNALCTL:-journalctl}"
 lock_path="${LANIUS_GPU_GUARD_LOCK_PATH:-${XDG_RUNTIME_DIR:-/tmp}/laniusc-nvidia-gpu-${UID}.lock}"
@@ -134,11 +124,9 @@ mkdir -p "$(dirname "$lock_path")"
 exec 9>"$lock_path"
 flock -n 9 || die "another guarded GPU workload holds $lock_path"
 
-boot_errors="$(kernel_errors)" || die 'could not inspect the current kernel journal'
-if [[ -n "$boot_errors" ]] && ! is_enabled "$allow_dirty_boot"; then
-  printf '%s\n' "$boot_errors" >&2
-  die 'current boot already contains an NVIDIA mapping or Xid error; reboot before GPU work'
-fi
+# The run stops on a kernel GPU error logged after it starts, so the journal
+# must be readable. Errors logged earlier in this boot do not block the run.
+kernel_errors >/dev/null || die 'could not inspect the current kernel journal'
 
 read -r initial_used initial_total initial_temperature < <(sample_gpu) || die "could not sample NVIDIA GPU $gpu_index"
 if (( initial_used * 100 >= max_initial_memory_percent * initial_total )); then

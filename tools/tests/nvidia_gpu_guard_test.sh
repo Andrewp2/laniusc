@@ -86,8 +86,7 @@ grep -q 'initial framebuffer use' "$tmp/stderr"
 
 reset_samples '1000, 24000, 50'
 printf '%s\n' 'NVRM: Xid (PCI:0000:01:00): 31' >"$FAKE_BOOT_JOURNAL_FILE"
-expect_status 78 "$guard" -- sh -c 'exit 0'
-grep -q 'current boot already contains' "$tmp/stderr"
+expect_status 0 "$guard" -- sh -c 'exit 0'
 >"$FAKE_BOOT_JOURNAL_FILE"
 
 reset_samples '1000, 24000, 50'
