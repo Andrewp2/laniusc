@@ -307,18 +307,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     if (layout.status != 0u) return;
     X86LirCore core = target_lir_core[page_row];
-    X86LirOperands operands = target_lir_operands[page_row];
-    X86LirLocations locations = target_lir_locations[page_row];
     uint function_id = semantic_function_id_by_hir[core.source_hir];
     uint semantic_count = min(gParams.function_capacity, semantic_lir_function_total[0u]);
     if (function_id >= semantic_count) return;
     uint function_index = target_function_index_by_semantic[function_id];
     if (function_index >= target_function_count[0u]) return;
     TargetLirFunction function = target_functions[function_index];
-    SemanticLirFunction semantic_function = semantic_lir_functions[function_id];
-    uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
+    bool prologue = row == function.instruction_start;
+    bool guard = (core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
+        core.op == X86_LIR_OP_INDEX_ADDRESS) && core.local_ordinal != INVALID;
+    X86LirOperands operands;
+    if (core.op == X86_LIR_OP_BINARY || guard)
+    {
+        operands = target_lir_operands[page_row];
+        guard = guard || x86_safety_shift(core, operands) ||
+            x86_safety_integer_division(core, operands);
+    }
+    if (!prologue && !guard) return;
+
     uint cursor = layout.body_offset + target_byte_offset[row];
-    if (row == function.instruction_start)
+    if (prologue)
+    {
+        SemanticLirFunction semantic_function = semantic_lir_functions[function_id];
+        uint saved_mask = x86_saved_gpr_mask_by_function[function_id];
         emit_prologue(cursor, function, semantic_function, saved_mask);
-    emit_guards(cursor, core, operands, locations, function, layout.runtime_offset);
+    }
+    if (guard)
+        emit_guards(cursor, core, operands, target_lir_locations[page_row], function,
+            layout.runtime_offset);
 }
