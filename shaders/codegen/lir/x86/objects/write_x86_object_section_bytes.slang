@@ -10,38 +10,30 @@ RWStructuredBuffer<uint> x86_object_rodata_bytes;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint load_byte(uint pos)
+// Pack up to four live bytes. Object sections start at arbitrary byte
+// offsets and the last destination word can be partial.
+uint load_word(uint start, uint bytes)
 {
-    return (x86_artifact_bytes[pos >> 2u] >> ((pos & 3u) * 8u)) & 0xffu;
-}
-
-void store_byte(RWStructuredBuffer<uint> output, uint pos, uint value)
-{
-    uint word_i = pos >> 2u;
-    uint shift = (pos & 3u) * 8u;
-    uint mask = 0xffu << shift;
-    uint old_value = output[word_i];
-    for (;;)
-    {
-        uint next = (old_value & ~mask) | ((value & 0xffu) << shift);
-        uint prior;
-        InterlockedCompareExchange(output[word_i], old_value, next, prior);
-        if (prior == old_value) return;
-        old_value = prior;
-    }
+    uint word = start >> 2u;
+    uint shift = (start & 3u) * 8u;
+    uint value = x86_artifact_bytes[word] >> shift;
+    if (bytes * 8u > 32u - shift)
+        value |= x86_artifact_bytes[word + 1u] << (32u - shift);
+    return value & (0xffffffffu >> ((4u - bytes) * 8u));
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint word = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint row = word * 4u;
     if (row >= gParams.artifact_capacity) return;
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     uint wrapper_length = layout.body_offset - layout.text_offset;
     uint text_length = wrapper_length + layout.body_length + layout.runtime_length;
     if (row < text_length)
-        store_byte(x86_object_text_bytes, row, load_byte(layout.text_offset + row));
+        x86_object_text_bytes[word] = load_word(layout.text_offset + row, min(4u, text_length - row));
     if (row < layout.rodata_length)
-        store_byte(x86_object_rodata_bytes, row, load_byte(layout.rodata_offset + row));
+        x86_object_rodata_bytes[word] = load_word(layout.rodata_offset + row, min(4u, layout.rodata_length - row));
 }

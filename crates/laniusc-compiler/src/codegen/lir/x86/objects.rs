@@ -31,6 +31,10 @@ mod object_extent {
     pub(super) fn artifact_bytes(c: LoweringCapacities) -> u32 {
         c.artifact_bytes.max(1)
     }
+
+    pub(super) fn artifact_words(c: LoweringCapacities) -> u32 {
+        artifact_bytes(c).div_ceil(4)
+    }
     pub(super) fn target_rows(c: LoweringCapacities) -> u32 {
         c.target_instructions.max(1)
     }
@@ -282,9 +286,9 @@ impl GpuX86ObjectStage {
             "artifact.x86.object.bytes",
             &bytes_pass,
             &params,
-            artifact_capacity,
+            artifact_capacity.div_ceil(4),
         )?;
-        let bytes_op = JobSized::new(bytes_op, object_extent::artifact_bytes, capacities)?;
+        let bytes_op = JobSized::new(bytes_op, object_extent::artifact_words, capacities)?;
         let metadata_readback_copies = [
             (
                 "artifact.x86.object.relocation_total.readback",
