@@ -4,6 +4,10 @@ use {crate::compiler::gpu_compiler::trait_solver::{abi::Span, catalog::FrozenCat
 use crate::gpu::{
     buffers::LaniusBuffer,
     dispatch_capture,
+    operations::{
+        STEP_PROGRAM_SYNC_WORDS, StepProgramOperation, step_program_group_counts,
+        step_program_group_variant,
+    },
     passes_core::{self, PassData},
 };
 
@@ -202,9 +206,13 @@ fn params_block(catalog: &Arena, words: [u32; 8]) -> Result<(wgpu::Buffer, u32)>
 }
 
 fn params_binding(buffer: &wgpu::Buffer) -> wgpu::BindingResource<'_> {
+    params_binding_at(buffer, 0)
+}
+
+fn params_binding_at(buffer: &wgpu::Buffer, offset: u64) -> wgpu::BindingResource<'_> {
     wgpu::BindingResource::Buffer(wgpu::BufferBinding {
         buffer,
-        offset: 0,
+        offset,
         size: Some(super::workspace::params_block_size()),
     })
 }
@@ -655,38 +663,34 @@ const WAVE_PLAN_PHASE: u32 = 70;
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
 const AUDIT_TERMS: &str = "type_checker/trait_solver/normalization/audit_normalized_terms";
-const AUDIT_GOALS: &str = "type_checker/trait_solver/normalization/audit_normalized_goals";
-const MARK_GOALS: &str = "type_checker/trait_solver/normalization/mark_normalized_goals";
+const INDEX_NORMALIZED_GOALS: &str = "type_checker/trait_solver/normalization/index_normalized_proof_goals";
 const AUDIT_WORK: &str = "type_checker/trait_solver/proof_frontier/audit_proof_work";
 const WRITE_GOAL_INDEX: &str = "type_checker/trait_solver/proof_frontier/write_goal_index";
 const AUDIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/proof_substitution/audit_proof_substitutions";
-/// Commit stages over the whole grid (proof_commit_audit.slang): audit lanes
-/// over the owner rows, whose last workgroup runs the committing thread; 47
-/// and 50 go on with lanes that finish what the commit let through, and the
-/// last workgroup of 50's goal-index lanes commits the Work. The lanes of
-/// 45, 47 and 55 take every admitted Work, those of 50 the pending Work rows.
+/// Commit stages audit a complete owner span before publishing. Phase 47
+/// commits and indexes goals in a step program. The other commit stages
+/// use the last workgroup of their dispatch (proof_commit_audit.slang).
+/// Phases 45, 47 and 55 audit all admitted Work. Phase 50 audits pending Work.
 const COMMIT_STAGES: [(u32, &[&str]); 4] = [
     (45, &[AUDIT_TERMS]),
-    (47, &[AUDIT_GOALS, MARK_GOALS]),
+    (47, &[INDEX_NORMALIZED_GOALS]),
     (50, &[AUDIT_WORK, WRITE_GOAL_INDEX]),
     (55, &[AUDIT_SUBSTITUTIONS]),
 ];
-/// Lanes whose last workgroup runs a committing thread (pca_last_group):
-/// one dispatch over the whole span, with one workgroup while the thread's
-/// one-row span is planned (WaveSpan::commit_one).
+/// Commits run over the whole span. When the planner enables a commit with
+/// an empty owner span (WaveSpan::commit_one), the committing lane still runs.
 const COMMITTING_KERNELS: [&str; 6] = [
     AUDIT_TERMS,
-    AUDIT_GOALS,
+    INDEX_NORMALIZED_GOALS,
     AUDIT_WORK,
     WRITE_GOAL_INDEX,
     AUDIT_SUBSTITUTIONS,
     PROOF_EDGE_ROWS,
 ];
 /// Lanes that use no thread-scratch slot: one dispatch over the whole span.
-const WHOLE_SPAN_KERNELS: [&str; 7] = [
+const WHOLE_SPAN_KERNELS: [&str; 6] = [
     AUDIT_TERMS,
-    AUDIT_GOALS,
-    MARK_GOALS,
+    INDEX_NORMALIZED_GOALS,
     AUDIT_WORK,
     WRITE_GOAL_INDEX,
     AUDIT_SUBSTITUTIONS,
@@ -728,8 +732,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/trait_solver/normalization/hash_normalized_goals",
         256,
     ),
-    (47, AUDIT_GOALS, 256),
-    (47, MARK_GOALS, 256),
+    (47, INDEX_NORMALIZED_GOALS, 256),
     (
         48,
         "type_checker/trait_solver/proof_frontier/initialize_proof_frontier",
@@ -742,11 +745,6 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     ),
     (50, AUDIT_WORK, 256),
     (50, WRITE_GOAL_INDEX, 256),
-    (
-        51,
-        "type_checker/trait_solver/proof_frontier/index_proof_work",
-        256,
-    ),
     (
         52,
         "type_checker/trait_solver/proof_frontier/resolve_proof_work",
@@ -826,7 +824,10 @@ impl ProofKernels {
         let passes = PROOF_KEYS
             .iter()
             .map(|(_, key, _)| {
-                passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(device, key, "main", key, &PARAMS_BLOCKS)
+                let dynamic = if *key == INDEX_NORMALIZED_GOALS { &[][..] } else { &PARAMS_BLOCKS };
+                passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(
+                    device, key, "main", key, dynamic,
+                )
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
@@ -899,6 +900,7 @@ pub(super) mod wave {
     pub const OVERFLOW_POINT: usize = 13;
     pub const OVERFLOW_ROWS: usize = 14;
     pub const CHUNK_ROWS: usize = 15;
+    pub const PROGRAM_FAILED: u64 = 20;
     pub const SLOT_WORDS: usize = 16;
     pub const CALLS_FIRST: usize = 17;
     pub const CALLS_COUNT: usize = 18;
@@ -920,6 +922,7 @@ pub(super) mod wave {
     pub const FAULT_RECEIPT: u32 = 3;
     pub const FAULT_CURSOR: u32 = 4;
     pub const FAULT_REQUIREMENTS: u32 = 5;
+    pub const FAULT_PROGRAM: u32 = 6;
 }
 // Slot words (proof_solver_wave.slang): TraitSolverParams, indirect
 // arguments, then the step's static description.
@@ -929,6 +932,7 @@ const SLOT_CHUNK: usize = 12;
 const SLOT_THREADS: usize = 13;
 const SLOT_LIMIT: usize = 14;
 const SLOT_ONE: usize = 15;
+const SLOT_PROGRAM: usize = 16;
 const SLOT_MIN_WORDS: u32 = 64;
 /// Chunk steps per span at most; with 4096-row chunks this is any span a
 /// 32-bit row count allows.
@@ -1151,7 +1155,6 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
                     groups.push((Work, vec![stage(phase)?]));
                 }
             }
-            groups.push((Work, vec![stage(51)?]));
             groups.push((Work, vec![stage(52)?]));
             groups.push((Requirements, vec![stage(57)?]));
             groups.push((Work, SELECTION_STEPS.to_vec()));
@@ -1231,7 +1234,7 @@ pub(super) fn wave_state(device: &wgpu::Device, catalog: &Arena, calls: Span) ->
     )
 }
 
-struct WaveStep {
+struct WaveDispatch {
     pass: usize,
     bindings: wgpu::BindGroup,
     /// Dynamic offsets of its parameter blocks (`params_offsets`).
@@ -1241,13 +1244,22 @@ struct WaveStep {
     indirect: Option<u64>,
 }
 
-impl WaveStep {
+impl WaveDispatch {
     fn launch<'a>(&self, template: &'a WaveTemplate) -> Launch<'a> {
         match self.indirect {
             None => Launch::Direct((1, 1, 1)),
             Some(offset) => Launch::Indirect(&template.slots.buffer, offset),
         }
     }
+}
+
+enum WaveStep {
+    Dispatch(WaveDispatch),
+    Program {
+        operation: StepProgramOperation,
+        sync: LaniusBuffer<u32>,
+        state: LaniusBuffer<u32>,
+    },
 }
 
 /// One bound buffer view: a bind group built over it stays valid while a
@@ -1327,6 +1339,7 @@ impl WaveTemplate {
             row[SLOT_THREADS] = PROOF_KEYS[slot.pass].2;
             row[SLOT_LIMIT] = slot.limit;
             row[SLOT_ONE] = slot.one.map_or(0, |one| one as u32 + 1);
+            row[SLOT_PROGRAM] = u32::from(PROOF_KEYS[slot.pass].1 == INDEX_NORMALIZED_GOALS);
         }
         words
     }
@@ -1532,6 +1545,28 @@ impl ProofKernels {
         let params_words = u32::try_from(phases.len() + 1)?
             .checked_mul(stride)
             .ok_or_else(|| anyhow!("solver wave parameter table overflow"))?;
+        let goal_pass = proof_key_index(INDEX_NORMALIZED_GOALS)?;
+        let sync = slots.iter().any(|slot| slot.pass == goal_pass).then(|| {
+            workspace.shared("trait_solver.proof_goal_sync").buffer(
+                STEP_PROGRAM_SYNC_WORDS as u32,
+                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+                None,
+            )
+        }).transpose()?;
+        let launches = if sync.is_some() {
+            let [small_groups, large_groups] = step_program_group_counts();
+            let launch = |label, groups| {
+                workspace.shared(label).buffer(
+                    4, wgpu::BufferUsages::UNIFORM, Some(&[groups, 0, 0, 0]),
+                )
+            };
+            Some([
+                (small_groups, launch("trait_solver.proof_goal_small_launch", small_groups)?),
+                (large_groups, launch("trait_solver.proof_goal_large_launch", large_groups)?),
+            ])
+        } else {
+            None
+        };
         let mut template = WaveTemplate {
             pieces: pieces.to_vec(),
             chunks,
@@ -1600,10 +1635,33 @@ impl ProofKernels {
                 &self.passes[plan],
                 [plan_block, u32::try_from(template.proof_block(WAVE_PLAN_PHASE))?],
             );
-            steps.push(WaveStep { pass: plan, bindings, offsets, indirect: None });
+            steps.push(WaveStep::Dispatch(WaveDispatch {
+                pass: plan, bindings, offsets, indirect: None,
+            }));
             for slot in first..end {
                 let WaveSlot { pass, phase, .. } = template.slot_rows[slot];
                 let offset = template.slots.absolute_offset(slot as u64 * slot_bytes);
+                if pass == goal_pass {
+                    let sync = sync.as_ref().expect("goal program has a sync slot");
+                    let resources = [
+                        ("trait_solver_params", params_binding_at(&template.slots.buffer, offset)),
+                        ("trait_solver_catalog", catalog.buffer.as_entire_binding()),
+                        ("trait_solver_batch", input.buffer.as_entire_binding()),
+                        ("trait_solver_output", output.buffer.as_entire_binding()),
+                        ("trait_solver_proof_store", proof.storage.buffer.as_entire_binding()),
+                        ("proof_store_params", params_binding_at(&template.params.buffer, template.proof_block(phase))),
+                        (COMMIT_AUDIT, audit.as_entire_binding()),
+                    ];
+                    let work_bound = proof.storage.buffer.byte_size as u64 / (16 * 4);
+                    let (groups, launch) = &launches.as_ref().expect("goal program launches")
+                        [step_program_group_variant(work_bound)];
+                    let operation = StepProgramOperation::new_reflected_with_launch(
+                        device, INDEX_NORMALIZED_GOALS, &self.passes[pass], &resources, sync,
+                        0, *groups, launch.as_entire_binding(),
+                    )?;
+                    steps.push(WaveStep::Program { operation, sync: sync.clone(), state: state.clone() });
+                    continue;
+                }
                 let shared = slot_bindings
                     .iter()
                     .find(|(key, _)| *key == (pass, phase))
@@ -1637,61 +1695,48 @@ impl ProofKernels {
                     &self.passes[pass],
                     [u32::try_from(offset)?, u32::try_from(template.proof_block(phase))?],
                 );
-                steps.push(WaveStep {
+                steps.push(WaveStep::Dispatch(WaveDispatch {
                     pass,
                     bindings,
                     offsets,
                     indirect: Some(offset + u64::from(SLOT_ARGS) * 4),
-                });
+                }));
             }
         }
         template.steps = steps;
         Ok(template)
     }
 
-    /// Records every step of each template, in order, in one compute pass:
-    /// most steps of a recorded round dispatch no workgroups, and a pass per
-    /// step cost more than the steps. Operation limits and timers that cannot
-    /// stamp inside a pass keep a pass per step.
-    pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
-        // A dispatch capture (`LANIUS_CAPTURE`) copies buffers
-        // around its dispatch, which needs a pass per step too.
-        if crate::gpu::timer::operation_capture_requires_split_passes()
-            || passes_core::debug_operation_limited()
-            || crate::gpu::dispatch_capture::capture_pass().is_some()
-        {
-            for template in templates {
-                for step in &template.steps {
-                    dispatch_pass(encoder, &self.passes[step.pass], &step.bindings, &step.offsets, step.launch(template));
-                }
-            }
-            return;
-        }
-        passes_core::flush_deferred_compute(encoder);
-        let timed = crate::gpu::timer::operation_capture_active();
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("trait_solver.solver_wave"),
-                timestamp_writes: None,
-            },
+    /// Dispatches within each segment share a compute pass. A program
+    /// flushes it before its sync clear and before copying its failure word.
+    pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) -> Result<()> {
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(crate::gpu::timer::operation_capture_active())
+                && !passes_core::debug_operation_limited()
+                && crate::gpu::dispatch_capture::capture_pass().is_none(),
+            "trait_solver.solver_wave",
         );
         for template in templates {
             for step in &template.steps {
-                let pass = &self.passes[step.pass];
-                compute.set_pipeline(&pass.pipeline);
-                compute.set_bind_group(0, Some(&step.bindings), &step.offsets);
-                passes_core::record_compute_dispatch();
-                match step.launch(template) {
-                    Launch::Direct(groups) => compute.dispatch_workgroups(groups.0, groups.1, groups.2),
-                    Launch::Indirect(buffer, offset) => compute.dispatch_workgroups_indirect(buffer, offset),
-                }
-                // Profiled jobs need one timestamp per recorded dispatch.
-                if timed {
-                    crate::gpu::timer::stamp_active_operation_in_pass(&mut compute, pass.shader_id.clone());
+                match step {
+                    WaveStep::Dispatch(step) => dispatch_pass(
+                        encoder, &self.passes[step.pass], &step.bindings, &step.offsets,
+                        step.launch(template),
+                    ),
+                    WaveStep::Program { operation, sync, state } => {
+                        operation.record(encoder)?;
+                        passes_core::flush_deferred_compute(encoder);
+                        sync.copy_to(
+                            encoder, StepProgramOperation::failed_offset(0),
+                            state, wave::PROGRAM_FAILED * 4, 4,
+                        );
+                    }
                 }
             }
         }
+        passes_core::flush_deferred_compute(encoder);
+        drop(batch);
+        Ok(())
     }
 }
 

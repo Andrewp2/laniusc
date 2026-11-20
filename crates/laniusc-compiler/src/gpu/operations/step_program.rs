@@ -64,7 +64,7 @@ pub(crate) struct StepProgramOperation {
     dispatch: ProgramDispatch,
     sync: LaniusBuffer<u32>,
     offset: u64,
-    _launch: LaniusBuffer<Launch>,
+    _launch: Option<LaniusBuffer<Launch>>,
 }
 
 impl StepProgramOperation {
@@ -114,7 +114,7 @@ impl StepProgramOperation {
             dispatch: ProgramDispatch::Graph(operation),
             sync: sync.clone(),
             offset,
-            _launch: launch,
+            _launch: Some(launch),
         })
     }
 
@@ -131,15 +131,34 @@ impl StepProgramOperation {
         groups: u32,
         options: u32,
     ) -> Result<Self> {
-        let offset = Self::validate_launch(name, pass, sync, slot, groups)?;
         let launch = uniform_from_val(
             device,
             name,
             &Launch { groups, slot, options, reserved: 0 },
         );
+        let mut operation = Self::new_reflected_with_launch(
+            device, name, pass, resources, sync, slot, groups, launch.as_entire_binding(),
+        )?;
+        operation._launch = Some(launch);
+        Ok(operation)
+    }
+
+    /// Uses a persistent stage-owned uniform for a reflected launch.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_reflected_with_launch(
+        device: &wgpu::Device,
+        name: &'static str,
+        pass: &PassData,
+        resources: &[(&str, wgpu::BindingResource<'_>)],
+        sync: &LaniusBuffer<u32>,
+        slot: u32,
+        groups: u32,
+        launch: wgpu::BindingResource<'_>,
+    ) -> Result<Self> {
+        let offset = Self::validate_launch(name, pass, sync, slot, groups)?;
         let mut entries = resources.to_vec();
         entries.push(("step_program_sync", sync.as_entire_binding()));
-        entries.push(("program_launch", launch.as_entire_binding()));
+        entries.push(("program_launch", launch));
         let bind = passes_core::bind_group::create_bind_group_from_bindings(
             device, Some(name), pass, 0, &entries,
         )?;
@@ -147,7 +166,7 @@ impl StepProgramOperation {
             dispatch: ProgramDispatch::Reflected { pass: pass.clone(), bind, groups },
             sync: sync.clone(),
             offset,
-            _launch: launch,
+            _launch: None,
         })
     }
 

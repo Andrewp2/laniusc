@@ -663,11 +663,12 @@ impl GpuTraitSolver {
     }
 
     /// Records the templates at `order` in one submit.
-    fn submit_templates(&self, templates: &[solver_kernels::WaveTemplate], order: &[usize]) {
+    fn submit_templates(&self, templates: &[solver_kernels::WaveTemplate], order: &[usize]) -> Result<()> {
         let recorded = order.iter().map(|&index| &templates[index]).collect::<Vec<_>>();
         let mut commands = self.wave_encoder();
-        self.proof_kernels.as_ref().expect("loaded proof kernels").record_waves(&mut commands, &recorded);
+        self.proof_kernels.as_ref().expect("loaded proof kernels").record_waves(&mut commands, &recorded)?;
         self.submit_wave(commands);
+        Ok(())
     }
 
     /// The wave driver while a test fault is armed: one round at a time, with
@@ -738,7 +739,7 @@ impl GpuTraitSolver {
             }
             let (pieces, hook) = cuts.front_mut().expect("a recorded cut");
             let template = self.template(templates, packet, submission, pieces, chunks, state, demand)?;
-            self.submit_templates(templates, &[template]);
+            self.submit_templates(templates, &[template])?;
             let readback = self.wave_readback(packet, layout, submission, state, demand)?;
             wave_fault(&readback.state)?;
             if readback.state[wave::STOP] == wave::DONE {
@@ -871,7 +872,7 @@ impl GpuTraitSolver {
                 submits.last_mut().expect("a submit").push(finish);
             }
             for order in submits.iter().filter(|order| !order.is_empty()) {
-                self.submit_templates(templates, order);
+                self.submit_templates(templates, order)?;
             }
             // A deferred check reads the state with its caller's readback.
             if defer {
@@ -1611,6 +1612,10 @@ fn wave_chunks(rows: u32) -> u32 {
 /// The host error of a planner fault (proof_solver_wave.slang).
 fn wave_fault(words: &[u32]) -> Result<()> {
     use solver_kernels::wave;
+    ensure!(
+        words[wave::PROGRAM_FAILED as usize] == 0,
+        "proof goal step program failed its barrier"
+    );
     if words[wave::STOP] != wave::FAULT {
         return Ok(());
     }
@@ -1620,6 +1625,7 @@ fn wave_fault(words: &[u32]) -> Result<()> {
         wave::FAULT_RECEIPT => "solver progress has a stale or malformed batch receipt",
         wave::FAULT_CURSOR => "solver work cursor moved beyond admitted rows",
         wave::FAULT_REQUIREMENTS => "solver reached quiescence with an unlinked requirement suffix",
+        wave::FAULT_PROGRAM => "proof goal step program failed its barrier",
         _ => "solver wave planner reported an unknown fault",
     }))
 }

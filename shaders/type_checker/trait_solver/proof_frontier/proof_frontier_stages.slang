@@ -147,8 +147,6 @@ public void pps_stage_commit_work()
     ts_batch_failure(pps_commit_tables(PPS_WORK | (PPS_REQUIREMENTS << 4u) | (PPS_ROOT_LINKS << 8u) |
         (PPS_REDUCTION_QUEUE << 12u) | (PPS_GOAL_INDEX << 16u), 5u));
 }
-public void pps_stage_index_work(uint local)
-{ uint row; if (pps_stage_row(local, PPS_WORK, row)) ts_batch_failure(pps_insert_work(row)); }
 public void pps_stage_resolve_work(uint local)
 {
     uint row; SolverStatus status;

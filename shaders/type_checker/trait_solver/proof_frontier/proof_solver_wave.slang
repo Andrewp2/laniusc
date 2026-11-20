@@ -52,6 +52,7 @@ public static const uint PSW_SLOT_WORDS = 16u;    // host: slot stride
 public static const uint PSW_CALLS_FIRST = 17u;   // host: the batch's new call rows
 public static const uint PSW_CALLS_COUNT = 18u;
 public static const uint PSW_QUEUE_COMMIT = 19u;  // the emitted steps' queue commit is due
+public static const uint PSW_PROGRAM_FAILED = 20u; // failed barrier copied from the program
 public static const uint PSW_SPAN_RECORDS = 32u;  // first, count per span
 public static const uint PSW_STATE_WORDS = 80u;
 
@@ -67,6 +68,10 @@ public static const uint PSW_SLOT_LIMIT = 14u;    // rows the template recorded 
 // planned the step launches at least one workgroup, whose last workgroup
 // commits (proof_commit_audit.slang, pca_last_group).
 public static const uint PSW_SLOT_ONE = 15u;
+public static const uint PSW_SLOT_PROGRAM = 16u;
+// Unused native-layout words of a program's uniform block.
+public static const uint PSW_SLOT_PROGRAM_WORK_COUNT = 6u;
+public static const uint PSW_SLOT_PROGRAM_WORK_FIRST = 7u;
 
 public static const uint PSW_RUNNING = 0u;
 public static const uint PSW_STOPPED = 1u;  // the batch or the store stopped building
@@ -81,6 +86,7 @@ public static const uint PSW_FAULT_LAYOUT = 2u;
 public static const uint PSW_FAULT_RECEIPT = 3u;
 public static const uint PSW_FAULT_CURSOR = 4u;
 public static const uint PSW_FAULT_REQUIREMENTS = 5u;
+public static const uint PSW_FAULT_PROGRAM = 6u;
 
 // Planning points, in recording order (the host's former readbacks).
 public static const uint PSW_POINT_FIRST_WORK = 0u;  // after initial Work
@@ -425,15 +431,31 @@ public void psw_plan(uint lane)
         uint one = trait_solver_wave_slots[base + PSW_SLOT_ONE];
         if (one != 0u && running && psw_g_spans[(one - 1u) * 2u + 1u] != 0u)
             groups = max(groups, 1u);
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS] = groups;
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 1u] = 1u;
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS + 2u] = 1u;
+        if (trait_solver_wave_slots[base + PSW_SLOT_PROGRAM] != 0u)
+        {
+            trait_solver_wave_slots[base + PSW_SLOT_PROGRAM_WORK_COUNT] =
+                groups != 0u ? 1u + psw_g_spans[PSW_SPAN_WORK * 2u + 1u] : 0u;
+            trait_solver_wave_slots[base + PSW_SLOT_PROGRAM_WORK_FIRST] =
+                psw_g_spans[PSW_SPAN_WORK * 2u];
+        }
+        else
+        {
+            trait_solver_wave_slots[base + PSW_SLOT_ARGS] = groups;
+            trait_solver_wave_slots[base + PSW_SLOT_ARGS + 1u] = 1u;
+            trait_solver_wave_slots[base + PSW_SLOT_ARGS + 2u] = 1u;
+        }
     }
 }
 
 // The decisions of one point (lane 0): the spans, and what was planned.
 uint psw_plan_point()
 {
+    if (trait_solver_wave[PSW_PROGRAM_FAILED] != 0u)
+    {
+        psw_fault(PSW_FAULT_PROGRAM);
+        return PSW_PLANNED;
+    }
+
     uint point = trait_solver_wave_plan.point;
     // The queue commit is set by a queue point's planner and made by the
     // next planner. A full round's queue point follows a round start that
