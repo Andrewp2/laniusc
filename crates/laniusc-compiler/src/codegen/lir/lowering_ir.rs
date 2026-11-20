@@ -757,6 +757,16 @@ pub enum LoweringTarget {
     Wasm,
 }
 
+impl LoweringTarget {
+    pub(super) fn semantic_page_rows(self) -> u32 {
+        match self {
+            // Each x86 scatter workgroup searches only its own interval.
+            Self::X86_64 => 256,
+            Self::Wasm => TARGET_LIR_PAGE_ROWS,
+        }
+    }
+}
+
 /// Artifact boundary requested from one lowering job.
 ///
 /// Executable and relocatable-object projection share semantic and target LIR,
@@ -4253,7 +4263,9 @@ fn lowering_compiler_graph_builder(
     let target_semantic_pages = graph.add_resource(workspace(
         "lir.target.semantic_pages",
         target_domain,
-        LoweringCapacities::bytes::<TargetSemanticPage>(target_page_count),
+        LoweringCapacities::bytes::<TargetSemanticPage>(
+            capacities.target_instructions.max(1).div_ceil(target.semantic_page_rows()),
+        ),
     ))?;
     let target_core_bytes = match target {
         LoweringTarget::X86_64 => LoweringCapacities::bytes::<X86LirCore>(target_page_rows),
@@ -6382,6 +6394,7 @@ fn lowering_compiler_graph_builder(
                 "x86_inline_info_by_function",
                 x86_inline_info_by_function.unwrap(),
             ),
+            PassAccess::read("target_semantic_pages", target_semantic_pages),
             PassAccess::read("target_lir_offset", target_offsets),
             PassAccess::read("target_lir_total", target_total),
             PassAccess::write("semantic_to_target_start", semantic_to_target_start),

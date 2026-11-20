@@ -46,6 +46,7 @@ StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
 StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<X86InlineInfo> x86_inline_info_by_function;
+StructuredBuffer<TargetSemanticPage> target_semantic_pages;
 StructuredBuffer<uint> target_lir_offset;
 StructuredBuffer<uint> target_lir_total;
 RWStructuredBuffer<uint> semantic_to_target_start;
@@ -101,10 +102,11 @@ uint inline_body_semantic_row(X86InlineInfo info, uint ordinal, uint total)
     return INVALID;
 }
 
-uint scheduled_owner(uint target_row, uint semantic_count)
+uint scheduled_owner(uint target_row)
 {
-    uint lo = 0u;
-    uint hi = semantic_count;
+    TargetSemanticPage tile = target_semantic_pages[target_row / 256u];
+    uint lo = tile.semantic_start;
+    uint hi = lo + tile.semantic_count;
     while (lo + 1u < hi)
     {
         uint mid = lo + (hi - lo) / 2u;
@@ -438,7 +440,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint semantic_count = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (semantic_count == 0u) return;
 
-    uint scheduled_row = scheduled_owner(row, semantic_count);
+    uint scheduled_row = scheduled_owner(row);
     uint semantic_row = semantic_schedule_order[scheduled_row];
     uint source_hir = opt_ir_source_hir[semantic_row];
     uint target_start = target_lir_offset[scheduled_row];

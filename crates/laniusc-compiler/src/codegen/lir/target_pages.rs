@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use encase::ShaderType;
 
 use super::lowering_ir::{
-    LOWERING_PROGRAM_SLOTS, LoweringCapacities, TARGET_LIR_PAGE_ROWS, TARGET_PAGE_PROGRAM_SLOT,
+    LOWERING_PROGRAM_SLOTS, LoweringCapacities, LoweringTarget, TARGET_PAGE_PROGRAM_SLOT,
     TargetSemanticPage,
 };
 use crate::gpu::{
@@ -43,11 +43,13 @@ impl GpuTargetPagePlanner {
         allocations: &CompilerGraphAllocations,
         resources: &ResourceMap<'_>,
         capacities: LoweringCapacities,
+        target: LoweringTarget,
     ) -> Result<Self> {
+        let page_rows = target.semantic_page_rows();
         let page_count = capacities
             .target_instructions
             .max(1)
-            .div_ceil(TARGET_LIR_PAGE_ROWS);
+            .div_ceil(page_rows);
         let pages = workspace
             .alias(
                 graph,
@@ -64,7 +66,7 @@ impl GpuTargetPagePlanner {
                 semantic_capacity: capacities.semantic_instructions.max(1),
                 target_capacity: capacities.target_instructions.max(1),
                 page_count,
-                page_rows: TARGET_LIR_PAGE_ROWS,
+                page_rows,
             },
         );
         let sync = workspace

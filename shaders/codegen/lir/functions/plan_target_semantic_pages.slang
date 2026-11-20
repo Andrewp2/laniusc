@@ -69,7 +69,8 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     if (!step_barrier(program)) return;
 
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
-    for (uint row = program.lane; row < gParams.page_count; row += program.lanes)
+    uint live_pages = total / gParams.page_rows + uint(total % gParams.page_rows != 0u);
+    for (uint row = program.lane; row < min(live_pages, gParams.page_count); row += program.lanes)
         plan_page(row, rows, total);
     step_program_end(program);
 }

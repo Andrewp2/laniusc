@@ -367,6 +367,7 @@ impl GpuX86LirStage {
             &allocations,
             &resources,
             capacities,
+            crate::codegen::lir::lowering_ir::LoweringTarget::X86_64,
         )
         .context("construct x86 target-page planner")?;
         let pages = (0..target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))

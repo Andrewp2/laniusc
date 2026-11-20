@@ -410,6 +410,7 @@ impl GpuWasmLirStage {
             &allocations,
             &resources,
             capacities,
+            crate::codegen::lir::lowering_ir::LoweringTarget::Wasm,
         )?;
         let param_width = ComputeOperation::direct_with_uniform(
             device,
