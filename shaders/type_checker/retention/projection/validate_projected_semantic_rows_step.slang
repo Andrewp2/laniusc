@@ -158,12 +158,9 @@ void check_signature(Row at)
     pj_g_facts[at.g] = uint4(PJ_REF_SCALAR, SCALAR_BOOL, 0u, 0u);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void validate_projected_semantic_row(uint g)
 {
     failed = false;
-    uint g = pj_lane(dtid);
     uint n = pj_instance_count();
     if (g >= pj_total(PJ_C_ROWS)) return;
     Row at;

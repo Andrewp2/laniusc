@@ -9,6 +9,9 @@ import type_checker.retention.projection_rows.project_retained_expression_edges_
 import type_checker.retention.projection_rows.project_retained_pattern_roots_step;
 import type_checker.retention.projection_rows.project_retained_pattern_payloads_step;
 
+import type_checker.retention.projection_rows.scan_projected_string_word_counts;
+import type_checker.retention.projection.validate_projected_semantic_rows_step;
+
 [shader("compute")]
 [numthreads(STEP_PROGRAM_GROUP_LANES, 1, 1)]
 void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
@@ -69,5 +72,10 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
         }
     }
     if (program.lane == 0u) pj_status[PJ_S_PATTERN_CHANGED] = completed_payloads;
+    if (!step_barrier(program)) return;
+    if (!scan_projected_string_word_counts(program, rows)) return;
+
+    for (uint row = program.lane; row < rows; row += program.lanes)
+        validate_projected_semantic_row(row);
     step_program_end(program);
 }

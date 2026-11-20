@@ -205,20 +205,16 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/prepare_retained_projection",
     "type_checker/retention/projection/substitute_retained_projection_terms",
     PREPARE_VALIDATION,
-    "type_checker/retention/projection/validate_projected_semantic_rows",
     "type_checker/retention/projection/materialize_retained_batch",
     "type_checker/retention/projection/certify_retained_root_calls",
-    "type_checker/retention/projection_rows/scan_projected_string_word_counts",
     "type_checker/retention/projection/validate_retained_call_routes",
 ];
 const K_PLAN: usize = 0;
 const K_REQUESTS: usize = 1;
 const K_PREPARE_VALIDATION: usize = 2;
-const K_CHECK: usize = 3;
-const K_MATERIALIZE: usize = 4;
-const K_CERTIFY: usize = 5;
-const K_STRING_SCAN: usize = 6;
-const K_CALLS: usize = 7;
+const K_MATERIALIZE: usize = 3;
+const K_CERTIFY: usize = 4;
+const K_CALLS: usize = 5;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -862,7 +858,6 @@ pub struct RetainedProjection {
     no_counts: wgpu::Buffer,
     /// One config buffer per string-scan step (`scan_projected_string_word_counts`), kept
     /// between runs; each run rewrites the steps it records.
-    string_scan_configs: Vec<wgpu::Buffer>,
     /// The root certification result (`certify_retained_native_abi`), rewritten every run.
     cert: wgpu::Buffer,
     no_root_readiness: wgpu::Buffer,
@@ -979,16 +974,6 @@ struct Recorder<'a> {
     projection: &'a RetainedProjection,
     encoder: wgpu::CommandEncoder,
     dispatches: u32,
-    /// Bind groups created by this recording, by kernel and extra buffers.
-    /// Repeated rounds of one kernel (layout, pattern payloads) bind the
-    /// same buffers, so they share a bind group. A recording runs under the
-    /// store lock and resizes no projection table, so the other bindings of
-    /// a kernel cannot change within it.
-    binds: Vec<(usize, Vec<(String, wgpu::Buffer)>, wgpu::BindGroup)>,
-    /// Dispatches not yet recorded: kernel, bind group and workgroups.
-    /// Consecutive dispatches share one timed compute pass; wgpu orders their
-    /// storage accesses. `encoder()` records them before a copy or clear.
-    pending: Vec<(usize, wgpu::BindGroup, u32)>,
 }
 
 impl RetainedProjection {
@@ -1008,7 +993,6 @@ impl RetainedProjection {
             status: storage(&device, "pj_status", STATUS_WORDS as u64 * 4, false),
             no_results: storage(&device, "pj_no_results", 64, false),
             no_counts: storage(&device, "pj_no_counts", 256, false),
-            string_scan_configs: Vec::new(),
             cert: storage(&device, "nc_cert", 16, false),
             no_root_readiness: storage(&device, "pj_no_root_readiness", 16, false),
             staging: std::sync::Mutex::new(None),
@@ -1239,31 +1223,6 @@ impl RetainedProjection {
         Ok(out)
     }
 
-    fn bind(
-        &self,
-        kernel: usize,
-        store: &Store,
-        inputs: &ProjectionInputs,
-        extra: &[(&str, &wgpu::Buffer)],
-    ) -> Result<wgpu::BindGroup> {
-        let pass = &self.passes[kernel];
-        let names = reflected_names(pass);
-        let mut entries = Vec::with_capacity(names.len());
-        for name in &names {
-            let n = name.as_str();
-            let buffer = self.bound_buffer(store, inputs, extra, n)
-                .ok_or_else(|| anyhow!("{} binds unknown buffer {n}", pass.shader_id))?;
-            entries.push((n, buffer.as_entire_binding()));
-        }
-        passes_core::bind_group::create_bind_group_from_bindings(
-            &self.device,
-            Some(&pass.shader_id),
-            pass,
-            0,
-            &entries,
-        )
-    }
-
     fn bound_buffer<'a>(
         &'a self,
         store: &'a Store,
@@ -1338,8 +1297,6 @@ impl RetainedProjection {
                     label: Some("retained_projection"),
                 }),
             dispatches: 0,
-            binds: Vec::new(),
-            pending: Vec::new(),
         }
     }
 
@@ -1557,12 +1514,6 @@ impl RetainedProjection {
         // Layout, edges, check and the batch plan.
         let started = std::time::Instant::now();
         let batches = report.rows.div_ceil(options.batch_rows.max(1));
-        // The scan doubles its distance from 1 past rows / 2: at most 33
-        // steps for u32 rows, plus the first.
-        while self.string_scan_configs.len() < 34 {
-            self.string_scan_configs
-                .push(storage(&self.device, "pj_string_scan_config", 16, false));
-        }
         // A type's layout completes one round after its element and field
         // layouts. The last round runs after its status word is cleared, so
         // the word reports whether that round still completed a layout. If
@@ -1640,54 +1591,21 @@ impl RetainedProjection {
             let payloads = totals[S_TOTALS + 5];
             let rows = self.type_capacity.max(report.rows).max(payloads);
             r.program(K_PREPARE_VALIDATION, &guard, inputs, &extra, rows)?;
-            if totals[S_TOTALS + 7] != 0 {
-                let mut input = 0u32;
-                let mut distance = 0u32;
-                for config in &self.string_scan_configs {
-                    self.queue
-                        .write_buffer_counted(config, 0, &words_bytes(&[distance, input, 0, 0]));
-                    let scan_extra = [
-                        ("sb_results", &results),
-                        ("sb_counts", &counts),
-                        ("pj_string_scan_config", config),
-                    ];
-                    r.dispatch(K_STRING_SCAN, &guard, inputs, &scan_extra, report.rows + 1)?;
-                    if distance == 0 {
-                        distance = 1;
-                    } else {
-                        input ^= 1;
-                        if distance > report.rows / 2 {
-                            break;
-                        }
-                        distance *= 2;
-                    }
-                }
-                if input == 1 {
-                    r.encoder().copy_buffer_counted(
-                        &self.rows["pj_string_scratch"],
-                        0,
-                        &self.rows["pj_string_offsets"],
-                        0,
-                        (report.rows as u64 + 1) * 4,
-                    );
-                }
-            } else {
-                r.encoder()
-                    .clear_buffer_counted(&self.rows["pj_string_offsets"], 0, None);
-            }
-            r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
             let mut bindings = extra.to_vec();
             bindings.extend(self.certification_bindings(roots.as_ref()));
             if roots.is_some() {
                 self.reset_certification();
             }
-            if early {
-                r.clear_argument_modes();
-            }
             let cert_rows = roots.as_ref().map_or(0, |root| root.calls.rows());
             let rows = report.rows.max(batches).max(cert_rows);
-            let flags = u32::from(roots.is_some()) | (u32::from(early) << 1);
-            r.program_with_options(K_CALLS, &guard, inputs, &bindings, rows, flags)?;
+            r.program_with_options(K_CALLS, &guard, inputs, &bindings, rows, u32::from(roots.is_some()))?;
+            if early {
+                // On settings, combining this with validation took 1.53 ms
+                // across the two phases. Keep separate kernels in this submit.
+                let shape = self.columns.as_ref().unwrap().shape;
+                let rows = early_rows.max(early_side).max(shape.string_words as u32);
+                r.materialize(&guard, inputs, &extra, rows)?;
+            }
             let schema_status = self.schema.status_buffer().clone();
             let mut parts = vec![
                 (&self.status, STATUS_WORDS),
@@ -1717,6 +1635,13 @@ impl RetainedProjection {
             recorded_early = recorded.transpose()?;
             drop(guard);
             report.dispatches += dispatches;
+            if read[0][S_PROGRAM_FAILED] != 0 {
+                bail!("retention program {PREPARE_VALIDATION} failed to synchronize");
+            }
+            if read[0][S_CALL_PROGRAM_FAILED] != 0 {
+                bail!("retention program {} failed to synchronize", KERNELS[K_CALLS]);
+            }
+            check_certification_sync(&read[1])?;
             if chain {
                 chain = false;
                 let schema_words = read.pop().unwrap();
@@ -1756,13 +1681,6 @@ impl RetainedProjection {
             let cert = read.pop().unwrap();
             let status = read.pop().unwrap();
             trace(&format!("check: {status:?}"));
-            if status[S_PROGRAM_FAILED] != 0 {
-                bail!("retention program {PREPARE_VALIDATION} failed to synchronize");
-            }
-            if status[S_CALL_PROGRAM_FAILED] != 0 {
-                bail!("retention program {} failed to synchronize", KERNELS[K_CALLS]);
-            }
-            check_certification_sync(&cert)?;
             if status[S_LAYOUT_CHANGED] == 0 && status[S_PATTERN_CHANGED] == 0 {
                 break (table, cert, status);
             }
@@ -2044,63 +1962,11 @@ impl Recorder<'_> {
         Ok(())
     }
 
-    fn dispatch(
-        &mut self,
-        kernel: usize,
-        store: &Store,
-        inputs: &ProjectionInputs,
-        extra: &[(&str, &wgpu::Buffer)],
-        lanes: u32,
-    ) -> Result<()> {
-        let groups = lanes.div_ceil(256).max(1);
-        self.dispatch_groups(kernel, store, inputs, extra, groups)
-    }
-
-    fn dispatch_groups(
-        &mut self,
-        kernel: usize,
-        store: &Store,
-        inputs: &ProjectionInputs,
-        extra: &[(&str, &wgpu::Buffer)],
-        groups: u32,
-    ) -> Result<()> {
-        let cached = self.binds.iter().find(|(k, e, _)| {
-            *k == kernel
-                && e.len() == extra.len()
-                && e.iter().zip(extra).all(|((n, b), (m, c))| n == m && b == *c)
-        });
-        let bind = match cached {
-            Some((_, _, bind)) => bind.clone(),
-            None => {
-                let bind = self.projection.bind(kernel, store, inputs, extra)?;
-                let key = extra.iter().map(|(n, b)| (n.to_string(), (*b).clone())).collect();
-                self.binds.push((kernel, key, bind.clone()));
-                bind
-            }
-        };
-        self.pending.push((kernel, bind, groups));
-        self.dispatches += 1;
-        Ok(())
-    }
-
-    /// The encoder, after recording the pending dispatches in one pass.
     fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
-        let passes = &self.projection.passes;
-        let steps = self
-            .pending
-            .iter()
-            .map(|&(kernel, ref bind, groups)| {
-                let launch = super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1);
-                (&passes[kernel], bind, launch)
-            })
-            .collect::<Vec<_>>();
-        super::substitution::record_timed(&mut self.encoder, "retained_projection", &steps);
-        self.pending.clear();
         &mut self.encoder
     }
 
-    fn finish(mut self) -> u32 {
-        self.encoder();
+    fn finish(self) -> u32 {
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
     }

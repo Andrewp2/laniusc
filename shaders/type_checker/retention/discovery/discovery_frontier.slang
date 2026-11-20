@@ -20,4 +20,3 @@ public void advance_discovery_frontier(uint wave, bool accept_predicates)
     dg_wave[4u + 2u * wave] = lo;
     dg_wave[5u + 2u * wave] = hi;
 }
-
