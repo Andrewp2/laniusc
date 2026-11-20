@@ -13,13 +13,11 @@
 // the store has no term past the last round; otherwise the rounds stay
 // running and the host records more.
 import type_checker.retention.projection_schema.retained_schema_workspace;
-import type_checker.retention.substitution.retained_substitution_results;
 import type_checker.retention.projection_schema.retained_schema_round_state;
-public void advance_retained_schema_round(uint mode)
+public void advance_retained_schema_round(uint mode, uint gate, bool published, bool failed)
 {
     ps_round[4] = 0u;
-    uint gate = ps_config[PS_CFG_GATE_RUN];
-    if (gate != 0u && sb_counts[SB_C_SYNC_FAILED] != 0u)
+    if (gate != 0u && failed)
     {
         InterlockedOr(ps_status[PS_ERROR], 4u);
         ps_status[PS_STOP] = PS_STOP_FAILED;
@@ -28,7 +26,7 @@ public void advance_retained_schema_round(uint mode)
     if (ps_status[PS_STOP] != PS_STOP_RUNNING) return;
     if (gate != 0u)
     {
-        if (!sb_publication_current(gate))
+        if (!published)
         {
             ps_status[PS_STOP] = PS_STOP_UNPUBLISHED;
             return;

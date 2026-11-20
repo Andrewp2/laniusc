@@ -16,7 +16,7 @@ uint verdict(Batch b, uint string_words)
     if (gate == PJ_GATE_FORCE_FAIL || pj_status[PJ_S_STATE] != PJ_STATE_CHECKED)
         return PJ_VERDICT_FAILED;
     uint side = 0u;
-    for (uint k = 0u; k < PJ_SIDE_TABLES; k++) side = max(side, pj_batch_side(k));
+    for (uint k = 0u; k < PJ_SIDE_TABLES; k++) side = max(side, pj_batch_side(b, k));
     uint string_capacity; uint stride;
     ob_string_data.GetDimensions(string_capacity, stride);
     bool fits = b.rows <= pj_config[PJ_CFG_ROW_CAP]
@@ -26,23 +26,22 @@ uint verdict(Batch b, uint string_words)
     return fits ? PJ_VERDICT_PASSED : PJ_VERDICT_CAPACITY;
 }
 
-public void publish_retained_lowering_batch()
+public void publish_retained_lowering_batch(Batch b)
 {
-    Batch b = pj_batch();
     uint string_words = pj_string_offsets[pj_base_at(b.hi,PJ_C_ROWS)] -
         pj_string_offsets[pj_base_at(b.lo,PJ_C_ROWS)];
     uint gate = verdict(b, string_words);
     pj_status[PJ_S_GATE] = gate;
     bool open = gate == PJ_VERDICT_NONE || gate == PJ_VERDICT_PASSED;
     ob_count_rows[0u] = open ? b.rows : 0u;
-    ob_count_call_args[0u] = open ? pj_batch_side(PJ_SIDE_CALL_ARGS) : 0u;
-    ob_count_fields[0u] = open ? pj_batch_side(PJ_SIDE_FIELDS) : 0u;
-    ob_count_match_arms[0u] = open ? pj_batch_side(PJ_SIDE_MATCH_ARMS) : 0u;
-    ob_count_match_payloads[0u] = open ? pj_batch_side(PJ_SIDE_MATCH_PAYLOADS) : 0u;
-    ob_count_array_elements[0u] = open ? pj_batch_side(PJ_SIDE_ARRAY_ELEMENTS) : 0u;
-    ob_count_strings[0u] = open ? pj_batch_side(PJ_SIDE_STRINGS) : 0u;
+    ob_count_call_args[0u] = open ? pj_batch_side(b, PJ_SIDE_CALL_ARGS) : 0u;
+    ob_count_fields[0u] = open ? pj_batch_side(b, PJ_SIDE_FIELDS) : 0u;
+    ob_count_match_arms[0u] = open ? pj_batch_side(b, PJ_SIDE_MATCH_ARMS) : 0u;
+    ob_count_match_payloads[0u] = open ? pj_batch_side(b, PJ_SIDE_MATCH_PAYLOADS) : 0u;
+    ob_count_array_elements[0u] = open ? pj_batch_side(b, PJ_SIDE_ARRAY_ELEMENTS) : 0u;
+    ob_count_strings[0u] = open ? pj_batch_side(b, PJ_SIDE_STRINGS) : 0u;
     ob_string_pool_len[0u] = open ? 4u * string_words : 0u;
-    ob_count_params[0u] = open ? pj_batch_side(PJ_SIDE_PARAMS) : 0u;
+    ob_count_params[0u] = open ? pj_batch_side(b, PJ_SIDE_PARAMS) : 0u;
     pj_status[PJ_S_BATCH + 0u] = b.lo;
     pj_status[PJ_S_BATCH + 1u] = b.hi;
     pj_status[PJ_S_BATCH + 2u] = b.rows;

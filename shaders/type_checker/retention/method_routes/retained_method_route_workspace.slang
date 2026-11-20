@@ -1,6 +1,6 @@
 __exported import type_checker.retention.retention_store;
 __exported import type_checker.trait_solver.retained_catalog.retained_route_abi;
-__exported import type_checker.retention.substitution.retained_substitution_results;
+__exported import type_checker.retention.substitution.retained_substitution_layout;
 // config: run, generation, requests, proof nodes, value parity, identity
 // epoch/arena/serial, flag round mod 3, unused.
 public StructuredBuffer<uint> mr_config;
@@ -25,6 +25,7 @@ public uint mr_entry(uint d)
     uint e=rt_decl_def[d]; if (e==0u || e>rt_counts[RT_A_DIR]) return RT_INVALID; e--;
     return rt_dir[e*RT_DIR_WORDS].x==d && rt_dir[e*RT_DIR_WORDS].w==RT_DIR_COMMITTED && rt_dir[e*RT_DIR_WORDS+3u].w==0u ? e : RT_INVALID;
 }
+[noinline]
 public uint mr_id(uint atom,uint kind)
 {
     if (atom>=mr_h(RP_H_ATOMS)) return RT_INVALID;
@@ -37,6 +38,7 @@ public void mr_fail(uint request,uint code)
     InterlockedOr(mr_state[14],1u<<min(code,31u));
     InterlockedAdd(mr_state[1],1u); InterlockedMin(mr_state[2],request);
 }
+[noinline]
 public uint mr_binding(uint env,uint entry,uint param)
 {
     if (entry==RT_INVALID || !rt_is_stored_term(env) || rt_term_kind(env)!=RT_KIND_ENV) return RT_UNKNOWN;
@@ -96,3 +98,11 @@ public uint mr_value_in(uint2 r,uint parity)
 public uint mr_value(uint2 r) { return mr_value_in(r,mr_config[4]); }
 public interface IMrLevel { void run(uint lane, uint lanes, uint level); }
 public struct MrArgs : IRtArgs { public uint base; public uint arg(uint k) { return mr_args[base+k]; } }
+
+public interface IMethodResults
+{
+    uint4 result(uint row);
+    bool current(uint row);
+    uint4 request(uint row);
+    uint instance_decl(uint instance);
+}

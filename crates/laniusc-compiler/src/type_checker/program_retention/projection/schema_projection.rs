@@ -2,10 +2,9 @@
 //! context. Each round's frontier contains the terms appended since the
 //! previous round; one request per schema record realizes its field type.
 //!
-//! One program prepares the round's requests. Substitution records its own
-//! batch, and the publication program writes the realized field types. The
-//! caller reads `ps_status` with its next readback. An unfinished round can
-//! resume through the full substitution path.
+//! The schema chain prepares requests, substitutes them, and publishes the
+//! realized fields before opening the next frontier. Its existing status
+//! readback can request a retry of an unpublished or oversized round.
 
 use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
@@ -13,6 +12,7 @@ use crate::type_checker::program_retention::substitution::read_many_labeled;
 
 const PREPARE: &str = "type_checker/retention/projection_schema/prepare_retained_schema_requests";
 const PUBLISH: &str = "type_checker/retention/projection_schema/publish_retained_schema_fields";
+const CHAIN: &str = "type_checker/retention/projection_schema/realize_retained_schema_chain";
 const PREPARE_FAILED: usize = 9;
 const PUBLISH_FAILED: usize = 10;
 
@@ -54,11 +54,18 @@ pub struct SchemaReport {
     pub resumed: u32,
 }
 
+enum SchemaProgram {
+    Prepare,
+    Publish,
+    Chain,
+}
+
 struct Kernels {
     device: std::sync::Arc<wgpu::Device>,
     queue: std::sync::Arc<wgpu::Queue>,
     prepare: PassData,
     publish: PassData,
+    chain: PassData,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     configs: Vec<wgpu::Buffer>,
     cursor: usize,
@@ -91,8 +98,7 @@ impl Kernels {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         store: &Store,
-        prepare: bool,
-        options: bool,
+        kernel: SchemaProgram,
         config: [u32; 8],
         extra: &[(&str, &wgpu::Buffer)],
         report: &mut SchemaReport,
@@ -103,16 +109,21 @@ impl Kernels {
         let cfg = &self.configs[self.cursor];
         self.cursor += 1;
         self.queue.write_buffer_counted(cfg, 0, &words_bytes(&config));
-        let (key, pass, slot, failure_word, rows) = if prepare {
-            (
+        let terms = store.capacity.arenas[A_TERMS];
+        let (key, pass, slot, failure_word, rows, options) = match kernel {
+            SchemaProgram::Prepare => (
                 PREPARE, &self.prepare, super::super::PREPARE_SCHEMA_SYNC_SLOT,
-                PREPARE_FAILED, store.capacity.arenas[A_TERMS],
-            )
-        } else {
-            (
+                PREPARE_FAILED, config[4], 1,
+            ),
+            SchemaProgram::Publish => (
                 PUBLISH, &self.publish, super::super::PUBLISH_SCHEMA_SYNC_SLOT,
-                PUBLISH_FAILED, config[4],
-            )
+                PUBLISH_FAILED, config[4], 1,
+            ),
+            SchemaProgram::Chain => (
+                CHAIN, &self.chain, super::super::SCHEMA_CHAIN_SYNC_SLOT,
+                PREPARE_FAILED, terms.max(config[4]),
+                super::super::substitution::FIRST_BATCH_OPTIONS,
+            ),
         };
         let names = reflected_names(pass);
         let mut bindings = Vec::with_capacity(names.len());
@@ -131,7 +142,7 @@ impl Kernels {
         let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
         let program = StepProgramOperation::new_reflected(
             &self.device, key, pass, &bindings, &store.step_program_sync,
-            slot, groups, u32::from(options),
+            slot, groups, options,
         )?;
         program.record(encoder)?;
         passes_core::flush_deferred_compute(encoder);
@@ -174,6 +185,7 @@ impl SchemaProjection {
                 queue: gpu.queue.clone(),
                 prepare: make_pass_data_from_shader_key(&gpu.device, PREPARE, "main", PREPARE)?,
                 publish: make_pass_data_from_shader_key(&gpu.device, PUBLISH, "main", PUBLISH)?,
+                chain: make_pass_data_from_shader_key(&gpu.device, CHAIN, "main", CHAIN)?,
                 buffers,
                 configs: Vec::new(),
                 cursor: 0,
@@ -229,16 +241,9 @@ impl SchemaProjection {
         self.kernels.ensure("ps_scan_b", (terms + 1) * 4, false)?;
         self.kernels.ensure("ps_blocks", (terms + 1).div_ceil(256) * 4, false)?;
         self.kernels.ensure("pj_schema_fields", u64::from(self.field_capacity) * 8, true)?;
-        let rounds = self.rounds as usize;
-        let runs = self.engine.begin_chain(&self.requests, rounds)?;
-        let (results, counts) = self
-            .engine
-            .chain_buffers()
-            .ok_or_else(|| anyhow!("schema substitution buffers are not allocated"))?;
-        let (results, counts) = (results.clone(), counts.clone());
-        let gate_extra = [("sb_results", &results), ("sb_counts", &counts)];
-        let requests = self.requests.buffers().map(|(n, b)| (n, b.clone()));
-        let request_extra = requests.iter().map(|(n, b)| (*n, b)).collect::<Vec<_>>();
+        self.engine.begin_chain(&self.requests, self.rounds as usize)?;
+        let mut extra = self.engine.chain_bindings()?;
+        extra.extend(self.requests.buffers());
         let mut report = std::mem::take(&mut self.report);
         report.chains += 1;
         self.kernels.cursor = 0;
@@ -246,36 +251,10 @@ impl SchemaProjection {
         if first {
             encoder.clear_buffer_counted(&self.kernels.buffers["pj_schema_ranges"], 0, None);
         }
-        for (i, &run) in runs.iter().enumerate() {
-            let gate = if i == 0 { 0 } else { runs[i - 1] };
-            let config = self.config(0, run, gate, generation);
-            let k = &mut self.kernels;
-            let mut extra = gate_extra.to_vec();
-            extra.extend_from_slice(&request_extra);
-            k.record(&mut encoder, &guard, true, false, config, &extra, &mut report)?;
-            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
-                                guard: &Store,
-                                run: u32,
-                                results: &wgpu::Buffer,
-                                counts: &wgpu::Buffer|
-             -> Result<()> {
-                let mut config = config;
-                let close = i + 1 == rounds;
-                config[1] = run;
-                config[2] = if close { run } else { 0 };
-                let extra = [
-                    ("sb_results", results),
-                    ("sb_counts", counts),
-                    request_extra[1],
-                ];
-                k.record(encoder, guard, false, close, config, &extra, &mut report)
-            };
-            let dispatches = self
-                .engine
-                .record_chained(&mut encoder, &guard, &self.requests, i, run, &mut consumer);
-            drop(consumer);
-            report.substitution_dispatches += dispatches?;
-        }
+        self.engine.record_chain_prelude(&mut encoder, 0)?;
+        let mut config = self.config(0, 0, 0, generation);
+        config[6] = self.rounds;
+        self.kernels.record(&mut encoder, &guard, SchemaProgram::Chain, config, &extra, &mut report)?;
         self.kernels.queue.submit(Some(encoder.finish()));
         self.report = report;
         Ok(())
@@ -387,7 +366,7 @@ impl SchemaProjection {
                 .ok_or_else(|| anyhow!("schema substitution buffers are not allocated"))?;
             let mut extra = request_extra.clone();
             extra.push(("sb_counts", counts));
-            self.kernels.record(&mut encoder, &guard, true, true, config, &extra, &mut report)?;
+            self.kernels.record(&mut encoder, &guard, SchemaProgram::Prepare, config, &extra, &mut report)?;
             self.kernels.queue.submit(Some(encoder.finish()));
         }
         let substitution = match self.engine.run(store, &self.requests) {
@@ -413,7 +392,7 @@ impl SchemaProjection {
         let mut encoder = self.kernels.device.create_command_encoder(&Default::default());
         let consume = self.config(1, run, run, guard.generation);
         let extra = [("sb_results", &results), ("sb_counts", &counts), request_extra[1]];
-        self.kernels.record(&mut encoder, &guard, false, true, consume, &extra, &mut report)?;
+        self.kernels.record(&mut encoder, &guard, SchemaProgram::Publish, consume, &extra, &mut report)?;
         self.kernels.queue.submit(Some(encoder.finish()));
         self.report = report;
         Ok(())

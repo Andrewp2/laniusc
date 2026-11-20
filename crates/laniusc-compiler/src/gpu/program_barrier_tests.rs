@@ -182,17 +182,24 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         (64, 0, 0),
         (64, 257, 0),
         (64, 131_075, 1),
+        (64, 131_075, 2),
     ] {
         let params = uniform_from_val(device, label, &ScanParams { groups, rows, in_place });
         let count = rows as usize;
-        let input = storage_rw_for_array::<u32>(device, label, count.max(1));
+        let (stride, column, total_word) = if in_place == 2 { (3, 1, 1) } else { (1, 0, 0) };
+        let input = storage_rw_for_array::<u32>(device, label, (count * stride).max(1));
         let prefix = storage_rw_for_array::<u32>(device, label, count.max(1));
-        let total = storage_rw_for_array::<u32>(device, label, 1);
+        let total = storage_rw_for_array::<u32>(device, label, total_word + 1);
         let sums = storage_rw_for_array::<u32>(device, label, groups as usize);
         let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
         let data: Vec<u32> = (0..rows).map(|row| row.wrapping_mul(0x9e3779b9)).collect();
+        let sentinel = 0x2c9ae133u32;
         if !data.is_empty() {
-            let bytes: Vec<u8> = data.iter().flat_map(|value| value.to_le_bytes()).collect();
+            let mut words = vec![sentinel; count * stride];
+            for (row, value) in data.iter().copied().enumerate() {
+                words[row * stride + column] = value;
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|value| value.to_le_bytes()).collect();
             input.write(queue, 0, &bytes);
         }
         let entries = [
@@ -208,7 +215,7 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
             device, Some(label), &pass, 0, &entries,
         ).unwrap();
         let header_bytes = (SYNC_WORDS + 1) * 4;
-        let size = header_bytes + count * 4;
+        let size = header_bytes + count * stride * 4;
         let readback = readback_bytes(device, label, size, size);
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
@@ -223,10 +230,10 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
             compute.dispatch_workgroups(groups, 1, 1);
         }
         sync.copy_to(&mut encoder, 0, &readback, 0, (SYNC_WORDS * 4) as u64);
-        total.copy_to(&mut encoder, 0, &readback, (SYNC_WORDS * 4) as u64, 4);
+        total.copy_to(&mut encoder, (total_word * 4) as u64, &readback, (SYNC_WORDS * 4) as u64, 4);
         if count != 0 {
             let scanned = if in_place == 0 { &prefix } else { &input };
-            scanned.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * 4) as u64);
+            scanned.copy_to(&mut encoder, 0, &readback, header_bytes as u64, (count * stride * 4) as u64);
         }
         queue.submit(Some(encoder.finish()));
         let slice = readback.slice(..);
@@ -241,8 +248,12 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
         assert_eq!(output[1], 0, "groups {groups}, rows {rows}");
         assert_eq!(output[3], groups, "groups {groups}, rows {rows}");
         let mut expected = 0u32;
-        for (row, (value, actual)) in data.into_iter().zip(&output[SYNC_WORDS + 1..]).enumerate() {
-            assert_eq!(*actual, expected, "groups {groups}, rows {rows}, row {row}");
+        let scanned = output[SYNC_WORDS + 1..].chunks_exact(stride);
+        for (row, (value, actual)) in data.into_iter().zip(scanned).enumerate() {
+            assert_eq!(actual[column], expected, "groups {groups}, rows {rows}, row {row}");
+            if stride == 3 {
+                assert_eq!((actual[0], actual[2]), (sentinel, sentinel));
+            }
             expected = expected.wrapping_add(value);
         }
         assert_eq!(output[SYNC_WORDS], expected, "groups {groups}, rows {rows}");

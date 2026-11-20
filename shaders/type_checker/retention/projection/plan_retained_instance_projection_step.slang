@@ -45,11 +45,8 @@ void fail(uint rank, uint code, uint detail)
     for (uint c = 0u; c < PJ_COLUMNS; c++) pj_base[rank * PJ_COLUMNS + c] = 0u;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void plan_retained_instance_projection(uint rank)
 {
-    uint rank = pj_lane(dtid);
     uint4 ready = pj_readiness[0u];
     uint generation = rt_counts[RT_C_GENERATION];
     uint instance_words; uint route_rows; uint stride;

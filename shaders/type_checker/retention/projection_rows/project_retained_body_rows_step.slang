@@ -7,6 +7,7 @@
 // member's field range, the call record routed to the target's native
 // symbol, the function's result and entry tag, and the tree relations
 // (expression parent and root, nearest loop, control depth).
+import type_checker.retention.projection.retained_projection_results;
 import type_checker.retention.projection.retained_lowering_columns;
 import type_checker.retention.projection_rows.retained_pattern_projection;
 
@@ -111,9 +112,8 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     ob_calls[b + 21u] = 0u;
 }
 
-public void project_retained_body_rows(uint row)
+public void project_retained_body_rows(Batch b, uint row)
 {
-    Batch b = pj_batch();
     uint capacity; uint s;
     ob_core.GetDimensions(capacity, s);
     if (row >= b.rows || row >= capacity) return;

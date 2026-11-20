@@ -14,6 +14,7 @@
 //   symbolic.
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
+import type_checker.retention.projection.retained_projection_results;
 import shared.numbers.integer_words;
 import type_checker.expression_rules.float_literal_selection;
 import type_checker.expression_rules.operator_operand_rules;

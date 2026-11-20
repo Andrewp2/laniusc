@@ -4,7 +4,7 @@ import type_checker.retention.discovery.discovery_workspace;
 import type_checker.retention.discovery.collect_discovery_requests_step;
 import type_checker.retention.discovery.discovery_request_status;
 
-StructuredBuffer<uint> dg_receipt;
+public StructuredBuffer<uint> dg_receipt;
 RWStructuredBuffer<uint> dg_scan_total;
 
 uint use_count(uint instance)

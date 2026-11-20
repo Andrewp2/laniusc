@@ -3,7 +3,6 @@
 // Element layouts are the compact HIR records (hir_records.slang).
 __exported import type_checker.retention.projection.retained_projection_workspace;
 
-public StructuredBuffer<uint4> pj_batches;
 public RWStructuredBuffer<uint4> ob_core;
 public RWStructuredBuffer<uint4> ob_links;
 public RWStructuredBuffer<uint4> ob_payload;
@@ -73,21 +72,23 @@ public struct Batch
     public uint hi;
     public uint rows;
     public uint tokens;
+    public uint4 side_a;
+    public uint4 side_b;
 }
 
-public Batch pj_batch()
+public Batch projected_batch(uint4 w, uint4 side_a, uint4 side_b)
 {
-    uint4 w = pj_batches[pj_config[PJ_CFG_BATCH] * PJ_BATCH_WORDS];
     Batch b;
     b.lo = w.x; b.hi = w.y; b.rows = w.z; b.tokens = w.w;
+    b.side_a = side_a;
+    b.side_b = side_b;
     return b;
 }
 
-public uint pj_batch_side(uint k)
+public uint pj_batch_side(Batch b, uint k)
 {
-    uint b = pj_config[PJ_CFG_BATCH] * PJ_BATCH_WORDS;
-    uint4 w1 = pj_batches[b + 1u];
-    uint4 w2 = pj_batches[b + 2u];
+    uint4 w1 = b.side_a;
+    uint4 w2 = b.side_b;
     if (k < 4u) return k == 0u ? w1.x : (k == 1u ? w1.y : (k == 2u ? w1.z : w1.w));
     return k == 4u ? w2.x : (k == 5u ? w2.y : w2.z);
 }

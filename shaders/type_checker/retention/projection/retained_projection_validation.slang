@@ -1,4 +1,5 @@
 // Common concrete row and type validation for projection and call checking.
+import type_checker.retention.projection.retained_projection_results;
 import type_checker.expression_rules.operator_operand_rules;
 import type_checker.expression_contexts.inherited_expression_type;
 __exported import type_checker.retention.projection_rows.retained_projection_type_tables;

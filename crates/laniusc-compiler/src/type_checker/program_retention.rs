@@ -289,9 +289,13 @@ const PUBLISH_SCHEMA_SYNC_SLOT: u32 = PREPARE_SCHEMA_SYNC_SLOT + 1;
 const PROJECTION_CALLS_SYNC_SLOT: u32 = PUBLISH_SCHEMA_SYNC_SLOT + 1;
 const MATERIALIZE_SYNC_SLOT: u32 = PROJECTION_CALLS_SYNC_SLOT + 1;
 const PROJECTION_CERTIFY_SYNC_SLOT: u32 = MATERIALIZE_SYNC_SLOT + 1;
-const DISCOVERY_WAVE_SYNC_SLOT: u32 = PROJECTION_CERTIFY_SYNC_SLOT + 1;
-const DISCOVERY_CHAIN_SYNC_SLOT: u32 = DISCOVERY_WAVE_SYNC_SLOT + 1;
-const RETENTION_SYNC_SLOTS: usize = DISCOVERY_CHAIN_SYNC_SLOT as usize + 1;
+const DISCOVERY_CLOSED_WAVE_SYNC_SLOT: u32 = PROJECTION_CERTIFY_SYNC_SLOT + 1;
+const DISCOVERY_CHAIN_SYNC_SLOT: u32 = DISCOVERY_CLOSED_WAVE_SYNC_SLOT + 1;
+const SCHEMA_CHAIN_SYNC_SLOT: u32 = DISCOVERY_CHAIN_SYNC_SLOT + 1;
+const PROJECTION_PLAN_SYNC_SLOT: u32 = SCHEMA_CHAIN_SYNC_SLOT + 1;
+const DISCOVERY_ROOT_SYNC_SLOT: u32 = PROJECTION_PLAN_SYNC_SLOT + 1;
+const PROJECTION_SUBSTITUTION_SYNC_SLOT: u32 = DISCOVERY_ROOT_SYNC_SLOT + 1;
+const RETENTION_SYNC_SLOTS: usize = PROJECTION_SUBSTITUTION_SYNC_SLOT as usize + 1;
 const EXPORT_SYNC_FAILURE: usize = 200;
 const RETENTION_SYNC: &str = "type_check.retention.step_program_sync";
 
@@ -331,6 +335,7 @@ const UNCOMMIT_KERNEL: &str = "type_checker/retention/export/retract_unaccepted_
 /// Words of the call rewrite's status (native_calls.rs).
 const NC_STATUS_WORDS: usize = 4;
 const SNAPSHOT_ROWS_KERNEL: &str = "type_checker/retention/copy_retained_snapshot_rows";
+const SNAPSHOT_TABLES_KERNEL: &str = "type_checker/retention/copy_retained_snapshot_tables";
 
 /// Job tables the snapshot copies by their counted rows
 /// (`copy_retained_snapshot_rows.slang`): the table, the table whose word 0 counts its
@@ -389,7 +394,8 @@ const SNAPSHOT_ROW_TABLES: &[(&str, &str, u64, bool)] = &[
 ];
 /// Tables per `snapshot_rows` dispatch, and that dispatch's parameter words.
 const SNAPSHOT_ROWS_PER_DISPATCH: usize = 16;
-const SNAPSHOT_ROWS_PARAM_WORDS: usize = 4 + 4 * SNAPSHOT_ROWS_PER_DISPATCH;
+const SNAPSHOT_TABLES_PER_DISPATCH: usize = 45;
+const SNAPSHOT_ROWS_PARAM_WORDS: usize = 4 + 4 * SNAPSHOT_TABLES_PER_DISPATCH;
 /// Pool keys of the parameter buffers, one per dispatch.
 const SNAPSHOT_ROWS_PARAMS: [&str; 4] = [
     "snapshot_rows.params0",
@@ -582,6 +588,8 @@ pub struct ProgramRetention {
     uncommit: PassData,
     /// Copies the counted rows of the snapshot's row tables.
     snapshot_rows: PassData,
+    snapshot_key: &'static str,
+    snapshot_width: usize,
     resolve: Mutex<Option<PassData>>,
     trait_probe: Mutex<Option<PassData>>,
     /// Test fault applied to the export's snapshot, never the frontend.
@@ -765,8 +773,14 @@ impl ProgramRetention {
             .collect::<Result<Vec<_>>>()?;
         let rehash = make_pass_data_from_shader_key(&device, REHASH_KERNEL, "main", REHASH_KERNEL)?;
         let uncommit = make_pass_data_from_shader_key(&device, UNCOMMIT_KERNEL, "main", UNCOMMIT_KERNEL)?;
-        let snapshot_rows =
-            make_pass_data_from_shader_key(&device, SNAPSHOT_ROWS_KERNEL, "main", SNAPSHOT_ROWS_KERNEL)?;
+        let (snapshot_key, snapshot_width) = if device.limits().max_storage_buffers_per_shader_stage
+            >= (SNAPSHOT_TABLES_PER_DISPATCH * 3) as u32
+        {
+            (SNAPSHOT_TABLES_KERNEL, SNAPSHOT_TABLES_PER_DISPATCH)
+        } else {
+            (SNAPSHOT_ROWS_KERNEL, SNAPSHOT_ROWS_PER_DISPATCH)
+        };
+        let snapshot_rows = make_pass_data_from_shader_key(&device, snapshot_key, "main", snapshot_key)?;
         let mut store = Store {
             step_program_sync: retention_sync(&device, RETENTION_SYNC_SLOTS),
             capacity,
@@ -804,6 +818,8 @@ impl ProgramRetention {
             rehash,
             uncommit,
             snapshot_rows,
+            snapshot_key,
+            snapshot_width,
             resolve: Mutex::new(None),
             trait_probe: Mutex::new(None),
             export_fault: Mutex::new(None),
@@ -910,7 +926,7 @@ impl ProgramRetention {
             }
             tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
         }
-        for (dispatch, group) in by_rows.chunks(SNAPSHOT_ROWS_PER_DISPATCH).enumerate() {
+        for (dispatch, group) in by_rows.chunks(self.snapshot_width).enumerate() {
             let key = *SNAPSHOT_ROWS_PARAMS
                 .get(dispatch)
                 .ok_or_else(|| anyhow!("program retention snapshot has too many row tables"))?;
@@ -934,18 +950,19 @@ impl ProgramRetention {
                 words[4 + 4 * slot..8 + 4 * slot].copy_from_slice(entry);
             }
             self.queue.write_buffer_counted(&params, 0, &words_bytes(&words));
-            let names = (0..SNAPSHOT_ROWS_PER_DISPATCH)
+            let names = (0..self.snapshot_width)
                 .flat_map(|slot| [format!("sr_src{slot}"), format!("sr_count{slot}"), format!("sr_dst{slot}")])
                 .collect::<Vec<_>>();
             let mut entries = vec![("gSR", params.as_entire_binding())];
-            for slot in 0..SNAPSHOT_ROWS_PER_DISPATCH {
+            for slot in 0..self.snapshot_width {
                 // Unused slots repeat the first table; `tables` stops the kernel before them.
                 let (src, dst, count, _) = &group[if slot < group.len() { slot } else { 0 }];
                 entries.push((names[3 * slot].as_str(), src.buffer.as_entire_binding()));
                 entries.push((names[3 * slot + 1].as_str(), count.buffer.as_entire_binding()));
                 entries.push((names[3 * slot + 2].as_str(), dst.as_entire_binding()));
             }
-            let label = "program_retention.snapshot_rows";
+            let label = self.snapshot_key;
+            passes_core::bind_group::validate_exact_binding_names(&self.snapshot_rows, 0, &entries)?;
             let bind = passes_core::bind_group::create_bind_group_from_bindings(
                 &self.device,
                 Some(label),
@@ -1302,6 +1319,13 @@ impl ProgramRetention {
         job: &BTreeMap<&'static str, JobTable>,
         shape: ScratchShape,
     ) -> Result<wgpu::CommandBuffer> {
+        if crate::options::get().report.resources.is_some() {
+            let scratch_bytes = store.scratch.values().map(wgpu::Buffer::size).sum::<u64>();
+            eprintln!(
+                "[program_retention] arena_bytes={} export_scratch_bytes={} sync_bytes={}",
+                store.capacity.bytes(), scratch_bytes, store.step_program_sync.byte_size,
+            );
+        }
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("program_retention.export"),
         });

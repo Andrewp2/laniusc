@@ -3,9 +3,8 @@
 // no lane walks the bytes of a long string.
 import type_checker.retention.projection.retained_lowering_columns;
 
-public void project_retained_string_bytes(uint word)
+public void project_retained_string_bytes(Batch b, uint word)
 {
-    Batch b = pj_batch();
     uint start = pj_base_at(b.lo,PJ_C_ROWS);
     uint end = pj_base_at(b.hi,PJ_C_ROWS);
     uint base = pj_string_offsets[start];

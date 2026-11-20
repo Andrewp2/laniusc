@@ -18,17 +18,17 @@ bool matches_bound(uint record,uint required,uint env,uint subject)
     }
     return self && a==rt_term_arity(fact.w);
 }
-public void select_retained_method_bindings(uint i)
+public void select_retained_method_bindings<R : IMethodResults>(uint i, R results)
 {
-     if (i>=mr_config[2]) return;
-    uint4 request=mr_requests[i];
+
+    uint4 request=results.request(i);
     uint4 use=rt_uses[request.z*RT_USE_WORDS];
     uint required=mr_entry(use.w);
     if (required==RT_INVALID || rt_dir[required*RT_DIR_WORDS].y!=3u) return;
-    if (mr_state[0]!=1u || request.x!=0u || request.w>=mr_h(RP_H_USES) || !sb_result_current(mr_config[0],i)) { mr_fail(i,2u); return; }
-    uint4 sub=sb_results[i*SB_RESULT_WORDS];
+    if (mr_state[0]!=1u || request.x!=0u || request.w>=mr_h(RP_H_USES) || !results.current(i)) { mr_fail(i,2u); return; }
+    uint4 sub = results.result(i);
     if (sub.y!=SB_OK || !rt_term_closed(sub.x) || rt_term_kind(sub.x)!=RT_KIND_ENV || rt_term_words(sub.x).x!=use.w) { mr_fail(i,3u); return; }
-    uint caller=mr_entry(mr_instances[2u*request.w].x); uint parent=caller==RT_INVALID ? RT_INVALID : mr_entry(rt_dir[caller*RT_DIR_WORDS].z);
+    uint caller=mr_entry(results.instance_decl(request.w)); uint parent=caller==RT_INVALID ? RT_INVALID : mr_entry(rt_dir[caller*RT_DIR_WORDS].z);
     if (caller==RT_INVALID) { mr_fail(i,4u); return; }
     uint own=rt_dir_trait[caller].y; uint count=own+(parent==RT_INVALID ? 0u : rt_dir_trait[parent].y);
     uint found=RT_INVALID; uint symbolic=rt_uses[request.z*RT_USE_WORDS+1u].x;

@@ -1,5 +1,6 @@
 // One lane per arm/payload. Roots take the scrutinee's type; each payload
 // records membership and contributes to its parent's exact payload arity.
+import type_checker.retention.projection.retained_projection_results;
 import type_checker.retention.projection_rows.retained_pattern_projection;
 
 public void project_retained_pattern_roots(uint lane)

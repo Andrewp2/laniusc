@@ -202,9 +202,8 @@ const CALL_WORDS: u64 = 22;
 
 const PREPARE_VALIDATION: &str = "type_checker/retention/projection/prepare_retained_validation";
 const KERNELS: &[&str] = &[
-    "type_checker/retention/projection/plan_retained_instance_projection",
-    "type_checker/retention/projection/scan_retained_projection_sizes",
-    "type_checker/retention/projection/emit_retained_projection_substitution_requests",
+    "type_checker/retention/projection/prepare_retained_projection",
+    "type_checker/retention/projection/substitute_retained_projection_terms",
     PREPARE_VALIDATION,
     "type_checker/retention/projection/validate_projected_semantic_rows",
     "type_checker/retention/projection/materialize_retained_batch",
@@ -213,14 +212,13 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/validate_retained_call_routes",
 ];
 const K_PLAN: usize = 0;
-const K_SCAN: usize = 1;
-const K_REQUESTS: usize = 2;
-const K_PREPARE_VALIDATION: usize = 3;
-const K_CHECK: usize = 4;
-const K_MATERIALIZE: usize = 5;
-const K_CERTIFY: usize = 6;
-const K_STRING_SCAN: usize = 7;
-const K_CALLS: usize = 8;
+const K_REQUESTS: usize = 1;
+const K_PREPARE_VALIDATION: usize = 2;
+const K_CHECK: usize = 3;
+const K_MATERIALIZE: usize = 4;
+const K_CERTIFY: usize = 5;
+const K_STRING_SCAN: usize = 6;
+const K_CALLS: usize = 7;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -867,6 +865,7 @@ pub struct RetainedProjection {
     string_scan_configs: Vec<wgpu::Buffer>,
     /// The root certification result (`certify_retained_native_abi`), rewritten every run.
     cert: wgpu::Buffer,
+    no_root_readiness: wgpu::Buffer,
     /// Mappable staging for readbacks, grown to the largest one.
     staging: std::sync::Mutex<Option<wgpu::Buffer>>,
     gate_fault: ProjectionGateFault,
@@ -1011,6 +1010,7 @@ impl RetainedProjection {
             no_counts: storage(&device, "pj_no_counts", 256, false),
             string_scan_configs: Vec::new(),
             cert: storage(&device, "nc_cert", 16, false),
+            no_root_readiness: storage(&device, "pj_no_root_readiness", 16, false),
             staging: std::sync::Mutex::new(None),
             gate_fault: ProjectionGateFault::None,
             device,
@@ -1066,6 +1066,8 @@ impl RetainedProjection {
             ),
             ("pj_errors", storage(d, "pj_errors", n * 16, false)),
             ("pj_identity", storage(d, "pj_identity", slots * 4, false)),
+            ("pj_scan_sums", storage(d, "pj_scan_sums", u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS) * 4, false)),
+            ("pj_scan_total", storage(d, "pj_scan_total", COLUMNS as u64 * 4, false)),
         ]
         .into_iter()
         .collect();
@@ -1303,19 +1305,28 @@ impl RetainedProjection {
         results: &wgpu::Buffer,
         counts: &wgpu::Buffer,
     ) -> Result<()> {
-        let cert = &self.cert;
-        self.queue
-            .write_buffer_counted(cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
-        let extra = [
-            ("sb_results", results),
-            ("sb_counts", counts),
-            ("nc_use_abi", &roots.calls.abi),
-            ("nc_use_args", &roots.calls.args),
-            ("rr_routes", roots.routes),
-            ("rr_readiness", roots.readiness),
-            ("nc_cert", cert),
-        ];
+        self.reset_certification();
+        let mut extra = vec![("sb_results", results), ("sb_counts", counts)];
+        extra.extend(self.certification_bindings(Some(roots)));
         r.program(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())
+    }
+
+    fn reset_certification(&self) {
+        self.queue
+            .write_buffer_counted(&self.cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
+    }
+
+    fn certification_bindings<'a>(
+        &'a self,
+        roots: Option<&'a RootCertification<'_>>,
+    ) -> [(&'static str, &'a wgpu::Buffer); 5] {
+        [
+            ("nc_use_abi", roots.map_or(&self.no_results, |root| &root.calls.abi)),
+            ("nc_use_args", roots.map_or(&self.no_results, |root| &root.calls.args)),
+            ("rr_routes", roots.map_or(&self.no_results, |root| root.routes)),
+            ("rr_readiness", roots.map_or(&self.no_root_readiness, |root| root.readiness)),
+            ("nc_cert", &self.cert),
+        ]
     }
 
     fn recorder(&self) -> Recorder<'_> {
@@ -1444,12 +1455,14 @@ impl RetainedProjection {
                 ("sb_results", &self.no_results),
                 ("sb_counts", &self.no_counts),
             ];
-            r.dispatch(K_PLAN, &guard, inputs, &none, inputs.instance_capacity)?;
-            r.dispatch_groups(K_SCAN, &guard, inputs, &none, 1)?;
+            r.program(K_PLAN, &guard, inputs, &none, inputs.instance_capacity)?;
             report.dispatches += r.finish();
             drop(guard);
             self.read(&self.status, STATUS_WORDS, &mut report)?
         };
+        if totals[S_PROGRAM_FAILED] != 0 {
+            bail!("retention program {} failed to synchronize", KERNELS[K_PLAN]);
+        }
         report.instances = totals[4];
         report.rows = totals[S_TOTALS + C_ROWS];
         report.tokens = totals[S_TOTALS + C_TOKENS];
@@ -1528,26 +1541,12 @@ impl RetainedProjection {
         let chained_dispatches;
         {
             let guard = store.store.lock().unwrap();
-            let [requests_buffer, count_buffer] = requests.buffers();
-            let extra = [
-                requests_buffer,
-                count_buffer,
-                ("sb_results", &self.no_results),
-                ("sb_counts", &self.no_counts),
-            ];
+            let mut bindings = self.substitution.chain_bindings()?;
+            bindings.extend(requests.buffers());
             let mut r = self.recorder();
-            r.dispatch(K_REQUESTS, &guard, inputs, &extra, report.requests.max(1))?;
-            // The schema does not read this run's results; the check does,
-            // and it checks the publication on the GPU.
-            let mut none = |_: &mut wgpu::CommandEncoder,
-                            _: &Store,
-                            _: u32,
-                            _: &wgpu::Buffer,
-                            _: &wgpu::Buffer|
-             -> Result<()> { Ok(()) };
-            chained_dispatches =
-                self.substitution
-                    .record_chained(r.encoder(), &guard, &requests, 0, run, &mut none)?;
+            self.substitution.record_chain_prelude(r.encoder(), 0)?;
+            r.program(K_REQUESTS, &guard, inputs, &bindings, report.requests.max(1))?;
+            chained_dispatches = 1;
             report.dispatches += r.finish();
         }
         // Realize nominal schema fields using their own exact binders. New
@@ -1677,16 +1676,18 @@ impl RetainedProjection {
                     .clear_buffer_counted(&self.rows["pj_string_offsets"], 0, None);
             }
             r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
-            r.program(K_CALLS, &guard, inputs, &extra, report.rows.max(batches))?;
-            // The certification and the batch table are read with the status;
-            // they are used only when the check passed.
-            if let Some(roots) = &roots {
-                self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
+            let mut bindings = extra.to_vec();
+            bindings.extend(self.certification_bindings(roots.as_ref()));
+            if roots.is_some() {
+                self.reset_certification();
             }
             if early {
-                let string_words = self.columns.as_ref().unwrap().shape.string_words as u32;
-                r.materialize(&guard, inputs, &extra, early_rows.max(early_side).max(string_words))?;
+                r.clear_argument_modes();
             }
+            let cert_rows = roots.as_ref().map_or(0, |root| root.calls.rows());
+            let rows = report.rows.max(batches).max(cert_rows);
+            let flags = u32::from(roots.is_some()) | (u32::from(early) << 1);
+            r.program_with_options(K_CALLS, &guard, inputs, &bindings, rows, flags)?;
             let schema_status = self.schema.status_buffer().clone();
             let mut parts = vec![
                 (&self.status, STATUS_WORDS),
@@ -1953,9 +1954,13 @@ impl Recorder<'_> {
         extra: &[(&str, &wgpu::Buffer)],
         rows: u32,
     ) -> Result<()> {
+        self.clear_argument_modes();
+        self.program(K_MATERIALIZE, store, inputs, extra, rows)
+    }
+
+    fn clear_argument_modes(&mut self) {
         let argument_modes = self.projection.columns.as_ref().unwrap().w("ob_argument_mode");
         self.encoder().clear_buffer_counted(argument_modes, 0, None);
-        self.program(K_MATERIALIZE, store, inputs, extra, rows)
     }
 
     fn program(
@@ -1966,11 +1971,38 @@ impl Recorder<'_> {
         extra: &[(&str, &wgpu::Buffer)],
         rows: u32,
     ) -> Result<()> {
+        let options = if kernel == K_REQUESTS {
+            super::substitution::FIRST_BATCH_OPTIONS
+        } else {
+            0
+        };
+        self.program_with_options(kernel, store, inputs, extra, rows, options)
+    }
+
+    fn program_with_options(
+        &mut self,
+        kernel: usize,
+        store: &Store,
+        inputs: &ProjectionInputs,
+        extra: &[(&str, &wgpu::Buffer)],
+        rows: u32,
+        options: u32,
+    ) -> Result<()> {
         let projection = self.projection;
         let pass = &projection.passes[kernel];
         let key = KERNELS[kernel];
         let status = &projection.status;
         let (slot, failure) = match kernel {
+            K_PLAN => (super::PROJECTION_PLAN_SYNC_SLOT, Some((status, S_PROGRAM_FAILED))),
+            K_REQUESTS => {
+                let status = extra.iter().find(|(name, _)| *name == "sb_counts")
+                    .map(|(_, buffer)| *buffer)
+                    .ok_or_else(|| anyhow!("{key} has no substitution status"))?;
+                (
+                    super::PROJECTION_SUBSTITUTION_SYNC_SLOT,
+                    Some((status, super::substitution::words::SYNC_FAILED)),
+                )
+            }
             K_PREPARE_VALIDATION => (super::VALIDATION_SYNC_SLOT, Some((status, S_PROGRAM_FAILED))),
             K_CALLS => (super::PROJECTION_CALLS_SYNC_SLOT, Some((status, S_CALL_PROGRAM_FAILED))),
             K_CERTIFY => (super::PROJECTION_CERTIFY_SYNC_SLOT, Some((&projection.cert, 3))),
@@ -1992,7 +2024,7 @@ impl Recorder<'_> {
         let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
         let program = StepProgramOperation::new_reflected(
             &projection.device, key, pass, &bindings,
-            &store.step_program_sync, slot, groups, 0,
+            &store.step_program_sync, slot, groups, options,
         )?;
         let encoder = self.encoder();
         program.record(encoder)?;
@@ -2006,10 +2038,11 @@ impl Recorder<'_> {
                 4,
             );
         }
-        self.dispatches += 1;
+        if kernel != K_REQUESTS {
+            self.dispatches += 1;
+        }
         Ok(())
     }
-
 
     fn dispatch(
         &mut self,

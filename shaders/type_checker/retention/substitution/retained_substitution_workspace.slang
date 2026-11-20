@@ -111,6 +111,7 @@ public void sb_overflow(uint bit) { InterlockedOr(sb_counts[SB_C_OVERFLOW], bit)
 // Term kind classes of closed operands.
 
 // A type: a scalar or a NAMED, ARRAY, SLICE or REF record.
+[noinline]
 public bool sb_is_type(uint ref)
 {
     uint kind = rt_term_kind(ref);
@@ -128,6 +129,7 @@ public struct SbBinder
     public uint const_count;
 }
 
+[noinline]
 public SbBinder sb_binder(uint env)
 {
     SbBinder b;
@@ -260,6 +262,7 @@ SbCheck sb_check_nominal(uint decl, uint term, uint counts)
 }
 
 // Validates request (decl, env, term) before it creates any task.
+[noinline]
 public SbCheck sb_validate(uint decl, uint env, uint term)
 {
     if (rt_counts[RT_C_READY] == 0u) return sb_check(SB_NOT_READY, SB_ENV_NONE, term, RT_NONE);
@@ -348,6 +351,7 @@ SbChild sb_bind_leaf(SbBinder b, uint leaf)
     return sb_value(rt_term_arg(b.env, index));
 }
 
+[noinline]
 public SbChild sb_resolve(SbBinder b, uint ref)
 {
     if (ref == RT_FIT_FAILED) return sb_immediate(ref, SB_PRIOR_FIT);

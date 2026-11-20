@@ -2,7 +2,7 @@
 // round's request-lane dispatch sizes this pass; size_retained_schema_dispatches wrote the count.
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.projection_schema.retained_schema_round_state;
-RWStructuredBuffer<uint4> sb_requests;
+public RWStructuredBuffer<uint4> sb_requests;
 public void emit_retained_schema_requests(uint q)
 {
     if (q >= ps_round_count()) return;

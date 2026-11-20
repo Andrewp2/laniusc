@@ -107,7 +107,6 @@ impl MethodRoutes {
         instances: &wgpu::Buffer,
         config: &Config,
         requests: u32,
-        gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let names = reflected_names(&self.pass);
         let mut entries = Vec::with_capacity(names.len());
@@ -120,7 +119,6 @@ impl MethodRoutes {
                 "mr_instances" => instances.as_entire_binding(),
                 "mr_requests" => metadata.as_entire_binding(),
                 "mr_config" => self.config.as_entire_binding(),
-                "mr_gate" => gate.unwrap_or(&self.config).as_entire_binding(),
                 "sb_results" => sub.0.as_entire_binding(),
                 "sb_counts" => sub.1.as_entire_binding(),
                 n => self.buffers.get(n).or_else(|| guard.buffers.get(n))
@@ -133,7 +131,7 @@ impl MethodRoutes {
         let groups = step_program_group_counts()[step_program_group_variant(rows)];
         let program = StepProgramOperation::new_reflected(
             &self.device, PROGRAM, &self.pass, &entries, &guard.step_program_sync,
-            METHOD_ROUTES_SYNC_SLOT, groups, u32::from(gate.is_some()),
+            METHOD_ROUTES_SYNC_SLOT, groups, 0,
         )?;
         program.record(encoder)?;
         passes_core::flush_deferred_compute(encoder);
@@ -145,6 +143,28 @@ impl MethodRoutes {
             4,
         );
         Ok(())
+    }
+
+    /// Supplies the closed wave's proof tables and method workspace.
+    pub(super) fn prepare_wave<'a>(
+        &'a self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &Store,
+        view: &'a RetainedTraitView<'_>,
+        run: u32,
+        nodes: (&wgpu::Buffer, u64, u32),
+    ) -> Vec<(&'static str, wgpu::BindingResource<'a>)> {
+        let config = Config::new(run, store.generation, 0, nodes.2, view.identity);
+        self.write_config(&config);
+        encoder.copy_buffer_counted(nodes.0, nodes.1, &self.config, 12, 4);
+        let mut bindings = vec![
+            ("mr_routes", view.routes.whole_binding()),
+            ("mr_catalog", view.catalog.binding()),
+            ("mr_proof", view.proof.binding()),
+            ("mr_config", self.config.as_entire_binding()),
+        ];
+        bindings.extend(self.buffers.iter().map(|(&name, buffer)| (name, buffer.as_entire_binding())));
+        bindings
     }
 
     /// Records the first batch of a run whose request and proof node counts
@@ -165,13 +185,12 @@ impl MethodRoutes {
         nodes: (&wgpu::Buffer, u64, u32),
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
-        gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let config = Config::new(run, guard.generation, 0, nodes.2, view.identity);
         self.write_config(&config);
         encoder.copy_buffer_counted(requests.0, requests.1, &self.config, 8, 4);
         encoder.copy_buffer_counted(nodes.0, nodes.1, &self.config, 12, 4);
-        self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2, gate)
+        self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2)
     }
     /// Runs the routes. Every batch also records `then(encoder, store,
     /// mr_state, mr_out)` after the routes, and its one readback returns
@@ -206,7 +225,7 @@ impl MethodRoutes {
                     passes_core::compute_pass_batching_allowed(false),
                     "retained method routes",
                 );
-                self.record_batch(&mut encoder, &guard, &view, buffers, metadata, instances, &config, requests, None)?;
+                self.record_batch(&mut encoder, &guard, &view, buffers, metadata, instances, &config, requests)?;
                 passes_core::flush_deferred_compute(&mut encoder);
                 then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
                 passes_core::flush_deferred_compute(&mut encoder);

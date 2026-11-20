@@ -31,6 +31,7 @@ public globallycoherent RWStructuredBuffer<uint> dg_levels;
 //         request demand, generation, roots, failure, predicated instances,
 //         requests blocked (failure or overflow before resolution), reserved...
 public uint dg_lane(uint3 id) { return id.x + id.y * 16776960u; }
+[noinline]
 public uint dg_entry(uint decl)
 {
     if (decl == 0u || decl >= rt_counts[RT_A_DECLS]) return RT_INVALID;
@@ -54,6 +55,7 @@ public void dg_fail(uint root, uint index, uint use, uint code, uint detail)
     dg_errors[error] = uint4(code, use, detail, root != 0u ? RT_INVALID : dg_edge_owner[index].x);
     InterlockedMin(dg_status[6], error);
 }
+[noinline]
 public uint dg_insert_at_depth(uint decl, uint env, uint root, uint index, uint use, uint depth)
 {
     uint capacity; uint stride; dg_instances.GetDimensions(capacity, stride); capacity /= 2u;

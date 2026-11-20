@@ -33,16 +33,18 @@ use crate::gpu::{
 const RANK_INSTANCES_PROGRAM: &str = "type_checker/retention/discovery/rank_retained_instances";
 const COLLECT_PROGRAM: &str = "type_checker/retention/discovery/collect_retained_requests";
 const RESOLVE_PROGRAM: &str = "type_checker/retention/discovery/resolve_retained_requests";
-const WAVE_PROGRAM: &str = "type_checker/retention/discovery/expand_retained_discovery_wave";
+const CLOSED_WAVE_PROGRAM: &str = "type_checker/retention/discovery/expand_closed_retained_discovery_wave";
 const CHAIN_PROGRAM: &str = "type_checker/retention/discovery/expand_retained_discovery_chain";
+const ROOT_PROGRAM: &str = "type_checker/retention/discovery/expand_retained_discovery_roots";
 const COLLECT: usize = 0;
 const RESOLVE: usize = 1;
 const COUNT_TERMS: usize = 2;
 const RANK_INSTANCES: usize = 3;
 const PUBLISH_WAVE: usize = 4;
 const ATTACH_METHOD_ROUTES: usize = 5;
-const EXPAND_WAVE: usize = 6;
+const EXPAND_CLOSED_WAVE: usize = 6;
 const EXPAND_CHAIN: usize = 7;
+const EXPAND_ROOT: usize = 8;
 const KERNELS: &[&str] = &[
     COLLECT_PROGRAM,
     RESOLVE_PROGRAM,
@@ -50,14 +52,16 @@ const KERNELS: &[&str] = &[
     RANK_INSTANCES_PROGRAM,
     "type_checker/retention/discovery/publish_discovery_wave",
     "type_checker/retention/discovery/attach_discovered_method_routes",
-    WAVE_PROGRAM,
+    CLOSED_WAVE_PROGRAM,
     CHAIN_PROGRAM,
+    ROOT_PROGRAM,
 ];
 const STATUS_WORDS: usize = 32;
 const METHOD_ROUTES_SYNC_FAILED: usize = 31;
 const RANK_SYNC_FAILED: usize = 30;
 const COLLECT_SYNC_FAILED: usize = 29;
 const RESOLVE_SYNC_FAILED: usize = 28;
+const CLOSED_WAVE_SYNC_FAILED: usize = 24;
 /// Route header words 8-10 of a retained trait publication: status (1
 /// valid), route failures, first failure (retained_route_abi.slang).
 const PUBLICATION_STATUS_WORD: u64 = 8;
@@ -188,7 +192,7 @@ pub struct RetainedDiscovery {
     /// every other use of the encoder (a copy, a clear, another module's
     /// recording, `finish`). wgpu-core's `finish` costs about 13 µs per
     /// compute pass, so one pass per dispatch cost discovery milliseconds.
-    pending: Vec<(usize, wgpu::BindGroup, PendingLaunch)>,
+    pending: Vec<(usize, wgpu::BindGroup, u32)>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -380,7 +384,6 @@ impl RetainedDiscovery {
             }
             let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
             config[10] = u32::from(self.admission.is_some());
-            self.record(&mut encoder, &guard, COLLECT, config, &extra, uses, &mut report)?;
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             // As in a wave, resolution skips itself after a root failure or
@@ -754,11 +757,11 @@ impl RetainedDiscovery {
     /// Records waves without closed predicates in one submit, starting
     /// with the frontier `lo..hi` (`wave` is lo, hi, edges, depth, the
     /// predicated instance count and the number of waves). Wave 0 is the
-    /// host's; before each later wave `publish_discovery_wave` mode 3 places the
+    /// host's. Before each later wave the program places the
     /// instances the previous wave inserted, or an empty frontier when the
     /// host must decide first (a failure, an overflow, new closed
     /// predicates), and copies (lo, hi, edges) into the wave's configs.
-    /// Each wave substitutes its requests in its own run (`record_chained`)
+    /// Each wave substitutes its requests in its own run
     /// and resolves them; a run that did not publish fails resolution with
     /// code 11. One readback returns the status, the store counters, the
     /// last run's status words, the waves' frontiers and the level counts.
@@ -832,6 +835,7 @@ impl RetainedDiscovery {
             report,
         )?;
         let (status, rest) = words.split_at(STATUS_WORDS + counts::WORDS);
+        check_discovery_sync(status)?;
         let (sb, rest) = rest.split_at(super::substitution::words::COUNT);
         let (log, levels) = rest.split_at(log_words);
         let last = runs[waves as usize - 1];
@@ -851,17 +855,16 @@ impl RetainedDiscovery {
     /// solve before the host has read the wave before it
     /// (`RetainedTraitPublication::record_chained`): sized from the
     /// capacities, gated by plan_closed_obligation_dispatches, which skips it unless the wave has new
-    /// instances with closed predicates. Its receipt check (publish_discovery_wave mode
-    /// 4) stops the chain with code 12 when a solve that ran did not place
+    /// instances with closed predicates. The following program checks the
+    /// receipt and stops the chain with code 12 when a solve that ran did not place
     /// its batch or did not finish, and gates the wave's method and bound
     /// routes. Routes that did not finish stop it with code 13
     /// (attach_discovered_method_routes). The tail stops at new closed predicates, as
     /// `chain_waves` does.
     ///
-    /// Each wave with a closed solve takes three submits: the frontier
-    /// (publish_discovery_wave mode 3), the solve's own, then the wave and its
-    /// resolution, whose configs take the frontier from the GPU after the
-    /// host writes them.
+    /// Each wave with a closed solve takes two submits. The solve goes first.
+    /// The program then resolves the current wave and prepares the frontier
+    /// for the next solve.
     #[allow(clippy::too_many_arguments)]
     fn chain_closed(
         &mut self,
@@ -888,6 +891,7 @@ impl RetainedDiscovery {
         let (words, last, waves) = result?;
         let log_words = WAVE_CLOSED_RAN as usize + 1;
         let (status, rest) = words.split_at(STATUS_WORDS + counts::WORDS);
+        check_discovery_sync(status)?;
         let (sb, rest) = rest.split_at(super::substitution::words::COUNT);
         let (log, levels) = rest.split_at(log_words);
         let generation = store.generation();
@@ -933,9 +937,6 @@ impl RetainedDiscovery {
         let status_buffer = self.scratch["dg_status"].clone();
         let levels_buffer = self.scratch["dg_levels"].clone();
         let receipt_buffer = self.scratch["dg_receipt"].clone();
-        let route_gate = self.scratch["dg_route_gate"].clone();
-        let bound_args = self.scratch["dg_bound_args"].clone();
-        let metadata = self.scratch["dg_req_meta"].clone();
         let instances = self.scratch["dg_instances"].clone();
         let instance_buffer = LaniusBuffer::new((instances.clone(), instances.size()), instances.size() as usize / 4);
         let mut bindings = extra.to_vec();
@@ -960,65 +961,26 @@ impl RetainedDiscovery {
             config[6] = depth + 1 + i;
             config[8] = i + 1;
             config[9] = 0;
-            config[11] = 1;
-            let guard = store.store.lock().unwrap();
-            let mut encoder = self.encoder();
-            if i > 0 {
-                config[0] = 3;
-                self.record(&mut encoder, &guard, PUBLISH_WAVE, config, extra, 1, report)?;
-            }
-            // The solve's submissions follow the frontier's.
-            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
-            drop(guard);
+            config[12] = u32::from(i + 1 < CLOSED_CHAIN_WAVES);
             let proofs = source.record_chained(store, &instance_buffer, counters, &inputs)?;
             let mut encoder = self.encoder();
             proofs.copy_receipt(&mut encoder, &receipt_buffer, 0);
             let view = proofs.view(source, store)?;
             let guard = store.store.lock().unwrap();
-            // A chained wave reads its frontier from the GPU.
-            if i > 0 {
-                let first = self.config_cursor;
-                let count = 4;
-                while self.configs.len() < first + count {
-                    self.configs.push(self.buffer("dg_config", 64)?);
-                }
-                for slot in first..first + count {
-                    self.flush(&mut encoder);
-                    encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[slot], 4, 12);
-                }
-            }
             let nodes_bound = proofs.proof_node_bound();
             routes.prepare(request_lanes, nodes_bound)?;
-            let mut check = config;
-            check[0] = 4;
-            check[12] = request_lanes.div_ceil(256).max(1);
-            self.record(&mut encoder, &guard, PUBLISH_WAVE, check, extra, 1, report)?;
-            config[0] = 0;
             let run = runs[i as usize];
             config[5] = run;
             let rows = if i == 0 { hi - lo } else { instance_lanes };
-            self.flush(&mut encoder);
             engine.record_chain_prelude(&mut encoder, i as usize)?;
-            self.record(&mut encoder, &guard, EXPAND_WAVE, config, &bindings, rows.max(request_lanes), report)?;
-            let (results, counts) = engine.chain_buffers()
-                .ok_or_else(|| anyhow!("retained substitution buffers are not allocated"))?;
-            routes.record_first_batch(
-                &mut encoder,
-                &guard,
-                &view,
-                run,
-                (results, counts),
-                (counts, (super::substitution::words::REQUESTS * 4) as u64, request_lanes),
+            let method_bindings = routes.prepare_wave(
+                &mut encoder, &guard, &view, run,
                 (&receipt_buffer, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, nodes_bound),
-                &metadata,
-                &instances,
-                Some(&route_gate),
+            );
+            self.record_with_resources(
+                &mut encoder, &guard, EXPAND_CLOSED_WAVE, config, &bindings,
+                &method_bindings, rows.max(request_lanes).max(nodes_bound), report,
             )?;
-            let mut bound = extra.to_vec();
-            bound.push(("mr_out", routes.output()));
-            bound.push(("mr_state", routes.state()));
-            self.record_with(&mut encoder, &guard, ATTACH_METHOD_ROUTES, config, &bound, Dispatch::Indirect(&bound_args), report)?;
-            self.record(&mut encoder, &guard, PUBLISH_WAVE, config, extra, 1, report)?;
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             // The next solve may reuse this one's buffers: the GPU runs
@@ -1088,7 +1050,25 @@ impl RetainedDiscovery {
         let request_lanes = requests.capacity();
         let levels_buffer = self.scratch["dg_levels"].clone();
         config[0] = 0;
-        let ran = {
+        let ran = if config[4] != 0 {
+            let mut initial = |engine: &RetainedSubstitution,
+                               encoder: &mut wgpu::CommandEncoder,
+                               guard: &Store,
+                               run: u32| {
+                let mut bindings = extra.to_vec();
+                bindings.extend(engine.chain_bindings()?);
+                let mut config = config;
+                config[5] = run;
+                let rows = request_lanes.max(guard.capacity.arenas[super::A_TERMS]);
+                self.flush(encoder);
+                encoder.clear_buffer_counted(&levels_buffer, 0, None);
+                self.record(encoder, guard, EXPAND_ROOT, config, &bindings, rows, report)
+            };
+            let mut reads = vec![(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)];
+            reads.extend(also_read);
+            reads.push((&levels_buffer, LEVELS));
+            engine.run_then(store, requests, None, Some(&mut initial), &reads)
+        } else {
             // resolve_discovery_requests does nothing unless this run's publication
             // committed, so it may follow the first batch on the GPU.
             let mut consumer = |encoder: &mut wgpu::CommandEncoder,
@@ -1133,7 +1113,6 @@ impl RetainedDiscovery {
                     (spec.receipt, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, spec.nodes_bound),
                     &spec.metadata,
                     &spec.instances,
-                    None,
                 )?;
                 let mut bound = extra.to_vec();
                 bound.push(("mr_out", spec.routes.output()));
@@ -1149,7 +1128,7 @@ impl RetainedDiscovery {
                 reads.push((spec.routes.state(), 32));
             }
             reads.push((&levels_buffer, LEVELS));
-            engine.run_then(store, requests, Some(&mut consumer), &reads)
+            engine.run_then(store, requests, Some(&mut consumer), None, &reads)
         };
         self.substitution = Some(engine);
         let (sub, words) = match ran? {
@@ -1304,11 +1283,6 @@ impl RetainedDiscovery {
         ] {
             self.ensure(name, bytes)?;
         }
-        for (name, indirect) in [("dg_route_gate", false), ("dg_bound_args", true)] {
-            if !self.scratch.contains_key(name) {
-                self.scratch.insert(name, storage(&self.device, name, 16, indirect));
-            }
-        }
         Ok(())
     }
     fn buffer(&self, name: &str, bytes: u64) -> Result<wgpu::Buffer> {
@@ -1348,11 +1322,8 @@ impl RetainedDiscovery {
         let steps = self
             .pending
             .iter()
-            .map(|(kernel, bind, launch)| {
-                let launch = match launch {
-                    PendingLaunch::Groups(x, y) => super::substitution::Launch::Groups(*x, *y, 1),
-                    PendingLaunch::Indirect(buffer) => super::substitution::Launch::Indirect(buffer, 0),
-                };
+            .map(|(kernel, bind, groups)| {
+                let launch = super::substitution::Launch::Groups((*groups).min(65535), groups.div_ceil(65535), 1);
                 (&self.passes[*kernel], bind, launch)
             })
             .collect::<Vec<_>>();
@@ -1374,24 +1345,27 @@ impl RetainedDiscovery {
         lanes: u32,
         report: &mut DiscoveryReport,
     ) -> Result<()> {
-        self.record_with(encoder, store, kernel, config, extra, Dispatch::Lanes(lanes), report)
+        self.record_with_resources(encoder, store, kernel, config, extra, &[], lanes, report)
     }
-    fn record_with(
+    #[allow(clippy::too_many_arguments)]
+    fn record_with_resources(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         store: &Store,
         kernel: usize,
         config: [u32; 16],
         extra: &[(&str, &wgpu::Buffer)],
-        dispatch: Dispatch<'_>,
+        resources: &[(&str, wgpu::BindingResource<'_>)],
+        lanes: u32,
         report: &mut DiscoveryReport,
     ) -> Result<()> {
         let program = match kernel {
             RANK_INSTANCES => Some((RANK_INSTANCES_PROGRAM, super::DISCOVERY_RANK_SYNC_SLOT, RANK_SYNC_FAILED)),
             COLLECT => Some((COLLECT_PROGRAM, super::DISCOVERY_COLLECT_SYNC_SLOT, COLLECT_SYNC_FAILED)),
             RESOLVE => Some((RESOLVE_PROGRAM, super::DISCOVERY_RESOLVE_SYNC_SLOT, RESOLVE_SYNC_FAILED)),
-            EXPAND_WAVE => Some((WAVE_PROGRAM, super::DISCOVERY_WAVE_SYNC_SLOT, super::substitution::words::SYNC_FAILED)),
+            EXPAND_CLOSED_WAVE => Some((CLOSED_WAVE_PROGRAM, super::DISCOVERY_CLOSED_WAVE_SYNC_SLOT, CLOSED_WAVE_SYNC_FAILED + config[8] as usize - 1)),
             EXPAND_CHAIN => Some((CHAIN_PROGRAM, super::DISCOVERY_CHAIN_SYNC_SLOT, super::substitution::words::SYNC_FAILED)),
+            EXPAND_ROOT => Some((ROOT_PROGRAM, super::DISCOVERY_ROOT_SYNC_SLOT, super::substitution::words::SYNC_FAILED)),
             _ => None,
         };
         if program.is_some() {
@@ -1410,6 +1384,10 @@ impl RetainedDiscovery {
         for name in &names {
             let n = name.as_str();
             if matches!(n, "program_launch" | "step_program_sync") {
+                continue;
+            }
+            if let Some((_, binding)) = resources.iter().find(|(name, _)| *name == n) {
+                entries.push((n, binding.clone()));
                 continue;
             }
             if n == "dg_proofs" {
@@ -1435,15 +1413,14 @@ impl RetainedDiscovery {
             entries.push((n, buffer.as_entire_binding()));
         }
         if let Some((key, slot, failure_word)) = program {
-            let Dispatch::Lanes(rows) = dispatch else {
-                bail!("{key} requires a direct launch");
-            };
-            let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
-            let (status, options) = if matches!(kernel, EXPAND_WAVE | EXPAND_CHAIN) {
+            let groups = step_program_group_counts()[step_program_group_variant(u64::from(lanes))];
+            let (status, options) = if matches!(kernel, EXPAND_CHAIN | EXPAND_ROOT) {
                 let counts = extra.iter().find(|(name, _)| *name == "sb_counts")
                     .map(|(_, buffer)| *buffer)
                     .ok_or_else(|| anyhow!("{key} has no substitution status"))?;
                 (counts, super::substitution::FIRST_BATCH_OPTIONS)
+            } else if kernel == EXPAND_CLOSED_WAVE {
+                (&self.scratch["dg_status"], super::substitution::FIRST_BATCH_OPTIONS)
             } else {
                 (&self.scratch["dg_status"], 0)
             };
@@ -1460,9 +1437,9 @@ impl RetainedDiscovery {
                 (failure_word * 4) as u64,
                 4,
             );
-            if matches!(kernel, EXPAND_WAVE | EXPAND_CHAIN) {
+            if matches!(kernel, EXPAND_CLOSED_WAVE | EXPAND_CHAIN) {
                 report.substitution_dispatches += 1;
-            } else {
+            } else if kernel != EXPAND_ROOT {
                 report.dispatches += 1;
             }
             return Ok(());
@@ -1474,15 +1451,7 @@ impl RetainedDiscovery {
             0,
             &entries,
         )?;
-        let launch = match dispatch {
-            Dispatch::Lanes(lanes) => {
-                let groups = lanes.div_ceil(256).max(1);
-                PendingLaunch::Groups(groups.min(65535), groups.div_ceil(65535))
-            }
-            Dispatch::Indirect(buffer) => PendingLaunch::Indirect(buffer.clone()),
-        };
-        let _ = encoder;
-        self.pending.push((kernel, bind, launch));
+        self.pending.push((kernel, bind, lanes.div_ceil(256).max(1)));
         report.dispatches += 1;
         Ok(())
     }
@@ -1588,17 +1557,6 @@ struct Chained {
     /// word 3).
     predicated: u32,
 }
-/// How many workgroups a recorded pass runs.
-enum PendingLaunch {
-    Groups(u32, u32),
-    Indirect(wgpu::Buffer),
-}
-enum Dispatch<'a> {
-    /// One lane per item, 256 lanes per workgroup.
-    Lanes(u32),
-    /// Workgroup counts the GPU wrote at offset 0 of an indirect buffer.
-    Indirect(&'a wgpu::Buffer),
-}
 /// Accepts a deferred closed publication receipt, which follows the status
 /// words and store counters in `words`. A publication that did not finish
 /// rejects the wave, before any growth or discovery failure is reported.
@@ -1624,6 +1582,11 @@ fn closed_receipt_failure(
     })
 }
 fn check_discovery_sync(status: &[u32]) -> Result<()> {
+    for wave in 0..CLOSED_CHAIN_WAVES as usize {
+        if status.get(CLOSED_WAVE_SYNC_FAILED + wave).copied() == Some(1) {
+            bail!("retention program {CLOSED_WAVE_PROGRAM} failed to synchronize in wave {wave}");
+        }
+    }
     for (word, key) in [
         (RANK_SYNC_FAILED, RANK_INSTANCES_PROGRAM),
         (COLLECT_SYNC_FAILED, COLLECT_PROGRAM),

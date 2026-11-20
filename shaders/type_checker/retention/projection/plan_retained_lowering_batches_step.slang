@@ -6,7 +6,7 @@
 // the largest batch, for the host's one allocation of the batch columns.
 import type_checker.retention.projection.retained_projection_workspace;
 
-RWStructuredBuffer<uint4> pj_batches;
+public RWStructuredBuffer<uint4> pj_batches;
 
 // The first rank whose first row is at least `g` (the instance count when
 // none is).

@@ -4,12 +4,13 @@
 // its substituted declared type as the lowering's parameter reference.
 // Array elements retain their owner, value and ordinal.
 // Match arm and payload indices retain canonical order within each body.
+import type_checker.retention.projection.retained_projection_results;
 import type_checker.retention.projection.retained_lowering_columns;
 import type_checker.retention.projection_schema.retained_schema_projection;
 
 void copy(Batch b, uint k, uint index)
 {
-    if (index >= pj_batch_side(k)) return;
+    if (index >= pj_batch_side(b, k)) return;
     uint gi = pj_base_at(b.lo, PJ_C_SIDE + k) + index;
     uint rank = pj_rank_of(PJ_C_SIDE + k, gi, b.lo, b.hi);
     uint rel = gi - pj_base_at(rank, PJ_C_SIDE + k);
@@ -65,9 +66,8 @@ void copy(Batch b, uint k, uint index)
     }
 }
 
-public void project_retained_body_side_tables(uint index)
+public void project_retained_body_side_tables(Batch b, uint index)
 {
-    Batch b = pj_batch();
     if (b.lo >= b.hi) return;
     copy(b, PJ_SIDE_CALL_ARGS, index);
     copy(b, PJ_SIDE_FIELDS, index);

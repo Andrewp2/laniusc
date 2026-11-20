@@ -13,6 +13,7 @@
 // Every compared type must have a complete native layout. A failing use
 // counts in nc_cert[0], the lowest failing use goes to nc_cert[1], and the
 // failure bit to nc_cert[2]. finalize_retained_native_abi sets READY_ABI.
+import type_checker.retention.projection.retained_projection_results;
 import type_checker.retention.projection.retained_projection_workspace;
 
 public StructuredBuffer<uint4> nc_use_abi;

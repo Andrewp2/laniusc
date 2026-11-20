@@ -36,19 +36,17 @@ uint intern_environment(uint request, RtTermKey key, MrArgs args, uint arity)
 }
 
 uint mr_final_value(uint2 reference) { return mr_value_in(reference, 1u); }
-public void intern_retained_method_environments(uint i)
+public void intern_retained_method_environments(uint i, uint env, uint4 request)
 {
     // Both loops ran to their fixed point or to the level bound in the
     // passes before this one.
-    if (i>=mr_config[2]) return;
     uint4 selected=mr_selected[i]; if (selected.x==RT_INVALID || mr_out[i].w!=0u) return;
-    uint4 request=mr_requests[i]; uint required_decl=rt_uses[request.z*RT_USE_WORDS].w;
+    uint required_decl=rt_uses[request.z*RT_USE_WORDS].w;
     uint required=mr_entry(required_decl); uint target=mr_entry(selected.x);
     uint4 d1=rt_dir[target*RT_DIR_WORDS+1u];
     uint types=d1.y&0xffffu; uint constants=d1.y>>16u; uint n=types+constants;
     uint4 original=rt_dir[required*RT_DIR_WORDS+1u]; uint on=(original.y&0xffffu)+(original.y>>16u);
     if (types>32u || constants>32u || on>64u || mr_state[3]!=0u) { mr_fail(i,10u); return; }
-    uint env=sb_results[i*SB_RESULT_WORDS].x;
     MrArgs args; args.base=i*64u;
     for (uint k=0u;k<n;k++)
     {

@@ -8,16 +8,13 @@
 // written; the count tells the engine how many the producer needed.
 import type_checker.retention.projection.retained_projection_workspace;
 
-RWStructuredBuffer<uint4> sb_requests;
-RWStructuredBuffer<uint> sb_request_count;
+public RWStructuredBuffer<uint4> sb_requests;
+public RWStructuredBuffer<uint> sb_request_count;
 
 uint resolved_or_unit(uint term) { return rt_is_resolved(term) ? term : SCALAR_UNIT; }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+public void emit_retained_projection_substitution_request(uint q)
 {
-    uint q = pj_lane(dtid);
     uint n = pj_instance_count();
     uint total = pj_base[n * PJ_COLUMNS + PJ_C_REQUESTS];
     if (q == 0u) sb_request_count[0u] = total;

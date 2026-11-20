@@ -101,6 +101,9 @@ pub(super) fn record_timed(
 pub(super) type Consumer<'a> =
     dyn FnMut(&mut wgpu::CommandEncoder, &Store, u32, &wgpu::Buffer, &wgpu::Buffer) -> Result<()> + 'a;
 
+pub(super) type InitialBatch<'a> =
+    dyn FnMut(&RetainedSubstitution, &mut wgpu::CommandEncoder, &Store, u32) -> Result<()> + 'a;
+
 /// Result statuses (retained_substitution_workspace.slang SB_*).
 pub mod status {
     pub const OK: u32 = 0;
@@ -515,7 +518,7 @@ impl RetainedSubstitution {
         store: &ProgramRetention,
         requests: &SubstitutionRequests,
     ) -> Result<SubstitutionRun> {
-        Ok(self.run_then(store, requests, None, &[])?.0)
+        Ok(self.run_then(store, requests, None, None, &[])?.0)
     }
 
     /// `run`, with a consumer recorded in the first batch's submit, after
@@ -530,11 +533,12 @@ impl RetainedSubstitution {
         store: &ProgramRetention,
         requests: &SubstitutionRequests,
         consumer: Option<&mut Consumer<'_>>,
+        initial: Option<&mut InitialBatch<'_>>,
         extra: &[(&wgpu::Buffer, usize)],
     ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
         self.published = None;
         let mut guard = store.store.lock().unwrap();
-        let result = self.run_attempts(store, &mut guard, requests, consumer, extra);
+        let result = self.run_attempts(store, &mut guard, requests, consumer, initial, extra);
         match &result {
             Ok((SubstitutionRun::Published(report), _)) => self.published = Some(report.publication),
             Ok((SubstitutionRun::RequestCapacity { .. }, _)) => {}
@@ -564,6 +568,7 @@ impl RetainedSubstitution {
         guard: &mut Store,
         requests: &SubstitutionRequests,
         mut consumer: Option<&mut Consumer<'_>>,
+        mut initial: Option<&mut InitialBatch<'_>>,
         extra: &[(&wgpu::Buffer, usize)],
     ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
         self.ensure_results(requests)?;
@@ -601,18 +606,25 @@ impl RetainedSubstitution {
 
             let mut rounds = FIRST_BATCH_ROUNDS;
             let mut recorded = rounds;
-            self.record_batch(&mut encoder, guard, requests, true, rounds, &mut report.dispatches)?;
-            let consumed = match consumer.take() {
-                Some(record) => {
-                    let (_, results, _) = self
-                        .results
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
-                    record(&mut encoder, guard, run, results, &self.scratch["sb_counts"])?;
-                    passes_core::flush_deferred_compute(&mut encoder);
-                    true
+            let consumed = if let Some(record) = initial.take() {
+                record(self, &mut encoder, guard, run)?;
+                passes_core::flush_deferred_compute(&mut encoder);
+                report.dispatches += 1;
+                true
+            } else {
+                self.record_batch(&mut encoder, guard, requests, true, rounds, &mut report.dispatches)?;
+                match consumer.take() {
+                    Some(record) => {
+                        let (_, results, _) = self
+                            .results
+                            .as_ref()
+                            .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
+                        record(&mut encoder, guard, run, results, &self.scratch["sb_counts"])?;
+                        passes_core::flush_deferred_compute(&mut encoder);
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
             };
             self.queue.submit(Some(encoder.finish()));
             report.batches += 1;
@@ -794,13 +806,10 @@ impl RetainedSubstitution {
     pub(super) fn chain_bindings(&self) -> Result<Vec<(&'static str, &wgpu::Buffer)>> {
         let (_, results, roots) = self.results.as_ref()
             .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
-        let runs = self.chain_runs.as_ref()
-            .ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
-        let mut bindings = vec![
-            ("sb_results", results),
-            ("sb_req_root", roots),
-            ("sb_chain_runs", runs),
-        ];
+        let mut bindings = vec![("sb_results", results), ("sb_req_root", roots)];
+        if let Some(runs) = self.chain_runs.as_ref() {
+            bindings.push(("sb_chain_runs", runs));
+        }
         bindings.extend(self.scratch.iter().map(|(&name, buffer)| (name, buffer)));
         Ok(bindings)
     }

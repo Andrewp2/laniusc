@@ -6,17 +6,20 @@ groupshared uint step_program_scan_carry;
 // Each lane scans a contiguous range. Only the lane totals participate in the
 // workgroup scan. In-place scans are safe because both passes touch only the
 // lane's own input range. The caller ends the final step before reusing sums.
-public bool step_program_prefix_scan(
+public bool step_program_prefix_scan_strided(
     inout StepProgram program,
     uint rows,
     RWStructuredBuffer<uint> input,
     RWStructuredBuffer<uint> prefix,
     RWStructuredBuffer<uint> total,
-    RWStructuredBuffer<uint> group_sums)
+    RWStructuredBuffer<uint> group_sums,
+    uint column,
+    uint stride,
+    uint total_word)
 {
     if (rows == 0u)
     {
-        if (program.lane == 0u) total[0u] = 0u;
+        if (program.lane == 0u) total[total_word] = 0u;
         return true;
     }
 
@@ -33,11 +36,11 @@ public bool step_program_prefix_scan(
     if (group < active_groups)
     {
         for (uint row = first; row < end; ++row)
-            sum += input[row];
+            sum += input[row * stride + column];
         inclusive = prefix_scan_u32_256(lane, sum);
         if (lane == size - 1u)
         {
-            if (active_groups == 1u) total[0u] = inclusive;
+            if (active_groups == 1u) total[total_word] = inclusive;
             else group_sums[group] = inclusive;
         }
     }
@@ -57,7 +60,7 @@ public bool step_program_prefix_scan(
             {
                 step_program_scan_carry = prior_inclusive;
                 if (group + 1u == active_groups)
-                    total[0u] = prior_inclusive + inclusive;
+                    total[total_word] = prior_inclusive + inclusive;
             }
             GroupMemoryBarrierWithGroupSync();
             carry = step_program_scan_carry;
@@ -67,18 +70,29 @@ public bool step_program_prefix_scan(
     uint offset = carry + inclusive - sum;
     if (chunk == 1u)
     {
-        if (first < rows) prefix[first] = offset;
+        if (first < rows) prefix[first * stride + column] = offset;
     }
     else
     {
         for (uint row = first; row < end; ++row)
         {
-            uint value = input[row];
-            prefix[row] = offset;
+            uint value = input[row * stride + column];
+            prefix[row * stride + column] = offset;
             offset += value;
         }
     }
     return true;
+}
+
+public bool step_program_prefix_scan(
+    inout StepProgram program,
+    uint rows,
+    RWStructuredBuffer<uint> input,
+    RWStructuredBuffer<uint> prefix,
+    RWStructuredBuffer<uint> total,
+    RWStructuredBuffer<uint> group_sums)
+{
+    return step_program_prefix_scan_strided(program, rows, input, prefix, total, group_sums, 0u, 1u, 0u);
 }
 
 struct PrefixScanU32x4Add : IPrefixScanOp<uint4>

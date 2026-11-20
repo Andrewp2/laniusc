@@ -1,14 +1,10 @@
 import type_checker.retention.discovery.discovery_workspace;
+import type_checker.retention.discovery.discovery_term_counts;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
     uint term = RT_FIRST_TERM + dg_lane(id);
-    if (term >= rt_counts[RT_A_TERMS] || rt_term_head[term].x == 0u || !rt_term_closed(term)) return;
-    uint height = rt_term_height(term);
-    if (height != 0u && height < 128u)
-        InterlockedAdd(dg_levels[height], 1u);
-    else if (dg_config[0] == 0u)
-        dg_status[10] = 8u;
+    if (term < rt_counts[RT_A_TERMS]) count_discovered_term(term, dg_config[0] == 0u);
 }
