@@ -148,7 +148,6 @@ impl ClosedTraitPublication {
         if self.solver.is_some() {
             ensure!(receipt.len() >= Self::RECEIPT_WORDS, "closed publication receipt has no solver state");
             let state = &receipt[RP_HEADER_WORDS as usize..][..wave::READ_WORDS as usize];
-            crate::compiler::gpu_compiler::trait_solver::dispatch::wave_fault(state)?;
             if state[wave::STOP] != wave::DONE {
                 return Ok(None);
             }

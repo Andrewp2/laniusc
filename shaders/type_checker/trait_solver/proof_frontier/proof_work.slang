@@ -1,6 +1,17 @@
-// Transient frontier records never become retained proof identities. They may
-// be updated only by their owning stage; every stage transition is separated by
-// a dispatch barrier. Persistent proof readers cannot read these records.
+// The proof search of one batch. PPS_WORK is a queue of goals. Row i below
+// the root count is source obligation `first + i`. Every later row is one
+// prerequisite of an implementation that a proof applied. One lane owns one
+// row from its goal to its proof.
+//
+// A recorded step runs the rows [cursor, cursor + count) through four lane
+// kernels: build_proof_goals, select_proof_assumptions,
+// select_proof_implementations and write_proof_rows. The rows a step appends
+// run in a later step, so a step is one nesting level of obligations at
+// most. plan_proof_wave chooses each step's rows on the GPU, and the host
+// reads the state back once after the recorded steps.
+//
+// Rows are not shared between obligations: two obligations with the same
+// goal prove it twice. A goal equal to one of its ancestors is a cycle.
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.catalog.catalog_io;
@@ -10,41 +21,75 @@ import type_checker.scoped_types.scoped_type_hash;
 import type_checker.scoped_types.scoped_type_equality;
 import type_checker.trait_solver.scoped_type_scratch;
 
-public static const uint PPS_WORK_REQUEST = 0u;
-public static const uint PPS_WORK_NORMALIZED = 1u;
-public static const uint PPS_WORK_NEW = 2u;
-public static const uint PPS_WORK_ALIAS = 3u;
-public static const uint PPS_WORK_WAITING = 4u;
-public static const uint PPS_WORK_READY = 5u;
-public static const uint PPS_WORK_PROOF_PENDING = 6u;
-public static const uint PPS_WORK_PROVEN = 7u;
-public static const uint PPS_WORK_MISSING = 8u;
-public static const uint PPS_WORK_NOTIFIED = 9u;
-// Normalization owns these intermediate states. Only the final commit stage
-// changes GOAL_VALIDATED to NORMALIZED; failures leave the wave unpublished.
-public static const uint PPS_WORK_NORMALIZATION_EMITTED = 20u;
-public static const uint PPS_WORK_NORMALIZATION_VALIDATED = 21u;
-public static const uint PPS_WORK_GOAL_VALIDATED = 22u;
+// Work16 words.
+public static const uint PPS_WORK_CONTEXT = 0u;
+public static const uint PPS_WORK_GOAL = 1u;
+public static const uint PPS_WORK_STATE = 2u;
+public static const uint PPS_WORK_PARENT = 3u;      // Work row, INVALID for a root
+public static const uint PPS_WORK_ROOT = 4u;        // the root Work of this tree
+public static const uint PPS_WORK_PREDICATE = 5u;   // catalog/batch predicate row
+// A root's environment, or the substitution of the parent's implementation.
+public static const uint PPS_WORK_SOURCE = 6u;
+public static const uint PPS_WORK_PARENT_EDGE = 7u; // parent's ProofEdge row, INVALID for a root
+public static const uint PPS_WORK_PROOF = 8u;
+public static const uint PPS_WORK_IMPLEMENTATION = 9u;
+public static const uint PPS_WORK_DEPTH = 10u;
+// Roots only: the worst outcome of the tree (PPS_VERDICT_*), an atomic max.
+public static const uint PPS_WORK_VERDICT = 11u;
+public static const uint PPS_WORK_ASSUMPTION = 12u;
+public static const uint PPS_WORK_OBLIGATION = 13u; // roots only
+
+public static const uint PPS_WORK_PENDING = 0u;
+public static const uint PPS_WORK_BUILT = 1u;    // the goal row exists
+public static const uint PPS_WORK_SELECTED = 2u; // implementation and assumption words are final
+public static const uint PPS_WORK_PROVEN = 3u;
+public static const uint PPS_WORK_REFUTED = 4u;
+
+public static const uint PPS_VERDICT_CYCLE = 1u;
+public static const uint PPS_VERDICT_MISSING = 2u;
+
+// Proof8 word 7. A proof with a refuted descendant is no proof: every reader
+// accepts only CLOSED or CONDITIONAL.
+public static const uint PPS_PROOF_CLOSED = 1u;
+public static const uint PPS_PROOF_CONDITIONAL = 2u;
+public static const uint PPS_PROOF_REFUTED = 3u;
+
 public static const uint PPS_ATOMIC_ATTEMPTS = 65536u;
 public static const uint PPS_LOGICAL_WORK_LIMIT = 65536u;
 
-public bool pps_pending4(uint table, uint row, uint field, out uint4 value)
+// Wave state, written by plan_proof_wave and by the host before an attempt.
+public StructuredBuffer<uint> trait_solver_wave;
+public static const uint PSW_STOP = 0u;             // PSW_RUNNING .. PSW_DONE
+public static const uint PSW_FAULT_DETAIL = 1u;
+public static const uint PSW_CURSOR = 2u;           // first Work row no step has run
+public static const uint PSW_ROOTS = 3u;            // source obligations: a bound from the host, the count after the first plan
+public static const uint PSW_CHUNK_FIRST = 4u;      // this step's rows
+public static const uint PSW_CHUNK_COUNT = 5u;
+public static const uint PSW_OBLIGATIONS_FIRST = 6u; // host
+public static const uint PSW_STEPS = 7u;            // steps that ran rows
+public static const uint PSW_LANE_ARGS = 8u;        // indirect arguments, three words each
+public static const uint PSW_PUBLISH_ARGS = 12u;
+public static const uint PSW_CALLS_FIRST = 17u;     // host: the batch's new call rows
+public static const uint PSW_CALLS_COUNT = 18u;
+public static const uint PSW_REDUCE_ARGS = 20u;
+public static const uint PSW_FINALIZE_ARGS = 24u;
+public static const uint PSW_RUNNING = 0u;
+public static const uint PSW_STOPPED = 1u;  // the batch or the store stopped building
+public static const uint PSW_DONE = 2u;     // every Work ran; the finish published
+// Rows of one step: every lane takes one thread-scratch slot.
+public static const uint PSW_CHUNK_ROWS = 4096u;
+public static const uint PSW_LANE_GROUP = 64u;
+
+// The Work row of lane `local` in this step.
+public bool pps_wave_lane(uint local, out uint work)
 {
-    value = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID);
-    uint address;
-    if (!pps_address(table, row, field, 4u, true, address)) return false;
-    value = uint4(trait_solver_proof_store[address], trait_solver_proof_store[address + 1u],
-        trait_solver_proof_store[address + 2u], trait_solver_proof_store[address + 3u]);
+    work = TS_INVALID;
+    if (local >= trait_solver_wave[PSW_CHUNK_COUNT] || !pps_building() || !ts_batch_is_building())
+        return false;
+    work = trait_solver_wave[PSW_CHUNK_FIRST] + local;
     return true;
 }
-public bool pps_work_read(uint row, out uint4 key, out uint4 selection,
-    out uint4 completion, out uint4 source)
-{
-    return pps_read4(PPS_WORK, row, 0u, key) &&
-        pps_read4(PPS_WORK, row, 4u, selection) &&
-        pps_read4(PPS_WORK, row, 8u, completion) &&
-        pps_read4(PPS_WORK, row, 12u, source);
-}
+
 public bool pps_write4(uint table, uint row, uint field, uint4 value)
 {
     uint address;
@@ -55,21 +100,25 @@ public bool pps_write4(uint table, uint row, uint field, uint4 value)
     trait_solver_proof_store[address + 3u] = value.w;
     return true;
 }
-public bool pps_work_write(uint row, uint4 key, uint4 selection, uint4 completion, uint4 source)
-{
-    return pps_write4(PPS_WORK, row, 0u, key) && pps_write4(PPS_WORK, row, 4u, selection) &&
-        pps_write4(PPS_WORK, row, 8u, completion) && pps_write4(PPS_WORK, row, 12u, source);
-}
-public bool pps_transient_word(uint table, uint row, uint field, uint value)
+public bool pps_write_word(uint table, uint row, uint field, uint value)
 {
     uint address;
-    if (table < PPS_PERSISTENT_TABLES || !pps_address(table, row, field, 1u, true, address)) return false;
+    if (!pps_address(table, row, field, 1u, true, address)) return false;
     trait_solver_proof_store[address] = value; return true;
 }
+// Raises one word of a row of this batch to at least `value`. Several lanes
+// of one dispatch may raise the same word. `previous` is the word before.
+public bool pps_raise_word(uint table, uint row, uint field, uint value, out uint previous)
+{
+    previous = TS_INVALID; uint address;
+    if (!pps_address(table, row, field, 1u, true, address)) return false;
+    InterlockedMax(trait_solver_proof_store[address], value, previous);
+    return true;
+}
 
-// A successful CAS is a prefix reservation, not admission. Each emitter first
-// counts its complete rows and makes one reservation per table; overflow never
-// truncates a row. A failed wave discards its entire unaccepted suffix.
+// A successful CAS is a prefix reservation. A lane reserves the complete
+// rows of one table at once, and overflow never truncates a row. Rows of a
+// failed attempt are never accepted (pps_accept_submission).
 public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint first)
 {
     first = TS_INVALID;
@@ -78,8 +127,7 @@ public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint f
         return ts_invalid(66u, subject, table);
     if (count == 0u) { first = 0u; return ts_ok(); }
     uint address = PPS_DIRECTORY + table * 6u + 1u;
-    uint limit = table == PPS_WORK ? PPS_LOGICAL_WORK_LIMIT :
-        (table == PPS_REDUCTION_QUEUE ? 2u * PPS_LOGICAL_WORK_LIMIT : TS_INVALID);
+    uint limit = table == PPS_WORK ? PPS_LOGICAL_WORK_LIMIT : TS_INVALID;
     // The active lanes of a subgroup that reserve rows of one table take
     // them with one exchange: a compare-exchange per lane on the table's
     // counter serializes every lane of a large stage. The total fits
@@ -122,7 +170,7 @@ public bool pps_goal_equal(uint left, uint right)
 {
     uint4 a; uint4 aa; uint4 b; uint4 ba; uint nodes; uint atoms;
     if (!pps_read8(PPS_GOALS, left, a, aa) || !pps_read8(PPS_GOALS, right, b, ba) ||
-        a.x != b.x || aa.x != ba.x || aa.x > 32u ||
+        a.x != b.x || aa.x != ba.x || aa.y != ba.y || aa.x > 32u ||
         !pps_count(PPS_TERM_NODES, nodes) || !ts_table_count(1u, atoms)) return false;
     [loop]
     for (uint i = 0u; i <= aa.x; i++)
@@ -136,63 +184,32 @@ public bool pps_goal_equal(uint left, uint right)
     return true;
 }
 
-public SolverStatus pps_insert_work(uint work)
+// Work `work` of the tree of `root` is refuted. Every proof above it is no
+// proof, and the root takes the verdict. `parent` is the Work's parent.
+public SolverStatus pps_refute_work(uint work, uint parent, uint root, uint verdict)
 {
-    uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 goal; uint4 extra;
-    uint4 buckets; uint unused; uint active;
-    if (!pps_work_read(work, key, selected, completion, source) || key.z != PPS_WORK_NORMALIZED ||
-        !pps_read8(PPS_GOALS, key.y, goal, extra) || !pps_count(PPS_WORK, active) ||
-        !pps_descriptor(PPS_GOAL_BUCKETS, buckets, unused) || buckets.w == 0u ||
-        (buckets.w & (buckets.w - 1u)) != 0u || !pps_span(PPS_GOAL_INDEX, work, 1u))
-        return ts_invalid(70u, work, PPS_GOAL_INDEX);
-    uint hash = scoped_type_hash_mix(extra.y, key.x);
-    uint address;
-    if (!pps_address(PPS_GOAL_BUCKETS, hash & (buckets.w - 1u), 0u, 1u, true, address) ||
-        !pps_write4(PPS_GOAL_INDEX, work, 0u, uint4(hash, TS_INVALID, work, 1u)))
-        return ts_invalid(1u, work, PPS_GOAL_INDEX);
-    uint expected = TS_INVALID;
-    [loop]
-    for (uint attempt = 0u; attempt < active; attempt++)
-    {
-        uint previous;
-        InterlockedCompareExchange(trait_solver_proof_store[address], expected, work, previous);
-        if (previous == expected)
-        {
-            if (!pps_transient_word(PPS_GOAL_INDEX, work, 1u, previous))
-                return ts_invalid(1u, work, PPS_GOAL_INDEX);
-            return ts_ok();
-        }
-        expected = previous;
-    }
-    return ts_limit(8u, work, active + 1u, active);
+    uint previous;
+    if (!pps_write_word(PPS_WORK, work, PPS_WORK_STATE, PPS_WORK_REFUTED) ||
+        !pps_raise_word(PPS_WORK, root, PPS_WORK_VERDICT, verdict, previous))
+        return ts_invalid(1u, work, root);
+    return pps_raise_ancestor_proofs(work, parent, PPS_PROOF_REFUTED);
 }
-
-// Resolve only after the whole insertion dispatch. All candidate goals were
-// independently admitted. Lowest logical Work ID gives a stable representative
-// across waves; repeated goals become edges, never optimistic recursive proofs.
-public SolverStatus pps_resolve_work(uint work)
+// Raises the classification of the proof of every Work from `ancestor` up to
+// the root. An ancestor already at `classification` or above ends the walk:
+// the lane that raised it walks the rest.
+public SolverStatus pps_raise_ancestor_proofs(uint work, uint ancestor, uint classification)
 {
-    uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 index;
-    uint4 buckets; uint unused; uint active; uint address;
-    if (!pps_work_read(work, key, selected, completion, source) || key.z != PPS_WORK_NORMALIZED ||
-        !pps_read4(PPS_GOAL_INDEX, work, 0u, index) || index.z != work || index.w != 1u ||
-        !pps_count(PPS_WORK, active) || !pps_descriptor(PPS_GOAL_BUCKETS, buckets, unused) ||
-        buckets.w == 0u || (buckets.w & (buckets.w - 1u)) != 0u ||
-        !pps_address(PPS_GOAL_BUCKETS, index.x & (buckets.w - 1u), 0u, 1u, false, address))
-        return ts_invalid(70u, work, PPS_GOAL_INDEX);
-    uint candidate = trait_solver_proof_store[address]; uint best = work;
     [loop]
-    for (uint examined = 0u; candidate != TS_INVALID; examined++)
+    for (uint depth = 0u; ancestor != TS_INVALID; depth++)
     {
-        if (examined == TS_CHAIN_LIMIT) return ts_limit(8u, work, examined + 1u, TS_CHAIN_LIMIT);
-        uint4 link; uint4 other;
-        if (candidate >= active || !pps_read4(PPS_GOAL_INDEX, candidate, 0u, link) ||
-            link.z != candidate || link.w != 1u || !pps_read4(PPS_WORK, candidate, 0u, other))
-            return ts_invalid(70u, work, candidate);
-        if (link.x == index.x && other.x == key.x && candidate < best &&
-            pps_goal_equal(key.y, other.y)) best = candidate;
-        candidate = link.y;
+        uint4 key; uint4 result; uint previous;
+        if (depth > TS_DEPTH_LIMIT) return ts_limit(6u, work, depth + 1u, TS_DEPTH_LIMIT);
+        if (!pps_read4(PPS_WORK, ancestor, 0u, key) || !pps_read4(PPS_WORK, ancestor, 8u, result) ||
+            key.z != PPS_WORK_PROVEN ||
+            !pps_raise_word(PPS_PROOFS, result.x, 7u, classification, previous))
+            return ts_invalid(70u, work, ancestor);
+        if (previous >= classification) break;
+        ancestor = key.w;
     }
-    key.z = best == work ? PPS_WORK_NEW : PPS_WORK_ALIAS; key.w = best;
-    return pps_write4(PPS_WORK, work, 0u, key) ? ts_ok() : ts_invalid(1u, work, PPS_WORK);
+    return ts_ok();
 }

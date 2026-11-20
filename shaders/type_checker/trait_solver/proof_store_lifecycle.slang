@@ -1,5 +1,5 @@
 // Serial lifecycle transitions. Dispatch barriers separate initialization,
-// frozen-wave validation, admitted-prefix publication, and final acceptance.
+// the solver's steps and final acceptance.
 // A reserved row and a successful allocation are never proof authority.
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.batches.batch_io;
@@ -15,39 +15,20 @@ public void pps_store_failure(SolverStatus status)
 }
 
 // Store initialization over one workgroup (initialize_trait_batch): the
-// layout admission and the goal bucket clear run on every lane, the checks
-// and directory writes on lane 0.
-groupshared uint4 pps_init_buckets;
-groupshared uint pps_init_admitted;
+// layout admission runs on every lane, the checks and directory writes on
+// lane 0.
 public void pps_initialize_store_group(uint lane)
 {
     SolverStatus layout = pps_admit_layout_group(lane);
-    if (lane == 0u)
-    {
-        uint4 buckets;
-        SolverStatus status = pps_initialize_checks(layout, buckets);
-        pps_store_failure(status);
-        pps_init_buckets = buckets;
-        pps_init_admitted = select(status.state == TS_VALID, 1u, 0u);
-    }
-    GroupMemoryBarrierWithGroupSync();
-    if (pps_init_admitted == 0u) return;
-    uint4 buckets = pps_init_buckets;
-    [loop]
-    for (uint bucket = lane; bucket < buckets.z; bucket += PPS_GROUP_LANES)
-        trait_solver_proof_store[buckets.x + bucket] = TS_INVALID;
     if (lane != 0u) return;
-    uint bucket_directory = PPS_DIRECTORY + PPS_GOAL_BUCKETS * 6u;
-    trait_solver_proof_store[bucket_directory + 1u] = buckets.z;
-    trait_solver_proof_store[bucket_directory + 3u] = buckets.z;
-    trait_solver_proof_store[10u] = PPS_BUILDING;
+    SolverStatus status = pps_initialize_checks(layout);
+    pps_store_failure(status);
+    if (status.state == TS_VALID) trait_solver_proof_store[10u] = PPS_BUILDING;
 }
 
-// Lane 0's part before the bucket clear: every check, then the temporary
-// tables' directory reset. `buckets` is the goal bucket descriptor.
-SolverStatus pps_initialize_checks(SolverStatus layout, out uint4 buckets)
+// Every check, then the temporary tables' directory reset.
+SolverStatus pps_initialize_checks(SolverStatus layout)
 {
-    buckets = uint4(0u);
     if (!ts_batch_is_building()) return ts_invalid(66u, TS_INVALID, TS_INVALID);
     if (layout.state != TS_VALID) return layout;
     if (proof_store_params.epoch_low != trait_solver_batch[2u] ||
@@ -67,10 +48,6 @@ SolverStatus pps_initialize_checks(SolverStatus layout, out uint4 buckets)
             (trait_solver_proof_store[7u] == 0u && accepted != 0u))
             return ts_invalid(66u, table, TS_INVALID);
     }
-    uint unused;
-    if (!pps_descriptor(PPS_GOAL_BUCKETS, buckets, unused) || buckets.z == TS_INVALID ||
-        (buckets.z != 0u && (buckets.z & (buckets.z - 1u)) != 0u))
-    { buckets = uint4(0u); return ts_invalid(66u, PPS_GOAL_BUCKETS, TS_INVALID); }
     // All layout/identity checks precede any payload mutation. No other stage
     // reads these temporary rows until this dispatch has completed.
     for (uint table = PPS_PERSISTENT_TABLES; table < PPS_TABLES; table++)
@@ -80,25 +57,6 @@ SolverStatus pps_initialize_checks(SolverStatus layout, out uint4 buckets)
         trait_solver_proof_store[base + 3u] = 0u;
         trait_solver_proof_store[base + 4u] = 0u;
     }
-    return ts_ok();
-}
-
-// The producer supplies the frozen wave endpoints, never a caller-chosen new
-// count. Every row in [expected_admitted,frozen_reserved) must have completed
-// its typed validator, with all failures reduced to the sticky batch status.
-public SolverStatus pps_check_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
-{
-    uint4 span; uint accepted;
-    if (!ts_batch_is_building() || !pps_building() ||
-        !pps_descriptor(table, span, accepted) || span.w != expected_admitted || span.y != frozen_reserved)
-        return ts_invalid(66u, table, frozen_reserved);
-    return ts_ok();
-}
-public SolverStatus pps_publish_validated_prefix(uint table, uint expected_admitted, uint frozen_reserved)
-{
-    SolverStatus status = pps_check_validated_prefix(table, expected_admitted, frozen_reserved);
-    if (status.state != TS_VALID) return status;
-    trait_solver_proof_store[PPS_DIRECTORY + table * 6u + 3u] = frozen_reserved;
     return ts_ok();
 }
 

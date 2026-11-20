@@ -14,23 +14,17 @@ use {crate::compiler::gpu_compiler::trait_solver::{
             ProofStoreSession,
         },
     }, super::Submission};
-#[cfg(test)]
-use anyhow::anyhow;
 use anyhow::{Result, ensure};
 
 pub(super) const BATCH_BUILDING: u32 = 0x8000_0001;
 pub(super) const STORE_BUILDING: u32 = 0xffff_fffe;
 pub(super) const STORE_CAPACITY_DETAIL: u32 = 69;
 pub(super) const WORK: usize = 8;
-pub(super) const QUEUE: usize = 15;
 
 pub(super) struct ProofProgress {
     pub header: Vec<u32>,
     pub receipt: [u32; 8],
     pub reserved: [u32; PROOF_STORE_TABLES],
-    /// Admitted rows per table; test hooks read pending rows past them.
-    #[cfg(test)]
-    pub admitted: [u32; PROOF_STORE_TABLES],
 }
 impl ProofProgress {
     pub fn from_owned_readback(
@@ -61,8 +55,6 @@ impl ProofProgress {
             "solver progress has a stale or malformed batch receipt"
         );
         let mut reserved = [0; PROOF_STORE_TABLES];
-        #[cfg(test)]
-        let mut admitted = [0; PROOF_STORE_TABLES];
         for table in 0..PROOF_STORE_TABLES {
             let base = PROOF_STORE_DIRECTORY as usize + table * 6;
             let row = &header[base..base + 6];
@@ -82,17 +74,11 @@ impl ProofProgress {
                 "solver progress accepted a temporary table"
             );
             reserved[table] = row[1];
-            #[cfg(test)]
-            {
-                admitted[table] = row[3];
-            }
         }
         Ok(Self {
             header,
             receipt,
             reserved,
-            #[cfg(test)]
-            admitted,
         })
     }
 
@@ -126,50 +112,25 @@ impl ProofProgress {
             self.receipt[5] == current && required > current && required != INVALID,
             "solver capacity request does not increase an owned table"
         );
-        let mut capacities = std::array::from_fn(|index| layout.slices[index].capacity);
-        capacities[table] = required
-            .checked_next_power_of_two()
-            .filter(|&n| n != INVALID)
-            .unwrap_or(required);
+        // A retry runs the whole attempt again, and the failed reservation
+        // names only its own table. The solver's tables fill together, so
+        // each retry doubles all of them.
+        let mut capacities: [u32; PROOF_STORE_TABLES] = std::array::from_fn(|index| {
+            let capacity = layout.slices[index].capacity;
+            if index <= WORK { capacity.saturating_mul(2).min(INVALID - 1) } else { capacity }
+        });
+        capacities[table] = capacities[table].max(
+            required.checked_next_power_of_two().filter(|&n| n != INVALID).unwrap_or(required));
         size_work_bounded(&mut capacities, session.accepted_prefix())?;
         Ok(Some(capacities))
     }
-
-    #[cfg(test)]
-    pub fn pending(&self, table: usize) -> Result<Span> {
-        let first = *self
-            .admitted
-            .get(table)
-            .ok_or_else(|| anyhow!("solver table absent"))?;
-        let reserved = self.reserved[table];
-        ensure!(
-            first <= reserved,
-            "solver admitted prefix exceeds reservation"
-        );
-        Span::new(first, reserved - first)
-    }
-
 }
 
-// Bucket count follows possible Work rows, including every capacity retry.
-// This is a storage load-factor bound, independent of semantic goal contents.
-fn size_goal_buckets(capacities: &mut [u32; PROOF_STORE_TABLES]) -> Result<()> {
-    capacities[11] = capacities[11].max(buckets(capacities[WORK])?);
-    ensure!(
-        capacities[11].is_power_of_two(),
-        "solver goal bucket capacity is not a power of two"
-    );
-    Ok(())
-}
-
-// Tables whose rows each Work row of the solve emits at most once, so the Work
-// capacity bounds them exactly and they never need a retry of their own:
-// normalization reserves one goal per Work and the goal index one entry per
-// Work; selection one substitution per selected Work; expansion one
-// requirement per child Work; reduction one proof per ready Work and one proof
-// edge per child of its Work; and a Work enqueues at most two events (ready or
-// failed, then proven). Persistent tables add this solve's rows after their
-// accepted ledger prefix. A larger Work capacity grows them with it.
+// Tables whose rows each Work row of the solve emits at most once, so the
+// Work capacity bounds them and they never need a retry of their own: one
+// goal, one substitution and one proof per Work, and one proof edge per child
+// Work. Persistent tables add this solve's rows after their accepted ledger
+// prefix. A larger Work capacity grows them with it.
 fn size_work_bounded(
     capacities: &mut [u32; PROOF_STORE_TABLES],
     accepted: &[u32; PROOF_STORE_PERSISTENT],
@@ -178,11 +139,7 @@ fn size_work_bounded(
     for table in [3usize, 4, 6, 7] {
         capacities[table] = capacities[table].max(add(accepted[table], work, "work-bounded proof rows")?);
     }
-    for table in [9usize, 10] {
-        capacities[table] = capacities[table].max(work);
-    }
-    capacities[QUEUE] = capacities[QUEUE].max(mul(work, 2, "work-bounded reduction events")?);
-    size_goal_buckets(capacities)
+    Ok(())
 }
 
 /// Raises a solve's first-attempt capacities to the pool's floor (the
@@ -200,34 +157,35 @@ pub(super) fn with_floor(
     Ok(capacities)
 }
 
-// Each source obligation creates one root Work, Goal, RootLink and normalization
-// request before recursive expansion. Seed these linear tables directly rather
-// than repeatedly restarting that known root inventory from a fixed small cap.
-// Other structural expansion remains GPU requested; no depth-times-arity slab.
+/// Term rows seeded per Work row of the first attempt: nodes, edges, roots
+/// and bindings. An overflow runs the whole attempt again
+/// (`ProofProgress::capacity_retry`), so the seed covers the goals of
+/// ordinary programs.
+const SEED_ROWS_PER_WORK: [(usize, u32); 4] = [(0, 8), (1, 8), (2, 4), (5, 4)];
+
+// Each source obligation is one root Work with one goal. Child Works follow
+// the roots, so the Work seed is twice the roots, rounded up as a growth
+// retry would round it.
 pub(super) fn initial_capacities(
     session: &ProofStoreSession,
     source_obligations: u32,
 ) -> Result<[u32; PROOF_STORE_TABLES]> {
     let layout = session.layout();
     let mut capacities = std::array::from_fn(|table| layout.slices[table].capacity.max(64));
-    for table in [WORK, 10, 13, 14] {
-        capacities[table] = capacities[table].max(source_obligations);
-    }
-    // Expansion adds child Works beyond the roots; an exact root count
-    // overflows on the first child and restarts the whole attempt. Round
-    // the seed up as a growth retry would.
-    capacities[WORK] = capacities[WORK].max(
-        source_obligations.checked_next_power_of_two().unwrap_or(source_obligations));
-    // Goal and subject-root rows append after accepted persistent history.
-    // Use its exact ledger counts, not capacity as a proxy for existing rows.
-    for table in [2usize, 3] {
+    let work = source_obligations
+        .saturating_mul(2)
+        .checked_next_power_of_two()
+        .unwrap_or(source_obligations);
+    capacities[WORK] = capacities[WORK].max(work);
+    // Term rows append after accepted persistent history. Use its exact
+    // ledger counts, not capacity as a proxy for existing rows.
+    for (table, rows) in SEED_ROWS_PER_WORK {
         capacities[table] = capacities[table].max(add(
             session.accepted_prefix()[table],
-            source_obligations,
-            "persistent root proof storage",
+            mul(capacities[WORK], rows, "seeded proof storage")?,
+            "seeded proof storage",
         )?);
     }
-    capacities[QUEUE] = capacities[QUEUE].max(mul(source_obligations, 2, "root proof queue")?);
     size_work_bounded(&mut capacities, session.accepted_prefix())?;
     Ok(capacities)
 }

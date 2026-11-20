@@ -15,8 +15,7 @@
 1024 type_checker/dependencies/projections/project_dependency_type_instances
 768 type_checker/interface/type_topology/export_interface_type_records
 512 type_checker/interface/type_topology/size_interface_type_trees
-396 type_checker/trait_solver/normalization/normalize_original_obligations
-396 type_checker/trait_solver/normalization/normalize_prerequisite_obligations
+396 type_checker/trait_solver/proof_frontier/build_proof_goals
 256 type_checker/modules/paths/normalize_type_aliases
 88 type_checker/predicates/validate_imported_methods
 48 type_checker/dependencies/projections/project_dependency_calls

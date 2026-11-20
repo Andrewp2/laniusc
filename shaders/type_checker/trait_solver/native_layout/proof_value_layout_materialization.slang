@@ -4,7 +4,7 @@ import type_checker.trait_solver.constant_atoms;
 import type_checker.trait_solver.packed_graph;
 import type_checker.trait_solver.native_layout.recipe_abi;
 import type_checker.trait_solver.native_layout.native_layout_work_abi;
-import type_checker.trait_solver.normalization.proof_term_normalization;
+import type_checker.trait_solver.proof_term_normalization;
 import type_checker.trait_solver.proof_term_graph;
 import type_checker.scoped_types.scoped_type_equality;
 import type_checker.trait_solver.scoped_type_scratch;

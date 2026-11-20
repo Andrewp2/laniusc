@@ -26,10 +26,10 @@ are under `target/stdlib-work/stream-forward-current-66e966d3/`.
 ## Existing contracts and exact missing boundary
 
 1. The GPU implementation solver retains the selected implementation's exact
-   substitution. `proof_frontier_selection.slang` stores `PPS_BINDINGS` and a
+   substitution. `proof_selection.slang` stores `PPS_BINDINGS` and a
    `PPS_SUBSTITUTIONS` row containing implementation identity and the binding
-   span. `proof_substitution_walk.slang` validates that same accepted substitution
-   for the implementation's prerequisites. The environment exists in the owned
+   span. `proof_goal_construction.slang` substitutes those bindings into the
+   implementation's prerequisites. The environment exists in the owned
    proof closure; it must not be reconstructed from a nominal type's arguments.
 2. Native export deliberately drops generic implementations.
    `FrozenCatalog::implementation_method_targets` in

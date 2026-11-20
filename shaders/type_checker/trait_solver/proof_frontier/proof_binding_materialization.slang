@@ -1,56 +1,31 @@
 import shared.semantics.primitive_types;
 import shared.semantics.constant_value;
 import type_checker.trait_solver.constant_atoms;
-// Binding-owned prefixes are private until the complete substitution wave is
-// checked. Its exact source is reconstructed from the admitted goal match.
+// The bindings of a matched implementation, written as proof-store terms.
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_term_graph;
-import type_checker.trait_solver.normalization.proof_term_normalization;
+import type_checker.trait_solver.proof_term_normalization;
 import type_checker.trait_solver.admitted_rows;
-import type_checker.trait_solver.proof_frontier.proof_goal_admission;
 import type_checker.trait_solver.owned_type_constraint_contract;
 
-public bool pps_binding_node_span(uint4 allocation, bool pending)
+// A term already in the proof store's namespace: its scope and closure.
+public SolverStatus pps_admit_term(uint2 reference, uint owner, uint domain,
+    bool require_closed, out bool closed)
 {
-    uint4 nodes; uint accepted;
-    if (any(allocation.zw != uint2(0u, 0u)) || allocation.y >= TS_DEPTH_LIMIT ||
-        !pps_descriptor(PPS_TERM_NODES, nodes, accepted)) return false;
-    if (allocation.y == 0u) return allocation.x == 0u;
-    uint limit = pending ? nodes.y : nodes.w;
-    return allocation.x < limit && allocation.y <= limit - allocation.x &&
-        (!pending || allocation.x >= nodes.w);
-}
-
-// Replay reads exactly the owning binding's checked allocation. This sink has
-// no matching/equality capability and cannot publish admission itself.
-public struct OwnedBindingCheckSink : IProofNormalizationSink
-{
-    public static bool read(uint row, out uint4 low, out uint4 high)
-    {
-        low = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); high = low;
-        uint admitted;
-        return pps_count(PPS_TERM_NODES, admitted) && (row < admitted
-            ? pps_read8(PPS_TERM_NODES, row, low, high)
-            : pps_read_pending8(PPS_TERM_NODES, row, low, high));
-    }
-    public static bool begin_node(uint mode, uint row, uint4 expected, uint4 unused)
-    {
-        uint4 low; uint4 high;
-        if (!read(row, low, high) || any(low != expected)) return false;
-        return low.x == 6u ? all(high == uint4(0u, 0u, 0u, 0u)) :
-            low.x == 5u && all(high.zw == uint2(0u, 0u));
-    }
-    public static bool set_child(uint mode, uint row, uint ordinal, uint2 expected)
-    {
-        uint4 low; uint4 high;
-        return ordinal == 0u && read(row, low, high) && low.x == 5u && all(high.xy == expected);
-    }
+    closed = false; uint2 unpublished; ProofNormalizationCounts counts;
+    ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
+    SolverStatus status = ts_normalize_proof_root<SameProofNormalizationGraph<SolverProofTermGraph>,
+        NoProofNormalizationBindings, NoProofNormalizationSink>(
+        reference, TS_INVALID, owner, domain, false, reservation, unpublished, closed, counts);
+    if (status.state != TS_VALID) return status;
+    if (require_closed && !closed) return ts_invalid(10u, reference.y, owner);
+    return ts_ok();
 }
 
 // The terminal/root is already in the admitted goal namespace (side1). Each
 // target owns one row; folding to Node6 does not erase allocation ownership of
-// earlier steps. Exact replay checks those rows even when they become unreachable.
+// earlier steps.
 public SolverStatus pps_materialize_binding_request<Sink : IProofNormalizationSink>(
     OwnedConstraintBindingRequest request, uint parameter, uint visible_owner,
     bool require_closed, uint4 allocation, out uint2 normalized, out bool closed)

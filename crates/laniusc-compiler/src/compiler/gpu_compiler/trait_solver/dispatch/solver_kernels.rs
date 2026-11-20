@@ -1,13 +1,9 @@
 use anyhow::{Result, anyhow, ensure};
 
-use {crate::compiler::gpu_compiler::trait_solver::{abi::Span, catalog::FrozenCatalog, proof_store::PROOF_STORE_TABLES}, super::{BatchPlan, arena::Arena}};
+use {crate::compiler::gpu_compiler::trait_solver::{abi::Span, catalog::FrozenCatalog}, super::{BatchPlan, arena::Arena}};
 use crate::gpu::{
     buffers::LaniusBuffer,
     dispatch_capture,
-    operations::{
-        STEP_PROGRAM_SYNC_WORDS, StepProgramOperation, step_program_group_counts,
-        step_program_group_variant,
-    },
     passes_core::{self, PassData},
 };
 
@@ -230,7 +226,7 @@ pub(super) fn record_phase_with_proof(
     proof: Option<ProofResources<'_>>,
 ) -> Result<()> {
     record_phase_with_resources(
-        device, encoder, pass, phase, span, threads, catalog, input, output, proof, None, None, None,
+        device, encoder, pass, phase, span, threads, catalog, input, output, proof, None, None,
     )
 }
 
@@ -247,7 +243,6 @@ fn record_phase_with_resources(
     proof: Option<ProofResources<'_>>,
     recipes: Option<&Arena>,
     layout_work: Option<&Arena>,
-    demand: Option<&LaniusBuffer<u32>>,
 ) -> Result<()> {
     ensure!(
         pass.thread_group_size == [threads, 1, 1],
@@ -278,20 +273,13 @@ fn record_phase_with_resources(
     } else {
         None
     };
-    // Audit lanes take no scratch slot, so they run over their whole span. A
-    // group-slot kernel takes one slot per workgroup.
+    // A group-slot kernel takes one slot per workgroup.
     let max_rows = if scratch.is_some() && GROUP_SLOT_KERNELS.contains(&pass.shader_id.as_str()) {
         max_rows.min(THREAD_SCRATCH_SLOTS / COHERENCE_CHECKERS * threads)
-    } else if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
+    } else if scratch.is_some() {
         max_rows.min(THREAD_SCRATCH_SLOTS)
     } else {
         max_rows
-    };
-    let audit = match proof {
-        Some(proof) if passes_core::bind_group::declares_binding(pass, 0, COMMIT_AUDIT) => {
-            Some(commit_audit(catalog, proof.storage)?)
-        }
-        _ => None,
     };
     let mut done = 0u32;
     while done < span.count {
@@ -353,12 +341,6 @@ fn record_phase_with_resources(
         if let Some(scratch) = &scratch {
             resources.push(("thread_scratch", scratch.as_entire_binding()));
         }
-        if let Some(demand) = demand {
-            resources.push(("trait_solver_proof_demand", demand.as_entire_binding()));
-        }
-        if let Some(audit) = &audit {
-            resources.push((COMMIT_AUDIT, audit.as_entire_binding()));
-        }
         let bindings = passes_core::bind_group::create_bind_group_from_bindings(
             device,
             Some("trait_solver.bindings"),
@@ -380,32 +362,6 @@ fn thread_scratch(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
         .workspace()
         .shared("trait_solver.thread_scratch")
         .buffer(THREAD_SCRATCH_SLOTS * THREAD_SCRATCH_CELLS * 4, wgpu::BufferUsages::STORAGE, None)
-}
-
-/// The commit audits' shared words (proof_commit_audit.slang): a header, then
-/// one claim word per two words of the proof arena. The role is shared: a
-/// stage's audit lanes and committing thread are recorded together, and
-/// the thread retires the lanes' claim tag.
-const COMMIT_AUDIT: &str = "trait_solver_commit_audit";
-const COMMIT_AUDIT_HEADER_WORDS: u32 = 16;
-pub(super) fn commit_audit(catalog: &Arena, proof: &Arena) -> Result<LaniusBuffer<u32>> {
-    let claims = u32::try_from(proof.buffer.byte_size / 8)?;
-    let words = claims
-        .checked_add(COMMIT_AUDIT_HEADER_WORDS + 1)
-        .ok_or_else(|| anyhow!("commit audit table overflow"))?;
-    catalog.workspace().shared("trait_solver.commit_audit").buffer(
-        words,
-        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-        None,
-    )
-}
-/// Zeroes the audit header for a solver attempt, keeping its epoch word:
-/// claim words of earlier attempts carry tags up to that epoch.
-pub(super) fn reset_commit_audit(catalog: &Arena, proof: ProofResources<'_>) -> Result<()> {
-    let audit = commit_audit(catalog, proof.storage)?;
-    let zeros = [0u8; (COMMIT_AUDIT_HEADER_WORDS as usize - 1) * 4];
-    audit.write(catalog.workspace().queue(), 4, &zeros);
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -487,7 +443,7 @@ fn proof_params_words(proof: ProofResources<'_>, phase: u32) -> [u32; 8] {
 
 // These literal keys also register the batch entry artifacts with the build.
 // Call reduction (18) and the batch receipt (19) run at the solver's finish
-// point (PROOF_KEYS).
+// (PROOF_KEYS).
 const BATCH_KEYS: [&str; 4] = [
     "type_checker/trait_solver/batches/initialize_trait_batch",
     "type_checker/trait_solver/batches/validate_retained_evidence",
@@ -614,202 +570,81 @@ impl BatchKernels {
     }
 }
 
-// Literal artifact inventory. Stage numbers are independent of chronological
-// order: original Work initialization precedes its normalization stages.
-/// PPS_SELECT_PHASE_EXACT and PPS_SELECT_PHASE_GENERIC in
-/// proof_frontier_selection.slang.
-const SELECTION_PHASE: u32 = 53;
-const GENERIC_SELECTION_PHASE: u32 = 65;
-/// PPS_WALK_PHASE_WORK, PPS_WALK_PHASE_PROOFS and
-/// PPS_WALK_PHASE_PREREQUISITES in proof_substitution_walk.slang.
-const SUBSTITUTION_PHASE: u32 = 54;
-const IMPLEMENTATION_PROOF_PHASE: u32 = 59;
-const PREREQUISITE_PHASE: u32 = 66;
-const WALK_GOALS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_goals";
-const WALK_ROOTS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_roots";
-const WALK_BINDINGS: &str = "type_checker/trait_solver/proof_substitution/walk_substitution_bindings";
-const SELECT_IMPLEMENTATIONS: &str = "type_checker/trait_solver/proof_frontier/select_proof_implementations";
-/// Exact implementation match, caller assumption search, generic
-/// implementation match (the first kernel again, as phase 65), then the
-/// finish (proof_frontier_selection.slang).
-const SELECTION_STEPS: [(&str, u32); 4] = [
-    (SELECT_IMPLEMENTATIONS, SELECTION_PHASE),
-    ("type_checker/trait_solver/proof_frontier/select_proof_assumptions", SELECTION_PHASE),
-    (SELECT_IMPLEMENTATIONS, GENERIC_SELECTION_PHASE),
-    ("type_checker/trait_solver/proof_frontier/select_proof_work", SELECTION_PHASE),
-];
-/// Up to the head match, the head's root unification, then the bindings
-/// (proof_substitution_walk.slang).
-const SUBSTITUTION_STEPS: [(&str, u32); 3] = [
-    (WALK_GOALS, SUBSTITUTION_PHASE),
-    (WALK_ROOTS, SUBSTITUTION_PHASE),
-    (WALK_BINDINGS, SUBSTITUTION_PHASE),
-];
-/// The substitution walk's three dispatches, then the root unification kernel
-/// again (phase 66) for the proof's fixed prerequisite checks.
-const IMPLEMENTATION_PROOF_STEPS: [(&str, u32); 4] = [
-    (WALK_GOALS, IMPLEMENTATION_PROOF_PHASE),
-    (WALK_ROOTS, IMPLEMENTATION_PROOF_PHASE),
-    (WALK_BINDINGS, IMPLEMENTATION_PROOF_PHASE),
-    (WALK_ROOTS, PREREQUISITE_PHASE),
-];
-const BINDING_ROWS: &str = "type_checker/trait_solver/proof_substitution/admit_proof_binding_rows";
-const ASSUMPTION_PROOFS: &str = "type_checker/trait_solver/proof_publication/admit_assumption_proofs";
-const PROOF_EDGE_ROWS: &str = "type_checker/trait_solver/proof_publication/admit_proof_edge_rows";
-/// The GPU planner of recorded solver rounds (proof_solver_wave.slang).
-const WAVE_PLAN_PHASE: u32 = 70;
-/// Normalization row counts (proof_demand.slang): original Works (phase 41)
-/// and prerequisite Works (phase 42).
-pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
-pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
-const AUDIT_TERMS: &str = "type_checker/trait_solver/normalization/audit_normalized_terms";
-const INDEX_NORMALIZED_GOALS: &str = "type_checker/trait_solver/normalization/index_normalized_proof_goals";
-const AUDIT_WORK: &str = "type_checker/trait_solver/proof_frontier/audit_proof_work";
-const WRITE_GOAL_INDEX: &str = "type_checker/trait_solver/proof_frontier/write_goal_index";
-const AUDIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/proof_substitution/audit_proof_substitutions";
-/// Commit stages audit a complete owner span before publishing. Phase 47
-/// commits and indexes goals in a step program. The other commit stages
-/// use the last workgroup of their dispatch (proof_commit_audit.slang).
-/// Phases 45, 47 and 55 audit all admitted Work. Phase 50 audits pending Work.
-const COMMIT_STAGES: [(u32, &[&str]); 4] = [
-    (45, &[AUDIT_TERMS]),
-    (47, &[INDEX_NORMALIZED_GOALS]),
-    (50, &[AUDIT_WORK, WRITE_GOAL_INDEX]),
-    (55, &[AUDIT_SUBSTITUTIONS]),
-];
-/// Commits run over the whole span. When the planner enables a commit with
-/// an empty owner span (WaveSpan::commit_one), the committing lane still runs.
-const COMMITTING_KERNELS: [&str; 6] = [
-    AUDIT_TERMS,
-    INDEX_NORMALIZED_GOALS,
-    AUDIT_WORK,
-    WRITE_GOAL_INDEX,
-    AUDIT_SUBSTITUTIONS,
-    PROOF_EDGE_ROWS,
-];
-/// Lanes that use no thread-scratch slot: one dispatch over the whole span.
-const WHOLE_SPAN_KERNELS: [&str; 6] = [
-    AUDIT_TERMS,
-    INDEX_NORMALIZED_GOALS,
-    AUDIT_WORK,
-    WRITE_GOAL_INDEX,
-    AUDIT_SUBSTITUTIONS,
-    PROOF_EDGE_ROWS,
-];
-fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
-    COMMIT_STAGES.iter().find(|(entry, _)| *entry == phase).map(|(_, keys)| *keys)
-}
-const PROOF_KEYS: &[(u32, &str, u32)] = &[
-    (
-        41,
-        "type_checker/trait_solver/normalization/normalize_original_obligations",
-        256,
-    ),
-    (
-        42,
-        "type_checker/trait_solver/normalization/normalize_prerequisite_obligations",
-        256,
-    ),
-    (
-        43,
-        "type_checker/trait_solver/normalization/validate_original_obligation_normalization",
-        256,
-    ),
-    (
-        44,
-        "type_checker/trait_solver/normalization/validate_prerequisite_normalization",
-        256,
-    ),
-    // Commit stages 45, 47, 50 and 55: see COMMIT_STAGES.
-    (45, AUDIT_TERMS, 256),
-    (
-        46,
-        "type_checker/trait_solver/normalization/hash_normalized_goals",
-        256,
-    ),
-    (47, INDEX_NORMALIZED_GOALS, 256),
-    (
-        48,
-        "type_checker/trait_solver/proof_frontier/initialize_proof_frontier",
-        256,
-    ),
-    (
-        49,
-        "type_checker/trait_solver/proof_frontier/admit_proof_work",
-        256,
-    ),
-    (50, AUDIT_WORK, 256),
-    (50, WRITE_GOAL_INDEX, 256),
-    (
-        52,
-        "type_checker/trait_solver/proof_frontier/resolve_proof_work",
-        256,
-    ),
-    // Work selection: see SELECTION_STEPS.
-    (53, SELECT_IMPLEMENTATIONS, 256),
-    (
-        53,
-        "type_checker/trait_solver/proof_frontier/select_proof_assumptions",
-        256,
-    ),
-    (
-        53,
-        "type_checker/trait_solver/proof_frontier/select_proof_work",
-        256,
-    ),
-    // Substitution walk (phases 54, 59 and 66): see SUBSTITUTION_STEPS and
-    // IMPLEMENTATION_PROOF_STEPS.
-    (54, WALK_GOALS, 256),
-    (54, WALK_ROOTS, 256),
-    (54, WALK_BINDINGS, 256),
-    (54, BINDING_ROWS, 256),
-    (55, AUDIT_SUBSTITUTIONS, 256),
-    (
-        56,
-        "type_checker/trait_solver/proof_frontier/expand_proof_frontier",
-        256,
-    ),
-    (
-        57,
-        "type_checker/trait_solver/proof_frontier/link_proof_requirements",
-        256,
-    ),
-    (
-        58,
-        "type_checker/trait_solver/proof_publication/emit_ready_proofs",
-        256,
-    ),
-    (59, ASSUMPTION_PROOFS, 256),
-    (59, PROOF_EDGE_ROWS, 256),
-    (
-        61,
-        "type_checker/trait_solver/proof_publication/publish_work_proofs",
-        256,
-    ),
-    (
-        64,
-        "type_checker/trait_solver/proof_publication/publish_proof_roots",
-        256,
-    ),
-    (
-        COUNT_ORIGINAL_NORMALIZATION,
-        "type_checker/trait_solver/normalization/count_original_normalization_rows",
-        256,
-    ),
-    (
-        COUNT_PREREQUISITE_NORMALIZATION,
-        "type_checker/trait_solver/normalization/count_prerequisite_normalization_rows",
-        256,
-    ),
-    (
-        WAVE_PLAN_PHASE,
-        "type_checker/trait_solver/proof_frontier/plan_solver_wave",
-        256,
-    ),
-    // The finish point's batch stages: call reduction, then the receipt.
+/// The planner of the recorded steps (plan_proof_wave.slang). Its
+/// dispatch_first selects the step plan (0) or the finish (1).
+const PLAN_PHASE: u32 = 80;
+/// One thread-scratch slot per lane: PSW_LANE_GROUP in proof_work.slang.
+const LANE_THREADS: u32 = 64;
+// Literal artifact inventory, in the order of one step and then the finish:
+// phase, key, workgroup threads.
+const PROOF_KEYS: [(u32, &str, u32); 8] = [
+    (PLAN_PHASE, "type_checker/trait_solver/proof_frontier/plan_proof_wave", 1),
+    (82, "type_checker/trait_solver/proof_frontier/build_proof_goals", LANE_THREADS),
+    (83, "type_checker/trait_solver/proof_frontier/select_proof_assumptions", LANE_THREADS),
+    (84, "type_checker/trait_solver/proof_frontier/select_proof_implementations", LANE_THREADS),
+    (85, "type_checker/trait_solver/proof_frontier/write_proof_rows", LANE_THREADS),
+    (86, "type_checker/trait_solver/proof_frontier/publish_proof_roots", 256),
+    // The finish's batch stages: call reduction, then the receipt.
     (18, "type_checker/trait_solver/batches/reduce_batch_calls", 256),
     (19, "type_checker/trait_solver/batches/finalize_trait_batch", 256),
 ];
+const PLANNER: usize = 0;
+const LANES: std::ops::Range<usize> = 1..5;
+const FINISH: std::ops::Range<usize> = 5..8;
+
+/// State words and values of the recorded steps (proof_work.slang, PSW_*).
+pub(super) mod wave {
+    pub const STOP: usize = 0;
+    pub const ROOTS: usize = 3;
+    pub const OBLIGATIONS_FIRST: usize = 6;
+    /// Indirect arguments, three words each: the lanes of a step, then the
+    /// finish's root publication, call reduction and receipt.
+    pub const LANE_ARGS: u64 = 8;
+    pub const FINISH_ARGS: [u64; 3] = [12, 20, 24];
+    pub const CALLS_FIRST: usize = 17;
+    pub const CALLS_COUNT: usize = 18;
+    /// Words the host reads back.
+    pub const READ_WORDS: u32 = 32;
+    pub const RUNNING: u32 = 0;
+    pub const STOPPED: u32 = 1;
+    /// Every Work ran, and the finish published the roots and the receipt.
+    pub const DONE: u32 = 2;
+}
+
+/// The solver state of one attempt. The planner writes it and the host reads
+/// it back after the recorded steps. One shared role: an attempt reads its
+/// state back before the next attempt rewrites it.
+pub(super) fn wave_state(catalog: &Arena, obligations: Span, calls: Span) -> Result<LaniusBuffer<u32>> {
+    let mut words = [0u32; wave::READ_WORDS as usize];
+    words[wave::ROOTS] = obligations.count;
+    words[wave::OBLIGATIONS_FIRST] = obligations.first;
+    words[wave::CALLS_FIRST] = calls.first;
+    words[wave::CALLS_COUNT] = calls.count;
+    catalog.workspace().shared("trait_solver.solver_wave").buffer(
+        wave::READ_WORDS,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
+        Some(&words),
+    )
+}
+
+/// One dispatch of an attempt with its bindings and parameter offsets. Every
+/// step records the same dispatches: the planner chooses their rows.
+struct WaveDispatch {
+    pass: usize,
+    bindings: wgpu::BindGroup,
+    offsets: Vec<u32>,
+    /// Byte offset of the indirect arguments in the wave state, or None for
+    /// one direct workgroup.
+    indirect: Option<u64>,
+}
+/// The dispatches of one attempt over one packet's arenas.
+pub(super) struct WaveProgram {
+    state: LaniusBuffer<u32>,
+    /// The planner, then the four lane kernels.
+    step: Vec<WaveDispatch>,
+    /// The planner's finish, the root publication and the batch stages.
+    finish: Vec<WaveDispatch>,
+}
 
 pub(super) struct ProofKernels {
     passes: Vec<PassData>,
@@ -819,904 +654,106 @@ impl ProofKernels {
         let passes = PROOF_KEYS
             .iter()
             .map(|(_, key, _)| {
-                let dynamic = if *key == INDEX_NORMALIZED_GOALS { &[][..] } else { &PARAMS_BLOCKS };
                 passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(
-                    device, key, "main", key, dynamic,
+                    device, key, "main", key, &PARAMS_BLOCKS,
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        for (pass, (_, key, threads)) in passes.iter().zip(PROOF_KEYS) {
+            ensure!(
+                pass.thread_group_size == [threads, 1, 1],
+                "proof kernel {key} thread size differs from dispatch contract"
+            );
+        }
         Ok(Self { passes })
     }
-    /// Records Work initialization before the solver rounds.
-    pub fn record_initialize_frontier(
+
+    /// The bindings of one attempt's dispatches.
+    #[allow(clippy::too_many_arguments)]
+    pub fn wave_program(
         &self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
+        state: &LaniusBuffer<u32>,
+        obligations: Span,
+        calls: Span,
         catalog: &Arena,
         input: &Arena,
         output: &Arena,
         proof: ProofResources<'_>,
-    ) -> Result<()> {
-        let index =
-            proof_key_index("type_checker/trait_solver/proof_frontier/initialize_proof_frontier")?;
-        let (phase, _, threads) = PROOF_KEYS[index];
-        record_phase_with_proof(
-            device,
-            encoder,
-            &self.passes[index],
-            phase,
-            span,
-            threads,
-            catalog,
-            input,
-            output,
-            Some(proof),
-        )
-    }
-}
-
-/// State words and values of the recorded solver rounds
-/// (proof_solver_wave.slang).
-pub(super) mod wave {
-    pub const STOP: usize = 0;
-    pub const FAULT_DETAIL: usize = 1;
-    #[cfg(test)]
-    pub const WORK_ACTIVE: usize = 5;
-    #[cfg(test)]
-    pub const QUEUE_ACTIVE: usize = 6;
-    #[cfg(test)]
-    pub const WORK_FIRST: usize = 7;
-    #[cfg(test)]
-    pub const WORK_COUNT: usize = 8;
-    pub const OVERFLOW_POINT: usize = 13;
-    pub const OVERFLOW_ROWS: usize = 14;
-    pub const CHUNK_ROWS: usize = 15;
-    pub const PROGRAM_FAILED: u64 = 20;
-    pub const SLOT_WORDS: usize = 16;
-    pub const CALLS_FIRST: usize = 17;
-    pub const CALLS_COUNT: usize = 18;
-    /// Words the host reads back: the scalar state, not the span records.
-    pub const READ_WORDS: u32 = 32;
-    pub const STATE_WORDS: u32 = 80;
-    pub const RUNNING: u32 = 0;
-    pub const STOPPED: u32 = 1;
-    /// Quiescent, and the finish point published the roots and receipt.
-    pub const DONE: u32 = 2;
-    pub const FAULT: u32 = 3;
-    pub const OVERFLOW: u32 = 4;
-    pub const GROW: u32 = 5;
-    /// A round start found Work its recorded steps do not take, before any
-    /// of them ran; `OVERFLOW_POINT` names the round start.
-    pub const FULL_ROUND: u32 = 6;
-    pub const FAULT_IDENTITY: u32 = 1;
-    pub const FAULT_LAYOUT: u32 = 2;
-    pub const FAULT_RECEIPT: u32 = 3;
-    pub const FAULT_CURSOR: u32 = 4;
-    pub const FAULT_REQUIREMENTS: u32 = 5;
-    pub const FAULT_PROGRAM: u32 = 6;
-}
-// Slot words (proof_solver_wave.slang): TraitSolverParams, indirect
-// arguments, then the step's static description.
-const SLOT_ARGS: u32 = 8;
-const SLOT_SPAN: usize = 11;
-const SLOT_CHUNK: usize = 12;
-const SLOT_THREADS: usize = 13;
-const SLOT_LIMIT: usize = 14;
-const SLOT_ONE: usize = 15;
-const SLOT_PROGRAM: usize = 16;
-const SLOT_MIN_WORDS: u32 = 64;
-/// Chunk steps per span at most; with 4096-row chunks this is any span a
-/// 32-bit row count allows.
-pub(super) const WAVE_MAX_CHUNKS: u32 = 1 << 20;
-
-/// Planning points, in recording order: where the planner reads the
-/// counters and computes the spans of the steps up to the next point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum WavePoint {
-    FirstWork = 0,
-    Round = 1,
-    Selected = 2,
-    Expanded = 3,
-    /// After work admission: ready-proof emission (58) over the queue span,
-    /// then the emitted steps over the same rows. Word 5 is unused.
-    Queue = 4,
-    /// After the recorded rounds: the quiescence test, then the finish.
-    Finish = 6,
-    /// The start of a queue round (`QUEUE_ROUND`): a round start that stops
-    /// the solve with `wave::FULL_ROUND` when Work is pending, then the
-    /// queue point, with the queue point's steps.
-    QueueRound = 7,
-    /// Round starts of rounds that normalize only original Works (the
-    /// opening round, from Work cursor zero) or only prerequisite Works
-    /// (every later round): `OPENING_ROUND` and `LATER_ROUND`. Either
-    /// stops the solve with `wave::FULL_ROUND` when its Work span starts
-    /// elsewhere.
-    OpeningRound = 8,
-    LaterRound = 9,
-    /// The only point of a solve without source obligations: the finish
-    /// point after a test that no Work exists and the first work would
-    /// commit nothing. Otherwise it stops the solve with `wave::FULL_ROUND`
-    /// before any step.
-    NoWork = 10,
-}
-impl WavePoint {
-    pub const ROUND: [WavePoint; 4] = [
-        WavePoint::Round,
-        WavePoint::Selected,
-        WavePoint::Expanded,
-        WavePoint::Queue,
-    ];
-    /// A round without Work: its Round, Selected and Expanded points plan
-    /// nothing, so it runs only the queue steps. A queue round records just
-    /// those, after a round start that checks that no Work is pending; that
-    /// planner also plans the queue point.
-    pub const QUEUE_ROUND: [WavePoint; 1] = [WavePoint::QueueRound];
-    /// A full round with the normalization of one Work kind.
-    pub const OPENING_ROUND: [WavePoint; 4] = [
-        WavePoint::OpeningRound,
-        WavePoint::Selected,
-        WavePoint::Expanded,
-        WavePoint::Queue,
-    ];
-    pub const LATER_ROUND: [WavePoint; 4] = [
-        WavePoint::LaterRound,
-        WavePoint::Selected,
-        WavePoint::Expanded,
-        WavePoint::Queue,
-    ];
-    /// A round start of a full round.
-    pub fn starts_full_round(self) -> bool {
-        matches!(self, WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound)
-    }
-    pub fn from_word(word: u32) -> Option<Self> {
-        [
-            WavePoint::FirstWork,
-            WavePoint::Finish,
-            WavePoint::QueueRound,
-            WavePoint::OpeningRound,
-            WavePoint::LaterRound,
-            WavePoint::NoWork,
-        ]
-            .into_iter()
-            .chain(Self::ROUND)
-            .find(|point| *point as u32 == word)
-    }
-    /// This point and the rest of its round; the first-work and finish
-    /// points are alone.
-    pub fn remainder(self) -> &'static [WavePoint] {
-        match self {
-            WavePoint::FirstWork => &[WavePoint::FirstWork],
-            WavePoint::Finish => &[WavePoint::Finish],
-            WavePoint::NoWork => &[WavePoint::NoWork],
-            WavePoint::QueueRound => &Self::QUEUE_ROUND,
-            WavePoint::OpeningRound => &Self::OPENING_ROUND,
-            WavePoint::LaterRound => &Self::LATER_ROUND,
-            point => &Self::ROUND[point as usize - 1..],
-        }
-    }
-}
-
-/// Some consecutive step groups of one point (`wave_segment`). The point's
-/// planner runs before them.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct WavePiece {
-    pub point: WavePoint,
-    first: usize,
-    end: usize,
-}
-impl WavePiece {
-    pub fn whole(point: WavePoint) -> Self {
-        Self { point, first: 0, end: usize::MAX }
-    }
-    /// The no-Work point, with the call reduction only when the check has
-    /// calls.
-    pub fn no_work(calls: u32) -> Self {
-        Self::groups(WavePoint::NoWork, usize::from(calls == 0), usize::MAX)
-    }
-    /// Groups `first..end` of the point: a test pause inside it, or the
-    /// no-Work point without its call reduction.
-    pub fn groups(point: WavePoint, first: usize, end: usize) -> Self {
-        Self { point, first, end }
-    }
-}
-/// How many leading groups of a round's first point run stages up to `phase`.
-#[cfg(test)]
-pub(super) fn round_groups_through(phase: u32) -> Result<usize> {
-    Ok(wave_segment(WavePoint::Round)?
-        .iter()
-        .take_while(|(_, steps)| steps.iter().all(|(_, entry)| *entry <= phase))
-        .count())
-}
-
-/// Row spans the planner computes (proof_solver_wave.slang, PSW_SPAN_*).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum WaveSpan {
-    FirstWork = 0,
-    FirstOne = 1,
-    Work = 2,
-    WorkOne = 3,
-    Requirements = 4,
-    AllWork = 5,
-    SelectedWork = 6,
-    Bindings = 7,
-    SelectedOne = 8,
-    SelectedAllWork = 9,
-    ExpandedWork = 10,
-    ExpandedOne = 11,
-    Queue = 12,
-    EmittedQueue = 13,
-    ProofEdges = 14,
-    EmittedOne = 15,
-    FinishRoots = 16,
-    FinishCalls = 17,
-    FinishOne = 18,
-}
-impl WaveSpan {
-    fn is_one(self) -> bool {
-        matches!(
-            self,
-            WaveSpan::FirstOne
-                | WaveSpan::WorkOne
-                | WaveSpan::SelectedOne
-                | WaveSpan::ExpandedOne
-                | WaveSpan::EmittedOne
-                | WaveSpan::FinishOne
-        )
-    }
-    /// Every admitted Work, for the commit audits: one step over the whole
-    /// span, however long.
-    fn is_whole(self) -> bool {
-        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork | WaveSpan::ProofEdges)
-    }
-    /// The one-row span of the committing thread that a committing kernel's
-    /// last workgroup runs over this span: planned exactly when this span
-    /// is, and the commit runs then even when this span has no row.
-    fn commit_one(self) -> Option<WaveSpan> {
-        match self {
-            WaveSpan::FirstWork => Some(WaveSpan::FirstOne),
-            WaveSpan::AllWork => Some(WaveSpan::WorkOne),
-            WaveSpan::SelectedAllWork => Some(WaveSpan::SelectedOne),
-            WaveSpan::ExpandedWork => Some(WaveSpan::ExpandedOne),
-            WaveSpan::ProofEdges => Some(WaveSpan::EmittedOne),
-            _ => None,
-        }
-    }
-}
-
-/// The steps between one point and the next: groups of kernels over one
-/// span, each group dispatched chunk by chunk. This is the solver's stage
-/// order.
-fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
-    let stage = |phase: u32| -> Result<(&'static str, u32)> {
-        PROOF_KEYS
-            .iter()
-            .find(|(entry, _, _)| *entry == phase)
-            .map(|(_, key, _)| (*key, phase))
-            .ok_or_else(|| anyhow!("unregistered proof stage {phase}"))
-    };
-    // A commit stage (COMMIT_STAGES): its lanes over `rows`.
-    let commit = |phase: u32, rows: WaveSpan| -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
-        let keys = commit_stage(phase).ok_or_else(|| anyhow!("proof stage {phase} is not a commit"))?;
-        Ok(keys.iter().map(|&key| (rows, vec![(key, phase)])).collect())
-    };
-    use WaveSpan::*;
-    Ok(match point {
-        // Each Work admission counts the rows the next normalization
-        // reserves, so the store can grow in place before it runs.
-        WavePoint::FirstWork => {
-            let mut groups = vec![(FirstWork, vec![stage(49)?])];
-            groups.extend(commit(50, FirstWork)?);
-            groups.push((FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]));
-            groups
-        }
-        WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound => {
-            // Normalization (41 to 47), 51, 52, 57, then selection. The
-            // opening round leaves out the prerequisite Works' 42 and 44,
-            // a later round the original Works' 41 and 43.
-            let mut groups = Vec::new();
-            for phase in 41..=47 {
-                if (point == WavePoint::OpeningRound && matches!(phase, 42 | 44))
-                    || (point == WavePoint::LaterRound && matches!(phase, 41 | 43))
-                {
-                    continue;
-                }
-                if matches!(phase, 45 | 47) {
-                    groups.extend(commit(phase, AllWork)?);
-                } else {
-                    groups.push((Work, vec![stage(phase)?]));
-                }
-            }
-            groups.push((Work, vec![stage(52)?]));
-            groups.push((Requirements, vec![stage(57)?]));
-            groups.push((Work, SELECTION_STEPS.to_vec()));
-            groups
-        }
-        WavePoint::Selected => {
-            let mut groups = vec![
-                (SelectedWork, SUBSTITUTION_STEPS.to_vec()),
-                (Bindings, vec![(BINDING_ROWS, SUBSTITUTION_PHASE)]),
-            ];
-            groups.extend(commit(55, SelectedAllWork)?);
-            groups.push((SelectedWork, vec![stage(56)?]));
-            groups
-        }
-        WavePoint::Expanded => {
-            let mut groups = vec![(ExpandedWork, vec![stage(49)?])];
-            groups.extend(commit(50, ExpandedWork)?);
-            groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
-            groups
-        }
-        // Ready-proof emission, then the emitted steps over the same queue
-        // rows. The edge admission takes the edges 58 reserved, one thread
-        // per queue row, in one dispatch.
-        WavePoint::Queue | WavePoint::QueueRound => vec![
-            (Queue, vec![stage(58)?]),
-            (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
-            (EmittedQueue, vec![(ASSUMPTION_PROOFS, IMPLEMENTATION_PROOF_PHASE)]),
-            // Its last workgroup commits the proofs and their edges.
-            (ProofEdges, vec![(PROOF_EDGE_ROWS, IMPLEMENTATION_PROOF_PHASE)]),
-            (EmittedQueue, vec![stage(61)?]),
-            // The reduction queue commits at the next planner
-            // (proof_solver_wave.slang, psw_commit_queue).
-        ],
-        // The no-Work point's test found no root link, so it has no root to
-        // publish. Its call reduction is left out when the check has no
-        // call (no_work_piece).
-        WavePoint::NoWork => vec![(FinishCalls, vec![stage(18)?]), (FinishOne, vec![stage(19)?])],
-        // Root publication, call reduction and the batch receipt.
-        WavePoint::Finish => vec![
-            (FinishRoots, vec![stage(64)?]),
-            (FinishCalls, vec![stage(18)?]),
-            (FinishOne, vec![stage(19)?]),
-        ],
-    })
-}
-
-/// Words per step slot: whole uniform-offset alignments, at least the slot.
-pub(super) fn wave_slot_words(device: &wgpu::Device) -> u32 {
-    (device.limits().min_uniform_buffer_offset_alignment / 4).max(SLOT_MIN_WORDS)
-}
-
-/// The zeroed normalization demand table (proof_demand.slang). One shared
-/// role: the solver reads each count back before the next zeroing is
-/// queued, so the queued write never races a use.
-pub(super) fn proof_demand(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
-    catalog.workspace().shared("trait_solver.proof_demand").buffer(
-        PROOF_STORE_TABLES as u32,
-        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        Some(&[0; PROOF_STORE_TABLES]),
-    )
-}
-
-/// The solver state of one attempt, planned and read only by the GPU
-/// planner until the host reads it back. One shared role: an attempt reads
-/// its state back before the next attempt rewrites it, and the templates
-/// that bind it stay valid across checks.
-pub(super) fn wave_state(device: &wgpu::Device, catalog: &Arena, calls: Span) -> Result<LaniusBuffer<u32>> {
-    let mut words = [0u32; wave::STATE_WORDS as usize];
-    words[wave::CHUNK_ROWS] = THREAD_SCRATCH_SLOTS;
-    words[wave::SLOT_WORDS] = wave_slot_words(device);
-    words[wave::CALLS_FIRST] = calls.first;
-    words[wave::CALLS_COUNT] = calls.count;
-    catalog.workspace().shared("trait_solver.solver_wave").buffer(
-        wave::STATE_WORDS,
-        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        Some(&words),
-    )
-}
-
-struct WaveDispatch {
-    pass: usize,
-    bindings: wgpu::BindGroup,
-    /// Dynamic offsets of its parameter blocks (`params_offsets`).
-    offsets: Vec<u32>,
-    /// None: the planner, one thread. Some: the byte offset of the step's
-    /// indirect arguments in the slot buffer.
-    indirect: Option<u64>,
-}
-
-impl WaveDispatch {
-    fn launch<'a>(&self, template: &'a WaveTemplate) -> Launch<'a> {
-        match self.indirect {
-            None => Launch::Direct((1, 1, 1)),
-            Some(offset) => Launch::Indirect(&template.slots.buffer, offset),
-        }
-    }
-}
-
-enum WaveStep {
-    Dispatch(WaveDispatch),
-    Program {
-        operation: StepProgramOperation,
-        sync: LaniusBuffer<u32>,
-        state: LaniusBuffer<u32>,
-    },
-}
-
-/// One bound buffer view: a bind group built over it stays valid while a
-/// check binds the same view.
-type BoundView = (wgpu::Buffer, u64, usize);
-fn bound_view(buffer: &LaniusBuffer<u32>) -> BoundView {
-    (buffer.buffer.clone(), buffer.byte_offset, buffer.byte_size)
-}
-
-/// The words of a template that change between checks: the arenas' logical
-/// sizes and the proof submission's identity.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct WaveInputs {
-    catalog_words: u32,
-    input_words: u32,
-    output_words: u32,
-    proof_words: u32,
-    epoch: u64,
-    arena_id: u64,
-    serial: u32,
-}
-
-/// The static description of one step slot.
-#[derive(Clone, Copy)]
-struct WaveSlot {
-    pass: usize,
-    phase: u32,
-    span: WaveSpan,
-    /// 0: the whole span; c: its chunk c - 1.
-    chunk: u32,
-    /// Rows the template recorded for the span.
-    limit: u32,
-    /// A committing kernel's one-row span (WaveSpan::commit_one).
-    one: Option<WaveSpan>,
-}
-
-/// Recorded steps of some planning points with bind groups built once per
-/// job: each step reads its parameters and indirect arguments from its slot,
-/// which the point's planner rewrites every time it runs. A later check
-/// reuses the template while it binds the same buffer views, and rewrites
-/// only its parameter words (`WaveInputs`).
-/// Templates kept per (pieces, chunks) shape: the main solve's packet and
-/// one per closed wave's packet, with room to spare.
-const WAVE_TEMPLATES_PER_SHAPE: usize = 8;
-
-pub(super) struct WaveTemplate {
-    pieces: Vec<WavePiece>,
-    chunks: u32,
-    bound: Vec<BoundView>,
-    slots: LaniusBuffer<u32>,
-    slot_rows: Vec<WaveSlot>,
-    /// The planner's dispatch block, then one proof-store block per phase
-    /// in `phases`. A separate buffer: the planner writes the slot buffer.
-    params: LaniusBuffer<u32>,
-    phases: Vec<u32>,
-    stride: u32,
-    written: WaveInputs,
-    steps: Vec<WaveStep>,
-    /// When a check last used this template; the least recent template of a
-    /// shape is the one a new one replaces.
-    used: u64,
-}
-
-impl WaveTemplate {
-    fn slot_words(&self, inputs: WaveInputs) -> Vec<u32> {
-        let stride = self.stride as usize;
-        let mut words = vec![0u32; self.slot_rows.len().max(1) * stride];
-        for (row, slot) in words.chunks_exact_mut(stride).zip(&self.slot_rows) {
-            row[2] = inputs.catalog_words;
-            row[3] = inputs.input_words;
-            row[4] = inputs.output_words;
-            row[5] = slot.phase;
-            row[SLOT_ARGS as usize + 1] = 1;
-            row[SLOT_ARGS as usize + 2] = 1;
-            row[SLOT_SPAN] = slot.span as u32;
-            row[SLOT_CHUNK] = slot.chunk;
-            row[SLOT_THREADS] = PROOF_KEYS[slot.pass].2;
-            row[SLOT_LIMIT] = slot.limit;
-            row[SLOT_ONE] = slot.one.map_or(0, |one| one as u32 + 1);
-            row[SLOT_PROGRAM] = u32::from(PROOF_KEYS[slot.pass].1 == INDEX_NORMALIZED_GOALS);
-        }
-        words
-    }
-
-    fn params_words(&self, inputs: WaveInputs) -> Vec<u32> {
-        let stride = self.stride as usize;
-        let mut words = vec![0u32; (self.phases.len() + 1) * stride];
-        words[..8].copy_from_slice(&[
-            0,
-            1,
-            inputs.catalog_words,
-            inputs.input_words,
-            inputs.output_words,
-            WAVE_PLAN_PHASE,
-            0,
-            0,
-        ]);
-        for (index, &phase) in self.phases.iter().enumerate() {
-            let base = (index + 1) * stride;
-            words[base..base + 8].copy_from_slice(&[
-                inputs.proof_words,
-                inputs.epoch as u32,
-                (inputs.epoch >> 32) as u32,
-                inputs.arena_id as u32,
-                (inputs.arena_id >> 32) as u32,
-                inputs.serial,
+    ) -> Result<WaveProgram> {
+        let scratch = thread_scratch(catalog)?;
+        let dispatch = |pass: usize, span: Span, indirect: Option<u64>| -> Result<WaveDispatch> {
+            let phase = PROOF_KEYS[pass].0;
+            let params = [
+                span.first,
+                span.count,
+                catalog.logical_words,
+                input.logical_words,
+                output.logical_words,
                 phase,
                 0,
-            ]);
-        }
-        words
-    }
-
-    /// Byte offset of the proof-store block of `phase` in the params buffer.
-    fn proof_block(&self, phase: u32) -> u64 {
-        let index = self.phases.iter().position(|entry| *entry == phase).expect("phase block");
-        self.params.absolute_offset((index as u64 + 1) * u64::from(self.stride) * 4)
-    }
-
-    /// Rewrites the parameter words when this check's differ. The writes
-    /// apply at the next submit, after every earlier submit that read them.
-    fn refresh(&mut self, queue: &wgpu::Queue, inputs: WaveInputs) {
-        if self.written == inputs {
-            return;
-        }
-        let bytes = |words: Vec<u32>| words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<u8>>();
-        self.slots.write(queue, 0, &bytes(self.slot_words(inputs)));
-        self.params.write(queue, 0, &bytes(self.params_words(inputs)));
-        self.written = inputs;
-    }
-}
-
-impl ProofKernels {
-    /// The index in `cache` of the template of `pieces` with `chunks` chunk
-    /// steps for every span that is not a single row, refreshed for this
-    /// check. A template is built when none binds these buffer views; it
-    /// replaces a template of the same pieces over views no check binds now.
-    pub fn wave_template(
-        &self,
-        cache: &mut Vec<WaveTemplate>,
-        device: &wgpu::Device,
-        pieces: &[WavePiece],
-        chunks: u32,
-        state: &LaniusBuffer<u32>,
-        demand: &LaniusBuffer<u32>,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<usize> {
-        ensure!((1..=WAVE_MAX_CHUNKS).contains(&chunks), "solver wave chunk count {chunks}");
-        let scratch = thread_scratch(catalog)?;
-        let audit = commit_audit(catalog, proof.storage)?;
-        let bound = [
-            &catalog.buffer,
-            &input.buffer,
-            &output.buffer,
-            &proof.storage.buffer,
-            &scratch,
-            &audit,
-            state,
-            demand,
-        ]
-        .map(bound_view)
-        .to_vec();
-        let inputs = WaveInputs {
-            catalog_words: catalog.logical_words,
-            input_words: input.logical_words,
-            output_words: output.logical_words,
-            proof_words: proof.storage.logical_words,
-            epoch: proof.epoch,
-            arena_id: proof.arena_id,
-            serial: proof.serial,
-        };
-        let queue = catalog.workspace().queue().clone();
-        let same = |template: &WaveTemplate| template.pieces == pieces && template.chunks == chunks;
-        let used = cache.iter().map(|template| template.used).max().unwrap_or(0) + 1;
-        if let Some(index) = cache.iter().position(|template| same(template) && template.bound == bound) {
-            cache[index].refresh(&queue, inputs);
-            cache[index].used = used;
-            return Ok(index);
-        }
-        let mut template = self.build_wave_template(
-            device, pieces, chunks, bound, inputs, &scratch, &audit, state, demand, catalog, input,
-            output, proof,
-        )?;
-        template.used = used;
-        // Each solve of a job binds its own packet arenas, so a shape keeps
-        // one template per packet up to WAVE_TEMPLATES_PER_SHAPE. A check uses
-        // one template of a shape, the most recent, so the one replaced is
-        // never one this check's order names.
-        let shape: Vec<usize> = (0..cache.len()).filter(|&index| same(&cache[index])).collect();
-        Ok(if shape.len() >= WAVE_TEMPLATES_PER_SHAPE {
-            let index = *shape.iter().min_by_key(|&&index| cache[index].used).expect("a template of this shape");
-            cache[index] = template;
-            index
-        } else {
-            cache.push(template);
-            cache.len() - 1
-        })
-    }
-
-    fn build_wave_template(
-        &self,
-        device: &wgpu::Device,
-        pieces: &[WavePiece],
-        chunks: u32,
-        bound: Vec<BoundView>,
-        inputs: WaveInputs,
-        scratch: &LaniusBuffer<u32>,
-        audit: &LaniusBuffer<u32>,
-        state: &LaniusBuffer<u32>,
-        demand: &LaniusBuffer<u32>,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<WaveTemplate> {
-        let stride = wave_slot_words(device);
-        let mut slots: Vec<WaveSlot> = Vec::new();
-        let mut segments = Vec::new();
-        for piece in pieces {
-            let point = piece.point;
-            let first = slots.len();
-            let groups = wave_segment(point)?;
-            let end = piece.end.min(groups.len());
-            for (span, steps) in groups.into_iter().take(end).skip(piece.first) {
-                // A committing kernel's lanes are one dispatch, so that its
-                // last workgroup follows all of them.
-                let committing = steps.iter().all(|(key, _)| COMMITTING_KERNELS.contains(key));
-                let whole = span.is_whole() || committing;
-                let span_chunks = if span.is_one() || whole { 1 } else { chunks };
-                let limit = if whole {
-                    u32::MAX
-                } else {
-                    span_chunks.saturating_mul(THREAD_SCRATCH_SLOTS)
-                };
-                let steps = steps
-                    .into_iter()
-                    .map(|(key, phase)| proof_key_index(key).map(|index| (index, phase)))
-                    .collect::<Result<Vec<_>>>()?;
-                for chunk in 1..=span_chunks {
-                    for &(pass, phase) in &steps {
-                        ensure!(
-                            PROOF_KEYS[pass].2 != 1 || span.is_one(),
-                            "singleton proof stage needs exactly one dispatch"
-                        );
-                        ensure!(
-                            !whole || WHOLE_SPAN_KERNELS.contains(&PROOF_KEYS[pass].1),
-                            "a whole-span step needs a kernel without scratch slots"
-                        );
-                        let one = if committing {
-                            Some(span.commit_one().ok_or_else(|| anyhow!("a committing step over a span without a commit"))?)
-                        } else {
-                            None
-                        };
-                        slots.push(WaveSlot {
-                            pass,
-                            phase,
-                            span,
-                            chunk: if whole { 0 } else { chunk },
-                            limit,
-                            one,
-                        });
-                    }
-                }
-            }
-            segments.push((point, first, slots.len()));
-        }
-        let slot_count = u32::try_from(slots.len())?;
-        let total_words = slot_count
-            .max(1)
-            .checked_mul(stride)
-            .ok_or_else(|| anyhow!("solver wave slot table overflow"))?;
-        // One proof-store parameter block per phase, the planner's first.
-        let mut phases = vec![WAVE_PLAN_PHASE];
-        for slot in &slots {
-            if !phases.contains(&slot.phase) {
-                phases.push(slot.phase);
-            }
-        }
-        let workspace = catalog.workspace();
-        let params_words = u32::try_from(phases.len() + 1)?
-            .checked_mul(stride)
-            .ok_or_else(|| anyhow!("solver wave parameter table overflow"))?;
-        let goal_pass = proof_key_index(INDEX_NORMALIZED_GOALS)?;
-        let sync = slots.iter().any(|slot| slot.pass == goal_pass).then(|| {
-            workspace.shared("trait_solver.proof_goal_sync").buffer(
-                STEP_PROGRAM_SYNC_WORDS as u32,
-                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-                None,
-            )
-        }).transpose()?;
-        let launches = if sync.is_some() {
-            let [small_groups, large_groups] = step_program_group_counts();
-            let launch = |label, groups| {
-                workspace.shared(label).buffer(
-                    4, wgpu::BufferUsages::UNIFORM, Some(&[groups, 0, 0, 0]),
-                )
-            };
-            Some([
-                (small_groups, launch("trait_solver.proof_goal_small_launch", small_groups)?),
-                (large_groups, launch("trait_solver.proof_goal_large_launch", large_groups)?),
-            ])
-        } else {
-            None
-        };
-        let mut template = WaveTemplate {
-            pieces: pieces.to_vec(),
-            chunks,
-            bound,
-            slots: workspace.initialized(
-                "trait_solver.solver_wave_slots",
-                total_words,
-                wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::UNIFORM
-                    | wgpu::BufferUsages::INDIRECT
-                    | wgpu::BufferUsages::COPY_DST,
-                None,
-            )?,
-            slot_rows: slots,
-            params: workspace.initialized(
-                "trait_solver.solver_wave_params",
-                params_words,
-                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                None,
-            )?,
-            phases,
-            stride,
-            written: inputs,
-            steps: Vec::new(),
-            used: 0,
-        };
-        let words = |words: Vec<u32>| words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<u8>>();
-        template.slots.write(workspace.queue(), 0, &words(template.slot_words(inputs)));
-        template.params.write(workspace.queue(), 0, &words(template.params_words(inputs)));
-        let plan = proof_key_index("type_checker/trait_solver/proof_frontier/plan_solver_wave")?;
-        let slot_bytes = u64::from(stride) * 4;
-        let plan_block = u32::try_from(template.params.absolute_offset(0))?;
-        let mut steps = Vec::with_capacity(template.slot_rows.len() + segments.len());
-        // A slot step's bindings depend only on its kernel and phase: its slot
-        // parameters are a dynamic offset into the one slot buffer. So the
-        // steps of one (kernel, phase) share a bind group.
-        let mut slot_bindings: Vec<((usize, u32), wgpu::BindGroup)> = Vec::new();
-        for (point, first, end) in segments {
-            let plan_params = workspace.initialized(
-                "trait_solver.solver_wave_plan",
-                4,
-                wgpu::BufferUsages::UNIFORM,
-                Some(&[point as u32, u32::try_from(first)?, u32::try_from(end)?, 0]),
-            )?;
+                0,
+            ];
+            let (uniform, uniform_offset) = params_block(catalog, params)?;
+            let (proof_uniform, proof_offset) = params_block(catalog, proof_params_words(proof, phase))?;
             let resources = [
-                ("trait_solver_params", params_binding(&template.params.buffer)),
+                ("trait_solver_params", params_binding(&uniform)),
                 ("trait_solver_catalog", catalog.buffer.as_entire_binding()),
                 ("trait_solver_batch", input.buffer.as_entire_binding()),
                 ("trait_solver_output", output.buffer.as_entire_binding()),
                 ("trait_solver_proof_store", proof.storage.buffer.as_entire_binding()),
-                ("proof_store_params", params_binding(&template.params.buffer)),
+                ("proof_store_params", params_binding(&proof_uniform)),
                 ("thread_scratch", scratch.as_entire_binding()),
+                // The planner writes the state and the lanes read it.
+                ("trait_solver_wave_plan", state.as_entire_binding()),
                 ("trait_solver_wave", state.as_entire_binding()),
-                ("trait_solver_wave_slots", template.slots.as_entire_binding()),
-                ("trait_solver_wave_plan", plan_params.as_entire_binding()),
-                ("trait_solver_proof_demand", demand.as_entire_binding()),
             ];
             let bindings = passes_core::bind_group::create_bind_group_from_bindings(
                 device,
-                Some("trait_solver.solver_wave_plan"),
-                &self.passes[plan],
+                Some("trait_solver.wave_bindings"),
+                &self.passes[pass],
                 0,
                 &resources,
             )?;
-            let offsets = params_offsets(
-                &self.passes[plan],
-                [plan_block, u32::try_from(template.proof_block(WAVE_PLAN_PHASE))?],
-            );
-            steps.push(WaveStep::Dispatch(WaveDispatch {
-                pass: plan, bindings, offsets, indirect: None,
-            }));
-            for slot in first..end {
-                let WaveSlot { pass, phase, .. } = template.slot_rows[slot];
-                let offset = template.slots.absolute_offset(slot as u64 * slot_bytes);
-                if pass == goal_pass {
-                    let sync = sync.as_ref().expect("goal program has a sync slot");
-                    let resources = [
-                        ("trait_solver_params", params_binding_at(&template.slots.buffer, offset)),
-                        ("trait_solver_catalog", catalog.buffer.as_entire_binding()),
-                        ("trait_solver_batch", input.buffer.as_entire_binding()),
-                        ("trait_solver_output", output.buffer.as_entire_binding()),
-                        ("trait_solver_proof_store", proof.storage.buffer.as_entire_binding()),
-                        ("proof_store_params", params_binding_at(&template.params.buffer, template.proof_block(phase))),
-                        (COMMIT_AUDIT, audit.as_entire_binding()),
-                    ];
-                    let work_bound = proof.storage.buffer.byte_size as u64 / (16 * 4);
-                    let (groups, launch) = &launches.as_ref().expect("goal program launches")
-                        [step_program_group_variant(work_bound)];
-                    let operation = StepProgramOperation::new_reflected_with_launch(
-                        device, INDEX_NORMALIZED_GOALS, &self.passes[pass], &resources, sync,
-                        0, *groups, launch.as_entire_binding(),
-                    )?;
-                    steps.push(WaveStep::Program { operation, sync: sync.clone(), state: state.clone() });
-                    continue;
-                }
-                let shared = slot_bindings
-                    .iter()
-                    .find(|(key, _)| *key == (pass, phase))
-                    .map(|(_, bindings)| bindings.clone());
-                let bindings = match shared {
-                    Some(bindings) => bindings,
-                    None => {
-                        let resources = [
-                            ("trait_solver_params", params_binding(&template.slots.buffer)),
-                            ("trait_solver_catalog", catalog.buffer.as_entire_binding()),
-                            ("trait_solver_batch", input.buffer.as_entire_binding()),
-                            ("trait_solver_output", output.buffer.as_entire_binding()),
-                            ("trait_solver_proof_store", proof.storage.buffer.as_entire_binding()),
-                            ("proof_store_params", params_binding(&template.params.buffer)),
-                            ("thread_scratch", scratch.as_entire_binding()),
-                            ("trait_solver_proof_demand", demand.as_entire_binding()),
-                            (COMMIT_AUDIT, audit.as_entire_binding()),
-                        ];
-                        let bindings = passes_core::bind_group::create_bind_group_from_bindings(
-                            device,
-                            Some("trait_solver.bindings"),
-                            &self.passes[pass],
-                            0,
-                            &resources,
-                        )?;
-                        slot_bindings.push(((pass, phase), bindings.clone()));
-                        bindings
-                    }
-                };
-                let offsets = params_offsets(
-                    &self.passes[pass],
-                    [u32::try_from(offset)?, u32::try_from(template.proof_block(phase))?],
-                );
-                steps.push(WaveStep::Dispatch(WaveDispatch {
-                    pass,
-                    bindings,
-                    offsets,
-                    indirect: Some(offset + u64::from(SLOT_ARGS) * 4),
-                }));
-            }
+            Ok(WaveDispatch {
+                pass,
+                bindings,
+                offsets: params_offsets(&self.passes[pass], [uniform_offset, proof_offset]),
+                indirect: indirect.map(|word| word * 4),
+            })
+        };
+        let lanes = Span::new(0, THREAD_SCRATCH_SLOTS)?;
+        let mut step = vec![dispatch(PLANNER, Span::new(0, 1)?, None)?];
+        for pass in LANES {
+            step.push(dispatch(pass, lanes, Some(wave::LANE_ARGS))?);
         }
-        template.steps = steps;
-        Ok(template)
+        let mut finish = vec![dispatch(PLANNER, Span::new(1, 1)?, None)?];
+        let spans = [obligations, calls, Span::new(0, 1)?];
+        for ((pass, span), args) in FINISH.zip(spans).zip(wave::FINISH_ARGS) {
+            finish.push(dispatch(pass, span, Some(args))?);
+        }
+        Ok(WaveProgram { state: state.clone(), step, finish })
     }
 
-    /// Dispatches within each segment share a compute pass. A program
-    /// flushes it before its sync clear and before copying its failure word.
-    pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) -> Result<()> {
+    /// Records `steps` steps and the finish in one compute pass.
+    pub fn record_wave(&self, encoder: &mut wgpu::CommandEncoder, program: &WaveProgram, steps: u32) {
         let batch = passes_core::DeferredComputeBatchGuard::begin(
             passes_core::compute_pass_batching_allowed(crate::gpu::timer::operation_capture_active())
                 && !passes_core::debug_operation_limited()
                 && crate::gpu::dispatch_capture::capture_pass().is_none(),
             "trait_solver.solver_wave",
         );
-        for template in templates {
-            for step in &template.steps {
-                match step {
-                    WaveStep::Dispatch(step) => dispatch_pass(
-                        encoder, &self.passes[step.pass], &step.bindings, &step.offsets,
-                        step.launch(template),
-                    ),
-                    WaveStep::Program { operation, sync, state } => {
-                        operation.record(encoder)?;
-                        passes_core::flush_deferred_compute(encoder);
-                        sync.copy_to(
-                            encoder, StepProgramOperation::failed_offset(0),
-                            state, wave::PROGRAM_FAILED * 4, 4,
-                        );
-                    }
-                }
-            }
+        let recorded = std::iter::repeat_n(&program.step, steps as usize).chain(std::iter::once(&program.finish));
+        for dispatch in recorded.flatten() {
+            let launch = match dispatch.indirect {
+                Some(offset) => Launch::Indirect(&program.state, program.state.byte_offset + offset),
+                None => Launch::Direct((1, 1, 1)),
+            };
+            dispatch_pass(encoder, &self.passes[dispatch.pass], &dispatch.bindings, &dispatch.offsets, launch);
         }
         passes_core::flush_deferred_compute(encoder);
         drop(batch);
-        Ok(())
     }
-}
-
-fn proof_key_index(key: &str) -> Result<usize> {
-    PROOF_KEYS
-        .iter()
-        .position(|(_, entry, _)| *entry == key)
-        .ok_or_else(|| anyhow!("unregistered proof kernel {key}"))
 }
 
 // Recipe roots are admitted with the catalog graph before this sidecar is
@@ -1760,7 +797,7 @@ impl RecipeKernels {
         ensure!(self.passes.len() == schedule.len(), "recipe kernel/schedule inventory differs");
         for (pass, (phase, count, threads)) in self.passes.iter().zip(schedule) {
             record_phase_with_resources(device, encoder, pass, phase, Span::new(0, count)?,
-                threads, storage, input, output, None, Some(recipes), None, None)?;
+                threads, storage, input, output, None, Some(recipes), None)?;
         }
         Ok(())
     }
@@ -1777,7 +814,7 @@ impl NativeLayoutKernel {
         catalog: &Arena, input: &Arena, output: &Arena, proof: ProofResources<'_>,
         recipes: &Arena, work: &Arena) -> Result<()> {
         record_phase_with_resources(device, encoder, &self.pass, 5, Span::new(0, 1)?, 1,
-            catalog, input, output, Some(proof), Some(recipes), Some(work), None)
+            catalog, input, output, Some(proof), Some(recipes), Some(work))
     }
 }
 
@@ -1795,7 +832,7 @@ impl ImplementationApplicationKernel {
         catalog: &Arena, input: &Arena, output: &Arena, proof: ProofResources<'_>, work: &Arena,
     ) -> Result<()> {
         record_phase_with_resources(device, encoder, &self.pass, 6, Span::new(0, 1)?, 1,
-            catalog, input, output, Some(proof), None, Some(work), None)
+            catalog, input, output, Some(proof), None, Some(work))
     }
 }
 

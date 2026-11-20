@@ -413,53 +413,49 @@ performs an occurs check. A fixed prerequisite check consumes completed bindings
 it cannot restart inference. Explicit depth, pair, occurs, and substitution work
 limits distinguish resource exhaustion from malformed input and no match.
 
-The catalog admits complete implementation heads and checks coherence. A proof
-frontier selects candidates and constructs prerequisite evidence. Implementation
-and assumption proof admission run in separate GPU dispatches over the same
-pending wave, followed by edge checking and commit. No admission dispatch itself
-publishes authority. Malformed proof kinds or fields leave persistent accepted
-prefixes unchanged and poison the failed packet. Catalog shaders bind only their
-catalog resources; proof-store resources belong to proof matching/admission.
+The catalog admits complete implementation heads and checks coherence. Catalog
+shaders bind only their catalog resources; proof-store resources belong to the
+proof search.
 
-A check records its solver rounds, then a finish point
-(`proof_solver_wave.slang`). The finish point runs the round-start quiescence
-test. A quiescent solve publishes its roots, reduces its calls and writes the
-batch receipt there. The first submit records two full rounds and three queue
-rounds. A check without source obligations records only a no-Work point: its
-planner tests that no Work exists and that the transient tables the first work
-commits are empty, then runs the batch receipt, after the call reduction when
-the check has calls; it has no root to publish. Otherwise it stops with
-`FULL_ROUND` before any step, and the host records the first work and the
-finish point.
+The proof search of a check is a queue of Work rows in the proof store
+(`proof_frontier/proof_work.slang`). Row `i` below the root count is source
+obligation `first + i`. Every later row is one prerequisite of an
+implementation that a proof applied. One lane owns one row from its goal to its
+proof.
 
-- Work is admitted only at the first work and at a full round's expansion, so
-  a round without Work runs only its queue steps. A queue round records just
-  those (9 dispatches against 37 for a full round). Its round start stops the
-  solve with `FULL_ROUND` before any step when Work is pending.
-- Original Works exist only before the first work and prerequisite Works only
-  after an expansion. The opening round normalizes only original Works and
-  later full rounds only prerequisite Works. Each of these round starts stops
-  the solve with `FULL_ROUND` when its Work span starts elsewhere.
-- After `FULL_ROUND` the host records full rounds from that round start (with
-  both Work kinds if a kind check stopped it). When the finish point finds
-  queue rows left, the host records twice as many queue rounds.
-- A commit stage's one-thread commit runs in the last workgroup of its
-  audit or lane dispatch (`proof_commit_audit.slang`, `pca_last_group`). Each
-  workgroup releases its lanes' accesses at device scope before it counts
-  itself arrived with an atomic add; the last one acquires before it commits.
-  The lanes write the audit header only with atomics, and the commit reads it
-  and the batch receipt with atomics. The planner launches one workgroup when
-  the commit is planned and the lanes have no row.
-- The queue point plans ready-proof emission and the emitted steps after it
-  over the same queue rows. The proof-edge admission finds the edges that
-  emission reserved in the store, so no planner runs between them. The
-  reduction queue's commit after the emitted steps is made by the next
-  planner, and a queue round's start also plans its queue point.
+A recorded step is `plan_proof_wave` and four lane kernels launched indirectly:
 
-One readback per submit returns the solver state and every result row. Wave templates are built once per job and reused
-while they bind the same buffers. Catalog admission does not read its receipts.
-The first check's readback reads them, and a failed admission is that check's
-error.
+| Kernel | Work of one lane |
+|---|---|
+| `build_proof_goals` | Copies the goal's predicate roots into the proof store. |
+| `select_proof_assumptions` | Tests the ancestors for a cycle and finds a caller assumption. |
+| `select_proof_implementations` | Finds the exact implementation, or the generic one without an assumption. |
+| `write_proof_rows` | Writes the proof, its bindings and one Work per prerequisite. |
+
+Selection order is the exact implementation, then a caller assumption, then the
+generic implementation.
+
+- A step runs at most 4,096 rows. The rows a step appends run in a later step,
+  so a step covers one nesting level of obligations at most.
+- The planner chooses each step's rows on the GPU. The host records a number of
+  steps, then a finish, and reads the state back once per submit. The first
+  submit records five steps beyond the root chunks. A solve with rows left
+  records twice as many.
+- The finish runs only when every Work ran. It makes the batch's rows readable,
+  then launches `publish_proof_roots`, `reduce_batch_calls` and
+  `finalize_trait_batch`.
+- Rows are not shared between obligations: two obligations with the same goal
+  prove it twice. A goal equal to one of its ancestors is a cycle.
+- A proof with a refuted descendant has classification 3. Readers accept only
+  classifications 1 (closed) and 2 (conditional).
+- A table without room stops the solve with limit 69. The host doubles the
+  tables and runs the attempt again. Rows of a failed attempt are never
+  accepted.
+- A deferred solve passes a bound of the root count. The planner takes the
+  count from the batch directory.
+
+Catalog admission does not read its receipts. The first check's readback reads
+them, and a failed admission is that check's error.
 
 Source checking retains accepted implementation prerequisites as well as callable
 bounds. Parameter lookup returns the declaration token, preserving lexical

@@ -1,7 +1,7 @@
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.batches.batch_io;
 import type_checker.trait_solver.admission_group;
-import type_checker.trait_solver.proof_publication.proof_store_lifecycle;
+import type_checker.trait_solver.proof_store_lifecycle;
 
 // One workgroup admits the batch and proof store layouts.
 [shader("compute")]

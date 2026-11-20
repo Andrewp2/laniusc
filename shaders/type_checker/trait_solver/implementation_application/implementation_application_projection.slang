@@ -286,7 +286,7 @@ SolverStatus iap_project_one(uint request, inout uint3 used)
     {
         uint4 edge; uint4 child; uint4 child_extra; uint actual_owner;
         if (!pps_read4(PPS_PROOF_EDGES, proof_extra.y + ordinal, 0u, edge) ||
-            edge.x != resolved || edge.y != prerequisites.x + ordinal || edge.z >= resolved || edge.w != 0u ||
+            edge.x != resolved || edge.y != prerequisites.x + ordinal || edge.z <= resolved || edge.w != 0u ||
             !ts_word(8u, edge.y, 1u, actual_owner) || actual_owner != implementation.y ||
             !iap_accepted_span(PPS_PROOFS, edge.z, 1u) ||
             !pps_read8(PPS_PROOFS, edge.z, child, child_extra) || child_extra.w != 1u || child.z != proof.z ||

@@ -19,13 +19,7 @@ public static const uint PPS_BINDINGS = 5u;
 public static const uint PPS_PROOFS = 6u;
 public static const uint PPS_PROOF_EDGES = 7u;
 public static const uint PPS_WORK = 8u;
-public static const uint PPS_REQUIREMENTS = 9u;
-public static const uint PPS_GOAL_INDEX = 10u;
-public static const uint PPS_GOAL_BUCKETS = 11u;
-public static const uint PPS_FRONTIER = 12u;
-public static const uint PPS_ROOT_LINKS = 13u;
-public static const uint PPS_NORMALIZATION_REQUESTS = 14u;
-public static const uint PPS_REDUCTION_QUEUE = 15u;
+// Tables 9 to 15 keep their directory slots and have no rows.
 
 public struct ProofStoreParams
 {
@@ -37,9 +31,10 @@ public RWStructuredBuffer<uint> trait_solver_proof_store;
 
 // Directory6: physical offset, reserved logical rows, physical row capacity,
 // admitted logical prefix, accepted logical prefix, fixed row width.
-// Reservation alone authorizes no read. Stage admission advances field3 only
-// after every reserved row has been emitted and checked. Receipt publication
-// advances field4 only after every original obligation succeeds.
+// A lane reserves its rows and writes them in one dispatch, and readers of a
+// later dispatch read every reserved row. The solver's finish advances
+// field3 to field1 once every Work ran (plan_proof_wave.slang): rows below
+// field3 are immutable. Receipt publication advances field4.
 // Every width is a power of two: log2 per table, one nibble each (low nibble
 // first): tables0-7 3,1,1,3,2,3,3,2; tables8-15 4,2,2,0,1,1,3,1; else 0.
 // Readers below are straight-line selects with one guarded early return.
@@ -149,7 +144,7 @@ public bool pps_count(uint table, out uint count)
     uint admitted = trait_solver_proof_store[directory + 3u];
     uint logical = trait_solver_proof_store[directory + 1u];
     if (!((logical != TS_INVALID) & (admitted <= logical))) return false;
-    count = admitted; return true;
+    count = logical; return true;
 }
 public bool pps_span(uint table, uint first, uint count)
 {
@@ -157,9 +152,8 @@ public bool pps_span(uint table, uint first, uint count)
     bool known = pps_count(table, rows);
     return known & (first <= rows) & (count <= rows - first);
 }
-// Safe projection after layout admission. For readers, the admitted count is
-// authority. Writers may address reserved rows only after a disjoint GPU count
-// and prefix reservation; acceptance never follows from this writer bound.
+// Safe projection after layout admission. Readers and writers address the
+// reserved rows. A writer never addresses an admitted persistent row.
 public bool pps_address(uint table, uint row, uint field, uint fields, bool write,
     out uint address)
 {
@@ -176,7 +170,7 @@ public bool pps_address(uint table, uint row, uint field, uint fields, bool writ
     uint words = proof_store_params.word_count;
     if (!((fields != 0u) & (field < width) & (fields <= width - field) &
         (logical != TS_INVALID) & (logical <= capacity) & (admitted <= logical) &
-        (accepted <= admitted) & (row < select(write, logical, admitted)) &
+        (accepted <= admitted) & (row < logical) &
         !(write & (table < PPS_PERSISTENT_TABLES) & (row < admitted)) &
         (offset <= words) & (row < ts_rows_in(offset, words, width)))) return false;
     address = offset + row * width + field;
@@ -202,34 +196,6 @@ public bool pps_read8(uint table, uint row, out uint4 low, out uint4 high)
     low = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); high = low;
     uint address;
     if (!pps_address(table, row, 0u, 8u, false, address)) return false;
-    low = uint4(trait_solver_proof_store[address], trait_solver_proof_store[address + 1u],
-        trait_solver_proof_store[address + 2u], trait_solver_proof_store[address + 3u]);
-    high = uint4(trait_solver_proof_store[address + 4u], trait_solver_proof_store[address + 5u],
-        trait_solver_proof_store[address + 6u], trait_solver_proof_store[address + 7u]);
-    return true;
-}
-// A validator may inspect its own fully emitted pending row before advancing
-// the admitted prefix. This never permits that row to support another proof.
-public bool pps_read_pending2(uint table, uint row, uint field, out uint2 value)
-{
-    value = uint2(TS_INVALID, TS_INVALID); uint address;
-    if (!pps_address(table, row, field, 2u, true, address)) return false;
-    value = uint2(trait_solver_proof_store[address], trait_solver_proof_store[address + 1u]);
-    return true;
-}
-public bool pps_read_pending4(uint table, uint row, uint field, out uint4 value)
-{
-    value = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); uint address;
-    if (!pps_address(table, row, field, 4u, true, address)) return false;
-    value = uint4(trait_solver_proof_store[address], trait_solver_proof_store[address + 1u],
-        trait_solver_proof_store[address + 2u], trait_solver_proof_store[address + 3u]);
-    return true;
-}
-public bool pps_read_pending8(uint table, uint row, out uint4 low, out uint4 high)
-{
-    low = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); high = low;
-    uint address;
-    if (!pps_address(table, row, 0u, 8u, true, address)) return false;
     low = uint4(trait_solver_proof_store[address], trait_solver_proof_store[address + 1u],
         trait_solver_proof_store[address + 2u], trait_solver_proof_store[address + 3u]);
     high = uint4(trait_solver_proof_store[address + 4u], trait_solver_proof_store[address + 5u],

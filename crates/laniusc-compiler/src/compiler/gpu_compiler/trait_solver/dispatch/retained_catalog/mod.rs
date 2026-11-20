@@ -1534,16 +1534,14 @@ impl GpuTraitSolver {
         }
         passes_core::flush_deferred_compute(&mut encoder);
         self.queue.submit(Some(encoder.finish()));
-        let mut templates = std::mem::take(&mut self.wave_templates);
         // Production publication reads no semantic rows; diagnostics opt in.
         self.semantic_rows = semantic_rows;
         let solved = if defer {
-            self.solve_deferred(&mut templates, packet, &layout, &plan, submission).map(|()| None)
+            self.solve_deferred(packet, &layout, &plan, submission).map(|()| None)
         } else {
-            self.solve(&mut templates, packet, &layout, &plan, submission).map(Some)
+            self.solve(packet, &layout, &plan, submission).map(Some)
         };
         self.semantic_rows = true;
-        self.wave_templates = templates;
         let readback = solved?;
         let proof_layout = packet.packet.proof_store.layout();
         self.workspace
