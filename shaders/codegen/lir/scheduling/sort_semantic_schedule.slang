@@ -31,6 +31,6 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     uint rows = min(gParams.capacity, target_lir_total[0u]);
     if (!step_program_radix_sort<ScheduleKey>(program, rows, gParams.digits,
             target_schedule_order, target_schedule_temporary,
-            target_schedule_histogram, target_schedule_bucket_total)) return;
+            target_schedule_histogram, target_schedule_bucket_total, true)) return;
     step_program_end(program);
 }

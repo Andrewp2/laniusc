@@ -14,6 +14,7 @@ groupshared uint step_radix_bucket_base[256];
 // order and carries each bucket's write offset from one tile to the next.
 // histogram needs program.groups * 256 words. bucket_total needs 256.
 // digits must be positive and TKey.digit must return a byte.
+// Bucket-major storage lets lanes scan group counts in parallel for each bucket.
 // The caller ends the last scatter step before reading the resulting order.
 public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
     inout StepProgram program,
@@ -22,7 +23,8 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
     RWStructuredBuffer<uint> order,
     RWStructuredBuffer<uint> temporary,
     RWStructuredBuffer<uint> histogram,
-    RWStructuredBuffer<uint> bucket_total)
+    RWStructuredBuffer<uint> bucket_total,
+    bool bucket_major = false)
 {
     if (rows == 0u) return true;
 
@@ -32,6 +34,7 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
     uint tiles = 1u + (rows - 1u) / size;
     uint tiles_per_group = 1u + (tiles - 1u) / program.groups;
     uint active_groups = 1u + (tiles - 1u) / tiles_per_group;
+    bool gather_buckets = program.groups > 1u && (!bucket_major || active_groups > 1u);
     uint first_tile = group * tiles_per_group;
     uint end_tile = min(tiles, first_tile + tiles_per_group);
     uint chunk = lane / 32u;
@@ -60,27 +63,44 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
             [unroll]
             for (uint shard = 0u; shard < 8u; ++shard)
                 count += step_radix_buckets[shard][lane];
-            histogram[group * size + lane] = count;
+            uint slot = bucket_major ? lane * program.groups + group : group * size + lane;
+            histogram[slot] = count;
         }
         if (!step_barrier(program)) return false;
 
-        if (program.groups > 1u)
+        if (gather_buckets)
         {
-            // Give each of up to eight workgroups a consecutive range of
-            // buckets. Each lane scans one bucket across the active groups.
-            uint buckets_per_group = 1u + (size - 1u) / min(program.groups, 8u);
-            uint bucket = group * buckets_per_group + lane;
-            if (lane < buckets_per_group && bucket < size)
+            if (bucket_major)
             {
-                uint sum = 0u;
-                for (uint group_i = 0u; group_i < active_groups; ++group_i)
+                // Consecutive lanes scan the group counts for one bucket.
+                for (uint bucket = group; bucket < size; bucket += program.groups)
                 {
-                    uint slot = group_i * size + bucket;
-                    uint group_count = histogram[slot];
-                    histogram[slot] = sum;
-                    sum += group_count;
+                    uint slot = bucket * program.groups + lane;
+                    uint own = lane < active_groups ? histogram[slot] : 0u;
+                    uint inclusive = prefix_scan_u32_256(lane, own);
+                    if (lane < active_groups) histogram[slot] = inclusive - own;
+                    if (lane == size - 1u) bucket_total[bucket] = inclusive;
+                    GroupMemoryBarrierWithGroupSync();
                 }
-                bucket_total[bucket] = sum;
+            }
+            else
+            {
+                // Give each of up to eight workgroups a consecutive range of
+                // buckets. Each lane scans one bucket across the active groups.
+                uint buckets_per_group = 1u + (size - 1u) / min(program.groups, 8u);
+                uint bucket = group * buckets_per_group + lane;
+                if (lane < buckets_per_group && bucket < size)
+                {
+                    uint sum = 0u;
+                    for (uint group_i = 0u; group_i < active_groups; ++group_i)
+                    {
+                        uint slot = group_i * size + bucket;
+                        uint group_count = histogram[slot];
+                        histogram[slot] = sum;
+                        sum += group_count;
+                    }
+                    bucket_total[bucket] = sum;
+                }
             }
             if (!step_barrier(program)) return false;
             if (group < active_groups) count = bucket_total[lane];
@@ -88,7 +108,8 @@ public bool step_program_radix_sort<TKey : IStepProgramRadixKey>(
 
         if (group < active_groups)
         {
-            uint carry = program.groups > 1u ? histogram[group * size + lane] : 0u;
+            uint slot = bucket_major ? lane * program.groups + group : group * size + lane;
+            uint carry = gather_buckets ? histogram[slot] : 0u;
             step_radix_bucket_base[lane] = prefix_scan_u32_256(lane, count) - count + carry;
             GroupMemoryBarrierWithGroupSync();
             for (uint tile = first_tile; tile < end_tile; ++tile)

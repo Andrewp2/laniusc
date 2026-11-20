@@ -2,7 +2,7 @@ import radix.radix_digits;
 import shared.collectives.step_program;
 import shared.collectives.program_radix_sort;
 
-struct Params { uint groups; uint rows; uint digits; };
+struct Params { uint groups; uint rows; uint digits; uint bucket_major; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> keys;
 RWStructuredBuffer<uint> order;
@@ -24,7 +24,8 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
     StepProgram program = step_program_begin(group, local, gParams.groups, 0u);
     if (!step_program_radix_sort<WordKey>(
-            program, gParams.rows, gParams.digits, order, temporary, histogram, bucket_total))
+            program, gParams.rows, gParams.digits, order, temporary, histogram, bucket_total,
+            gParams.bucket_major != 0u))
         return;
     step_program_end(program);
 }

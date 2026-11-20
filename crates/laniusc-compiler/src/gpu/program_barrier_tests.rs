@@ -355,20 +355,28 @@ fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
         groups: u32,
         rows: u32,
         digits: u32,
+        bucket_major: u32,
     }
 
     let gpu = device::global();
     let (device, queue) = (&gpu.device, &gpu.queue);
     let label = "tests/probe_program_radix_sort";
     let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
-    for (groups, rows, digits) in [
-        (1, 0, 1),
-        (1, 801, 1),
-        (1, 1219, 2),
-        (64, 18_125, 3),
-        (64, 65_651, 4),
+    let [_, large] = super::operations::step_program_group_counts();
+    for (groups, rows, digits, bucket_major) in [
+        (1, 0, 1, 0),
+        (1, 801, 1, 0),
+        (1, 1219, 2, 0),
+        (64, 18_125, 3, 0),
+        (64, 65_651, 4, 0),
+        (1, 1219, 3, 1),
+        (64, 38, 4, 1),
+        (64, 18_125, 3, 1),
+        (large, 171_710, 4, 1),
     ] {
-        let params = uniform_from_val(device, label, &SortParams { groups, rows, digits });
+        let params = uniform_from_val(
+            device, label, &SortParams { groups, rows, digits, bucket_major },
+        );
         let count = rows as usize;
         let data: Vec<u32> = (0..rows)
             .map(|row| ((row.wrapping_mul(269) % 713) << 8) | (if row % 13 == 0 { 255 } else { row % 11 }))
@@ -457,6 +465,7 @@ fn benchmark_step_program_collectives() {
         groups: u32,
         rows: u32,
         mode: u32,
+        bucket_major: u32,
     }
 
     #[derive(encase::ShaderType)]
@@ -510,10 +519,10 @@ fn benchmark_step_program_collectives() {
         let bucket_total = storage(256);
         let sync = storage(SYNC_WORDS);
         let probe_scan_params = uniform_from_val(
-            device, label, &ProbeParams { groups, rows, mode: 0 },
+            device, label, &ProbeParams { groups, rows, mode: 0, bucket_major: 0 },
         );
         let probe_sort_params = uniform_from_val(
-            device, label, &ProbeParams { groups, rows, mode: digits },
+            device, label, &ProbeParams { groups, rows, mode: digits, bucket_major: 0 },
         );
         let bind = |pass, entries: &[(&str, wgpu::BindingResource<'_>)]| {
             passes_core::bind_group::create_bind_group_from_bindings(
