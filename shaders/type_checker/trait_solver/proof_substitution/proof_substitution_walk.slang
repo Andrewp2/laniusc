@@ -251,7 +251,7 @@ public SolverStatus pps_walk_bindings(uint consumer, uint row)
         if (call.kind == PPS_CALL_RESOLVE)
             walk.resolved = owned_constraints_resolve<CatalogImplementationPatternGraph,
                 SolverProofTermGraph>(call.resolve_term, call.targets, walk.state, walk.resolution);
-        else if (call.kind != PPS_CALL_SKIP)
+        else
         {
             uint2 unused; ProofNormalizationCounts measured;
             ProofNormalizationReservation empty = (ProofNormalizationReservation)0;

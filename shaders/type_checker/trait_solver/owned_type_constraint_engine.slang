@@ -652,8 +652,33 @@ public OwnedConstraintStatus owned_constraints_finish_checks(inout OwnedConstrai
     }
     return state.status;
 }
-public bool owned_constraints_recheck(OwnedConstraintState state, uint cell, out uint3 term)
-{ return owned_constant_recheck_term(state.counts, state.seen, state.frame, cell, term); }
+// Advance in cell order over seen constant variables with a fit mask.
+// Read seen again after each resolution, which can mark a later cell.
+public bool owned_constraints_recheck(OwnedConstraintState state, inout uint cell, out uint3 term)
+{
+    term = uint3(0u, 0u, 0u);
+    for (uint side = cell / 32u; side < 2u; ++side)
+    {
+        uint domain = side * 2u + 1u;
+        uint remaining = state.seen[domain] & owned_constraint_mask(state.counts[domain]) &
+            (0xffffffffu << (cell % 32u));
+        while (remaining != 0u)
+        {
+            uint index = uint(firstbitlow(remaining));
+            uint at = side * 32u + index;
+            uint4 constant_cell = owned_constraint_constant_cell(state.frame, at);
+            if (constant_cell.w != 0u)
+            {
+                cell = at + 1u;
+                term = constant_cell.xyz;
+                return true;
+            }
+            remaining &= remaining - 1u;
+        }
+        cell = (side + 1u) * 32u;
+    }
+    return false;
+}
 public OwnedConstraintStatus owned_constraints_resolve<
     PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
     uint3 term, uint targets, inout OwnedConstraintState state, out OwnedConstantResolution value)

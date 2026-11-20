@@ -69,8 +69,7 @@ public static const uint PPS_CALL_ROOTS = 2u;
 // status and value land in walk.resolved and walk.resolution.
 public static const uint PPS_CALL_RESOLVE = 3u;
 // Nothing to call (a constant cell the head's finish need not recheck).
-public static const uint PPS_CALL_SKIP = 4u;
-public static const uint PPS_CALL_DONE = 5u;
+public static const uint PPS_CALL_DONE = 4u;
 public struct PpsSubstitutionCall
 {
     public uint kind;
@@ -215,7 +214,7 @@ public SolverStatus pps_substitution_feed_bindings(inout PpsSubstitutionWalk wal
             walk.state.status = walk.resolved;
             return ts_owned_constraint_status(walk.state.status, walk.row.x);
         }
-        walk.index++; recheck = true;
+        recheck = true;
     }
     else if (walk.phase == PPS_WALK_BINDING)
     {
@@ -255,11 +254,10 @@ public SolverStatus pps_substitution_feed_bindings(inout PpsSubstitutionWalk wal
     }
     if (recheck)
     {
-        if (walk.index < 64u)
+        uint3 term;
+        if (owned_constraints_recheck(walk.state, walk.index, term))
         {
-            uint3 term;
-            call.kind = owned_constraints_recheck(walk.state, walk.index, term)
-                ? PPS_CALL_RESOLVE : PPS_CALL_SKIP;
+            call.kind = PPS_CALL_RESOLVE;
             call.resolve_term = term; call.targets = OWNED_TARGETS_DISCARD;
             walk.phase = PPS_WALK_RECHECK;
             return ts_ok();
