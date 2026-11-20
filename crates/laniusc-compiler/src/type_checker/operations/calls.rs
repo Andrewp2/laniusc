@@ -167,9 +167,11 @@ pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_METHOD_MODULE_CONSUME: Re
 pub(in crate::type_checker) const CALLS_APPLY_METHOD_MODULE_ARGUMENTS: ReflectedComputeSpec =
     CALLS_APPLY_ARGUMENTS.with_name("type_check.calls.arguments.apply.method_modules");
 pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE: ReflectedComputeSpec =
-    CALLS_ARGUMENT_MATCH_INITIALIZE.with_name("type_check.calls.arg_match.final.init");
+    CALLS_ARGUMENT_MATCH_INITIALIZE.with_name("type_check.calls.arg_match.final.init")
+        .with_indirect_dispatch("inference_arg_list_args");
 pub(in crate::type_checker) const CALLS_ARGUMENT_MATCH_FINAL_CONSUME: ReflectedComputeSpec =
-    CALLS_ARGUMENT_MATCH_CONSUME.with_name("type_check.calls.arg_match.final.consume");
+    CALLS_ARGUMENT_MATCH_CONSUME.with_name("type_check.calls.arg_match.final.consume")
+        .with_indirect_dispatch("inference_arg_list_args");
 /// The rounds' application visits the listed active blocks
 /// (calls/inference_blocks.slang).
 pub(in crate::type_checker) const CALLS_APPLY_FINAL_ARGUMENTS: ReflectedComputeSpec =
@@ -204,7 +206,7 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_EMIT: ReflectedComputeSpec
 .with_aliases(&[
     typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
 ])
-.with_indirect_dispatch("hir_active_dispatch_args");
+.with_indirect_dispatch("inference_full_arg_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComputeSpec =
     call_pass!(
         "generic_claims.index.build",

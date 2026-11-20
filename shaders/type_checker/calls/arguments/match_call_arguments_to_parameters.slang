@@ -2,6 +2,7 @@ import type_checker.methods.method_candidate;
 StructuredBuffer<MethodCandidate> method_candidate;
 import shared.syntax.hir_records;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 // Match compact arguments to compact parameter rows.
 //
@@ -172,7 +173,7 @@ uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_thread_id(dtid);
+    uint row = inference_listed_argument(linear_thread_id(dtid));
     uint arg_rows = active_arg_row_count();
     // An argument row is its call's item.
     if (row < arg_rows && inference_item_active(valid_node(call_arg_row_call_node[row])

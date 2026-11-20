@@ -308,11 +308,11 @@ bool generic_param_in_scope(uint token, uint site)
 
 // Zero the bucket heads of both claim indexes. The index build hashes into
 // call_claim_lookup_capacity(count) buckets with count at most the claim
-// capacity, so clearing up to the head buffer's length covers them. One lane
-// per active HIR row, as this pass is dispatched.
+// capacity, so clearing up to the head buffer's length covers them. The
+// grid has one lane per argument row, rounded up to at least one group.
 void clear_claim_lookups(uint lane)
 {
-    uint lanes = max(active_hir_node_count(), 1u);
+    uint lanes = max(min(call_arg_row_count_out[0u], active_hir_node_count()), 1u);
     if (lane >= lanes) return;
     uint capacity; uint stride;
     call_generic_claim_lookup_head.GetDimensions(capacity, stride);

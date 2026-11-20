@@ -800,7 +800,7 @@ pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         input: "call_generic_claim_scan_input",
         output_prefix: "call_generic_claim_prefix",
         total: "call_generic_claim_count_out",
-        dispatch_args: "hir_active_dispatch_args",
+        dispatch_args: "inference_full_arg_args",
         local_prefix: "call_generic_claim_scan_local_prefix",
         block_sum: "call_generic_claim_scan_block_sum",
     },
@@ -809,7 +809,7 @@ pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         input: "call_const_claim_scan_input",
         output_prefix: "call_const_claim_prefix",
         total: "call_const_claim_count_out",
-        dispatch_args: "hir_active_dispatch_args",
+        dispatch_args: "inference_full_arg_args",
         local_prefix: "call_const_claim_scan_local_prefix",
         block_sum: "call_const_claim_scan_block_sum",
     },
@@ -3137,12 +3137,15 @@ fn build_graph(
     // (list_inference_ranges.slang).
     graph_resources!(graph, Workspace {
         inference_block_tables as "inference_block_tables" in Calls =>
-            (8 + 5 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks)) * 4;
+            (10 + 7 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks + call_arg_rows.div_ceil(32))) * 4;
         _inference_list_writer_args as "inference_list_writer_args" in DispatchArguments [StorageIndirect] => 12;
         inference_hir_blocks as "inference_hir_blocks" in Calls => (2 + hir_blocks) * 4;
         inference_token_blocks as "inference_token_blocks" in Calls => (2 + token_blocks) * 4;
         _inference_hir_list_args as "inference_hir_list_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_token_list_args as "inference_token_list_args" in DispatchArguments [StorageIndirect] => 12;
+        inference_arg_blocks as "inference_arg_blocks" in CallArguments => (2 + call_arg_rows.div_ceil(32)) * 4;
+        _inference_arg_list_args as "inference_arg_list_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_full_arg_args as "inference_full_arg_args" in DispatchArguments [StorageIndirect] => 12;
         // The locations of the call field closure's roots
         // (list_call_field_closure_roots.slang): two per HIR row at most.
         _call_root_list as "call_root_list" in HirNodes => (2 * hir_rows).max(1) * 16;
@@ -3161,6 +3164,7 @@ fn build_graph(
     // 03m1 wrote them.
     graph.mark_zero_initialized(inference_hir_blocks)?;
     graph.mark_zero_initialized(inference_token_blocks)?;
+    graph.mark_zero_initialized(inference_arg_blocks)?;
     // Method call keys (mark_method_call_keys) append to the list wherever they run.
     // Before the list is built they append to a stale list, which the
     // clear and the listing then replace, so no pass reads what they wrote.
@@ -5681,7 +5685,7 @@ fn build_graph(
     graph.add_indirect_dispatch(CALLS_INFERENCE_RANGES_PASS, "token_hir_active_dispatch_args")?;
     graph.mark_pass_bindings_initialize(
         CALLS_INFERENCE_RANGES_PASS,
-        &["inference_hir_blocks", "inference_token_blocks"],
+        &["inference_hir_blocks", "inference_token_blocks", "inference_arg_blocks"],
     )?;
     graph.add_kernel_pass_by_name(
         CALLS_INFERENCE_LIST_ARGS_PASS,
@@ -5804,7 +5808,12 @@ fn build_graph(
     graph.add_indirect_dispatch(CALLS_INFERENCE_BLOCK_LIST_PASS, "inference_list_writer_args")?;
     graph.mark_pass_bindings_initialize(
         CALLS_INFERENCE_BLOCK_LIST_PASS,
-        &["inference_hir_list_args", "inference_token_list_args"],
+        &[
+            "inference_hir_list_args",
+            "inference_token_list_args",
+            "inference_arg_list_args",
+            "inference_full_arg_args",
+        ],
     )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -6131,7 +6140,9 @@ fn build_graph(
         )?;
         graph.add_indirect_dispatch(
             name,
-            if name == MATCH_PAYLOADS_TYPE_INFERENCE.name {
+            if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
+                "inference_arg_list_args"
+            } else if name == MATCH_PAYLOADS_TYPE_INFERENCE.name {
                 "match_hir_dispatch_args"
             } else if name == CALLS_RETURN_TYPE_INDEX_PASS || name == CALLS_RETURN_IMPORTED_FIELDS_PASS {
                 "type_live_row_args"

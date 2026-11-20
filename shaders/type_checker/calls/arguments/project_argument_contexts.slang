@@ -17,6 +17,7 @@ import type_checker.substitution.checked_row_realization;
 import type_checker.substitution.source_slot_adapter;
 import type_checker.substitution.canonical_call_environments;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -120,7 +121,7 @@ void report(uint token, uint failure)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = dtid.x + dtid.y * 16776960u;
+    uint row = inference_listed_argument(dtid.x + dtid.y * 16776960u);
     if (row >= min(call_arg_row_count_out[0u], gParams.n_hir_nodes)) return;
     uint call = call_arg_row_call_node[row];
     uint node = argument_context_root(call_arg_row_node[row], hir_count(),

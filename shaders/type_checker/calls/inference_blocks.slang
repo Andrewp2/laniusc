@@ -30,3 +30,15 @@ public uint inference_listed_token(uint linear)
     if (call_inference_round[0u] == 0u || inference_token_blocks[0u] == 0u) return linear;
     return inference_token_blocks[2u + linear / 256u] * 256u + linear % 256u;
 }
+
+// Eight 32-row argument tiles share a workgroup. Unused tiles in the last
+// workgroup return a row outside the argument table.
+public StructuredBuffer<uint> inference_arg_blocks;
+
+public uint inference_listed_argument(uint linear)
+{
+    if (call_inference_round[0u] == 0u || inference_arg_blocks[0u] == 0u) return linear;
+    uint tile = linear / 32u;
+    if (tile >= inference_arg_blocks[1u]) return 0xffffffffu;
+    return inference_arg_blocks[2u + tile] * 32u + linear % 32u;
+}

@@ -52,16 +52,19 @@ impl CallArgumentMatchStage {
 pub(in crate::type_checker) struct CallArgumentMatchingOperation {
     initialize: ComputeOperation,
     consume: ComputeOperation,
+    inference: [ComputeOperation; 2],
 }
 
 impl CallArgumentMatchingOperation {
     pub(in crate::type_checker) fn new(
         initialize: ComputeOperation,
         consume: ComputeOperation,
+        inference: [ComputeOperation; 2],
     ) -> Self {
         Self {
             initialize,
             consume,
+            inference,
         }
     }
 
@@ -71,6 +74,11 @@ impl CallArgumentMatchingOperation {
         stage: CallArgumentMatchStage,
         pages: &DependencyPatternReplay<'_>,
     ) -> Result<()> {
+        if matches!(stage, CallArgumentMatchStage::Final) {
+            let [initialize, consume] = &self.inference;
+            initialize.record(encoder)?;
+            return pages.record(encoder, |encoder| consume.record(encoder));
+        }
         let (initialize, consume, _) = stage.operation_names();
         self.initialize.record_as(encoder, initialize)?;
         pages.record(encoder, |encoder| self.consume.record_as(encoder, consume))

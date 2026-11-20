@@ -1,7 +1,6 @@
-// Lists, at the start of each round's passes, the blocks of 256 HIR rows and
-// of 256 tokens that hold an item of a function active in the round, and
+// Lists the blocks of HIR rows, tokens, and arguments owned by active functions, and
 // writes the listed passes' dispatch arguments (inference_blocks.slang). One
-// lane per listed function, then one per always-active HIR and token block
+// lane per listed function, then one per always-active block
 // (write_inference_list_dispatch_args sized the dispatch). A block is listed once per round: its mark holds
 // the last round that listed it.
 //
@@ -15,6 +14,11 @@ StructuredBuffer<uint> call_inference_round;
 StructuredBuffer<uint> call_inference_fn_stamp;
 StructuredBuffer<uint> hir_active_dispatch_args;
 StructuredBuffer<uint> token_active_dispatch_args;
+StructuredBuffer<uint> call_arg_row_count_out;
+StructuredBuffer<uint> hir_active_count;
+RWStructuredBuffer<uint> inference_full_arg_args;
+RWStructuredBuffer<uint> inference_arg_blocks;
+RWStructuredBuffer<uint> inference_arg_list_args;
 RWStructuredBuffer<uint> inference_block_tables;
 RWStructuredBuffer<uint> inference_hir_blocks;
 RWStructuredBuffer<uint> inference_token_blocks;
@@ -29,14 +33,15 @@ void list_block(uint domain, uint block)
     uint slot;
     InterlockedAdd(inference_block_tables[INFERENCE_BLOCK_LISTED + domain], 1u, slot);
     if (domain == 0u) inference_hir_blocks[2u + slot] = block;
-    else inference_token_blocks[2u + slot] = block;
+    else if (domain == 1u) inference_token_blocks[2u + slot] = block;
+    else inference_arg_blocks[2u + slot] = block;
 }
 
 // Lists the blocks of rows [first, end) that this round has not listed yet.
-void list_range(uint domain, uint marks, uint first, uint end, uint round)
+void list_range(uint domain, uint marks, uint first, uint end, uint round, uint tile)
 {
     if (end == 0u) return;
-    for (uint block = first / 256u; block <= (end - 1u) / 256u; block++)
+    for (uint block = first / tile; block <= (end - 1u) / tile; block++)
     {
         uint old;
         InterlockedMax(inference_block_tables[marks + block], round, old);
@@ -44,16 +49,25 @@ void list_range(uint domain, uint marks, uint first, uint end, uint round)
     }
 }
 
-void copy_full_grid()
+uint3 full_argument_grid()
+{
+    uint rows = min(call_arg_row_count_out[0u], hir_active_count[0u]);
+    uint groups = max((rows + 255u) / 256u, 1u);
+    return uint3(min(groups, 65535u), (groups + 65534u) / 65535u, 1u);
+}
+
+void copy_full_grid(uint3 argument_grid)
 {
     [unroll]
     for (uint i = 0u; i < 3u; i++)
     {
         inference_hir_list_args[i] = hir_active_dispatch_args[i];
         inference_token_list_args[i] = token_active_dispatch_args[i];
+        inference_arg_list_args[i] = argument_grid[i];
     }
     inference_hir_blocks[0u] = 0u;
     inference_token_blocks[0u] = 0u;
+    inference_arg_blocks[0u] = 0u;
 }
 
 void write_listed_args(RWStructuredBuffer<uint> args, RWStructuredBuffer<uint> blocks,
@@ -79,36 +93,53 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
         uint records;
         InterlockedAdd(ct_counts[0u], 0u, records);
         ct_counts[13u] = records;
+        uint3 grid = full_argument_grid();
+        [unroll]
+        for (uint i = 0u; i < 3u; i++)
+            inference_full_arg_args[i] = grid[i];
     }
     uint round = call_inference_round[0u];
     if (round <= 1u || call_inference_round[1u] + 1u >= round)
     {
-        if (dtid.x == 0u) copy_full_grid();
+        if (dtid.x == 0u) copy_full_grid(full_argument_grid());
         return;
     }
-    uint stamps; uint hir_list; uint token_list; uint stride;
+    uint stamps; uint hir_list; uint token_list; uint arg_list; uint stride;
     call_inference_fn_stamp.GetDimensions(stamps, stride);
     inference_hir_blocks.GetDimensions(hir_list, stride);
     inference_token_blocks.GetDimensions(token_list, stride);
-    InferenceBlockLayout layout = inference_block_layout(stamps, hir_list, token_list);
+    inference_arg_blocks.GetDimensions(arg_list, stride);
+    InferenceBlockLayout layout = inference_block_layout(stamps, uint3(hir_list, token_list, arg_list));
     uint lane = dtid.x;
     uint functions = min(inference_block_tables[INFERENCE_BLOCK_FUNCTIONS], layout.groups);
-    uint always_hir = min(inference_block_tables[INFERENCE_BLOCK_ALWAYS], layout.hir_blocks);
-    uint always_tokens = min(inference_block_tables[INFERENCE_BLOCK_ALWAYS + 1u], layout.token_blocks);
+
     if (lane < functions)
     {
         uint group = inference_block_tables[layout.functions + lane];
         if (group < layout.groups && call_inference_fn_stamp[group] + 1u >= round)
         {
-            uint word = INFERENCE_BLOCK_HEADER + group * 4u;
-            list_range(0u, layout.hir_marks, ~inference_block_tables[word], inference_block_tables[word + 1u], round);
-            list_range(1u, layout.token_marks, ~inference_block_tables[word + 2u], inference_block_tables[word + 3u], round);
+            uint word = INFERENCE_BLOCK_HEADER + group * (INFERENCE_BLOCK_DOMAINS * 2u);
+            [unroll]
+            for (uint domain = 0u; domain < INFERENCE_BLOCK_DOMAINS; domain++)
+            {
+                uint start = word + domain * 2u;
+                list_range(domain, layout.marks[domain], ~inference_block_tables[start],
+                    inference_block_tables[start + 1u], round, domain == 2u ? INFERENCE_ARGUMENT_TILE : 256u);
+            }
         }
     }
-    else if (lane < functions + always_hir)
-        list_block(0u, inference_block_tables[layout.hir_always + lane - functions]);
-    else if (lane < functions + always_hir + always_tokens)
-        list_block(1u, inference_block_tables[layout.token_always + lane - functions - always_hir]);
+    else
+    {
+        uint index = lane - functions;
+        [unroll]
+        for (uint domain = 0u; domain < INFERENCE_BLOCK_DOMAINS; domain++)
+        {
+            uint count = min(inference_block_tables[INFERENCE_BLOCK_ALWAYS + domain], layout.blocks[domain]);
+            if (index < count)
+                list_block(domain, inference_block_tables[layout.always[domain] + index]);
+            index -= count;
+        }
+    }
     // The last workgroup to finish writes the grids and clears the counts for
     // the next round.
     AllMemoryBarrierWithGroupSync();
@@ -118,12 +149,22 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     InterlockedAdd(inference_block_tables[INFERENCE_BLOCK_DONE], 1u, done);
     if (done + 1u != groups) return;
     DeviceMemoryBarrier();
-    uint listed_hir; uint listed_tokens;
+    uint listed_hir; uint listed_tokens; uint listed_args;
     InterlockedAdd(inference_block_tables[INFERENCE_BLOCK_LISTED], 0u, listed_hir);
     InterlockedAdd(inference_block_tables[INFERENCE_BLOCK_LISTED + 1u], 0u, listed_tokens);
+    InterlockedAdd(inference_block_tables[INFERENCE_BLOCK_LISTED + 2u], 0u, listed_args);
     inference_block_tables[INFERENCE_BLOCK_DONE] = 0u;
     inference_block_tables[INFERENCE_BLOCK_LISTED] = 0u;
     inference_block_tables[INFERENCE_BLOCK_LISTED + 1u] = 0u;
+    inference_block_tables[INFERENCE_BLOCK_LISTED + 2u] = 0u;
+    uint arg_groups = (listed_args + 7u) / 8u;
+    bool fits = arg_groups <= 65535u;
+    inference_arg_blocks[0u] = fits ? 1u : 0u;
+    inference_arg_blocks[1u] = listed_args;
+    uint3 grid = fits ? uint3(arg_groups, 1u, 1u) : full_argument_grid();
+    inference_arg_list_args[0u] = grid.x;
+    inference_arg_list_args[1u] = grid.y;
+    inference_arg_list_args[2u] = 1u;
     write_listed_args(inference_hir_list_args, inference_hir_blocks, hir_active_dispatch_args, listed_hir);
     write_listed_args(inference_token_list_args, inference_token_blocks, token_active_dispatch_args, listed_tokens);
 }

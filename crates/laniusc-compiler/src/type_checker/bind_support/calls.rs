@@ -136,9 +136,21 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         },
     )?;
 
+    let listed_arg_args = typed_buffer_from_resources(resources, "inference_arg_list_args")?;
+    let full_arg_args = typed_buffer_from_resources(resources, "inference_full_arg_args")?;
     let argument_matching = CallArgumentMatchingOperation::new(
         direct(CALLS_ARGUMENT_MATCH_INITIALIZE, semantic_work)?,
         direct(CALLS_ARGUMENT_MATCH_CONSUME, semantic_work)?,
+        [
+            ComputeOperation::indirect_spec(
+                device, graph, resources, passes, CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE,
+                &listed_arg_args,
+            )?,
+            ComputeOperation::indirect_spec(
+                device, graph, resources, passes, CALLS_ARGUMENT_MATCH_FINAL_CONSUME,
+                &listed_arg_args,
+            )?,
+        ],
     );
     let generic_claim_validation =
         CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
@@ -153,7 +165,9 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     "call_const_claim_index_dispatch_args",
                 ],
             )?,
-            emit_claims: indirect(CALLS_GENERIC_CLAIM_EMIT)?,
+            emit_claims: ComputeOperation::indirect_spec(
+                device, graph, resources, passes, CALLS_GENERIC_CLAIM_EMIT, &full_arg_args,
+            )?,
             validate_generic: ComputeOperation::indirect_spec(
                 device,
                 graph,
@@ -322,7 +336,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 compiler_graph::CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS,
                 &passes.kernel("type_checker/calls/arguments/project_argument_contexts"),
-                hir_dispatch_args,
+                &listed_arg_args,
             )?,
         }),
         substitution: crate::type_checker::substitution::SubstitutionOperations::new(

@@ -27,6 +27,7 @@ import shared.semantics.constant_value;
 import shared.buffers.status;
 import type_checker.expression_rules.intrinsic_operand_rules;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -445,5 +446,5 @@ void collect_row_argument(uint row)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    collect_row_argument(linear_thread_id(dtid));
+    collect_row_argument(inference_listed_argument(linear_thread_id(dtid)));
 }
