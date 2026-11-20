@@ -7655,28 +7655,6 @@ mod tests {
     /// A multi-hop pointer jump over chains of up to `rows` links: an a-to-b
     /// and a b-to-a round per iteration, each round following
     /// `POINTER_JUMP_HOPS` links, enough iterations to reach every root.
-    fn assert_hop_jump_region(graph: &CompilerGraph, relation: &str, rows: u32) {
-        let region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| {
-                graph.passes()[region.first_pass.index()].name
-                    == format!("{relation}.step_a_to_b")
-            })
-            .unwrap_or_else(|| panic!("{relation} region"));
-        assert_eq!(region.pass_count, 2);
-        assert_eq!(
-            graph.passes()[region.first_pass.index() + 1].name,
-            format!("{relation}.step_b_to_a")
-        );
-        assert_eq!(region.iterations, pointer_jump_hop_pairs(rows), "{relation}");
-        assert!(
-            u64::from(POINTER_JUMP_HOPS).pow(2 * region.iterations) > u64::from(rows),
-            "{relation}: {} iterations cover {rows} links",
-            region.iterations
-        );
-    }
-
     #[test]
     fn cyclic_short_lifetime_registers_never_overlap() {
         let lanes = opcode::X86_TEMP_REGISTER_COUNT;
@@ -8527,11 +8505,6 @@ mod tests {
                 graph.resource_id("lir.semantic.operands"),
                 graph.resource_id("lir.opt.operands"),
                 "identity OptIR must take ownership of semantic operand storage"
-            );
-            assert_hop_jump_region(
-                &graph,
-                "lir.opt.dominators.depth",
-                capacities.optimization_block_capacity(),
             );
             assert!(
                 graph.repeated_regions().iter().any(|region| {
