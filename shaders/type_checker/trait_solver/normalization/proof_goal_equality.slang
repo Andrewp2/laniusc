@@ -43,7 +43,22 @@ public SolverStatus pps_predicate_equals_goal(uint predicate, uint environment,
     uint required_hash;
     SolverStatus status = ts_admit_and_hash_goal(required, require_closed, required_hash);
     if (status.state != TS_VALID) return status;
-    return pps_required_equals_goal(predicate, environment, required, required_hash, goal,
+    return pps_required_equals_goal(predicate, environment, required, required_hash, true, goal,
+        require_closed, equal);
+}
+
+// Publication already proved the root's source Work, predicate, environment
+// and context. Normalization replay admitted that exact source before
+// publishing the Work's goal. Compare the roots without repeating admission
+// and hashing of the source graph.
+public SolverStatus pps_admitted_predicate_equals_goal(uint predicate, uint environment,
+    uint visible_owner, uint goal, bool require_closed, out bool equal)
+{
+    equal = false;
+    SolverGoal required;
+    if (!ts_predicate_goal(predicate, environment, visible_owner, required))
+        return ts_invalid(1u, predicate, goal);
+    return pps_required_equals_goal(predicate, environment, required, 0u, false, goal,
         require_closed, equal);
 }
 // A caller assumption's predicate (input table 14 row `assumption`) against a
@@ -61,11 +76,11 @@ public SolverStatus pps_assumption_equals_goal(uint assumption, uint predicate,
         return ts_invalid(1u, predicate, goal);
     if (!ts_output_read4(8u, assumption, 0u, index) || index.z != assumption || index.w != 1u)
         return ts_invalid(70u, goal, assumption);
-    return pps_required_equals_goal(predicate, environment, required, index.x, goal,
+    return pps_required_equals_goal(predicate, environment, required, index.x, true, goal,
         require_closed, equal);
 }
 SolverStatus pps_required_equals_goal(uint predicate, uint environment, SolverGoal required,
-    uint required_hash, uint goal, bool require_closed, out bool equal)
+    uint required_hash, bool check_hash, uint goal, bool require_closed, out bool equal)
 {
     equal = false;
     uint4 low; uint4 high;
@@ -73,7 +88,8 @@ SolverStatus pps_required_equals_goal(uint predicate, uint environment, SolverGo
         (high.x == 0u && low.w != 0u) || !pps_span(PPS_TERM_ROOTS, low.w, high.x))
         return ts_invalid(67u, goal, predicate);
     if (require_closed && high.z != 1u) return ts_invalid(10u, goal, predicate);
-    if (required.trait_atom != low.x || required.argument_count != high.x || required_hash != high.y)
+    if (required.trait_atom != low.x || required.argument_count != high.x ||
+        (check_hash && required_hash != high.y))
         return ts_ok();
     uint input_nodes; uint solver_nodes; uint atoms;
     if (!ts_table_count(5u, input_nodes) || !pps_count(PPS_TERM_NODES, solver_nodes) ||

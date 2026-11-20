@@ -117,14 +117,19 @@ public SolverStatus pps_publish_root(uint link)
         !pps_work_read(root.y, key, selected, completion, source) || key.w == TS_INVALID)
         return ts_invalid(70u, link, PPS_ROOT_LINKS);
     uint work = key.w;
-    if (!pps_work_read(work, key, selected, completion, source) || key.w != work)
-        return ts_invalid(70u, link, work);
+    uint context = key.x;
     uint4 obligation; uint4 call; uint owner; bool closed;
     if (!ts_read4(16u, root.x, 0u, obligation) || !ts_read4(15u, obligation.x, 0u, call) ||
-        call.x != key.x || !ts_context_goal_scope(key.x, owner, closed))
+        call.x != context || !ts_context_goal_scope(context, owner, closed))
         return ts_invalid(3u, root.x, work);
+    if (source.x != 0u || completion.w != root.x || any(source.yz != obligation.yz))
+        return ts_invalid(68u, root.x, work);
+    if (work != root.y &&
+        (!pps_work_read(work, key, selected, completion, source) || key.w != work || key.x != context))
+        return ts_invalid(70u, link, work);
     bool equal;
-    SolverStatus status = pps_predicate_equals_goal(obligation.y, obligation.z, owner, key.y, closed, equal);
+    SolverStatus status = pps_admitted_predicate_equals_goal(
+        obligation.y, obligation.z, owner, key.y, closed, equal);
     if (status.state != TS_VALID) return status;
     if (!equal) return ts_invalid(68u, root.x, work);
     if (key.z == PPS_WORK_FAILED || key.z == PPS_WORK_MISSING || key.z == PPS_WORK_WAITING)
