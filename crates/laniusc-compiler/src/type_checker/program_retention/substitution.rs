@@ -31,6 +31,7 @@ use anyhow::{Result, anyhow, bail};
 
 use super::{
     ProgramRetention,
+    SUBSTITUTION_SYNC_SLOT,
     Store,
     counts,
     grown_capacity,
@@ -40,6 +41,7 @@ use super::{
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, readback_bytes},
+    operations::{StepProgramOperation, step_program_group_counts, step_program_group_variant},
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
@@ -169,6 +171,7 @@ pub mod words {
     pub const GENERATION: usize = 964;
     pub const REQUEST_CAPACITY: usize = 965;
     pub const COUNT: usize = 1024;
+    pub(super) const SYNC_FAILED: usize = 966;
 
     pub const PHASE_FINAL: u32 = 6;
     pub const STATE_PUBLISHED: u32 = 2;
@@ -192,29 +195,7 @@ pub const LEVELS: u32 = 256;
 /// A context is an ENV or the declaration's closed struct/enum application.
 pub const REQUEST_WORDS: usize = 4;
 
-const KERNELS: &[&str] = &[
-    "type_checker/retention/substitution/begin_retained_substitution",
-    "type_checker/retention/substitution/admit_retained_substitution_roots",
-    "type_checker/retention/substitution/plan_retained_substitution_round",
-    "type_checker/retention/substitution/process_retained_substitution_tasks",
-    "type_checker/retention/substitution/publish_retained_substitution_results",
-    "type_checker/retention/substitution/finalize_retained_substitution",
-    "type_checker/retention/substitution/roll_back_retained_substitution",
-];
-const K_BEGIN: usize = 0;
-const K_ROOTS: usize = 1;
-const K_PLAN: usize = 2;
-const K_STEP: usize = 3;
-const K_PUBLISH: usize = 4;
-const K_FINISH: usize = 5;
-const K_ROLLBACK: usize = 6;
-
-// Indirect slots (retained_substitution_workspace.slang SB_D_*).
-const D_ROOTS: u64 = 0;
-const D_STEP: u64 = 1;
-const D_PUBLISH: u64 = 2;
-const D_ROLLBACK: u64 = 3;
-const D_SLOTS: u64 = 4;
+const SUBSTITUTION_PROGRAM: &str = "type_checker/retention/substitute_retained_terms";
 
 /// Test kernel: single-lane construction script (shaders/tests/seed_retained_substitution_fixture.slang).
 #[doc(hidden)]
@@ -459,7 +440,7 @@ impl Publication<'_> {
 pub struct RetainedSubstitution {
     device: std::sync::Arc<wgpu::Device>,
     queue: std::sync::Arc<wgpu::Queue>,
-    passes: Vec<PassData>,
+    pass: PassData,
     capacity: SubstitutionCapacity,
     scratch: BTreeMap<&'static str, wgpu::Buffer>,
     scratch_capacity: Option<SubstitutionCapacity>,
@@ -481,14 +462,13 @@ impl RetainedSubstitution {
 
     pub(crate) fn new_with_device(gpu: &crate::gpu::device::GpuDevice, capacity: SubstitutionCapacity) -> Result<Self> {
         let device = gpu.device.clone();
-        let passes = KERNELS
-            .iter()
-            .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
-            .collect::<Result<Vec<_>>>()?;
+        let pass = make_pass_data_from_shader_key(
+            &device, SUBSTITUTION_PROGRAM, "main", SUBSTITUTION_PROGRAM,
+        )?;
         Ok(Self {
             device,
             queue: gpu.queue.clone(),
-            passes,
+            pass,
             capacity,
             scratch: BTreeMap::new(),
             scratch_capacity: None,
@@ -617,10 +597,10 @@ impl RetainedSubstitution {
                 0,
                 &words_bytes(&[self.hash_mask, run, 0, 0]),
             );
-            let binds = self.bind_all(guard, requests)?;
+
             let mut rounds = FIRST_BATCH_ROUNDS;
             let mut recorded = rounds;
-            self.record_batch(&mut encoder, &binds, true, rounds, &mut report.dispatches);
+            self.record_batch(&mut encoder, guard, requests, true, rounds, &mut report.dispatches)?;
             let consumed = match consumer.take() {
                 Some(record) => {
                     let (_, results, _) = self
@@ -645,6 +625,7 @@ impl RetainedSubstitution {
                 &parts,
                 &mut self.status_readback,
             )?;
+            check_sync(&counts)?;
             let consumer_words = counts.split_off(words::COUNT);
             let mut consumer_final = consumed && counts[words::PHASE] == words::PHASE_FINAL;
             while counts[words::PHASE] != words::PHASE_FINAL {
@@ -657,7 +638,7 @@ impl RetainedSubstitution {
                 rounds = rounds.saturating_mul(2).min(ROUND_BOUND - recorded);
                 recorded += rounds;
                 let mut encoder = self.device.create_command_encoder(&Default::default());
-                self.record_batch(&mut encoder, &binds, false, rounds, &mut report.dispatches);
+                self.record_batch(&mut encoder, guard, requests, false, rounds, &mut report.dispatches)?;
                 self.queue.submit(Some(encoder.finish()));
                 report.batches += 1;
                 counts = read_many(
@@ -666,6 +647,7 @@ impl RetainedSubstitution {
                     &[(&self.scratch["sb_counts"], words::COUNT)],
                     &mut self.status_readback,
                 )?;
+                check_sync(&counts)?;
                 consumer_final = false;
             }
             if counts[words::RUN] != run || counts[words::GENERATION] != guard.generation {
@@ -780,11 +762,15 @@ impl RetainedSubstitution {
         let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
         encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
         encoder.clear_buffer_counted(&self.scratch["sb_term_slots"], 0, None);
-        encoder.clear_buffer_counted(&self.scratch["sb_counts"], 0, None);
+        // Each run clears its status, keeping a failed wait visible until
+        // the chain's existing readback.
+        let count_bytes = (words::SYNC_FAILED * size_of::<u32>()) as u64;
+        encoder.clear_buffer_counted(
+            &self.scratch["sb_counts"], 0, (index != 0).then_some(count_bytes),
+        );
         encoder.copy_buffer_counted(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
-        let binds = self.bind_all(guard, requests)?;
         let mut dispatches = 0;
-        self.record_batch(encoder, &binds, true, FIRST_BATCH_ROUNDS, &mut dispatches);
+        self.record_batch(encoder, guard, requests, true, FIRST_BATCH_ROUNDS, &mut dispatches)?;
         let (_, results, _) = self
             .results
             .as_ref()
@@ -815,11 +801,11 @@ impl RetainedSubstitution {
         run: u32,
         generation: u32,
         dispatches: u32,
-    ) -> Option<SubstitutionReport> {
-        if !self.finish_chain(counts, run, generation) {
-            return None;
+    ) -> Result<Option<SubstitutionReport>> {
+        if !self.finish_chain(counts, run, generation)? {
+            return Ok(None);
         }
-        Some(SubstitutionReport {
+        Ok(Some(SubstitutionReport {
             attempts: 1,
             batches: 1,
             dispatches,
@@ -827,21 +813,22 @@ impl RetainedSubstitution {
             store_growths: 0,
             rolled_back_terms: 0,
             capacity: self.capacity,
-            publication: self.published?,
+            publication: self.published.expect("checked publication"),
             counts: counts[..words::COUNT].to_vec(),
-        })
+        }))
     }
 
     /// Accepts the status words of a chain's last run `run` (store build
     /// `generation`): it becomes the current publication when it published.
-    pub(super) fn finish_chain(&mut self, counts: &[u32], run: u32, generation: u32) -> bool {
+    pub(super) fn finish_chain(&mut self, counts: &[u32], run: u32, generation: u32) -> Result<bool> {
+        check_sync(counts)?;
         let published = counts.len() >= words::COUNT
             && counts[words::PHASE] == words::PHASE_FINAL
             && counts[words::STATE] == words::STATE_PUBLISHED
             && counts[words::RUN] == run
             && counts[words::GENERATION] == generation;
         self.published = published.then_some(PublicationId { generation, run, requests: counts[words::REQUESTS] });
-        published
+        Ok(published)
     }
 
     /// Fails when `bytes` exceed what one storage binding of this device
@@ -885,7 +872,6 @@ impl RetainedSubstitution {
         let tables = [
             ("sb_counts", words::COUNT as u64 * 4, false),
             ("sb_config", 16, false),
-            ("sb_dispatch", D_SLOTS * 3 * 4, true),
             ("sb_task_key", tasks * 16, false),
             ("sb_task_res", tasks * 16, false),
             ("sb_task_fail", tasks * 8, false),
@@ -907,11 +893,17 @@ impl RetainedSubstitution {
         Ok(())
     }
 
-    fn bind_all(
+    /// Runs one bounded batch before the existing status readback.
+    #[allow(clippy::too_many_arguments)]
+    fn record_batch(
         &self,
+        encoder: &mut wgpu::CommandEncoder,
         store: &Store,
         requests: &SubstitutionRequests,
-    ) -> Result<Vec<wgpu::BindGroup>> {
+        first: bool,
+        rounds: u32,
+        dispatches: &mut u32,
+    ) -> Result<()> {
         let (_, results, roots) = self
             .results
             .as_ref()
@@ -922,65 +914,41 @@ impl RetainedSubstitution {
             ("sb_results", results),
             ("sb_req_root", roots),
         ];
-        self.passes
-            .iter()
-            .map(|pass| {
-                let names = reflected_names(pass);
-                let mut entries = Vec::with_capacity(names.len());
-                for name in &names {
-                    let buffer = self
-                        .scratch
-                        .get(name.as_str())
-                        .or_else(|| extra.iter().find(|(n, _)| *n == name).map(|(_, b)| *b))
-                        .or_else(|| store.buffers.get(name.as_str()))
-                        .ok_or_else(|| anyhow!("{} binds unknown buffer {name}", pass.shader_id))?;
-                    entries.push((name.as_str(), buffer.as_entire_binding()));
-                }
-                passes_core::bind_group::create_bind_group_from_bindings(
-                    &self.device,
-                    Some(&pass.shader_id),
-                    pass,
-                    0,
-                    &entries,
-                )
-            })
-            .collect()
-    }
-
-    /// One batch: `rounds` rounds of the planner and the step (expansion,
-    /// the scatter, then evaluation), then publication and the
-    /// transaction's end. Each kernel checks the GPU phase, so the rounds an
-    /// attempt does not need dispatch no workgroups.
-    fn record_batch(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        binds: &[wgpu::BindGroup],
-        first: bool,
-        rounds: u32,
-        dispatches: &mut u32,
-    ) {
-        let indirect = &self.scratch["sb_dispatch"];
-        let mut steps = Vec::new();
-        let mut run = |kernel: usize, slot: Option<u64>| {
-            *dispatches += 1;
-            let launch = match slot {
-                None => Launch::Groups(1, 1, 1),
-                Some(slot) => Launch::Indirect(indirect, 3 * slot * 4),
-            };
-            steps.push((&self.passes[kernel], &binds[kernel], launch));
-        };
-        if first {
-            run(K_BEGIN, None);
-            run(K_ROOTS, Some(D_ROOTS));
+        let names = reflected_names(&self.pass);
+        let mut bindings = Vec::with_capacity(names.len());
+        for name in &names {
+            if matches!(name.as_str(), "step_program_sync" | "program_launch") {
+                continue;
+            }
+            let buffer = self.scratch.get(name.as_str())
+                .or_else(|| extra.iter().find(|(key, _)| *key == name).map(|(_, b)| *b))
+                .or_else(|| store.buffers.get(name.as_str()))
+                .ok_or_else(|| anyhow!("{SUBSTITUTION_PROGRAM} binds unknown buffer {name}"))?;
+            bindings.push((name.as_str(), buffer.as_entire_binding()));
         }
-        for _ in 0..rounds {
-            run(K_PLAN, None);
-            run(K_STEP, Some(D_STEP));
-        }
-        run(K_PUBLISH, Some(D_PUBLISH));
-        run(K_FINISH, None);
-        run(K_ROLLBACK, Some(D_ROLLBACK));
-        record_timed(encoder, "retained_substitution", &steps);
+        let rows = self.capacity.tasks.max(requests.capacity());
+        let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+        let program = StepProgramOperation::new_reflected(
+            &self.device,
+            SUBSTITUTION_PROGRAM,
+            &self.pass,
+            &bindings,
+            &store.step_program_sync,
+            SUBSTITUTION_SYNC_SLOT,
+            groups,
+            (rounds << 1) | u32::from(first),
+        )?;
+        program.record(encoder)?;
+        passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_counted(
+            &store.step_program_sync,
+            StepProgramOperation::failed_offset(SUBSTITUTION_SYNC_SLOT),
+            &self.scratch["sb_counts"],
+            (words::SYNC_FAILED * 4) as u64,
+            4,
+        );
+        *dispatches += 1;
+        Ok(())
     }
 
     fn read(&self, buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>> {
@@ -1006,6 +974,13 @@ impl RetainedSubstitution {
     pub fn read_counts(&self) -> Result<Vec<u32>> {
         self.read(&self.scratch["sb_counts"], words::COUNT)
     }
+}
+
+fn check_sync(counts: &[u32]) -> Result<()> {
+    if counts.get(words::SYNC_FAILED).copied() == Some(1) {
+        bail!("retention program {SUBSTITUTION_PROGRAM} failed to synchronize");
+    }
+    Ok(())
 }
 
 fn read_words(

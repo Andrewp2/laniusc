@@ -1754,7 +1754,7 @@ impl RetainedProjection {
                 let sb = read.pop().unwrap();
                 let substitution = self
                     .substitution
-                    .finish_chain_report(&sb, run, generation, chained_dispatches);
+                    .finish_chain_report(&sb, run, generation, chained_dispatches)?;
                 let reran = substitution.is_none();
                 let substitution = match substitution {
                     Some(substitution) => substitution,

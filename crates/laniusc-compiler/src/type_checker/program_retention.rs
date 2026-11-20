@@ -33,6 +33,10 @@ pub mod substitution;
 use crate::gpu::{
     buffers::LaniusBuffer,
     compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
+    operations::{
+        STEP_PROGRAM_MAX_GROUPS, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
 };
 
@@ -166,16 +170,6 @@ pub mod counts {
 
 const RT_FIRST_TERM: u32 = 32;
 const X_WORDS: usize = 256;
-const DISPATCH_WORDS: u64 = 3 * 16;
-const D_HIR: u64 = 0;
-const D_PARAMS: u64 = 1;
-const D_RECORDS: u64 = 2;
-const D_ROUND: u64 = 3;
-const D_SIDE: u64 = 4;
-const D_SCHEMA: u64 = 5;
-const D_COMMIT_DIR: u64 = 6;
-const D_ROLLBACK: u64 = 7;
-const HEIGHTS: usize = 80;
 
 /// Bytes per record of each arena, in arena order.
 const RECORD_BYTES: [u64; ARENAS] = [
@@ -279,36 +273,49 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_jobs", Sized::Arena(A_JOBS, 16)),
 ];
 
-const EXPORT_KERNELS: &[&str] = &[
-    "type_checker/retention/export/begin_retained_export",
-    "type_checker/retention/export_types/intern_retained_generic_parameters",
-    "type_checker/retention/export_types/index_retained_declaration_tokens",
-    "type_checker/retention/export_types/collect_retained_body_metadata",
-    "type_checker/retention/export_types/count_retained_type_heights",
-    "type_checker/retention/export_types/plan_retained_type_height_buckets",
-    "type_checker/retention/export_types/scatter_retained_types_by_height",
-    "type_checker/retention/export_types/translate_retained_canonical_types",
-    "type_checker/retention/export_types/advance_retained_type_translation",
-    "type_checker/retention/export_types/scan_retained_export_row_counts",
-    "type_checker/retention/export_types/scan_retained_export_block_totals",
-    "type_checker/retention/export_types/apply_retained_export_block_offsets",
-    "type_checker/retention/export_types/reserve_retained_export_rows",
-    "type_checker/retention/export_rows/stage_retained_declarations",
-    "type_checker/retention/export_rows/write_retained_body_rows",
-    "type_checker/retention/export_rows/write_retained_body_side_tables",
-    "type_checker/retention/export_rows/clear_retained_body_text",
-    "type_checker/retention/export_rows/copy_retained_body_text",
-    "type_checker/retention/export_rows/write_retained_schema_rows",
-    "type_checker/retention/export_rows/write_retained_use_rows",
-    "type_checker/retention/export_traits/classify_retained_trait_facts",
-    "type_checker/retention/export_traits/reserve_retained_trait_facts",
-    "type_checker/retention/export_traits/write_retained_trait_facts",
-    "type_checker/retention/export_traits/link_retained_bound_calls",
-    "type_checker/retention/export/finalize_retained_export_rows",
-    "type_checker/retention/export/commit_retained_export",
-    "type_checker/retention/export/publish_retained_directory_entries",
-    "type_checker/retention/export/roll_back_retained_export",
+const EXPORT_PROGRAMS: [&str; 5] = [
+    "type_checker/retention/prepare_retained_export",
+    "type_checker/retention/stage_retained_bodies",
+    "type_checker/retention/write_retained_body_tables",
+    "type_checker/retention/classify_retained_traits",
+    "type_checker/retention/commit_retained_job",
 ];
+const SUBSTITUTION_SYNC_SLOT: u32 = EXPORT_PROGRAMS.len() as u32;
+const RETENTION_SYNC_SLOTS: usize = EXPORT_PROGRAMS.len() + 1;
+const EXPORT_SYNC_FAILURE: usize = 200;
+const RETENTION_SYNC: &str = "type_check.retention.step_program_sync";
+
+fn export_binding_source(name: &str) -> &str {
+    match name {
+        "rt_input_ct_head" => "ct_head",
+        "rt_input_ct_meta" => "ct_meta",
+        "rt_input_ct_extra" => "ct_extra",
+        "rt_input_ct_args" => "ct_args",
+        "rt_input_ct_slot" => "ct_slot",
+        "rt_input_ct_counts" => "ct_counts",
+        name => name,
+    }
+}
+
+fn retention_sync(device: &wgpu::Device, slots: usize) -> LaniusBuffer<u32> {
+    let words = slots * STEP_PROGRAM_SYNC_WORDS;
+    let bytes = (words * size_of::<u32>()) as u64;
+    LaniusBuffer::new_labeled(
+        (storage(device, RETENTION_SYNC, bytes, false), bytes),
+        words,
+        RETENTION_SYNC,
+    )
+}
+
+fn check_export_sync(words: &[u32]) -> Result<()> {
+    for (slot, key) in EXPORT_PROGRAMS.iter().enumerate() {
+        if words[EXPORT_SYNC_FAILURE + slot] != 0 {
+            bail!("retention program {key} failed to synchronize");
+        }
+    }
+    Ok(())
+}
+
 const REHASH_KERNEL: &str = "type_checker/retention/rehash_retained_store";
 const UNCOMMIT_KERNEL: &str = "type_checker/retention/export/retract_unaccepted_retained_export";
 /// Words of the call rewrite's status (native_calls.rs).
@@ -474,10 +481,10 @@ struct ScratchShape {
     args: u64,
     param_slots: u64,
     tokens: u64,
-    job_tokens: u64,
 }
 
 struct Store {
+    step_program_sync: LaniusBuffer<u32>,
     capacity: ProgramRetentionCapacity,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     hash_mask: u32,
@@ -742,7 +749,7 @@ impl ProgramRetention {
     fn new_with_mode(gpu: &crate::gpu::device::GpuDevice, capacity: ProgramRetentionCapacity, native_projection: bool) -> Result<Arc<Self>> {
         let device = gpu.device.clone();
         let queue = gpu.queue.clone();
-        let passes = EXPORT_KERNELS
+        let passes = EXPORT_PROGRAMS
             .iter()
             .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
             .collect::<Result<Vec<_>>>()?;
@@ -751,6 +758,7 @@ impl ProgramRetention {
         let snapshot_rows =
             make_pass_data_from_shader_key(&device, SNAPSHOT_ROWS_KERNEL, "main", SNAPSHOT_ROWS_KERNEL)?;
         let mut store = Store {
+            step_program_sync: retention_sync(&device, RETENTION_SYNC_SLOTS),
             capacity,
             buffers: BTreeMap::new(),
             hash_mask: u32::MAX,
@@ -770,6 +778,8 @@ impl ProgramRetention {
         let job_inputs = passes
             .iter()
             .flat_map(reflected_names)
+            .filter(|name| !matches!(name.as_str(), "step_program_sync" | "program_launch"))
+            .map(|name| export_binding_source(&name).to_owned())
             // Store buffers and job scratch are `rt_*`; job tables are not,
             // except the job's lexer source tables.
             .filter(|name| !name.starts_with("rt_") || name.starts_with("rt_job_"))
@@ -1137,6 +1147,7 @@ impl ProgramRetention {
         if early.epoch != store.epoch || early.generation != store.generation {
             bail!("program retention store changed under a submitted export");
         }
+        check_export_sync(&x)?;
         let Some(report) = committed_export(1, counts_words.clone(), &x) else {
             if counts_words[counts::JOB_STATE] != counts::JOB_ROLLED_BACK {
                 bail!(
@@ -1256,6 +1267,7 @@ impl ProgramRetention {
             ])?;
             let x = read.pop().unwrap_or_default();
             let words = read.pop().unwrap_or_default();
+            check_export_sync(&x)?;
             if let Some(report) = committed_export(attempt, words.clone(), &x) {
                 store.reports.push(report.clone());
                 return Ok(report);
@@ -1288,119 +1300,43 @@ impl ProgramRetention {
                 encoder.clear_buffer_counted(buffer, 0, None);
             }
         }
-        let groups = |lanes: u64| -> [u32; 3] {
-            let g = lanes.div_ceil(256).max(1);
-            [g.min(65535) as u32, g.div_ceil(65535) as u32, 1]
-        };
-        let bind_groups = self
-            .passes
-            .iter()
-            .map(|pass| self.bind(pass, store, job, &[]))
-            .collect::<Result<Vec<_>>>()?;
-        // The trait-fact scan runs the 08 kernels again over the trait flags
-        // with their own counters (retained_trait_fact_export.slang).
-        const TRAIT_SCAN: &[(&str, &str)] = &[
-            ("rt_x_flags", "rt_x_tflags"),
-            ("rt_x_scan", "rt_x_tscan"),
-            ("rt_x_blocks", "rt_x_tblocks"),
-            ("rt_x_counts", "rt_x_tcounts"),
-        ];
-        // Bind groups past the kernel list are the trait scan's: index
-        // `EXPORT_KERNELS.len() + k` runs scan kernel 9 + k.
-        let mut bind_groups = bind_groups;
-        for index in 9..12 {
-            bind_groups.push(self.bind(&self.passes[index], store, job, TRAIT_SCAN)?);
-        }
-        let indirect = &store.scratch["rt_x_dispatch"];
-        {
-            let mut steps = Vec::new();
-            let mut run = |index: usize, dispatch: Dispatch| {
-                let kernel = index.checked_sub(EXPORT_KERNELS.len()).map_or(index, |k| 9 + k);
-                let launch = match dispatch {
-                    Dispatch::Direct([x, y, z]) => substitution::Launch::Groups(x, y, z),
-                    Dispatch::Indirect(slot) => substitution::Launch::Indirect(indirect, 3 * slot * 4),
+        let rows = shape.rows.max(shape.records).max(shape.tokens);
+        let groups = step_program_group_counts()[step_program_group_variant(rows)];
+        for (slot, (&key, pass)) in EXPORT_PROGRAMS.iter().zip(&self.passes).enumerate() {
+            let names = reflected_names(pass);
+            let mut bindings = Vec::with_capacity(names.len());
+            for name in &names {
+                if matches!(name.as_str(), "step_program_sync" | "program_launch") {
+                    continue;
+                }
+                let source = export_binding_source(name);
+                let resource = if let Some(buffer) = store.buffers.get(source).or_else(|| store.scratch.get(source)) {
+                    buffer.as_entire_binding()
+                } else if let Some(table) = job.get(source) {
+                    wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &table.buffer,
+                        offset: table.offset,
+                        size: NonZeroU64::new(table.size),
+                    })
+                } else {
+                    bail!("{key} requires missing buffer {source}");
                 };
-                steps.push((&self.passes[kernel], &bind_groups[index], launch));
-            };
-            use Dispatch::{Direct, Indirect};
-            let one = Direct([1, 1, 1]);
-            // Indexes follow EXPORT_KERNELS.
-            run(0, one);
-            run(1, Indirect(D_PARAMS));
-            run(2, Direct(groups(shape.rows.max(shape.tokens))));
-            run(3, Indirect(D_HIR));
-            run(4, Indirect(D_RECORDS));
-            run(5, one);
-            run(6, Indirect(D_RECORDS));
-            for _ in 1..HEIGHTS {
-                run(7, Indirect(D_ROUND));
-                run(8, one);
+                bindings.push((name.as_str(), resource));
             }
-            run(9, Direct(groups(shape.rows)));
-            run(10, one);
-            run(11, Direct(groups(shape.rows)));
-            run(12, one);
-            run(13, Indirect(D_HIR));
-            run(14, Indirect(D_HIR));
-            run(15, Indirect(D_SIDE));
-            run(16, Direct(groups(shape.job_tokens)));
-            run(17, Direct(groups(shape.job_tokens)));
-            run(18, Indirect(D_SCHEMA));
-            run(19, Indirect(D_HIR));
-            run(20, Indirect(D_HIR));
-            let trait_scan = EXPORT_KERNELS.len();
-            run(trait_scan, Direct(groups(shape.rows)));
-            run(trait_scan + 1, one);
-            run(trait_scan + 2, Direct(groups(shape.rows)));
-            run(21, one);
-            run(22, Indirect(D_HIR));
-            run(23, Indirect(D_HIR));
-            run(24, Indirect(D_HIR));
-            run(25, one);
-            run(26, Indirect(D_COMMIT_DIR));
-            run(27, Indirect(D_ROLLBACK));
-            substitution::record_timed(&mut encoder, "program_retention.export", &steps);
+            let program = StepProgramOperation::new_reflected(
+                &self.device, key, pass, &bindings, &store.step_program_sync, slot as u32, groups, 0,
+            )?;
+            program.record(&mut encoder)?;
+            passes_core::flush_deferred_compute(&mut encoder);
+            encoder.copy_buffer_counted(
+                &store.step_program_sync,
+                StepProgramOperation::failed_offset(slot as u32),
+                &store.scratch["rt_x_counts"],
+                ((EXPORT_SYNC_FAILURE + slot) * 4) as u64,
+                4,
+            );
         }
         Ok(encoder.finish())
-    }
-
-    /// Binds `pass` by reflected name; `aliases` binds a name to another
-    /// scratch buffer.
-    fn bind(
-        &self,
-        pass: &PassData,
-        store: &Store,
-        job: &BTreeMap<&'static str, JobTable>,
-        aliases: &[(&str, &str)],
-    ) -> Result<wgpu::BindGroup> {
-        let names = reflected_names(pass);
-        let mut entries = Vec::with_capacity(names.len());
-        for name in &names {
-            let alias = aliases.iter().find(|(from, _)| *from == name.as_str()).map(|(_, to)| *to);
-            let resource = if let Some(buffer) = alias.and_then(|to| store.scratch.get(to)) {
-                buffer.as_entire_binding()
-            } else if let Some(buffer) = store.buffers.get(name.as_str()) {
-                buffer.as_entire_binding()
-            } else if let Some(buffer) = store.scratch.get(name.as_str()) {
-                buffer.as_entire_binding()
-            } else if let Some(table) = job.get(name.as_str()) {
-                wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &table.buffer,
-                    offset: table.offset,
-                    size: NonZeroU64::new(table.size),
-                })
-            } else {
-                bail!("{} requires missing buffer {name}", pass.shader_id);
-            };
-            entries.push((name.as_str(), resource));
-        }
-        passes_core::bind_group::create_bind_group_from_bindings(
-            &self.device,
-            Some(&pass.shader_id),
-            pass,
-            0,
-            &entries,
-        )
     }
 
     /// Grows the store to `capacity`, keeping every committed record: the
@@ -1722,12 +1658,6 @@ pub(crate) struct ExportSubmitted {
     shape: ScratchShape,
 }
 
-#[derive(Clone, Copy)]
-enum Dispatch {
-    Direct([u32; 3]),
-    Indirect(u64),
-}
-
 /// The report of an export attempt whose counters (`rt_counts`,
 /// `rt_x_counts`) show that it committed.
 fn committed_export(attempt: u32, words: Vec<u32>, x: &[u32]) -> Option<JobReport> {
@@ -1757,7 +1687,6 @@ fn export_shape(job: &BTreeMap<&'static str, JobTable>) -> Result<ScratchShape> 
         args: args.max(1),
         param_slots: (2 * generic + rows / 4 + 64).next_power_of_two(),
         tokens: table_words(job, "decl_id_by_name_token")?.max(1),
-        job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
     })
 }
 
@@ -1814,10 +1743,8 @@ fn allocate_store(
 
 fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'static str, wgpu::Buffer> {
     let ScratchShape { rows, records, args, param_slots, tokens, .. } = shape;
-    let blocks = rows.div_ceil(256).max(1);
     [
         ("rt_x_counts", X_WORDS as u64 * 4, false),
-        ("rt_x_dispatch", DISPATCH_WORDS * 4, true),
         ("rt_x_param_key", param_slots * 4, false),
         ("rt_x_param_val", param_slots * 4, false),
         ("rt_x_term_map", records * 4, false),
@@ -1834,15 +1761,13 @@ fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'st
         ("rt_x_stats", rows * 16, false),
         ("rt_x_flags", rows * 16, false),
         ("rt_x_scan", rows * 16, false),
-        ("rt_x_blocks", blocks * 16, false),
+        ("rt_x_scan_group_sums", u64::from(STEP_PROGRAM_MAX_GROUPS) * 16, false),
         ("rt_x_fn_by_token", tokens * 4, false),
         ("rt_x_decl_by_token", tokens * 4, false),
         ("rt_x_seg_token", rows * 4, false),
         ("rt_x_callee", rows * 4, false),
         ("rt_x_tflags", rows * 16, false),
         ("rt_x_tscan", rows * 16, false),
-        ("rt_x_tblocks", blocks * 16, false),
-        ("rt_x_tcounts", X_WORDS as u64 * 4, false),
     ]
     .into_iter()
     .map(|(name, bytes, indirect)| (name, storage(device, name, bytes, indirect)))

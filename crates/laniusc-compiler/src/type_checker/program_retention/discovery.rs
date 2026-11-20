@@ -959,7 +959,7 @@ impl RetainedDiscovery {
         let (sb, rest) = rest.split_at(super::substitution::words::COUNT);
         let (log, levels) = rest.split_at(log_words);
         let last = runs[waves as usize - 1];
-        if !engine.finish_chain(sb, last, generation) || status[3] != 0 || failure(status).is_some() {
+        if !engine.finish_chain(sb, last, generation)? || status[3] != 0 || failure(status).is_some() {
             return Ok(None);
         }
         let ran = 1 + (1..waves as usize).filter(|&i| log[5 + 2 * i] > log[4 + 2 * i]).count() as u32;
@@ -1016,7 +1016,7 @@ impl RetainedDiscovery {
         let (log, levels) = rest.split_at(log_words);
         let generation = store.generation();
         let engine = self.substitution.as_mut().ok_or_else(|| anyhow!("discovery substitution is in use"))?;
-        if !engine.finish_chain(sb, last, generation) || status[3] != 0 || failure(status).is_some() {
+        if !engine.finish_chain(sb, last, generation)? || status[3] != 0 || failure(status).is_some() {
             return Ok(if status[10] == 0 && self.grow(status)? { ClosedChain::Grown } else { ClosedChain::Fallback });
         }
         let ran = 1 + (1..waves as usize).filter(|&i| log[5 + 2 * i] > log[4 + 2 * i]).count() as u32;

@@ -33,3 +33,8 @@ public uint type_row_term(uint row)
     }
     return term;
 }
+
+public StructuredBuffer<uint> compact_fn_return_type;
+public StructuredBuffer<uint> compact_const_value;
+public StructuredBuffer<uint> semantic_param_ref_tag_by_row;
+public StructuredBuffer<uint> semantic_param_ref_payload_by_row;

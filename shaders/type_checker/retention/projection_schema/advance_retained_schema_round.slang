@@ -23,8 +23,14 @@ void main(uint3 id: SV_DispatchThreadID)
     ps_write_dispatch(ps_indirect, 0u, 0u);
     ps_write_dispatch(ps_indirect, 3u, 0u);
     ps_round[4] = 0u;
-    if (ps_status[PS_STOP] != PS_STOP_RUNNING) return;
     uint gate = ps_config[PS_CFG_GATE_RUN];
+    if (gate != 0u && sb_counts[SB_C_SYNC_FAILED] != 0u)
+    {
+        InterlockedOr(ps_status[PS_ERROR], 2u);
+        ps_status[PS_STOP] = PS_STOP_FAILED;
+        return;
+    }
+    if (ps_status[PS_STOP] != PS_STOP_RUNNING) return;
     if (gate != 0u)
     {
         if (!sb_publication_current(gate))

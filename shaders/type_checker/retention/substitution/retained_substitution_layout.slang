@@ -118,3 +118,7 @@ public static const uint SB_WORDS = 1024u;
 public static const uint SB_CFG_HASH_MASK = 0u;
 public static const uint SB_CFG_RUN = 1u;
 
+
+// First unused status words, kept across consecutive runs in a chain.
+public static const uint SB_C_SYNC_FAILED = 966u;
+public static const uint SB_C_ROUND_LANES = 967u;

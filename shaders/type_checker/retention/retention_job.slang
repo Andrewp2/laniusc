@@ -40,7 +40,7 @@ public StructuredBuffer<HirVariant> compact_variants;
 //   rt_x_order        canonical IDs grouped by height
 //   rt_x_args         translated arguments, at their canonical arg base
 //   rt_x_row          per HIR row: (DeclId, directory entry, segment, token end)
-public globallycoherent RWStructuredBuffer<uint> rt_x_counts;
+public RWStructuredBuffer<uint> rt_x_counts;
 public globallycoherent RWStructuredBuffer<uint> rt_x_param_key;
 public globallycoherent RWStructuredBuffer<uint> rt_x_param_val;
 public globallycoherent RWStructuredBuffer<uint> rt_x_term_map;
@@ -62,8 +62,8 @@ public RWStructuredBuffer<uint> rt_x_use_env_slot;
 //   rt_x_flags/scan   per HIR row: the uint4 scan's input and exclusive prefix
 public globallycoherent RWStructuredBuffer<uint> rt_x_span;
 public globallycoherent RWStructuredBuffer<uint> rt_x_stats;
-public globallycoherent RWStructuredBuffer<uint4> rt_x_flags;
-public globallycoherent RWStructuredBuffer<uint4> rt_x_scan;
+public RWStructuredBuffer<uint4> rt_x_flags;
+public RWStructuredBuffer<uint4> rt_x_scan;
 //   rt_x_fn_by_token  function start token -> function row + 1 (0 when none);
 //                     a checked local call names its callee by that token
 public globallycoherent RWStructuredBuffer<uint> rt_x_fn_by_token;
@@ -104,7 +104,6 @@ public static const uint RT_STAT_UNTRANSLATED = 3u; // exported references whose
 public static const uint RT_X_HEIGHTS = 80u;          // height buckets
 public static const uint RT_X_BUCKET = 0u;            // + h: records of height h
 public static const uint RT_X_BUCKET_BASE = 80u;      // + h: first rt_x_order index of height h
-public static const uint RT_X_ROUND = 160u;           // current translation height
 public static const uint RT_X_SCAN_N = 161u;          // items of the current uint4 scan
 public static const uint RT_X_SCAN_TOTAL = 164u;      // + 4: its totals
 public static const uint RT_X_BASE = 168u;            // + arena: the job's reserved base
@@ -114,19 +113,8 @@ public static const uint RT_X_USE_FIRST = 186u;       // first use of the job
 public static const uint RT_X_ROW_FIRST = 187u;       // first segment row of the job
 public static const uint RT_X_UNTRANSLATED = 188u;  // canonical records that did not translate
 public static const uint RT_X_TRAIT_TOTAL = 192u;     // + 4: totals of the trait-fact scan (14c)
+public static const uint RT_X_PROGRAM_FAILURE = 200u; // one failed-wait word per export program
 public static const uint RT_X_WORDS = 256u;
-
-// Indirect dispatch slots (rt_x_counts[RT_X_DISPATCH + 3 * slot]).
-public static const uint RT_D_HIR = 0u;
-public static const uint RT_D_PARAMS = 1u;
-public static const uint RT_D_RECORDS = 2u;
-public static const uint RT_D_ROUND = 3u;
-public static const uint RT_D_SIDE = 4u;
-public static const uint RT_D_SCHEMA = 5u;
-public static const uint RT_D_COMMIT_DIR = 6u;
-public static const uint RT_D_ROLLBACK = 7u;
-public static const uint RT_D_ROOTS = 8u;
-public static const uint RT_D_SLOTS = 16u;
 
 public static const uint HIR_FILE = 1u;
 public static const uint HIR_ITEM = 2u;
@@ -171,8 +159,29 @@ public static const uint RT_INV_TRAIT_FACT = 10u;     // a predicate, impl head 
 public static const uint RT_INV_TRAIT_ORDER = 11u;    // an owner's trait facts are not one contiguous block in source order
 public static const uint RT_INV_TRAIT_IDENTITY = 12u; // trait, required-member or native-target identities disagree
 
-public uint job_library() { return ct_counts[CT_COUNT_LIBRARY]; }
-public uint job_unit() { return ct_counts[CT_COUNT_UNIT]; }
+public StructuredBuffer<uint4> rt_input_ct_head;
+public StructuredBuffer<uint4> rt_input_ct_meta;
+public StructuredBuffer<uint2> rt_input_ct_extra;
+public StructuredBuffer<uint> rt_input_ct_args;
+public StructuredBuffer<uint> rt_input_ct_slot;
+public StructuredBuffer<uint> rt_input_ct_counts;
+
+public uint export_record_capacity()
+{
+    uint rows; uint stride;
+    rt_input_ct_head.GetDimensions(rows, stride);
+    return min(rows, CT_ID_LIMIT);
+}
+
+public uint export_slot_capacity()
+{
+    uint rows; uint stride;
+    rt_input_ct_slot.GetDimensions(rows, stride);
+    return rows;
+}
+
+public uint job_library() { return rt_input_ct_counts[CT_COUNT_LIBRARY]; }
+public uint job_unit() { return rt_input_ct_counts[CT_COUNT_UNIT]; }
 
 public uint hir_count()
 {

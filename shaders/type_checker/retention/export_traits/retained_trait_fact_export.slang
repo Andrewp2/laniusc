@@ -39,8 +39,8 @@ public StructuredBuffer<uint> resolved_dependency_unit_id;
 public StructuredBuffer<uint> resolved_dependency_local_index;
 public StructuredBuffer<uint> resolved_dependency_trait_header; // 4 words per path
 
-public globallycoherent RWStructuredBuffer<uint4> rt_x_tflags;
-public globallycoherent RWStructuredBuffer<uint4> rt_x_tscan;
+public RWStructuredBuffer<uint4> rt_x_tflags;
+public RWStructuredBuffer<uint4> rt_x_tscan;
 // For each bound or impl trait node, classify_retained_trait_facts stages its immutable key and keeps
 // the claimed slot plus one. write_retained_trait_facts reads the term from the slot's second word.
 public globallycoherent RWStructuredBuffer<uint4> rt_x_trait_key;

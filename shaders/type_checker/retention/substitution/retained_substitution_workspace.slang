@@ -88,8 +88,6 @@ public uint4 sb_task_result(uint task, out uint2 fault)
     return uint4(term, SB_OK, RT_NONE, 0u);
 }
 
-// Lane numbering of 2D dispatches (set_dispatch).
-public uint sb_lane(uint3 dtid) { return dtid.x + dtid.y * 16776960u; }
 
 public uint sb_task_capacity()
 {
@@ -460,12 +458,3 @@ public uint2 sb_edge(SbChild c)
     if (slot == RT_INVALID) return uint2(c.b, SB_CAPACITY);
     return uint2(slot, SB_EDGE_TASK);
 }
-
-// ---------------------------------------------------------------------------
-// Dispatch arguments (planners only: a kernel dispatched indirectly must not
-// bind sb_dispatch).
-public static const uint SB_D_ROOTS = 0u;
-public static const uint SB_D_STEP = 1u;
-public static const uint SB_D_PUBLISH = 2u;
-public static const uint SB_D_ROLLBACK = 3u;
-public static const uint SB_D_SLOTS = 4u;

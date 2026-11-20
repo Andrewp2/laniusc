@@ -250,6 +250,89 @@ fn physical_gpu_step_program_prefix_scan_matches_exclusive_host_sum() {
 }
 
 #[test]
+fn physical_gpu_step_program_vector_scan_matches_exclusive_host_sum() {
+    #[derive(encase::ShaderType)]
+    struct ScanParams {
+        groups: u32,
+        rows: u32,
+    }
+
+    let gpu = device::global();
+    let device = &gpu.device;
+    let queue = &gpu.queue;
+    let label = "tests/probe_program_vector_scan";
+    let pass = make_pass_data_from_shader_key(device, label, "main", label).unwrap();
+    for (groups, rows) in [(1, 0), (1, 4099), (64, 257), (64, 131_075)] {
+        let count = rows as usize;
+        let params = uniform_from_val(device, label, &ScanParams { groups, rows });
+        let input = storage_rw_for_array::<u32>(device, label, 4 * count.max(1));
+        let prefix = storage_rw_for_array::<u32>(device, label, 4 * count.max(1));
+        let sums = storage_rw_for_array::<u32>(device, label, 4 * groups as usize);
+        let total = storage_rw_for_array::<u32>(device, label, 6);
+        let sync = storage_rw_for_array::<u32>(device, label, SYNC_WORDS);
+        let data: Vec<[u32; 4]> = (0..rows).map(|row| [
+            row.wrapping_mul(0x9e3779b9),
+            row & 3,
+            row.wrapping_mul(row),
+            1,
+        ]).collect();
+        if count != 0 {
+            let bytes: Vec<u8> = data.iter().flatten().flat_map(|value| value.to_le_bytes()).collect();
+            input.write(queue, 0, &bytes);
+        }
+        let entries = [
+            ("gParams", params.as_entire_binding()),
+            ("step_program_sync", sync.as_entire_binding()),
+            ("scan_input", input.as_entire_binding()),
+            ("scan_prefix", prefix.as_entire_binding()),
+            ("scan_sums", sums.as_entire_binding()),
+            ("scan_total", total.as_entire_binding()),
+        ];
+        let bindings = passes_core::bind_group::create_bind_group_from_bindings(
+            device, Some(label), &pass, 0, &entries,
+        ).unwrap();
+        let total_offset = (SYNC_WORDS * 4) as u64;
+        let prefix_offset = total_offset + 6 * 4;
+        let size = prefix_offset as usize + count * 16;
+        let readback = readback_bytes(device, label, size, size);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut compute = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
+            );
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, Some(&bindings), &[]);
+            compute.dispatch_workgroups(groups, 1, 1);
+        }
+        sync.copy_to(&mut encoder, 0, &readback, 0, total_offset);
+        total.copy_to(&mut encoder, 0, &readback, total_offset, 6 * 4);
+        if count != 0 {
+            prefix.copy_to(&mut encoder, 0, &readback, prefix_offset, count as u64 * 16);
+        }
+        queue.submit(Some(encoder.finish()));
+        let slice = readback.slice(..);
+        map_readback_blocking(device, &slice, label.into()).unwrap();
+        let mapped = slice.get_mapped_range();
+        let output: Vec<u32> = mapped.chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert_eq!(output[1], 0, "groups {groups}, rows {rows}");
+        assert_eq!(output[3], groups, "groups {groups}, rows {rows}");
+        let mut expected = [0u32; 4];
+        for (row, (values, actual)) in data.into_iter()
+            .zip(output[SYNC_WORDS + 6..].chunks_exact(4)).enumerate()
+        {
+            assert_eq!(actual, expected, "groups {groups}, rows {rows}, row {row}");
+            for (sum, value) in expected.iter_mut().zip(values) {
+                *sum = sum.wrapping_add(value);
+            }
+        }
+        assert_eq!(output[SYNC_WORDS..SYNC_WORDS + 6], [0, expected[0], expected[1], expected[2], expected[3], 0]);
+    }
+}
+
+#[test]
 fn physical_gpu_step_program_radix_sort_matches_stable_host_sort() {
     #[derive(encase::ShaderType)]
     struct SortParams {

@@ -6,7 +6,7 @@ use encase::ShaderType;
 use super::{ComputeGraph, ComputeOperation};
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
-    passes_core::PassData,
+    passes_core::{self, PassData},
     resource_registry::ResourceMap,
 };
 
@@ -51,8 +51,17 @@ pub(crate) fn step_program_group_variant(rows: u64) -> usize {
     usize::from(rows > SINGLE_GROUP_ROWS)
 }
 
+enum ProgramDispatch {
+    Graph(ComputeOperation),
+    Reflected {
+        pass: PassData,
+        bind: wgpu::BindGroup,
+        groups: u32,
+    },
+}
+
 pub(crate) struct StepProgramOperation {
-    operation: ComputeOperation,
+    dispatch: ProgramDispatch,
     sync: LaniusBuffer<u32>,
     offset: u64,
     _launch: LaniusBuffer<Launch>,
@@ -73,19 +82,7 @@ impl StepProgramOperation {
         groups: u32,
         options: u32,
     ) -> Result<Self> {
-        ensure!(
-            (1..=STEP_PROGRAM_MAX_GROUPS).contains(&groups),
-            "invalid step program group count {groups}",
-        );
-        ensure!(
-            pass.thread_group_size == [GROUP_LANES, 1, 1],
-            "{name} must use {GROUP_LANES} lanes",
-        );
-        let offset = u64::from(slot) * SLOT_BYTES;
-        ensure!(
-            offset + SLOT_BYTES <= sync.byte_size as u64,
-            "{name} has no sync slot {slot}",
-        );
+        let offset = Self::validate_launch(name, pass, sync, slot, groups)?;
         let binding = resources.tracked_view("step_program_sync")?;
         ensure!(
             *binding.buffer == sync.buffer
@@ -114,17 +111,78 @@ impl StepProgramOperation {
             groups * GROUP_LANES,
         )?;
         Ok(Self {
-            operation,
+            dispatch: ProgramDispatch::Graph(operation),
             sync: sync.clone(),
             offset,
             _launch: launch,
         })
     }
 
+    /// Binds a program over stage-owned storage with no graph slot reuse.
+    /// The sync and launch bindings are owned by the operation.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_reflected(
+        device: &wgpu::Device,
+        name: &'static str,
+        pass: &PassData,
+        resources: &[(&str, wgpu::BindingResource<'_>)],
+        sync: &LaniusBuffer<u32>,
+        slot: u32,
+        groups: u32,
+        options: u32,
+    ) -> Result<Self> {
+        let offset = Self::validate_launch(name, pass, sync, slot, groups)?;
+        let launch = uniform_from_val(
+            device,
+            name,
+            &Launch { groups, slot, options, reserved: 0 },
+        );
+        let mut entries = resources.to_vec();
+        entries.push(("step_program_sync", sync.as_entire_binding()));
+        entries.push(("program_launch", launch.as_entire_binding()));
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+            device, Some(name), pass, 0, &entries,
+        )?;
+        Ok(Self {
+            dispatch: ProgramDispatch::Reflected { pass: pass.clone(), bind, groups },
+            sync: sync.clone(),
+            offset,
+            _launch: launch,
+        })
+    }
+
+    fn validate_launch(
+        name: &str,
+        pass: &PassData,
+        sync: &LaniusBuffer<u32>,
+        slot: u32,
+        groups: u32,
+    ) -> Result<u64> {
+        ensure!(
+            (1..=STEP_PROGRAM_MAX_GROUPS).contains(&groups),
+            "invalid step program group count {groups}",
+        );
+        ensure!(
+            pass.thread_group_size == [GROUP_LANES, 1, 1],
+            "{name} must use {GROUP_LANES} lanes",
+        );
+        let offset = u64::from(slot) * SLOT_BYTES;
+        ensure!(
+            offset + SLOT_BYTES <= sync.byte_size as u64,
+            "{name} has no sync slot {slot}",
+        );
+        Ok(offset)
+    }
+
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         self.sync.clear(encoder, self.offset, Some(SLOT_BYTES));
-        self.operation.record(encoder)
+        match &self.dispatch {
+            ProgramDispatch::Graph(operation) => operation.record(encoder),
+            ProgramDispatch::Reflected { pass, bind, groups } => {
+                super::record_direct(encoder, pass, bind, &pass.shader_id, groups * GROUP_LANES)
+            }
+        }
     }
 
     pub(crate) fn failed_offset(slot: u32) -> u64 {
