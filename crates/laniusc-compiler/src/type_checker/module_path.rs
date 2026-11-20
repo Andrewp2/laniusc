@@ -11,12 +11,12 @@ mod dependency_visibility;
 mod inputs;
 mod layout;
 mod module_index;
-mod path_sequences;
+mod programs;
 mod projection;
-mod record_discovery;
 mod state;
 
 pub(super) use create::create_with_passes as create_module_path_state_with_passes;
 pub(super) use dependency_visibility::DependencyVisibilityState;
 pub(super) use inputs::CreateInputs as ModulePathCreateInputs;
+pub(super) use programs::MODULE_PROGRAM_SLOTS;
 pub(super) use state::State as ModulePathState;

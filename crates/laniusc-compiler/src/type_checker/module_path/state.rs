@@ -2,7 +2,7 @@ use super::{
     super::*,
     buffers::Buffers,
     dependency_visibility::DependencyVisibilityState,
-    path_sequences::PathPrefixRound,
+    programs::ModulePrograms,
     projection::TypeAliasProjection,
 };
 
@@ -11,22 +11,6 @@ use super::{
 /// This carrier preserves creation-time ordering and keeps the resident state
 /// independent from individual constructor helpers.
 pub(in crate::type_checker) struct BindGroups {
-    pub(in crate::type_checker) mark_records: ComputeOperation,
-    pub(in crate::type_checker) scatter_paths: ComputeOperation,
-    pub(in crate::type_checker) count_path_segments: ComputeOperation,
-    pub(in crate::type_checker) scatter_path_segments: ComputeOperation,
-    pub(in crate::type_checker) clear_path_state: ComputeOperation,
-    pub(in crate::type_checker) path_prefix_dispatch_args: ComputeOperation,
-    pub(in crate::type_checker) path_prefix_initial_table_clear: ComputeOperation,
-    pub(in crate::type_checker) path_prefix_rounds: Vec<PathPrefixRound>,
-    pub(in crate::type_checker) path_prefix_finalize: ComputeOperation,
-    pub(in crate::type_checker) module_records: CompactionOperation,
-    pub(in crate::type_checker) import_records: CompactionOperation,
-    pub(in crate::type_checker) decl_records: CompactionOperation,
-    pub(in crate::type_checker) append_variant_decl_count: ComputeOperation,
-    pub(in crate::type_checker) scatter_variant_decl_records: ComputeOperation,
-    pub(in crate::type_checker) clear_decl_lookup: ComputeOperation,
-    pub(in crate::type_checker) scatter_decl_span_records: ComputeOperation,
     pub(in crate::type_checker) clear_module_lookup: ComputeOperation,
     pub(in crate::type_checker) build_module_keys: ComputeOperation,
     pub(in crate::type_checker) module_dispatch: ComputeOperation,
@@ -73,7 +57,6 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) import_visible_validate_dispatch_args: ComputeOperation,
     pub(in crate::type_checker) initialize_import_visible_keys: ComputeOperation,
     pub(in crate::type_checker) validate_import_visible_keys: ComputeOperation,
-    pub(in crate::type_checker) path_dispatch_args: ComputeOperation,
     pub(in crate::type_checker) resolve_local_type_paths: ComputeOperation,
     pub(in crate::type_checker) resolve_local_value_paths: ComputeOperation,
     pub(in crate::type_checker) resolve_imported_type_paths: ComputeOperation,
@@ -115,21 +98,13 @@ pub(in crate::type_checker) struct BindGroups {
 /// keep those buffers alive across recorded checks.
 pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) resources: Buffers,
+    pub(in crate::type_checker) programs: ModulePrograms,
     pub(in crate::type_checker) dependency_interfaces: Option<GpuDependencyInterfaceState>,
     pub(in crate::type_checker) dependency_visibility: Option<Box<DependencyVisibilityState>>,
-    pub(in crate::type_checker) _extract_module_record_flag_params:
-        LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) _extract_import_record_flag_params:
-        LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) _extract_decl_record_flag_params:
-        LaniusBuffer<RecordFamilyFlagParams>,
-    pub(in crate::type_checker) _path_prefix_dispatch_params:
-        LaniusBuffer<PathPrefixDispatchParams>,
     pub(in crate::type_checker) _import_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _import_visible_validate_dispatch_params:
         LaniusBuffer<CountPairMaxDispatchParams>,
     pub(in crate::type_checker) _module_dispatch_params: LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) _module_record_params: LaniusBuffer<ModuleRecordScatterParams>,
     pub(in crate::type_checker) _module_lookup_params: LaniusBuffer<ModuleLookupParams>,
     pub(in crate::type_checker) _import_resolve_params: LaniusBuffer<ImportResolveParams>,
     pub(in crate::type_checker) _qualified_path_resolve_params:

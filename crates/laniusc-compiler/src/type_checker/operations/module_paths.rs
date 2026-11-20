@@ -1,126 +1,80 @@
-use crate::gpu::compiler_graph::{AccessMode, CompactionSpec, ReflectedComputeSpec};
+use crate::gpu::compiler_graph::{AccessMode, ReflectedComputeSpec};
 
-/// Discovers the compact-HIR rows which participate in module/path relations.
-///
-/// The shader calls its output `record_family_bits`; the compiler graph uses a
-/// phase-qualified name because the allocation is shared with the complete
-/// module-record scan operation.
-pub(in crate::type_checker) const MODULE_RECORDS_MARK: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.records.mark",
+pub(in crate::type_checker) const PATH_PROGRAM_FAILURE_COPY: &str =
+    "type_check.modules.path_program_failure.copy";
+
+pub(in crate::type_checker) const BUILD_PATH_TABLES: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.modules.build_path_tables",
     HirNodes,
-    "type_checker/modules/records/mark_module_record_candidates"
-    ; resources [typecheck_resource!("record_family_bits" => "module_record_family_bits", Write)]
+    "type_checker/modules/build_path_tables"
 )
-.with_indirect_dispatch("hir_active_dispatch_args");
+.with_aliases(&[typecheck_resource!(
+    "step_program_sync" => "module_step_program_sync", ReadWrite
+)])
+.with_initializes(&["step_program_sync"])
+.with_modes(&[
+    ("module_record_family_bits", AccessMode::Write),
+    ("path_id_by_owner_hir", AccessMode::Write),
+    ("path_id_by_owner_token", AccessMode::Write),
+    ("path_max_segment_count", AccessMode::Write),
+    ("resolved_value_type_qualifier_token", AccessMode::Write),
+    ("resolved_value_qualifier_binding", AccessMode::Write),
+    ("path_owner_hir", AccessMode::Write),
+    ("path_len", AccessMode::Write),
+    ("path_call_hir", AccessMode::Write),
+    ("path_owner_token", AccessMode::Write),
+    ("path_kind", AccessMode::Write),
+    ("path_count_out", AccessMode::Write),
+    ("path_dispatch_args", AccessMode::Write),
+    ("path_segment_base", AccessMode::Write),
+    ("path_segment_count", AccessMode::Write),
+    ("path_segment_count_out", AccessMode::Write),
+    ("path_segment_name_id", AccessMode::Write),
+    ("path_segment_token", AccessMode::Write),
+    ("path_prefix_base", AccessMode::Write),
+    ("path_prefix_id_a", AccessMode::Write),
+    ("path_prefix_id_b", AccessMode::Write),
+    ("path_prefix_table_state", AccessMode::Write),
+]);
 
-pub(in crate::type_checker) const PATH_STATE_CLEAR: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.paths.clear",
+pub(in crate::type_checker) const RECORD_PROGRAM_FAILURE_COPY: &str =
+    "type_check.modules.record_program_failure.copy";
+
+pub(in crate::type_checker) const COMPACT_RECORDS: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.modules.compact_records",
     HirNodes,
-    "type_checker/modules/paths/clear_path_state";
-    writes [
-        "path_id_by_owner_hir",
-        "path_id_by_owner_token",
-        "path_max_segment_count",
-        "resolved_value_type_qualifier_token",
-        "resolved_value_qualifier_binding",
-    ]
-);
-
-pub(in crate::type_checker) const PATHS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.paths.scatter",
-    HirNodes,
-    "type_checker/modules/paths/scatter_paths";
-    writes [
-        "path_owner_hir",
-        "path_len",
-        "path_call_hir",
-        "path_owner_token",
-        "path_id_by_owner_hir",
-        "path_id_by_owner_token",
-        "path_kind",
-        "path_count_out",
-    ]
-);
-
-pub(in crate::type_checker) const PATH_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.path_dispatch_args",
-    DispatchArguments,
-    "type_checker/modules/paths/write_path_dispatch_args";
-    writes ["path_count_out", "path_dispatch_args"]
-);
-
-pub(in crate::type_checker) const PATH_SEGMENTS_COUNT: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.path_segments.count",
-    HirNodes,
-    "type_checker/modules/paths/count_path_segments";
-    writes [
-        "path_segment_base",
-        "path_segment_count",
-        "path_segment_count_out",
-        "path_max_segment_count",
-    ]
+    "type_checker/modules/compact_records"
 )
-.with_indirect_dispatch("path_dispatch_args");
-
-pub(in crate::type_checker) const PATH_SEGMENTS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.path_segments.scatter",
-    Tokens,
-    "type_checker/modules/paths/scatter_path_segments";
-    writes [
-        "path_segment_name_id",
-        "path_segment_token",
-        "path_prefix_base",
-        "path_prefix_id_a",
-        "predicate_syntax_token",
-    ]
-);
-
-pub(in crate::type_checker) const PATH_PREFIX_DISPATCH: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.path_prefix_dispatch_args",
-    DispatchArguments,
-    "type_checker/modules/paths/write_path_prefix_dispatch_args";
-    writes ["path_prefix_row_dispatch_args", "path_prefix_round_dispatch_args"]
-);
-pub(in crate::type_checker) const PATH_PREFIX_TABLE_CLEAR: ReflectedComputeSpec =
-    typecheck_operation!(
-        "type_check.modules.path_prefix_table_clear",
-        Tokens,
-        "type_checker/modules/paths/clear_path_prefix_table";
-        writes ["path_prefix_table_state"]
-    )
-    .with_indirect_dispatch("path_prefix_row_dispatch_args");
-pub(in crate::type_checker) const PATH_PREFIX_INTERN_A_TO_B: ReflectedComputeSpec =
-    typecheck_operation!(
-        "type_check.modules.path_prefix_table_intern.a_to_b",
-        Tokens,
-        "type_checker/modules/paths/intern_path_prefix_pairs";
-        resources [
-            typecheck_resource!("path_prefix_id_in" => "path_prefix_id_a", Read),
-            typecheck_resource!("path_prefix_id_out" => "path_prefix_id_b", Write),
-            typecheck_resource!("path_prefix_table_state" => "path_prefix_table_state", ReadWrite),
-        ]
-    )
-    .with_indirect_dispatch("path_prefix_round_dispatch_args");
-pub(in crate::type_checker) const PATH_PREFIX_INTERN_B_TO_A: ReflectedComputeSpec =
-    typecheck_operation!(
-        "type_check.modules.path_prefix_table_intern.b_to_a",
-        Tokens,
-        "type_checker/modules/paths/intern_path_prefix_pairs";
-        resources [
-            typecheck_resource!("path_prefix_id_in" => "path_prefix_id_b", Read),
-            typecheck_resource!("path_prefix_id_out" => "path_prefix_id_a", Write),
-            typecheck_resource!("path_prefix_table_state" => "path_prefix_table_state", ReadWrite),
-        ]
-    )
-    .with_indirect_dispatch("path_prefix_round_dispatch_args");
-pub(in crate::type_checker) const PATH_PREFIX_FINALIZE: ReflectedComputeSpec =
-    typecheck_operation!(
-        "type_check.modules.path_prefix_finalize",
-        Tokens,
-        "type_checker/modules/paths/finalize_path_prefix_ids";
-        resources [typecheck_resource!("path_prefix_id_a" => "path_prefix_id_a", ReadWrite)]
-    )
-    .with_indirect_dispatch("path_prefix_row_dispatch_args");
+.with_aliases(&[typecheck_resource!(
+    "step_program_sync" => "module_step_program_sync", ReadWrite
+)])
+.with_initializes(&["step_program_sync"])
+.with_modes(&[
+    ("module_file_id", AccessMode::Write),
+    ("module_path_id", AccessMode::Write),
+    ("module_owner_hir", AccessMode::Write),
+    ("import_module_file_id", AccessMode::Write),
+    ("import_path_id", AccessMode::Write),
+    ("import_kind", AccessMode::Write),
+    ("import_owner_hir", AccessMode::Write),
+    ("decl_module_file_id", AccessMode::Write),
+    ("decl_name_id", AccessMode::Write),
+    ("decl_kind", AccessMode::Write),
+    ("decl_namespace", AccessMode::Write),
+    ("decl_visibility", AccessMode::Write),
+    ("decl_hir_node", AccessMode::Write),
+    ("decl_parent_type_decl", AccessMode::Write),
+    ("decl_name_token", AccessMode::Write),
+    ("decl_token_start", AccessMode::Write),
+    ("decl_token_end", AccessMode::Write),
+    ("decl_id_by_name_token", AccessMode::Write),
+    ("module_record_family_flag", AccessMode::Write),
+    ("module_record_prefix", AccessMode::Write),
+    ("decl_count_out", AccessMode::Write),
+    ("module_record_count_out", AccessMode::Write),
+    ("import_record_count_out", AccessMode::Write),
+    ("record_scan_group_sums", AccessMode::Write),
+]);
 
 pub(in crate::type_checker) const MODULE_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
     "type_check.modules.clear_module_lookup",
@@ -165,60 +119,6 @@ pub(in crate::type_checker) const IMPORT_DISPATCH: ReflectedComputeSpec = typech
     ; resources [
         typecheck_resource!("count_in" => "import_record_count_out", Read),
         typecheck_resource!("dispatch_args" => "import_dispatch_args", Write),
-    ]
-);
-
-pub(in crate::type_checker) const VARIANT_DECL_COUNT_APPEND: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.append_variant_decl_count",
-    Declarations,
-    "type_checker/modules/records/append_variant_decl_count"
-);
-
-pub(in crate::type_checker) const DECL_RECORD_LOOKUP_CLEAR: ReflectedComputeSpec = typecheck_operation!(
-    "type_check.modules.clear_decl_lookup",
-    Tokens,
-    "type_checker/modules/declarations/clear_decl_span_lookup";
-    writes ["decl_id_by_name_token"]
-);
-
-pub(in crate::type_checker) const DECL_SPAN_RECORDS_SCATTER: ReflectedComputeSpec =
-    typecheck_operation!(
-        "type_check.modules.scatter_decl_span_records",
-        HirNodes,
-        "type_checker/modules/records/scatter_decl_span_records";
-            writes [
-                "decl_name_token",
-                "decl_token_start",
-                "decl_token_end",
-                "decl_id_by_name_token",
-            ]
-            ; resources [
-                typecheck_resource!("decl_record_flag" => "module_record_family_flag", Read),
-                typecheck_resource!("decl_record_prefix" => "module_record_prefix", Read),
-            ]
-    )
-    .with_indirect_dispatch("hir_active_dispatch_args");
-
-pub(in crate::type_checker) const VARIANT_DECL_RECORDS_SCATTER: ReflectedComputeSpec = typecheck_operation!(
-"type_check.modules.scatter_variant_decl_records",
-Declarations,
-"type_checker/modules/records/scatter_variant_decl_records";
-writes [
-    "decl_module_file_id",
-    "decl_name_token",
-    "decl_name_id",
-    "decl_kind",
-    "decl_namespace",
-    "decl_visibility",
-    "decl_hir_node",
-    "decl_parent_type_decl",
-    "decl_token_start",
-        "decl_token_end",
-        "decl_id_by_name_token",
-    ]
-    ; resources [
-        typecheck_resource!("decl_record_flag" => "module_record_family_flag", Read),
-        typecheck_resource!("decl_record_prefix" => "module_record_prefix", Read),
     ]
 );
 
@@ -895,96 +795,3 @@ pub(in crate::type_checker) const MATCH_EXPRS_TYPE: ReflectedComputeSpec = typec
 
 pub(in crate::type_checker) const MATCH_EXPRS_TYPE_INFERENCE: ReflectedComputeSpec =
     MATCH_EXPRS_TYPE.with_name("type_check.modules.type_match_exprs.inference");
-
-const RECORD_FLAG_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("record_family_bits" => "module_record_family_bits", Read),
-    typecheck_resource!("record_family_flag" => "module_record_family_flag", Write),
-];
-
-const fn record_flag(name: &'static str) -> ReflectedComputeSpec {
-    typecheck_pass!(
-        name,
-        HirNodes,
-        "type_checker/modules/records/extract_module_record_flags"
-    )
-    .with_aliases(RECORD_FLAG_ALIASES)
-    .with_indirect_dispatch("hir_active_dispatch_args")
-}
-
-pub(in crate::type_checker) const MODULE_RECORD_FLAG: ReflectedComputeSpec =
-    record_flag("type_check.modules.records.module_flag");
-pub(in crate::type_checker) const IMPORT_RECORD_FLAG: ReflectedComputeSpec =
-    record_flag("type_check.modules.records.import_flag");
-pub(in crate::type_checker) const DECL_RECORD_FLAG: ReflectedComputeSpec =
-    record_flag("type_check.modules.records.decl_flag");
-
-macro_rules! record_compaction {
-    (
-        $aliases:ident, $scatter:ident, $operation:ident,
-        $flag:ident, $scan:expr,
-        $record:literal, $kernel:literal,
-        [$($output:literal),+ $(,)?]
-    ) => {
-        const $aliases: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-            typecheck_resource!(concat!($record, "_record_flag") => "module_record_family_flag", Read),
-            typecheck_resource!(concat!($record, "_record_prefix") => "module_record_prefix", Read),
-        ];
-        pub(in crate::type_checker) const $scatter: ReflectedComputeSpec = typecheck_pass!(
-            concat!("type_check.modules.records.", $record, "_scatter"),
-            HirNodes,
-            $kernel
-        )
-            .with_modes(&[$(($output, AccessMode::Write)),+])
-            .with_aliases($aliases)
-            .with_indirect_dispatch("hir_active_dispatch_args");
-        pub(in crate::type_checker) const $operation: CompactionSpec = CompactionSpec {
-            mark: $flag,
-            scan: $scan,
-            scatter: $scatter,
-        };
-    };
-}
-
-record_compaction!(
-    MODULE_RECORD_ALIASES,
-    MODULE_RECORDS_SCATTER,
-    MODULE_RECORD_COMPACTION,
-    MODULE_RECORD_FLAG,
-    super::super::compiler_graph::MODULE_RECORD_SCAN,
-    "module",
-    "type_checker/modules/records/scatter_module_records",
-    ["module_file_id", "module_path_id", "module_owner_hir"]
-);
-record_compaction!(
-    IMPORT_RECORD_ALIASES,
-    IMPORT_RECORDS_SCATTER,
-    IMPORT_RECORD_COMPACTION,
-    IMPORT_RECORD_FLAG,
-    super::super::compiler_graph::IMPORT_RECORD_SCAN,
-    "import",
-    "type_checker/modules/records/scatter_import_records",
-    [
-        "import_module_file_id",
-        "import_path_id",
-        "import_kind",
-        "import_owner_hir",
-    ]
-);
-record_compaction!(
-    DECL_RECORD_ALIASES,
-    DECL_RECORDS_SCATTER,
-    DECL_RECORD_COMPACTION,
-    DECL_RECORD_FLAG,
-    super::super::compiler_graph::DECL_RECORD_SCAN,
-    "decl",
-    "type_checker/modules/records/scatter_decl_core_records",
-    [
-        "decl_module_file_id",
-        "decl_name_id",
-        "decl_kind",
-        "decl_namespace",
-        "decl_visibility",
-        "decl_hir_node",
-        "decl_parent_type_decl",
-    ]
-);

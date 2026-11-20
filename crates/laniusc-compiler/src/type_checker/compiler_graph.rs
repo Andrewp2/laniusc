@@ -828,12 +828,6 @@ pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         block_sum: "call_required_generic_scan_block_sum",
     },
 };
-const MODULE_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.module_scan.local";
-const MODULE_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.module_scan.apply";
-const IMPORT_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.import_scan.local";
-const IMPORT_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.import_scan.apply";
-const DECL_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.decl_scan.local";
-const DECL_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.decl_scan.apply";
 const MODULE_DECL_KEY_SORT_PASS: &str = "type_check.modules.decl_keys";
 pub(super) const MODULE_DECL_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
     phase: CompilerPhase::TypeCheck,
@@ -889,55 +883,16 @@ const DECL_PUBLIC_SCAN_LOCAL_PASS: &str = "type_check.modules.decl_public.scan.l
 const DECL_PUBLIC_SCAN_APPLY_PASS: &str = "type_check.modules.decl_public.scan.apply";
 const IMPORT_VISIBLE_SCAN_LOCAL_PASS: &str = "type_check.modules.import_visibility.scan.local";
 const IMPORT_VISIBLE_SCAN_APPLY_PASS: &str = "type_check.modules.import_visibility.scan.apply";
-pub(super) const MODULE_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
-    module_record_scan_resources("module_record_count_out");
+pub(super) const MODULE_RECORD_SCAN_WORKSPACE: PrefixScanWorkspace<&'static str> =
+    PrefixScanWorkspace {
+        local_prefix: "module_record_scan_local_prefix",
+        block_sum: "module_record_scan_block_sum",
+    };
 pub(super) const MODULE_VALUE_SCAN_WORKSPACE: PrefixScanWorkspace<&'static str> =
     PrefixScanWorkspace {
         local_prefix: "module_value_scan_local_prefix",
         block_sum: "module_value_scan_block_sum",
     };
-pub(super) const IMPORT_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
-    module_record_scan_resources("import_record_count_out");
-pub(super) const DECL_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
-    module_record_scan_resources("decl_count_out");
-
-pub(super) const MODULE_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::HirNodes,
-    passes: PrefixScanGraphPasses {
-        local: MODULE_RECORD_SCAN_LOCAL_PASS,
-        apply: MODULE_RECORD_SCAN_APPLY_PASS,
-    },
-    resources: MODULE_RECORD_SCAN_RESOURCES,
-};
-pub(super) const IMPORT_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
-    passes: PrefixScanGraphPasses {
-        local: IMPORT_RECORD_SCAN_LOCAL_PASS,
-        apply: IMPORT_RECORD_SCAN_APPLY_PASS,
-    },
-    resources: IMPORT_RECORD_SCAN_RESOURCES,
-    ..MODULE_RECORD_SCAN
-};
-pub(super) const DECL_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
-    passes: PrefixScanGraphPasses {
-        local: DECL_RECORD_SCAN_LOCAL_PASS,
-        apply: DECL_RECORD_SCAN_APPLY_PASS,
-    },
-    resources: DECL_RECORD_SCAN_RESOURCES,
-    ..MODULE_RECORD_SCAN
-};
-
-const fn module_record_scan_resources(total: &'static str) -> PrefixScanResources<&'static str> {
-    PrefixScanResources {
-        count: "hir_active_count",
-        input: "module_record_family_flag",
-        output_prefix: "module_record_prefix",
-        total,
-        dispatch_args: "hir_active_dispatch_args",
-        local_prefix: "module_record_scan_local_prefix",
-        block_sum: "module_record_scan_block_sum",
-    }
-}
 pub(super) const DECL_TYPE_KEY_SCAN_RESOURCES: PrefixScanResources<&'static str> =
     module_compact_scan_resources(
         "decl_count_out",
@@ -3242,8 +3197,6 @@ fn build_graph(
     } else {
         token_rows
     };
-    let path_prefix_rounds =
-        u64::from(u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros()).max(1);
     graph_resources!(graph, Workspace {
         _module_status as "module_status" in Declarations => module_rows * 4;
         _module_dispatch_args as "module_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
@@ -3259,11 +3212,14 @@ fn build_graph(
         _import_visible_value_lookup_state as "import_visible_value_lookup_state" in Declarations => import_visible_rows * 8;
         _import_visible_value_duplicate_of as "import_visible_value_duplicate_of" in Declarations => import_visible_rows * 4;
         _import_visible_validate_dispatch_args as "import_visible_validate_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _module_step_program_sync as "module_step_program_sync" in Declarations =>
+            (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS * super::module_path::MODULE_PROGRAM_SLOTS * 4) as u64;
         _path_prefix_id_b as "path_prefix_id_b" in Tokens => token_rows * 4;
         _path_prefix_table_state as "path_prefix_table_state" in Tokens => token_rows * 8;
-        _path_prefix_row_dispatch_args as "path_prefix_row_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
-        _path_prefix_round_dispatch_args as "path_prefix_round_dispatch_args" in DispatchArguments [StorageIndirect] => path_prefix_rounds * 12;
         _path_dispatch_args as "path_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+    });
+    graph_resources!(graph, External {
+        module_step_program_failed in Bytes => (super::module_path::MODULE_PROGRAM_SLOTS * 4) as u64;
     });
     graph.add_resource_alias("module_by_canonical_id", _path_prefix_table_state)?;
     graph_resources!(graph, Workspace {
@@ -3400,6 +3356,8 @@ fn build_graph(
         _module_record_family_flag as "module_record_family_flag" in HirNodes => hir_rows * 4;
         _module_record_prefix as "module_record_prefix" in HirNodes => hir_rows * 4;
         _module_record_scan_local_prefix as "module_record_scan_local_prefix" in HirNodes => hir_rows * 4;
+        _record_scan_group_sums as "record_scan_group_sums" in HirNodes =>
+            u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS) * 4;
         _module_record_scan_block_sum as "module_record_scan_block_sum" in HirNodes => hir_blocks * 4;
         _module_value_scan_local_prefix as "module_value_scan_local_prefix" in Declarations => hir_rows * 4;
         _module_value_scan_block_sum as "module_value_scan_block_sum" in Declarations => hir_blocks * 4;
@@ -4397,41 +4355,31 @@ fn build_graph(
         PREDICATES_CLEAR_SYNTAX_TOKENS_PASS,
         "token_active_dispatch_args",
     )?;
-    // Record-family extraction reuses one flag, prefix, and hierarchy workspace
-    // across the module, import, and declaration scans. Each scan is a semantic
-    // graph operation; callers do not reproduce its internal access modes.
     TYPE_CONSTANT_STORAGE_CLEAR.register_kernel(&mut graph, kernels)?;
-    MODULE_RECORDS_MARK.register_kernel(&mut graph, kernels)?;
-    PATH_STATE_CLEAR.register_kernel(&mut graph, kernels)?;
-    PATHS_SCATTER.register_kernel(&mut graph, kernels)?;
-    PATH_DISPATCH.register_kernel(&mut graph, kernels)?;
-    PATH_SEGMENTS_COUNT.register_kernel(&mut graph, kernels)?;
-    PATH_SEGMENTS_SCATTER.register_kernel(&mut graph, kernels)?;
-    PATH_PREFIX_DISPATCH.register_kernel(&mut graph, kernels)?;
-    PATH_PREFIX_TABLE_CLEAR.register_kernel(&mut graph, kernels)?;
-    PATH_PREFIX_INTERN_A_TO_B.register_kernel(&mut graph, kernels)?;
-    PATH_PREFIX_INTERN_B_TO_A.register_kernel(&mut graph, kernels)?;
-    graph.repeat_pass_range(
-        u32::try_from(path_prefix_rounds)
-            .map_err(|_| "path-prefix round count exceeds u32".to_owned())?
-            .div_ceil(2),
-        PATH_PREFIX_INTERN_A_TO_B.name,
-        PATH_PREFIX_INTERN_B_TO_A.name,
+    BUILD_PATH_TABLES.register_kernel(&mut graph, kernels)?;
+    graph.add_buffer_copy_pass(
+        PATH_PROGRAM_FAILURE_COPY,
+        CompilerPhase::TypeCheck,
+        "module_step_program_sync",
+        _module_step_program_sync,
+        "module_step_program_failed",
+        module_step_program_failed,
     )?;
-    PATH_PREFIX_FINALIZE.register_kernel(&mut graph, kernels)?;
-    let record_scan_levels = prefix_scan_hierarchy_levels(hir_blocks);
-    MODULE_RECORD_COMPACTION.register(&mut graph, kernels, record_scan_levels)?;
+    // Record families reuse the flag and prefix in one program.
+    COMPACT_RECORDS.register_kernel(&mut graph, kernels)?;
+    graph.add_buffer_copy_pass(
+        RECORD_PROGRAM_FAILURE_COPY,
+        CompilerPhase::TypeCheck,
+        "module_step_program_sync",
+        _module_step_program_sync,
+        "module_step_program_failed",
+        module_step_program_failed,
+    )?;
     MODULE_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
     MODULE_KEYS_BUILD.register_kernel(&mut graph, kernels)?;
     MODULE_DISPATCH.register_kernel(&mut graph, kernels)?;
     MODULES_VALIDATE.register_kernel(&mut graph, kernels)?;
-    IMPORT_RECORD_COMPACTION.register(&mut graph, kernels, record_scan_levels)?;
     IMPORT_DISPATCH.register_kernel(&mut graph, kernels)?;
-    DECL_RECORD_COMPACTION.register(&mut graph, kernels, record_scan_levels)?;
-    VARIANT_DECL_COUNT_APPEND.register_kernel(&mut graph, kernels)?;
-    DECL_RECORD_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
-    DECL_SPAN_RECORDS_SCATTER.register_kernel(&mut graph, kernels)?;
-    VARIANT_DECL_RECORDS_SCATTER.register_kernel(&mut graph, kernels)?;
     FILE_MODULE_MAP_CLEAR.register_kernel(&mut graph, kernels)?;
     FILE_MODULE_MAP_BUILD.register_kernel(&mut graph, kernels)?;
     ATTACH_RECORD_MODULES.register_kernel(&mut graph, kernels)?;
@@ -4454,6 +4402,7 @@ fn build_graph(
     DECL_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
     DECL_DUPLICATES_VALIDATE.register_kernel(&mut graph, kernels)?;
     DECL_NAMESPACE_MARK.register_kernel(&mut graph, kernels)?;
+    let record_scan_levels = prefix_scan_hierarchy_levels(hir_blocks);
     DECL_NAMESPACE_SCAN.register(&mut graph, record_scan_levels)?;
     DECL_NAMESPACE_SCATTER.register_kernel(&mut graph, kernels)?;
     DECL_PUBLIC_MARK.register_kernel(&mut graph, kernels)?;
@@ -7308,16 +7257,9 @@ mod tests {
             graph.repeated_regions().len() >= 4,
             "every scalable operation must retain its own explicit repeated region",
         );
-        let path_prefix_region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| {
-                region.first_pass == graph.pass_id(PATH_PREFIX_INTERN_A_TO_B.name).unwrap()
-            })
-            .expect("path-prefix interning repeated region");
         assert_eq!(
-            path_prefix_region.iterations,
-            (u32::BITS - 4096u32.saturating_sub(1).leading_zeros()).div_ceil(2),
+            graph.pass_kernel(graph.pass_id(BUILD_PATH_TABLES.name).unwrap()),
+            Some(BUILD_PATH_TABLES.kernel),
         );
         let (_, module_radix_steps) = decl_key_radix_layout(4096, 4);
         let module_radix_region = graph
@@ -7541,8 +7483,8 @@ mod tests {
             resource("module_record_family_flag"),
             resource("module_record_prefix"),
         ];
-        let module_scan_start = graph.pass_id(MODULE_RECORDS_MARK.name).unwrap();
-        let module_scan_end = graph.pass_id(VARIANT_DECL_RECORDS_SCATTER.name).unwrap();
+        let module_scan_start = graph.pass_id(BUILD_PATH_TABLES.name).unwrap();
+        let module_scan_end = graph.pass_id(COMPACT_RECORDS.name).unwrap();
         for resource in initial_module_scan_resources {
             let lifetime = graph.lifetime(resource).unwrap();
             assert!(lifetime.first_pass.index() >= module_scan_start.index());
@@ -7550,8 +7492,8 @@ mod tests {
         }
         let local_bindings = [
             resource("module_record_family_flag"),
-            resource("module_record_scan_local_prefix"),
-            resource("module_record_scan_block_sum"),
+            resource("module_record_prefix"),
+            resource("record_scan_group_sums"),
         ]
         .map(storage_identity)
         .into_iter()
@@ -7559,7 +7501,7 @@ mod tests {
         assert_eq!(
             local_bindings.len(),
             3,
-            "scan input, local prefix, and block sums are bound together",
+            "scan input, prefix, and group sums are bound together",
         );
         let module_radix_resources = [
             resource("module_path_key_radix_block_histogram"),
@@ -7590,7 +7532,7 @@ mod tests {
                 .lifetime(resource("module_record_family_flag"))
                 .unwrap()
                 .last_pass,
-            graph.pass_id(VARIANT_DECL_RECORDS_SCATTER.name).unwrap(),
+            graph.pass_id(COMPACT_RECORDS.name).unwrap(),
             "the declaration flag remains live through every declaration scatter",
         );
         for resource in [

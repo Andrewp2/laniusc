@@ -41,8 +41,8 @@ uint path_prefix_first_slot(uint left, uint right, uint capacity)
 uint2 path_prefix_pair(
     uint row,
     uint step,
-    StructuredBuffer<uint> prefix_base,
-    StructuredBuffer<uint> prefix_id)
+    RWStructuredBuffer<uint> prefix_base,
+    RWStructuredBuffer<uint> prefix_id)
 {
     uint base = prefix_base[row];
     uint left = row >= base && row - base >= step

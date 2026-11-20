@@ -56,26 +56,6 @@ pub(in crate::type_checker) struct FnContextParams {
     pub(in crate::type_checker) scan_step: u32,
 }
 
-/// Capacity packet for GPU-produced exact path-prefix dispatches.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct PathPrefixDispatchParams {
-    pub(in crate::type_checker) segment_capacity: u32,
-    pub(in crate::type_checker) round_count: u32,
-    pub(in crate::type_checker) reserved0: u32,
-    pub(in crate::type_checker) reserved1: u32,
-}
-
-/// One exact path-prefix doubling round.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct PathPrefixRoundParams {
-    pub(in crate::type_checker) segment_capacity: u32,
-    pub(in crate::type_checker) step: u32,
-    pub(in crate::type_checker) reserved0: u32,
-    pub(in crate::type_checker) reserved1: u32,
-}
-
 /// Capacities for the direct canonical-path-id to module-row table.
 ///
 /// Canonical path ids are slots in the prefix interner, whose table contains
@@ -319,33 +299,6 @@ pub(in crate::type_checker) struct CountPairMaxDispatchParams {
     pub(in crate::type_checker) left_capacity: u32,
     pub(in crate::type_checker) right_capacity: u32,
     pub(in crate::type_checker) multiplier: u32,
-    pub(in crate::type_checker) reserved: u32,
-}
-
-/// Uniform for extracting one semantic record family from HIR records.
-///
-/// `family_bit` selects the path, module, import, declaration, or related
-/// record family that a subsequent counted scan will compact.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct RecordFamilyFlagParams {
-    pub(in crate::type_checker) n_hir_nodes: u32,
-    pub(in crate::type_checker) family_bit: u32,
-    pub(in crate::type_checker) reserved0: u32,
-    pub(in crate::type_checker) reserved1: u32,
-}
-
-/// Domains used while scattering compact module declarations.
-///
-/// Module records are indexed by dense HIR rows, while locating their parsed
-/// path inspects the declaration's token span. Keeping both capacities named
-/// prevents token indices from being bounded by the smaller HIR domain.
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-pub(in crate::type_checker) struct ModuleRecordScatterParams {
-    pub(in crate::type_checker) hir_node_capacity: u32,
-    pub(in crate::type_checker) token_capacity: u32,
-    pub(in crate::type_checker) module_capacity: u32,
     pub(in crate::type_checker) reserved: u32,
 }
 

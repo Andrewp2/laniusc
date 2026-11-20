@@ -1,14 +1,13 @@
 use super::{
     super::*,
-    bind_helpers::create_pair_max_dispatch,
+    bind_helpers::{create_count_dispatch, create_pair_max_dispatch},
     buffers::Buffers,
     dependency_visibility,
     inputs::CreateInputs,
     layout::Layout,
     module_index::{ModuleIndex, create_module_index},
-    path_sequences::{PathSequences, create_path_sequences},
+    programs::create_module_programs,
     projection::{ProjectionBindGroups, create_projection_bind_groups},
-    record_discovery::{RecordDiscovery, create_record_discovery},
     state::{BindGroups, State},
 };
 
@@ -40,14 +39,8 @@ pub(in crate::type_checker) fn create_with_passes(
     let resource_buffers = buffers.clone();
     let mut module_resources = resources.clone();
     resource_buffers.register_resources(&mut module_resources);
-    let PathSequences {
-        clear_state: clear_path_state,
-        dispatch_params: path_prefix_dispatch_params,
-        dispatch_args: path_prefix_dispatch_args,
-        initial_table_clear: path_prefix_initial_table_clear,
-        rounds: path_prefix_rounds,
-        finalize: path_prefix_finalize,
-    } = create_path_sequences(passes, graph, device, &inputs, &buffers, &module_resources)?;
+    let programs =
+        create_module_programs(passes, graph, device, layout, &inputs, &module_resources)?;
     let dependency_visibility = dependency_visibility::create(
         passes,
         device,
@@ -57,35 +50,17 @@ pub(in crate::type_checker) fn create_with_passes(
         &buffers,
         &module_resources,
     )?;
-    let RecordDiscovery {
-        mark_records,
-        extract_module_record_flag_params,
-        extract_module_record_flag,
-        extract_import_record_flag_params,
-        extract_import_record_flag,
-        extract_decl_record_flag_params,
-        extract_decl_record_flag,
-        scatter_paths,
-        path_dispatch_args: path_dispatch_args_group,
-        import_dispatch_params,
-        import_dispatch_args: import_dispatch_args_group,
-        count_path_segments,
-        scatter_path_segments,
-        module_scan,
-        import_scan,
-        decl_scan,
-    } = create_record_discovery(
-        passes,
-        graph,
+    let (import_dispatch_params, import_dispatch_args_group) = create_count_dispatch(
         device,
-        layout,
-        &inputs,
-        &buffers,
+        graph,
+        passes,
         &module_resources,
+        IMPORT_DISPATCH,
+        "type_check.modules.import_dispatch.params",
+        layout.record_capacity_u32,
+        1,
     )?;
     let ModuleIndex {
-        scatter_module_records,
-        module_record_params,
         clear_module_lookup,
         build_module_keys,
         module_dispatch_params,
@@ -98,7 +73,6 @@ pub(in crate::type_checker) fn create_with_passes(
         clear_dependency_module_lookup_call_collection,
         build_dependency_module_lookup_call_collection,
         resolve_dependency_imports_call_collection,
-        scatter_import_records,
         resolve_imports,
         clear_import_edge_set,
         build_import_edge_set,
@@ -188,7 +162,6 @@ pub(in crate::type_checker) fn create_with_passes(
         ..
     } = resource_buffers.clone();
     let CreateInputs {
-        params,
         token_capacity,
         hir_node_capacity,
         ..
@@ -759,52 +732,6 @@ pub(in crate::type_checker) fn create_with_passes(
         &path_dispatch_args,
     )?;
 
-    let mut decl_core_resources = module_resources.clone();
-    decl_core_resources.buffer("gParams", params);
-    let scatter_decl_core_records = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &decl_core_resources,
-        passes,
-        DECL_RECORDS_SCATTER,
-        inputs.hir_active_dispatch_args,
-    )?;
-
-    let append_variant_decl_count = ComputeOperation::direct_spec(
-        device,
-        graph,
-        &decl_core_resources,
-        passes,
-        VARIANT_DECL_COUNT_APPEND,
-        1,
-    )?;
-
-    let clear_decl_lookup = ComputeOperation::direct_spec(
-        device,
-        graph,
-        &decl_core_resources,
-        passes,
-        DECL_RECORD_LOOKUP_CLEAR,
-        token_capacity.saturating_mul(2).max(1),
-    )?;
-
-    let scatter_decl_span_records = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &decl_core_resources,
-        passes,
-        DECL_SPAN_RECORDS_SCATTER,
-        inputs.hir_active_dispatch_args,
-    )?;
-
-    let scatter_variant_decl_records = ComputeOperation::direct_spec(
-        device,
-        graph,
-        &decl_core_resources,
-        passes,
-        VARIANT_DECL_RECORDS_SCATTER,
-        n_blocks.saturating_mul(256).max(1),
-    )?;
     retained_params.push(decl_module_params);
     retained_params.push(attach_record_modules_params);
     retained_params.push(build_file_module_map_params);
@@ -814,16 +741,12 @@ pub(in crate::type_checker) fn create_with_passes(
     retained_params.push(import_visibility_mark_params);
     Ok(State {
         resources: buffers,
+        programs,
         dependency_interfaces: inputs.dependency_interfaces.cloned(),
         dependency_visibility,
-        _extract_module_record_flag_params: extract_module_record_flag_params,
-        _extract_import_record_flag_params: extract_import_record_flag_params,
-        _extract_decl_record_flag_params: extract_decl_record_flag_params,
-        _path_prefix_dispatch_params: path_prefix_dispatch_params,
         _import_dispatch_params: import_dispatch_params,
         _import_visible_validate_dispatch_params: import_visible_validate_dispatch_params,
         _module_dispatch_params: module_dispatch_params,
-        _module_record_params: module_record_params,
         _module_lookup_params: module_lookup_params,
         _import_resolve_params: import_resolve_params,
         _qualified_path_resolve_params: [
@@ -833,34 +756,6 @@ pub(in crate::type_checker) fn create_with_passes(
         _decl_key_radix_dispatch_params: decl_key_radix_dispatch_params,
         _retained_params: retained_params,
         bind_groups: BindGroups {
-            mark_records,
-            scatter_paths,
-            count_path_segments,
-            scatter_path_segments,
-            clear_path_state,
-            path_prefix_dispatch_args,
-            path_prefix_initial_table_clear,
-            path_prefix_rounds,
-            path_prefix_finalize,
-            module_records: CompactionOperation::new(
-                extract_module_record_flag,
-                module_scan,
-                scatter_module_records,
-            ),
-            import_records: CompactionOperation::new(
-                extract_import_record_flag,
-                import_scan,
-                scatter_import_records,
-            ),
-            decl_records: CompactionOperation::new(
-                extract_decl_record_flag,
-                decl_scan,
-                scatter_decl_core_records,
-            ),
-            append_variant_decl_count,
-            scatter_variant_decl_records,
-            clear_decl_lookup,
-            scatter_decl_span_records,
             clear_module_lookup,
             build_module_keys,
             module_dispatch,
@@ -903,7 +798,6 @@ pub(in crate::type_checker) fn create_with_passes(
             import_visible_validate_dispatch_args: import_visible_validate_dispatch_args_group,
             initialize_import_visible_keys,
             validate_import_visible_keys,
-            path_dispatch_args: path_dispatch_args_group,
             resolve_local_type_paths,
             resolve_local_value_paths,
             resolve_imported_type_paths,

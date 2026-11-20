@@ -462,7 +462,11 @@ impl GpuTypeChecker {
             4,
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
-        let status_readback = readback_u32s(device, "rb.type_check.resident.status", 4);
+        let status_readback = readback_u32s(
+            device,
+            "rb.type_check.resident.status",
+            4 + super::module_path::MODULE_PROGRAM_SLOTS,
+        );
         let status_prior = typed_storage_u32_rw(
             device,
             "type_check.resident.status_prior",
@@ -1140,6 +1144,7 @@ impl GpuTypeChecker {
                 encoder,
                 module_path,
                 dependency_pages,
+                token_capacity.max(hir_node_capacity),
                 timer.as_deref_mut(),
             )?;
             if let Some(timer) = timer.as_deref_mut() {
@@ -2871,8 +2876,16 @@ impl GpuTypeChecker {
         }
         let mapped = slice.get_mapped_range();
         let words = read_status_words(&mapped)?;
+        let module_failures = crate::gpu::readback::read_u32_words::<
+            { super::module_path::MODULE_PROGRAM_SLOTS },
+        >(&mapped[16..], "module step program");
         drop(mapped);
         self.status_readback.unmap();
+        if module_failures?.iter().any(|&failed| failed != 0) {
+            return Err(GpuTypeCheckError::Gpu(anyhow::anyhow!(
+                "a module step program ran out of spins at a barrier"
+            )));
+        }
         // When an error ended call inference, the passes after it ran on facts
         // it did not finish, so their errors can follow from the stop. Report
         // the status that ended it.

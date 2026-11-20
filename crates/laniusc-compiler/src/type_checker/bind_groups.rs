@@ -144,7 +144,7 @@ impl GpuTypeChecker {
         let module_record_family_flag = typecheck_graph.u32_buffer("module_record_family_flag")?;
         let module_record_prefix = typecheck_graph.u32_buffer("module_record_prefix")?;
         let module_record_scan_workspace = typecheck_graph
-            .prefix_scan_workspace(compiler_graph::MODULE_RECORD_SCAN_RESOURCES.workspace())?;
+            .prefix_scan_workspace(compiler_graph::MODULE_RECORD_SCAN_WORKSPACE)?;
         let module_value_scan_workspace =
             typecheck_graph.prefix_scan_workspace(compiler_graph::MODULE_VALUE_SCAN_WORKSPACE)?;
         let decl_type_key_prefix = typecheck_graph.u32_buffer("decl_type_key_prefix")?;
@@ -328,7 +328,14 @@ impl GpuTypeChecker {
         resources.buffer("hir_active_count", &hir_active_count);
         register_hir_resources(&mut resources, hir_items);
         resources.buffer("status", &self.status_buf);
-        resources.buffer("status_readback", &self.status_readback);
+        let status_readback_words: LaniusBuffer<u32> =
+            self.status_readback.subrange(0, 16, 4).map_err(anyhow::Error::msg)?;
+        let module_program_slots = super::module_path::MODULE_PROGRAM_SLOTS;
+        let module_program_failed: LaniusBuffer<u32> = self.status_readback
+            .subrange(16, (module_program_slots * 4) as u64, module_program_slots)
+            .map_err(anyhow::Error::msg)?;
+        resources.buffer("status_readback", &status_readback_words);
+        resources.buffer("module_step_program_failed", &module_program_failed);
         resources.buffer("status_prior", &self.status_prior);
         resources.buffer("call_inference_state", &self.call_inference_state);
         resources.buffer("call_inference_round", &self.call_inference_round);
@@ -463,7 +470,7 @@ impl GpuTypeChecker {
             &self.status_buf,
             0,
             "status_readback",
-            &self.status_readback,
+            &status_readback_words,
             0,
             16,
         )?;
@@ -494,7 +501,6 @@ impl GpuTypeChecker {
                 source_file_capacity,
                 token_capacity,
                 hir_node_capacity,
-                hir_active_count_buf: &hir_active_count,
                 hir_active_dispatch_args: &hir_active_dispatch_args,
                 method_lookup_dispatch_args: &method_lookup_dispatch_args,
                 hir_items,

@@ -5,8 +5,6 @@ use super::{super::*, buffers::Buffers, inputs::CreateInputs, layout::Layout};
 /// The module index maps canonical module keys, resolves imports into module ids, and
 /// validates the import graph before declaration lookup consumes it.
 pub(in crate::type_checker) struct ModuleIndex {
-    pub(in crate::type_checker) scatter_module_records: ComputeOperation,
-    pub(in crate::type_checker) module_record_params: LaniusBuffer<ModuleRecordScatterParams>,
     pub(in crate::type_checker) clear_module_lookup: ComputeOperation,
     pub(in crate::type_checker) build_module_keys: ComputeOperation,
     pub(in crate::type_checker) module_dispatch_params: LaniusBuffer<CountDispatchParams>,
@@ -23,7 +21,6 @@ pub(in crate::type_checker) struct ModuleIndex {
         Option<ComputeInvocation>,
     pub(in crate::type_checker) resolve_dependency_imports_call_collection:
         Option<ComputeInvocation>,
-    pub(in crate::type_checker) scatter_import_records: ComputeOperation,
     pub(in crate::type_checker) resolve_imports: ComputeOperation,
     pub(in crate::type_checker) clear_import_edge_set: ComputeOperation,
     pub(in crate::type_checker) build_import_edge_set: ComputeOperation,
@@ -43,30 +40,6 @@ pub(in crate::type_checker) fn create_module_index(
     buffers: &Buffers,
     resources: &ResourceMap<'_>,
 ) -> Result<ModuleIndex> {
-    let module_record_params = uniform_from_val(
-        device,
-        "type_check.modules.module_records.params",
-        &ModuleRecordScatterParams {
-            hir_node_capacity: inputs.hir_node_capacity,
-            token_capacity: inputs.token_capacity,
-            module_capacity: layout.module_capacity_u32,
-            reserved: 0,
-        },
-    );
-    let mut module_record_resources = resources.clone();
-    module_record_resources.buffer("gParams", &module_record_params);
-    // Module rows are a compaction scatter over the active dense-HIR domain.
-    // Dispatching over the capacity here would reinterpret stale flag/prefix
-    // rows beyond the current compact HIR as live records on daemon reuse.
-    let scatter_module_records = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &module_record_resources,
-        passes,
-        MODULE_RECORDS_SCATTER,
-        inputs.hir_active_dispatch_args,
-    )?;
-
     let module_lookup_params = uniform_from_val(
         device,
         "type_check.modules.module_lookup.params",
@@ -126,15 +99,6 @@ pub(in crate::type_checker) fn create_module_index(
         passes,
         MODULES_VALIDATE,
         &buffers.module_dispatch_args,
-    )?;
-
-    let scatter_import_records = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        resources,
-        passes,
-        IMPORT_RECORDS_SCATTER,
-        inputs.hir_active_dispatch_args,
     )?;
 
     let resolve_import_params = uniform_from_val(
@@ -293,8 +257,6 @@ pub(in crate::type_checker) fn create_module_index(
     )?;
 
     Ok(ModuleIndex {
-        scatter_module_records,
-        module_record_params,
         clear_module_lookup,
         build_module_keys,
         module_dispatch_params,
@@ -307,7 +269,6 @@ pub(in crate::type_checker) fn create_module_index(
         clear_dependency_module_lookup_call_collection,
         build_dependency_module_lookup_call_collection,
         resolve_dependency_imports_call_collection,
-        scatter_import_records,
         resolve_imports,
         clear_import_edge_set,
         build_import_edge_set,

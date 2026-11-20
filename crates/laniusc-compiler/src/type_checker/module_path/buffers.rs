@@ -157,8 +157,6 @@ module_path_buffers! {
     pub(super) path_prefix_id_a: LaniusBuffer<u32>,
     pub(super) path_prefix_id_b: LaniusBuffer<u32>,
     pub(super) path_prefix_table_state: LaniusBuffer<u32>,
-    pub(super) path_prefix_row_dispatch_args: LaniusBuffer<u32>,
-    pub(super) path_prefix_round_dispatch_args: LaniusBuffer<u32>,
     pub(super) path_owner_hir: LaniusBuffer<u32>,
     pub(super) path_call_hir: LaniusBuffer<u32>,
     pub(super) path_owner_token: LaniusBuffer<u32>,
@@ -382,11 +380,7 @@ impl Buffers {
         // Canonical ids are path-prefix table slots. After prefix interning is
         // finalized, reuse that exact allocation as the direct module lookup.
         let module_by_canonical_id = graph.u32_buffer("module_by_canonical_id")?;
-        let path_prefix_round_count =
-            u32::BITS - token_capacity.max(1).saturating_sub(1).leading_zeros();
         module_storage_buffers!(graph;
-            path_prefix_row_dispatch_args [INDIRECT]: 3;
-            path_prefix_round_dispatch_args [INDIRECT]: path_prefix_round_count.max(1) as usize * 3;
         );
         let path_owner_hir = graph.u32_buffer("path_owner_hir")?;
         let path_call_hir = graph.u32_buffer("path_call_hir")?;
@@ -509,8 +503,6 @@ impl Buffers {
             path_prefix_id_a,
             path_prefix_id_b,
             path_prefix_table_state,
-            path_prefix_row_dispatch_args,
-            path_prefix_round_dispatch_args,
             path_owner_hir,
             path_call_hir,
             path_owner_token,
