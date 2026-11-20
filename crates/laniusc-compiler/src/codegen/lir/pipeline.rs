@@ -111,9 +111,10 @@ impl TargetStage {
         page_id: usize,
         timer: &mut Option<&mut GpuTimer>,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_count_page(encoder, page_id, timer, job),
+            Self::X86_64(stage) => stage.record_count_page(encoder, page_id, timer, job, program_job),
             Self::Wasm(stage) => stage.record_count_page(encoder, page_id),
         }
     }
@@ -159,9 +160,10 @@ impl TargetStage {
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_between_target_pages(encoder, job),
+            Self::X86_64(stage) => stage.record_between_target_pages(encoder, job, program_job),
             Self::Wasm(stage) => stage.record_between_target_pages(encoder, object),
         }
     }
@@ -178,9 +180,10 @@ impl TargetStage {
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
         sized_job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_after_target_pages(encoder, object, sized_job),
+            Self::X86_64(stage) => stage.record_after_target_pages(encoder, object, sized_job, program_job),
             Self::Wasm(stage) => stage.record_after_target_pages(encoder, object),
         }
     }
@@ -1134,7 +1137,7 @@ impl GpuLoweringPipeline {
     /// direct operations whose grids they bound (`JobSized`).
     // Launch sizing uses the job's bounds before the workspace rounds them
     // up for reuse. The shaders still clamp counts to allocated capacities.
-    fn optimizer_job_capacities(
+    fn program_job_capacities(
         &self,
         bounds: super::semantics::LoweringJobBounds,
     ) -> Option<LoweringCapacities> {
@@ -1150,6 +1153,8 @@ impl GpuLoweringPipeline {
         Some(LoweringCapacities {
             semantic_instructions: capacities.semantic_instructions
                 .max(bounds.output_demand.semantic_instructions),
+            target_instructions: capacities.target_instructions
+                .max(bounds.output_demand.target_instructions),
             ..capacities
         })
     }
@@ -1268,12 +1273,13 @@ impl GpuLoweringPipeline {
         object: bool,
         timer: &mut Option<&mut GpuTimer>,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(self.target.compiler_phase());
         }
-        self.target.record_before_target_pages(encoder, job)?;
+        self.target.record_before_target_pages(encoder, program_job)?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.layout.done");
         }
@@ -1283,7 +1289,7 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, self.target.lowering_timer_label());
         }
-        self.target.record_between_target_pages(encoder, object, job)?;
+        self.target.record_between_target_pages(encoder, object, job, program_job)?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.artifact_layout.done");
         }
@@ -1294,6 +1300,7 @@ impl GpuLoweringPipeline {
             encoder,
             object,
             job.filter(|_| job_sized_direct_ops()),
+            program_job,
         )?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, self.target.emission_timer_label());
@@ -1334,17 +1341,19 @@ impl GpuLoweringPipeline {
         let execution_rank_pairs = self
             .capacities
             .job_execution_rank_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+        let program_job = self.program_job_capacities(bounds);
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
             Some(split),
             execution_rank_pairs,
             self.sized_job(job),
+            program_job,
         )?;
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
-            self.optimizer_job_capacities(bounds),
+            program_job,
             true,
         )?;
         split.submit_prefix(
@@ -1359,12 +1368,12 @@ impl GpuLoweringPipeline {
         }
         for page_id in 0..self.target.count_page_count() {
             self.target
-                .record_count_page(encoder, page_id, &mut timer, self.smaller_job(job))?;
+                .record_count_page(encoder, page_id, &mut timer, self.smaller_job(job), program_job)?;
         }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
-        self.record_target_pages(encoder, false, &mut timer, self.smaller_job(job))?;
+        self.record_target_pages(encoder, false, &mut timer, self.smaller_job(job), program_job)?;
         self.record_status_readback(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);
@@ -1420,17 +1429,19 @@ impl GpuLoweringPipeline {
         let execution_rank_pairs = self
             .capacities
             .job_execution_rank_jump_pairs(bounds.hir_rows, self.target.lowering_target());
+        let program_job = self.program_job_capacities(bounds);
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
             Some(split),
             execution_rank_pairs,
             self.sized_job(job),
+            program_job,
         )?;
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
-            self.optimizer_job_capacities(bounds),
+            program_job,
             true,
         )?;
         split.submit_prefix(
@@ -1445,12 +1456,12 @@ impl GpuLoweringPipeline {
         }
         for page_id in 0..self.target.count_page_count() {
             self.target
-                .record_count_page(encoder, page_id, &mut timer, self.smaller_job(job))?;
+                .record_count_page(encoder, page_id, &mut timer, self.smaller_job(job), program_job)?;
         }
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.analysis_count.done");
         }
-        self.record_target_pages(encoder, true, &mut timer, self.smaller_job(job))?;
+        self.record_target_pages(encoder, true, &mut timer, self.smaller_job(job), program_job)?;
         self.record_status_readback(encoder);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::ArtifactEmission);

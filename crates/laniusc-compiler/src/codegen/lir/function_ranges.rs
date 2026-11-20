@@ -135,9 +135,9 @@ impl GpuTargetFunctionTable {
         encoder: &mut wgpu::CommandEncoder,
         job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        let rows = job.map_or(self.semantic_capacity.max(self.function_capacity), |job| {
-            job.semantic_instructions.max(job.hir_nodes)
-        });
+        // The semantic-to-target function index is cleared over its full allocation.
+        let rows = job.map_or(self.semantic_capacity, |job| job.semantic_instructions)
+            .max(self.function_capacity);
         self.programs[step_program_group_variant(u64::from(rows))].record(encoder)
     }
 }

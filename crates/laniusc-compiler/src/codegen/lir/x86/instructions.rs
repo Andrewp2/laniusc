@@ -720,6 +720,7 @@ impl GpuX86LirStage {
         page_id: usize,
         timer: &mut Option<&mut GpuTimer>,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         if page_id == 0 {
             match job {
@@ -756,7 +757,7 @@ impl GpuX86LirStage {
             stamp(timer, encoder, "codegen.x86.if_convert.done");
             self.allocation_prepare.record(encoder)?;
             self.allocation_words.record(encoder)?;
-            let rows = job.map_or(self.spill_rows, |job| {
+            let rows = program_job.map_or(self.spill_rows, |job| {
                 job.semantic_instructions.max(job.local_capacity()).max(job.hir_nodes)
             });
             self.spill_layout[step_program_group_variant(u64::from(rows))].record(encoder)?;
@@ -801,8 +802,9 @@ impl GpuX86LirStage {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.artifact.record_layout_after_byte_counts(encoder, job)?;
+        self.artifact.record_layout_after_byte_counts(encoder, program_job)?;
         self.artifact.record_clear(encoder, job)?;
         Ok(())
     }
@@ -823,6 +825,7 @@ impl GpuX86LirStage {
         encoder: &mut wgpu::CommandEncoder,
         object: bool,
         sized_job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         self.artifact
             .record_extra_emits(encoder, self.pages.len())?;
@@ -830,7 +833,7 @@ impl GpuX86LirStage {
             self.object
                 .as_ref()
                 .context("x86 object projection was not allocated for this lowering job")?
-                .record_projection(encoder, sized_job)
+                .record_projection(encoder, sized_job, program_job)
         } else {
             self.artifact.record_length_readback(encoder)
         }
@@ -853,7 +856,7 @@ impl GpuX86LirStage {
     fn record_counts(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         let mut timer = None;
         for page_id in 0..self.count_pages.len() {
-            self.record_count_page(encoder, page_id, &mut timer, None)?;
+            self.record_count_page(encoder, page_id, &mut timer, None, None)?;
         }
         Ok(())
     }

@@ -406,8 +406,9 @@ impl GpuX86ObjectStage {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        let rows = job.map_or(self.runtime_relocation_capacity, |job| {
+        let rows = program_job.map_or(self.runtime_relocation_capacity, |job| {
             job.target_instructions.max(job.semantic_instructions)
         });
         self.compact_records[step_program_group_variant(u64::from(rows))].record(encoder)?;

@@ -162,7 +162,9 @@ impl HostService {
 pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 10;
 
 pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
-pub(super) const SCHEDULE_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
+pub(super) const SEMANTIC_FUNCTION_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
+pub(super) const SEMANTIC_RANK_PROGRAM_SLOT: u32 = SEMANTIC_FUNCTION_PROGRAM_SLOT + 1;
+pub(super) const SCHEDULE_PROGRAM_SLOT: u32 = SEMANTIC_RANK_PROGRAM_SLOT + 1;
 pub(super) const TARGET_PAGE_PROGRAM_SLOT: u32 = SCHEDULE_PROGRAM_SLOT + 1;
 pub(super) const TARGET_FUNCTION_PROGRAM_SLOT: u32 = TARGET_PAGE_PROGRAM_SLOT + 1;
 pub(super) const X86_SPILL_PROGRAM_SLOT: u32 = TARGET_FUNCTION_PROGRAM_SLOT + 1;
@@ -1750,17 +1752,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(capacities.parameters),
     ))?;
-    let semantic_param_scan_local = graph.add_resource(workspace(
-        "lir.semantic.param_scan_local",
-        ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<u32>(capacities.parameters),
-    ))?;
-    let param_scan_blocks = capacities.parameters.max(1).div_ceil(256);
-    let semantic_param_scan_block_sum = graph.add_resource(workspace(
-        "lir.semantic.param_scan_block_sum",
-        ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<u32>(param_scan_blocks),
-    ))?;
     let semantic_const_function_by_root = graph.add_resource(workspace(
         "lir.semantic.const_function_by_root",
         ResourceDomain::HirNodes,
@@ -2026,6 +2017,19 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let step_program_sync = graph.add_resource(workspace(
+        "step_program_sync",
+        ResourceDomain::OptimizationNodes,
+        LoweringCapacities::bytes::<u32>(
+            (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
+                * LOWERING_PROGRAM_SLOTS) as u32,
+        ),
+    ))?;
+    let semantic_scan_group_sums = graph.add_resource(workspace(
+        "lir.semantic.scan_group_sums",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS),
+    ))?;
     let execution_rank_link_a = graph.add_resource(workspace(
         "lir.semantic.execution_rank_link_a",
         ResourceDomain::HirNodes,
@@ -2059,16 +2063,6 @@ fn lowering_compiler_graph_builder(
     let semantic_scan_blocks = capacities.hir_nodes.max(1).div_ceil(256);
     let semantic_scan_block_sum = graph.add_resource(workspace(
         "lir.semantic.scan_block_sum",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
-    let semantic_function_scan_local = graph.add_resource(workspace(
-        "lir.semantic.function_scan_local",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
-    ))?;
-    let semantic_function_scan_block_sum = graph.add_resource(workspace(
-        "lir.semantic.function_scan_block_sum",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
@@ -2602,60 +2596,21 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.function_scan.local",
+        name: "lir.semantic.index_functions_and_parameters",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_input", semantic_function_flags),
-            PassAccess::write("scan_local_prefix", semantic_function_scan_local),
-            PassAccess::write("scan_block_sum", semantic_function_scan_block_sum),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.function_scan.apply",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_local_prefix", semantic_function_scan_local),
-            PassAccess::read("scan_block_sum", semantic_function_scan_block_sum),
-            PassAccess::write("scan_output_prefix", semantic_function_prefix),
-            PassAccess::write("scan_total", semantic_function_total),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.functions.param_mark",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
+            PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_param_count", hir_param_count),
             PassAccess::read("compact_params", hir_params),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
-            PassAccess::write("semantic_param_flag", semantic_param_flags),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.param_scan.local",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_param_count),
-            PassAccess::read("scan_input", semantic_param_flags),
-            PassAccess::write("scan_local_prefix", semantic_param_scan_local),
-            PassAccess::write("scan_block_sum", semantic_param_scan_block_sum),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.param_scan.apply",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_param_count),
-            PassAccess::read("scan_local_prefix", semantic_param_scan_local),
-            PassAccess::read("scan_block_sum", semantic_param_scan_block_sum),
-            PassAccess::write("scan_output_prefix", semantic_param_prefix),
-            PassAccess::write("scan_total", semantic_param_total),
+            PassAccess::write("semantic_function_prefix", semantic_function_prefix),
+            PassAccess::write("semantic_function_total", semantic_function_total),
+            PassAccess::initialize_read_write("semantic_param_flag", semantic_param_flags),
+            PassAccess::write("semantic_param_prefix", semantic_param_prefix),
+            PassAccess::write("semantic_param_total", semantic_param_total),
+            PassAccess::initialize_read_write("scan_group_sums", semantic_scan_group_sums),
+            PassAccess::initialize_read_write("step_program_sync", step_program_sync),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -2985,36 +2940,19 @@ fn lowering_compiler_graph_builder(
             PassAccess::write("execution_rank", execution_rank_a),
         ],
     })?;
-    let rank_pairs = capacities.execution_rank_jump_pairs();
-    graph.add_repeated_region(
-        rank_pairs,
-        vec![
-            PassDesc {
-                name: "lir.semantic.execution_rank.step_a_to_b",
-                phase: CompilerPhase::SemanticLowering,
-                dispatch_domain: ResourceDomain::HirNodes,
-                accesses: vec![
-                    PassAccess::read("compact_hir_count", hir_count),
-                    PassAccess::read("execution_rank_link_in", execution_rank_link_a),
-                    PassAccess::read("execution_rank_in", execution_rank_a),
-                    PassAccess::write("execution_rank_link_out", execution_rank_link_b),
-                    PassAccess::write("execution_rank_out", execution_rank_b),
-                ],
-            },
-            PassDesc {
-                name: "lir.semantic.execution_rank.step_b_to_a",
-                phase: CompilerPhase::SemanticLowering,
-                dispatch_domain: ResourceDomain::HirNodes,
-                accesses: vec![
-                    PassAccess::read("compact_hir_count", hir_count),
-                    PassAccess::read("execution_rank_link_in", execution_rank_link_b),
-                    PassAccess::read("execution_rank_in", execution_rank_b),
-                    PassAccess::write("execution_rank_link_out", execution_rank_link_a),
-                    PassAccess::write("execution_rank_out", execution_rank_a),
-                ],
-            },
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.propagate_execution_ranks",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::HirNodes,
+        accesses: vec![
+            PassAccess::read("compact_hir_count", hir_count),
+            PassAccess::read_write("execution_rank_link_a", execution_rank_link_a),
+            PassAccess::read_write("execution_rank_a", execution_rank_a),
+            PassAccess::initialize_read_write("execution_rank_link_b", execution_rank_link_b),
+            PassAccess::initialize_read_write("execution_rank_b", execution_rank_b),
+            PassAccess::read_write("step_program_sync", step_program_sync),
         ],
-    )?;
+    })?;
 
     graph.add_pass(PassDesc {
         name: "lir.semantic.count",
@@ -3749,14 +3687,6 @@ fn lowering_compiler_graph_builder(
         "lir.opt.block_region",
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
-    ))?;
-    let step_program_sync = graph.add_resource(workspace(
-        "step_program_sync",
-        ResourceDomain::OptimizationNodes,
-        LoweringCapacities::bytes::<u32>(
-            (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
-                * LOWERING_PROGRAM_SLOTS) as u32,
-        ),
     ))?;
     let opt_scan_group_sums = graph.add_resource(workspace(
         "lir.opt.scan_group_sums",
@@ -8598,7 +8528,6 @@ mod tests {
                 graph.resource_id("lir.opt.operands"),
                 "identity OptIR must take ownership of semantic operand storage"
             );
-            assert_hop_jump_region(&graph, "lir.semantic.execution_rank", capacities.hir_nodes);
             assert_hop_jump_region(
                 &graph,
                 "lir.opt.dominators.depth",
@@ -8718,12 +8647,12 @@ mod tests {
             ("lir.semantic.sort_schedule", "codegen/lir/scheduling/sort_semantic_schedule"),
             ("lir.semantic.project", "codegen/lir/semantics/instructions/project_semantic_values"),
             (
-                "lir.semantic.execution_rank.step_a_to_b",
+                "lir.semantic.propagate_execution_ranks",
                 "codegen/lir/semantics/instructions/propagate_semantic_execution_ranks",
             ),
             (
-                "lir.semantic.execution_rank.step_b_to_a",
-                "codegen/lir/semantics/instructions/propagate_semantic_execution_ranks",
+                "lir.semantic.index_functions_and_parameters",
+                "codegen/lir/semantics/functions/index_semantic_functions_and_parameters",
             ),
             (
                 "lir.semantic.value_uses.clear",

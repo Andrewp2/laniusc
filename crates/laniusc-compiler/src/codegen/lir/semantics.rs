@@ -7,7 +7,8 @@ use super::{
     counted_scans::{GpuResidentExclusiveScan, GraphScanContract},
     dispatch_sizing::JobSized,
     lowering_ir::{
-        LoweringCapacities,
+        LOWERING_PROGRAM_SLOTS, LoweringCapacities, SEMANTIC_FUNCTION_PROGRAM_SLOT,
+        SEMANTIC_RANK_PROGRAM_SLOT,
         LoweringStatus,
         SemanticLirAggregateElement,
         SemanticLirCallArg,
@@ -32,7 +33,10 @@ use crate::{
             ResourceId,
         },
         kernels::KernelRegistry,
-        operations::ComputeOperation,
+        operations::{
+            ComputeOperation, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+            step_program_group_counts, step_program_group_variant,
+        },
         passes_core::PassData,
         resource_registry::ResourceMap,
         timer::GpuTimer,
@@ -210,7 +214,6 @@ pub(super) struct ScanParams {
 struct SemanticPasses {
     status_clear: PassData,
     project: PassData,
-    execution_rank_step: PassData,
     value_uses_clear: PassData,
     value_uses_mark: PassData,
     count: PassData,
@@ -224,7 +227,6 @@ struct SemanticPasses {
     strings: PassData,
     function_mark: PassData,
     function_templates: PassData,
-    function_param_mark: PassData,
     function_layout_clear: PassData,
     function_layout_collect: PassData,
     function_layout_enum_variants: PassData,
@@ -244,7 +246,6 @@ impl SemanticPasses {
         Self {
             status_clear: load("codegen/lir/semantics/instructions/clear_lowering_status"),
             project: load("codegen/lir/semantics/instructions/project_semantic_values"),
-            execution_rank_step: load("codegen/lir/semantics/instructions/propagate_semantic_execution_ranks"),
             value_uses_clear: load("codegen/lir/semantics/instructions/clear_semantic_value_uses"),
             value_uses_mark: load("codegen/lir/semantics/instructions/mark_semantic_value_uses"),
             count: load("codegen/lir/semantics/instructions/count_semantic_instructions"),
@@ -258,7 +259,6 @@ impl SemanticPasses {
             strings: load("codegen/lir/semantics/instructions/write_semantic_string_records"),
             function_mark: load("codegen/lir/semantics/functions/mark_semantic_functions"),
             function_templates: load("codegen/lir/semantics/functions/mark_generic_function_templates"),
-            function_param_mark: load("codegen/lir/semantics/functions/mark_semantic_parameters"),
             function_layout_clear: load("codegen/lir/semantics/layouts/clear_semantic_aggregate_layouts"),
             function_layout_collect: load("codegen/lir/semantics/layouts/index_semantic_aggregate_declarations"),
             function_layout_enum_variants: load(
@@ -1022,9 +1022,6 @@ mod sem_extent {
     pub(super) fn hir(c: LoweringCapacities) -> u32 {
         c.hir_nodes.max(1)
     }
-    pub(super) fn parameters_rows(c: LoweringCapacities) -> u32 {
-        c.parameters
-    }
     pub(super) fn parameters(c: LoweringCapacities) -> u32 {
         c.parameters.max(1)
     }
@@ -1058,9 +1055,7 @@ struct GpuSemanticLoweringOperations {
     status_clear: ComputeOperation,
     function_mark: JobSized,
     function_templates: JobSized,
-    function_param_mark: JobSized,
-    function_param_scan: GpuResidentExclusiveScan,
-    function_scan: GpuResidentExclusiveScan,
+    index_functions_and_parameters: [StepProgramOperation; 2],
     local_mark: JobSized,
     local_scan: GpuResidentExclusiveScan,
     function_layout_clear: JobSized,
@@ -1075,8 +1070,7 @@ struct GpuSemanticLoweringOperations {
     place_clear: JobSized,
     place_mark: JobSized,
     place_addresses: JobSized,
-    execution_rank_a_to_b: JobSized,
-    execution_rank_b_to_a: JobSized,
+    execution_rank: [[StepProgramOperation; 3]; 2],
     value_uses_clear: ComputeOperation,
     value_uses_mark: JobSized,
     count: JobSized,
@@ -1103,6 +1097,7 @@ pub(crate) struct GpuSemanticLoweringStage {
     _function_params: LaniusBuffer<SemanticFunctionParams>,
     template_params: LaniusBuffer<SemanticTemplateParams>,
     execution_rank_pairs: u32,
+    hir_capacity: u32,
     total: LaniusBuffer<u32>,
     core: LaniusBuffer<SemanticLirCore>,
     operands: LaniusBuffer<SemanticLirOperands>,
@@ -1270,10 +1265,6 @@ impl GpuSemanticLoweringStage {
         let call_arg_counts_by_hir = alias("lir.semantic.call_arg_counts_by_hir", hir_nodes)?;
         let call_arg_prefix_by_hir = alias("lir.semantic.call_arg_prefix_by_hir", hir_nodes)?;
         let function_ids = alias("semantic.function_ids", hir_nodes)?;
-        let function_flags = alias("lir.semantic.function_flags", hir_nodes)?;
-        let function_prefix = alias("lir.semantic.function_prefix", hir_nodes)?;
-        let param_flags = alias("lir.semantic.param_flags", capacities.parameters)?;
-        let param_prefix = alias("lir.semantic.param_prefix", capacities.parameters)?;
         let local_flags = alias("lir.semantic.local_flags", hir_nodes)?;
         let local_prefix = alias("lir.semantic.local_prefix", hir_nodes)?;
         let counts = alias("lir.semantic.count_by_hir", hir_nodes)?;
@@ -1291,14 +1282,6 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.call_arg_scan.apply",
                 passes.scan_apply.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.execution_rank.step_a_to_b",
-                passes.execution_rank_step.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.execution_rank.step_b_to_a",
-                passes.execution_rank_step.reflection.as_ref(),
             ),
             (
                 "lir.semantic.value_uses.clear",
@@ -1340,18 +1323,6 @@ impl GpuSemanticLoweringStage {
                 passes.function_templates.reflection.as_ref(),
             ),
             (
-                "lir.semantic.functions.param_mark",
-                passes.function_param_mark.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.param_scan.local",
-                passes.scan_local.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.param_scan.apply",
-                passes.scan_apply.reflection.as_ref(),
-            ),
-            (
                 "lir.semantic.functions.layout.clear",
                 passes.function_layout_clear.reflection.as_ref(),
             ),
@@ -1362,14 +1333,6 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.functions.layout.words",
                 passes.function_layout_words.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.function_scan.local",
-                passes.scan_local.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.function_scan.apply",
-                passes.scan_apply.reflection.as_ref(),
             ),
             (
                 "lir.semantic.functions.scatter",
@@ -1579,50 +1542,6 @@ impl GpuSemanticLoweringStage {
             }};
         }
 
-        let function_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            &graph,
-            workspace,
-            &allocations,
-            GraphScanContract {
-                local_pass: "lir.semantic.function_scan.local",
-                apply_pass: "lir.semantic.function_scan.apply",
-                count: "hir.count",
-                input: "lir.semantic.function_flags",
-                local: "lir.semantic.function_scan_local",
-                block_sum: "lir.semantic.function_scan_block_sum",
-                output: "lir.semantic.function_prefix",
-                total: "lir.semantic.function_total",
-            },
-            hir_nodes,
-            hir.count,
-            &function_flags,
-            &function_prefix,
-            &function_count,
-        )?;
-        let function_param_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            &graph,
-            workspace,
-            &allocations,
-            GraphScanContract {
-                local_pass: "lir.semantic.param_scan.local",
-                apply_pass: "lir.semantic.param_scan.apply",
-                count: "hir.param_count",
-                input: "lir.semantic.param_flags",
-                local: "lir.semantic.param_scan_local",
-                block_sum: "lir.semantic.param_scan_block_sum",
-                output: "lir.semantic.param_prefix",
-                total: "lir.semantic.param_total",
-            },
-            capacities.parameters,
-            hir.param_count,
-            &param_flags,
-            &param_prefix,
-            &param_count,
-        )?;
         let local_scan = GpuResidentExclusiveScan::new(
             device,
             kernels,
@@ -1690,18 +1609,41 @@ impl GpuSemanticLoweringStage {
             &total,
         )?;
 
-        let execution_rank_a_to_b = JobSized::new(direct_uniform!(
-            "lir.semantic.execution_rank.step_a_to_b",
-            &passes.execution_rank_step,
-            &count_params,
-            hir_nodes,
-        )?, sem_extent::hir, capacities)?;
-        let execution_rank_b_to_a = JobSized::new(direct_uniform!(
-            "lir.semantic.execution_rank.step_b_to_a",
-            &passes.execution_rank_step,
-            &count_params,
-            hir_nodes,
-        )?, sem_extent::hir, capacities)?;
+        let sync = alias("step_program_sync", (STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS) as u32)?;
+        let variant = |program_resources: &ResourceMap<'_>, name, key, slot, groups, options| {
+            StepProgramOperation::new(
+                device, &context, program_resources, name, kernels.kernel(key), &sync,
+                slot, groups, options,
+            )
+        };
+        let [small, large] = step_program_group_counts();
+        let mut function_resources = resources.clone();
+        function_resources.buffer("gParams", &function_params);
+        let mut rank_resources = resources.clone();
+        rank_resources.buffer("gParams", &count_params);
+        let index_functions = |groups| {
+            variant(
+                &function_resources,
+                "lir.semantic.index_functions_and_parameters",
+                "codegen/lir/semantics/functions/index_semantic_functions_and_parameters",
+                SEMANTIC_FUNCTION_PROGRAM_SLOT,
+                groups, 0,
+            )
+        };
+        let index_functions_and_parameters = [index_functions(small)?, index_functions(large)?];
+        let rank_programs = |groups| -> Result<_> {
+            let rank = |pairs| {
+                variant(
+                    &rank_resources,
+                    "lir.semantic.propagate_execution_ranks",
+                    "codegen/lir/semantics/instructions/propagate_semantic_execution_ranks",
+                    SEMANTIC_RANK_PROGRAM_SLOT,
+                    groups, pairs,
+                )
+            };
+            Ok([rank(1)?, rank(2)?, rank(3)?])
+        };
+        let execution_rank = [rank_programs(small)?, rank_programs(large)?];
         let operations = GpuSemanticLoweringOperations {
             status_clear: direct("lir.status.clear", &passes.status_clear, 1)?,
             function_mark: JobSized::new(direct_uniform!(
@@ -1716,14 +1658,7 @@ impl GpuSemanticLoweringStage {
                 &template_params,
                 hir_nodes,
             )?, sem_extent::hir, capacities)?,
-            function_param_mark: JobSized::new(direct_uniform!(
-                "lir.semantic.functions.param_mark",
-                &passes.function_param_mark,
-                &function_params,
-                capacities.parameters,
-            )?, sem_extent::parameters_rows, capacities)?,
-            function_param_scan,
-            function_scan,
+            index_functions_and_parameters,
             local_mark: JobSized::new(direct_uniform!(
                 "lir.semantic.locals.mark",
                 &passes.local_mark,
@@ -1791,8 +1726,7 @@ impl GpuSemanticLoweringStage {
                 "lir.semantic.place.addresses", &passes.place_addresses, &function_params,
                 capacities.parameters.max(capacities.local_capacity()).max(1),
             )?, sem_extent::place_addresses, capacities)?,
-            execution_rank_a_to_b,
-            execution_rank_b_to_a,
+            execution_rank,
             value_uses_clear: direct_uniform!(
                 "lir.semantic.value_uses.clear",
                 &passes.value_uses_clear,
@@ -1861,6 +1795,7 @@ impl GpuSemanticLoweringStage {
             _function_params: function_params,
             template_params,
             execution_rank_pairs: capacities.execution_rank_jump_pairs(),
+            hir_capacity: hir_nodes,
             total,
             core,
             operands,
@@ -1943,6 +1878,7 @@ impl GpuSemanticLoweringStage {
             None,
             self.execution_rank_pairs,
             None,
+            None,
         )
     }
 
@@ -1958,6 +1894,7 @@ impl GpuSemanticLoweringStage {
         split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
         execution_rank_pairs: u32,
         job: Option<LoweringCapacities>,
+        program_job: Option<LoweringCapacities>,
     ) -> Result<()> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -1991,9 +1928,9 @@ impl GpuSemanticLoweringStage {
         }
         operations.function_layout_validate.record(encoder)?;
         operations.function_templates.record_job(encoder, job)?;
-        operations.function_scan.record(encoder)?;
-        operations.function_param_mark.record_job(encoder, job)?;
-        operations.function_param_scan.record(encoder)?;
+        let rows = program_job.map_or(self.hir_capacity, |job| job.hir_nodes.max(job.parameters));
+        let program_variant = step_program_group_variant(u64::from(rows));
+        operations.index_functions_and_parameters[program_variant].record(encoder)?;
         stamp!("lowering.semantic.functions.scan.done");
         operations.local_mark.record_job(encoder, job)?;
         operations.local_scan.record(encoder)?;
@@ -2009,10 +1946,8 @@ impl GpuSemanticLoweringStage {
         operations.place_clear.record_job(encoder, job)?;
         operations.place_mark.record_job(encoder, job)?;
         stamp!("lowering.semantic.locals.scatter.done");
-        for _ in 0..execution_rank_pairs.min(self.execution_rank_pairs) {
-            operations.execution_rank_a_to_b.record_job(encoder, job)?;
-            operations.execution_rank_b_to_a.record_job(encoder, job)?;
-        }
+        let pairs = execution_rank_pairs.min(self.execution_rank_pairs) as usize;
+        operations.execution_rank[program_variant][pairs - 1].record(encoder)?;
         stamp!("lowering.semantic.execution_rank.done");
         operations.count.record_job(encoder, job)?;
         operations.instruction_scan.record(encoder)?;
@@ -2029,7 +1964,7 @@ impl GpuSemanticLoweringStage {
         operations.strings.record_job(encoder, job)?;
         stamp!("lowering.semantic.strings.done");
         if let Some(sorter) = &self.semantic_sorter {
-            sorter.record_for_job(encoder, job.map(|job| job.semantic_instructions))?;
+            sorter.record_for_job(encoder, program_job.map(|job| job.semantic_instructions))?;
         }
         stamp!("lowering.semantic.schedule.done");
         Ok(())
