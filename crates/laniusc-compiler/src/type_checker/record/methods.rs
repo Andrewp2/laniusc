@@ -39,7 +39,7 @@ impl MethodBindGroups {
             return dependency_phase(encoder, false);
         }
         // The rounds' invocations visit the listed active blocks.
-        self.mark_call_keys.record_as(encoder, METHODS_MARK_CALL_KEYS_INFERENCE.name)?;
+        self.inference.mark_call_keys.record(encoder)?;
         self.inference.mark_call_return_keys.record(encoder)?;
         self.inference.resolve_table.record(encoder)?;
         self.inference.offer_bound_members.record(encoder)?;

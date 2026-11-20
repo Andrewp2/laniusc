@@ -25,6 +25,7 @@ import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.module_lookup;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 import type_checker.symbols.language_symbol_count;
 
 struct Params
@@ -865,12 +866,15 @@ void publish_associated_method_call_for_method_token(uint method_i)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
+    uint lane = linear_thread_id(dtid);
+    uint token = inference_listed_token(lane);
+    if (token < active_token_count() &&
+        valid_token(module_value_path_associated_receiver_token[token]) && inference_item_active(token))
+        publish_associated_method_call_for_method_token(token);
 
-    if (i < active_token_count() && inference_item_active(i))
-        publish_associated_method_call_for_method_token(i);
-
-    if (i < active_compact_hir_count() && inference_item_active(compact_hir_core[i].token_start))
+    uint i = inference_listed_hir_row(lane);
+    if (i < active_compact_hir_count() && compact_hir_core[i].kind == HIR_CALL_EXPR &&
+        inference_item_active(compact_hir_core[i].token_start))
     {
         publish_compact_direct_method_call(i);
         publish_compact_associated_method_call(i);

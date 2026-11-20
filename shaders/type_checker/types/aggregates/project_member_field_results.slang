@@ -203,9 +203,6 @@ bool member_expr_is_call_callee(uint node)
 
 void publish_member_field_chain_for_root(uint member_node)
 {
-    if (!valid_node(member_node) || (compact_hir_core[member_node].kind != HIR_MEMBER_EXPR &&
-        compact_hir_core[member_node].kind != HIR_INDEX_EXPR))
-        return;
     if (member_expr_is_call_callee(member_node))
         return;
 
@@ -339,7 +336,9 @@ void publish_member_field_chain_for_root(uint member_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = inference_listed_hir_row(linear_thread_id(dtid));
-    if (!valid_node(node) || !inference_item_active(compact_hir_core[node].token_start))
-        return;
+    if (!valid_node(node)) return;
+    HirCore core = compact_hir_core[node];
+    if ((core.kind != HIR_MEMBER_EXPR && core.kind != HIR_INDEX_EXPR) ||
+        !inference_item_active(core.token_start)) return;
     publish_member_field_chain_for_root(node);
 }

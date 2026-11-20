@@ -556,8 +556,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
-    if (node >= count || !inference_item_active(compact_hir_core[node].token_start)) return;
-    uint kind = compact_hir_core[node].kind;
+    if (node >= count) return;
+    HirCore core = compact_hir_core[node];
+    uint kind = core.kind;
+    if ((kind != 7u && kind != 8u && kind != 30u && kind != 36u) ||
+        !inference_item_active(core.token_start)) return;
     HirPayload statement = compact_hir_payload[node];
     BindingPlan plan;
     if (kind == 30u || (kind == 7u && statement.a == 7u))

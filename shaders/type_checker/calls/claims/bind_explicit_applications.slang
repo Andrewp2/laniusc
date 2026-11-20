@@ -9,6 +9,7 @@ import type_checker.calls.claim_reference;
 import type_checker.checked_types.checked_type_graph;
 import type_checker.concrete_types.concrete_type_equality;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
 ConstantBuffer<Params> gParams;
@@ -250,7 +251,7 @@ void publish_parent_bindings(uint token, uint owner, bool written_arguments)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 65535u * 256u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (call >= count || compact_hir_core[call].kind != 19u) return;
     if (!inference_item_active(compact_hir_core[call].token_start)) return;

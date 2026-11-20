@@ -201,10 +201,11 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
-    if (call >= hir_count() || !inference_item_active(compact_hir_core[call].token_start)) return;
-    bool record = compact_hir_core[call].kind == 28u;
-    bool unit = compact_hir_core[call].kind == 33u;
-    if (!record && !unit && compact_hir_core[call].kind != 19u) return;
+    if (call >= hir_count()) return;
+    HirCore core = compact_hir_core[call];
+    bool record = core.kind == 28u;
+    bool unit = core.kind == 33u;
+    if ((!record && !unit && core.kind != 19u) || !inference_item_active(core.token_start)) return;
     uint callee = record || unit ? call : compact_hir_payload[call].a;
     if (callee >= hir_count()) return;
     uint kind = compact_hir_core[callee].kind;

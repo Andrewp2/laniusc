@@ -32,7 +32,6 @@ const ARGUMENT_MATCH_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_const_claim_pattern_mask", AccessMode::Write),
 ];
 const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
-    ("call_arg_row_literal_context_mask", AccessMode::Write),
     ("call_generic_claim_callee", AccessMode::Write),
     ("call_generic_claim_slot", AccessMode::Write),
     ("call_generic_claim_type", AccessMode::Write),
@@ -298,7 +297,7 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND: ReflectedCom
             // validate_explicit_constants reads entries below the listed count.
             ("call_explicit_application_list", AccessMode::Write),
         ])
-        .with_indirect_dispatch("explicit_application_dispatch_args");
+        .with_indirect_dispatch("inference_explicit_args");
 pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: ReflectedComputeSpec =
     call_pass!("explicit_applications.validate", HirNodes,
         "type_checker/calls/claims/validate_explicit_applications")

@@ -16,6 +16,10 @@ StructuredBuffer<uint> hir_active_dispatch_args;
 StructuredBuffer<uint> token_active_dispatch_args;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> hir_active_count;
+StructuredBuffer<uint> method_token_hir_dispatch_args;
+StructuredBuffer<uint> explicit_application_dispatch_args;
+RWStructuredBuffer<uint> inference_method_key_args;
+RWStructuredBuffer<uint> inference_explicit_args;
 RWStructuredBuffer<uint> inference_full_arg_args;
 RWStructuredBuffer<uint> inference_arg_blocks;
 RWStructuredBuffer<uint> inference_arg_list_args;
@@ -64,22 +68,22 @@ void copy_full_grid(uint3 argument_grid)
         inference_hir_list_args[i] = hir_active_dispatch_args[i];
         inference_token_list_args[i] = token_active_dispatch_args[i];
         inference_arg_list_args[i] = argument_grid[i];
+        inference_method_key_args[i] = method_token_hir_dispatch_args[i];
+        inference_explicit_args[i] = explicit_application_dispatch_args[i];
     }
     inference_hir_blocks[0u] = 0u;
     inference_token_blocks[0u] = 0u;
     inference_arg_blocks[0u] = 0u;
 }
 
-void write_listed_args(RWStructuredBuffer<uint> args, RWStructuredBuffer<uint> blocks,
-    StructuredBuffer<uint> full, uint listed)
+uint3 listed_grid(RWStructuredBuffer<uint> blocks, uint3 full, uint listed, uint tiles_per_group)
 {
+    uint groups = (listed + tiles_per_group - 1u) / tiles_per_group;
     // A list longer than one grid row visits every row instead.
-    bool fits = listed <= 65535u;
-    args[0u] = fits ? listed : full[0u];
-    args[1u] = fits ? 1u : full[1u];
-    args[2u] = fits ? 1u : full[2u];
+    bool fits = groups <= 65535u;
     blocks[0u] = fits ? 1u : 0u;
     blocks[1u] = listed;
+    return fits ? uint3(groups, 1u, 1u) : full;
 }
 
 [shader("compute")]
@@ -88,7 +92,8 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
 {
     // Every record allocated so far was written by an earlier dispatch, so
     // the passes after this one read those records through L1.
-    if (dtid.x == 0u)
+    uint lane = dtid.x + dtid.y * 16776960u;
+    if (lane == 0u)
     {
         uint records;
         InterlockedAdd(ct_counts[0u], 0u, records);
@@ -101,7 +106,7 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     uint round = call_inference_round[0u];
     if (round <= 1u || call_inference_round[1u] + 1u >= round)
     {
-        if (dtid.x == 0u) copy_full_grid(full_argument_grid());
+        if (lane == 0u) copy_full_grid(full_argument_grid());
         return;
     }
     uint stamps; uint hir_list; uint token_list; uint arg_list; uint stride;
@@ -110,7 +115,6 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     inference_token_blocks.GetDimensions(token_list, stride);
     inference_arg_blocks.GetDimensions(arg_list, stride);
     InferenceBlockLayout layout = inference_block_layout(stamps, uint3(hir_list, token_list, arg_list));
-    uint lane = dtid.x;
     uint functions = min(inference_block_tables[INFERENCE_BLOCK_FUNCTIONS], layout.groups);
 
     if (lane < functions)
@@ -157,14 +161,22 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     inference_block_tables[INFERENCE_BLOCK_LISTED] = 0u;
     inference_block_tables[INFERENCE_BLOCK_LISTED + 1u] = 0u;
     inference_block_tables[INFERENCE_BLOCK_LISTED + 2u] = 0u;
-    uint arg_groups = (listed_args + 7u) / 8u;
-    bool fits = arg_groups <= 65535u;
-    inference_arg_blocks[0u] = fits ? 1u : 0u;
-    inference_arg_blocks[1u] = listed_args;
-    uint3 grid = fits ? uint3(arg_groups, 1u, 1u) : full_argument_grid();
-    inference_arg_list_args[0u] = grid.x;
-    inference_arg_list_args[1u] = grid.y;
-    inference_arg_list_args[2u] = 1u;
-    write_listed_args(inference_hir_list_args, inference_hir_blocks, hir_active_dispatch_args, listed_hir);
-    write_listed_args(inference_token_list_args, inference_token_blocks, token_active_dispatch_args, listed_tokens);
+    uint3 full_hir = uint3(hir_active_dispatch_args[0u], hir_active_dispatch_args[1u], 1u);
+    uint3 full_tokens = uint3(token_active_dispatch_args[0u], token_active_dispatch_args[1u], 1u);
+    // The key producer visits both domains, including when one needs the
+    // two-dimensional fallback. Each listed index is bounds checked.
+    uint3 hir = listed_grid(inference_hir_blocks, full_hir, listed_hir, 1u);
+    uint3 tokens = listed_grid(inference_token_blocks, full_tokens, listed_tokens, 1u);
+    uint3 args = listed_grid(inference_arg_blocks, full_argument_grid(), listed_args, 8u);
+    bool method_keys = method_token_hir_dispatch_args[0u] != 0u;
+    bool explicit_apps = explicit_application_dispatch_args[0u] != 0u;
+    [unroll]
+    for (uint i = 0u; i < 3u; i++)
+    {
+        inference_hir_list_args[i] = hir[i];
+        inference_token_list_args[i] = tokens[i];
+        inference_arg_list_args[i] = args[i];
+        inference_method_key_args[i] = method_keys ? max(hir[i], tokens[i]) : 0u;
+        inference_explicit_args[i] = explicit_apps ? hir[i] : 0u;
+    }
 }

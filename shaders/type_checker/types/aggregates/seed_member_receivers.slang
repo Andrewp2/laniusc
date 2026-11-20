@@ -181,9 +181,10 @@ bool call_callee(uint member)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint member = inference_listed_hir_row(linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE));
-    if (!valid_hir(member) || !inference_item_active(compact_hir_core[member].token_start)) return;
-    uint kind = compact_hir_core[member].kind;
-    if (kind != HIR_MEMBER_EXPR && kind != HIR_INDEX_EXPR) return;
+    if (!valid_hir(member)) return;
+    HirCore core = compact_hir_core[member];
+    uint kind = core.kind;
+    if ((kind != HIR_MEMBER_EXPR && kind != HIR_INDEX_EXPR) || !inference_item_active(core.token_start)) return;
     HirPayload p = compact_hir_payload[member];
     uint token = p.c;
     // A member used as a call callee is resolved by the method/static-call

@@ -102,7 +102,8 @@ uint2 candidate_masks(uint token)
 {
     uint2 context = context_masks(token);
     uint2 evidence = evidence_masks(token, context);
-    if (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token]))
+    if (all(evidence == 0u) ||
+        (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token])))
         return evidence;
     uint2 counts = required_callable_generic_counts(token);
     return (uint2(low_bits(counts.x), low_bits(counts.y)) | context) & evidence;

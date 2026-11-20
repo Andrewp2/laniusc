@@ -237,7 +237,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         resolve: indirect(CALLS_RESOLVE)?,
         explicit_application_binding: ComputeOperation::indirect_spec(
             device, graph, resources, passes, CALLS_EXPLICIT_APPLICATIONS_BIND,
-            &typed_buffer_from_resources(resources, "explicit_application_dispatch_args")?,
+            &typed_buffer_from_resources(resources, "inference_explicit_args")?,
         )?,
         explicit_application_validation: ComputeOperation::indirect_spec(
             device, graph, resources, passes, CALLS_EXPLICIT_APPLICATIONS_VALIDATE,

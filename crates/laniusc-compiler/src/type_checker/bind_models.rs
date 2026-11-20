@@ -300,6 +300,7 @@ pub(in crate::type_checker) struct MethodBindGroups {
 /// The inference rounds' own operations, which dispatch from the listed
 /// active blocks (calls/inference_blocks.slang).
 pub(in crate::type_checker) struct MethodInferenceOperations {
+    pub mark_call_keys: ComputeOperation,
     pub(in crate::type_checker) mark_call_return_keys: ComputeOperation,
     pub(in crate::type_checker) resolve_table: ComputeOperation,
     pub(in crate::type_checker) offer_bound_members: ComputeOperation,

@@ -3135,16 +3135,20 @@ fn build_graph(
     });
     // The listed active blocks of the inference rounds
     // (list_inference_ranges.slang).
+    let inference_arg_tiles = call_arg_rows.div_ceil(32);
     graph_resources!(graph, Workspace {
         inference_block_tables as "inference_block_tables" in Calls =>
-            (10 + 7 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks + call_arg_rows.div_ceil(32))) * 4;
+            (10 + 7 * (hir_rows + 1)
+                + 2 * (hir_blocks + token_blocks + inference_arg_tiles)) * 4;
         _inference_list_writer_args as "inference_list_writer_args" in DispatchArguments [StorageIndirect] => 12;
         inference_hir_blocks as "inference_hir_blocks" in Calls => (2 + hir_blocks) * 4;
         inference_token_blocks as "inference_token_blocks" in Calls => (2 + token_blocks) * 4;
         _inference_hir_list_args as "inference_hir_list_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_token_list_args as "inference_token_list_args" in DispatchArguments [StorageIndirect] => 12;
-        inference_arg_blocks as "inference_arg_blocks" in CallArguments => (2 + call_arg_rows.div_ceil(32)) * 4;
+        inference_arg_blocks as "inference_arg_blocks" in CallArguments => (2 + inference_arg_tiles) * 4;
         _inference_arg_list_args as "inference_arg_list_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_method_key_args as "inference_method_key_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_explicit_args as "inference_explicit_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_full_arg_args as "inference_full_arg_args" in DispatchArguments [StorageIndirect] => 12;
         // The locations of the call field closure's roots
         // (list_call_field_closure_roots.slang): two per HIR row at most.
@@ -5685,7 +5689,12 @@ fn build_graph(
     graph.add_indirect_dispatch(CALLS_INFERENCE_RANGES_PASS, "token_hir_active_dispatch_args")?;
     graph.mark_pass_bindings_initialize(
         CALLS_INFERENCE_RANGES_PASS,
-        &["inference_hir_blocks", "inference_token_blocks", "inference_arg_blocks"],
+        &[
+            "inference_hir_blocks",
+            "inference_token_blocks",
+            "inference_arg_blocks",
+            "call_arg_row_literal_context_mask",
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         CALLS_INFERENCE_LIST_ARGS_PASS,
@@ -5813,6 +5822,8 @@ fn build_graph(
             "inference_token_list_args",
             "inference_arg_list_args",
             "inference_full_arg_args",
+            "inference_method_key_args",
+            "inference_explicit_args",
         ],
     )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;

@@ -119,9 +119,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = inference_listed_hir_row(linear_dispatch_thread_id_2d(dtid, 16776960u));
     if (!valid_hir(node)) return;
-    if (!inference_item_active(compact_hir_core[node].token_start)) return;
-    uint kind = compact_hir_core[node].kind;
-    if (kind == HIR_STMT || kind == HIR_LET_STMT || kind == HIR_RETURN_STMT)
+    HirCore core = compact_hir_core[node];
+    bool statement = core.kind == HIR_STMT || core.kind == HIR_LET_STMT || core.kind == HIR_RETURN_STMT;
+    if ((!statement && core.kind != 19u) || !inference_item_active(core.token_start)) return;
+    if (statement)
     {
         // The complete matcher replaces legacy comparisons for direct local
         // aggregate results. A statement lane only owns its comparison row;
@@ -140,7 +141,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         return;
     }
-    if (kind != 19u) return;
     uint call = node;
     uint callee = callee_token(call);
     // 7 is `slice_from_raw_parts` and 16 is `slice_from_storage`.

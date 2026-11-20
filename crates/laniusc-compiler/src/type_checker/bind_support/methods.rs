@@ -44,6 +44,10 @@ pub(in crate::type_checker) fn create_method_bind_groups(
             gate: single(METHODS_GATE_LOOKUP_SWEEP)?,
         },
         inference: MethodInferenceOperations {
+            mark_call_keys: indirect(
+                METHODS_MARK_CALL_KEYS_INFERENCE,
+                &typed_buffer_from_resources(resources, "inference_method_key_args")?,
+            )?,
             mark_call_return_keys: indirect(
                 METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
                 &typed_buffer_from_resources(resources, "inference_hir_list_args")?,

@@ -91,7 +91,6 @@ RWStructuredBuffer<uint> call_generic_claim_type;
 RWStructuredBuffer<uint> call_generic_claim_ref_tag;
 RWStructuredBuffer<uint> call_generic_claim_ref_payload;
 RWStructuredBuffer<uint> call_generic_claim_arg_row;
-RWStructuredBuffer<uint> call_arg_row_literal_context_mask;
 RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 RWStructuredBuffer<uint> call_const_claim_callee;
 RWStructuredBuffer<uint> call_const_claim_slot;
@@ -339,21 +338,13 @@ void emit_argument_claims(uint arg_row)
     if (!inference_item_active(valid_node(call) ? compact_hir_core[call].token_start : INVALID) &&
         all(call_claim_emitted_span[arg_row] == span)) return;
     call_claim_emitted_span[arg_row] = span;
+    uint pattern_mask = call_generic_claim_pattern_mask[arg_row];
+    uint constant_pattern_mask = call_const_claim_pattern_mask[arg_row];
+    if ((pattern_mask | constant_pattern_mask) == 0u) return;
     uint callee = callee_token_for_hir_call(call);
     if (!valid_token(callee) || !parameter_pattern_page_contains(
         call_dependency_library_id[callee], call_dependency_unit_id[callee],
         call_dependency_local_index[callee])) return;
-    // The argument producer owns expression provenance. Consumers rank a
-    // claim with one row read instead of traversing HIR inside graph lookup.
-    call_arg_row_literal_context_mask[arg_row] = numeric_literal_accepts_context(
-        call_arg_row_node[arg_row], 3u, active_hir_node_count(), compact_hir_core,
-        compact_hir_payload, compact_hir_expr_parent) ? 1u : 0u;
-    if (numeric_literal_accepts_context(call_arg_row_node[arg_row], 5u,
-        active_hir_node_count(), compact_hir_core, compact_hir_payload, compact_hir_expr_parent))
-        call_arg_row_literal_context_mask[arg_row] |= 2u;
-    uint pattern_mask = call_generic_claim_pattern_mask[arg_row];
-    uint constant_pattern_mask = call_const_claim_pattern_mask[arg_row];
-    if ((pattern_mask | constant_pattern_mask) == 0u) return;
     uint start = call_generic_claim_prefix[arg_row];
     uint count = call_generic_claim_scan_input[arg_row];
     uint constant_start = call_const_claim_prefix[arg_row];

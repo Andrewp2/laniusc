@@ -34,11 +34,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint capacity; uint stride;
     call_inference_result_tag.GetDimensions(capacity, stride);
     if (node >= count || node >= capacity) return;
-    if (!inference_item_active(compact_hir_core[node].token_start)) return;
-    uint kind = compact_hir_core[node].kind;
+    HirCore core = compact_hir_core[node];
+    uint kind = core.kind;
     if (kind != 14u && kind != 16u && kind != 17u && kind != 20u &&
         kind != 21u && kind != 22u && kind != 23u && kind != 28u &&
         kind != 33u && kind != 34u && kind != 36u) return;
+    if (!inference_item_active(core.token_start)) return;
     uint tag; uint payload;
     bool available = inference_value_reference(node, tag, payload);
     // Unresolved source applications cannot become accepted value facts. In

@@ -24,9 +24,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     [unroll]
     for (uint domain = 0u; domain < INFERENCE_BLOCK_DOMAINS; domain++)
         lanes += min(inference_block_tables[INFERENCE_BLOCK_ALWAYS + domain], layout.blocks[domain]);
-    uint groups = min(max((lanes + 255u) / 256u, 1u), 65535u);
-    inference_block_tables[INFERENCE_BLOCK_GROUPS] = groups;
-    inference_list_writer_args[0u] = groups;
-    inference_list_writer_args[1u] = 1u;
+    uint groups = max((lanes + 255u) / 256u, 1u);
+    uint x = min(groups, 65535u);
+    uint y = (groups + 65534u) / 65535u;
+    inference_block_tables[INFERENCE_BLOCK_GROUPS] = x * y;
+    inference_list_writer_args[0u] = x;
+    inference_list_writer_args[1u] = y;
     inference_list_writer_args[2u] = 1u;
 }

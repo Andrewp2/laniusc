@@ -2,6 +2,7 @@
 // of each function (inference_block_layout.slang, inference_blocks.slang).
 // One lane per HIR row and token; inference_block_tables was cleared before.
 import shared.syntax.hir_records;
+import type_checker.expression_contexts.argument_context;
 #include "../inference_block_layout.slang"
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -12,6 +13,10 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_arg_row_count_out;
 StructuredBuffer<uint> call_arg_row_call_node;
+StructuredBuffer<uint> call_arg_row_node;
+StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_hir_expr_parent;
+RWStructuredBuffer<uint> call_arg_row_literal_context_mask;
 StructuredBuffer<uint> call_inference_fn_stamp;
 // Lists start unused (word 0 is 0): list_inference_blocks writes them each round.
 RWStructuredBuffer<uint> inference_hir_blocks;
@@ -77,11 +82,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (lane < hir) note_row(layout, 0u, lane, compact_hir_core[lane].token_start, 256u);
     if (lane < tokens) note_row(layout, 1u, lane, lane, 256u);
-    uint arguments = min(call_arg_row_count_out[0u], hir);
+    uint arguments = min(call_arg_row_count_out[0u], min(hir, layout.blocks.z * INFERENCE_ARGUMENT_TILE));
     if (lane < arguments)
     {
         uint call = call_arg_row_call_node[lane];
         uint token = call < hir ? compact_hir_core[call].token_start : 0xffffffffu;
         note_row(layout, 2u, lane, token, INFERENCE_ARGUMENT_TILE);
+        // Literal provenance depends only on the argument's syntax.
+        uint node = call_arg_row_node[lane];
+        uint integer = numeric_literal_accepts_context(node, 3u, hir, compact_hir_core,
+            compact_hir_payload, compact_hir_expr_parent) ? 1u : 0u;
+        uint floating = numeric_literal_accepts_context(node, 5u, hir, compact_hir_core,
+            compact_hir_payload, compact_hir_expr_parent) ? 2u : 0u;
+        call_arg_row_literal_context_mask[lane] = integer | floating;
     }
 }
