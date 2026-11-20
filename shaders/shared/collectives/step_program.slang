@@ -6,13 +6,33 @@
 // Measured on an RTX 3090 (gpu/program_barrier_tests.rs), one read and one
 // write per row:
 //
-//     one dispatch per step, recorded by the host   about 9 us of fixed cost
+//     one dispatch per step, recorded by the host   5 to 6 us of GPU time
 //     step in a program, 1 group,   256 rows        0.6 us
 //     step in a program, 1 group,   4,096 rows      1.9 us
 //     step in a program, 1 group,   65,536 rows     22 us
 //     step in a program, 64 groups, 16,384 rows     1.4 us
 //     step in a program, 64 groups, 65,536 rows     2.4 us
 //     step in a program, 64 groups, 524,288 rows    12 us
+//     step in a program, 164 groups, 41,984 rows    1.9 us
+//     step in a program, 492 groups, 125,952 rows   4.2 us
+//
+// When a program takes more GPU time than the dispatches it replaces:
+//
+// - A program runs `groups` x 256 lanes for its whole dispatch. 164 groups are
+//   41,984 lanes, and the RTX 3090 runs 125,952 threads at once. A dispatched
+//   kernel over a table of several hundred thousand rows uses all of them, so
+//   a step that does more than a few reads per row over such a table takes
+//   2.5 to 3 times as long in a 164-group program (measured on the parser's
+//   token and tree passes of a 33,000-line build: 2.36 ms dispatched, 4.34 ms
+//   in programs).
+// - 492 groups use every thread, and those steps then take about what the
+//   dispatched kernels took. A barrier then costs 4.2 us, which is close to
+//   the cost of the dispatch it replaces, and a step that is one read and one
+//   write per row takes 2 to 3 times as long as with 164 groups.
+//
+// So a program replaces a run of passes over small tables, where the fixed
+// cost of each dispatch is most of its time. A pass over a large table that
+// does real work per row stays a dispatched kernel between two programs.
 //
 // Use:
 //
