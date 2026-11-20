@@ -163,7 +163,10 @@ pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 10;
 
 pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
 pub(super) const SCHEDULE_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
-pub(super) const X86_LAYOUT_PROGRAM_SLOT: u32 = SCHEDULE_PROGRAM_SLOT + 1;
+pub(super) const TARGET_PAGE_PROGRAM_SLOT: u32 = SCHEDULE_PROGRAM_SLOT + 1;
+pub(super) const TARGET_FUNCTION_PROGRAM_SLOT: u32 = TARGET_PAGE_PROGRAM_SLOT + 1;
+pub(super) const X86_SPILL_PROGRAM_SLOT: u32 = TARGET_FUNCTION_PROGRAM_SLOT + 1;
+pub(super) const X86_LAYOUT_PROGRAM_SLOT: u32 = X86_SPILL_PROGRAM_SLOT + 1;
 pub(super) const X86_OBJECT_PROGRAM_SLOT: u32 = X86_LAYOUT_PROGRAM_SLOT + 1;
 pub(super) const LOWERING_PROGRAM_SLOTS: usize = X86_OBJECT_PROGRAM_SLOT as usize + 1;
 pub(super) const LOWERING_PROGRAM_FAILURE_BYTES: usize = LOWERING_PROGRAM_SLOTS * 4;
@@ -4292,17 +4295,23 @@ fn lowering_compiler_graph_builder(
         target_domain,
         LoweringCapacities::bytes::<u32>(1),
     ))?;
-    let target_scan_blocks = capacities.semantic_instructions.max(1).div_ceil(256);
-    let target_scan_local = graph.add_resource(workspace(
-        "lir.target.count_scan_local",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
-    ))?;
-    let target_scan_block_sum = graph.add_resource(workspace(
-        "lir.target.count_scan_block_sum",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(target_scan_blocks),
-    ))?;
+    let wasm_frame_scan = if target == LoweringTarget::Wasm {
+        let blocks = capacities.semantic_instructions.max(1).div_ceil(256);
+        Some((
+            graph.add_resource(workspace(
+                "lir.target.count_scan_local",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+            ))?,
+            graph.add_resource(workspace(
+                "lir.target.count_scan_block_sum",
+                ResourceDomain::SemanticInstructions,
+                LoweringCapacities::bytes::<u32>(blocks),
+            ))?,
+        ))
+    } else {
+        None
+    };
     let target_page_rows = capacities
         .target_instructions
         .max(1)
@@ -4492,19 +4501,6 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
-    let x86_place_scan_resources = if target == LoweringTarget::X86_64 {
-        Some(graph.add_prefix_scan_workspace(
-            ResourceDomain::SemanticInstructions,
-            u64::from(capacities.local_capacity().max(1)),
-            256,
-            crate::gpu::compiler_graph::PrefixScanWorkspace {
-                local_prefix: "lir.x86.place_scan_local",
-                block_sum: "lir.x86.place_scan_block_sum",
-            },
-        )?)
-    } else {
-        None
-    };
     let x86_stack_words_by_position = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
             "lir.x86.stack_words_by_position",
@@ -4539,19 +4535,6 @@ fn lowering_compiler_graph_builder(
             ResourceDomain::SemanticInstructions,
             LoweringCapacities::bytes::<u32>(1),
         ))?)
-    } else {
-        None
-    };
-    let x86_stack_scan_resources = if target == LoweringTarget::X86_64 {
-        Some(graph.add_prefix_scan_workspace(
-            ResourceDomain::SemanticInstructions,
-            u64::from(capacities.semantic_instructions.max(1)),
-            256,
-            crate::gpu::compiler_graph::PrefixScanWorkspace {
-                local_prefix: "lir.x86.stack_scan_local",
-                block_sum: "lir.x86.stack_scan_block_sum",
-            },
-        )?)
     } else {
         None
     };
@@ -6085,32 +6068,8 @@ fn lowering_compiler_graph_builder(
                 ),
             ],
         })?;
-        let x86_stack_scan = x86_stack_scan_resources.expect("x86 stack scan resources");
         graph.add_pass(PassDesc {
-            name: "lir.x86.stack_scan.local",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read("scan_input", x86_stack_words_by_position.unwrap()),
-                PassAccess::write("scan_local_prefix", x86_stack_scan.local_prefix),
-                PassAccess::write("scan_block_sum", x86_stack_scan.block_sum),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.stack_scan.apply",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read("scan_local_prefix", x86_stack_scan.local_prefix),
-                PassAccess::read("scan_block_sum", x86_stack_scan.block_sum),
-                PassAccess::write("scan_output_prefix", x86_stack_prefix_by_position.unwrap()),
-                PassAccess::write("scan_total", x86_stack_word_total.unwrap()),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.allocation.locations",
+            name: "lir.x86.assign_spill_layout",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
@@ -6119,83 +6078,23 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read("x86_function_start", x86_function_start.unwrap()),
-                PassAccess::read(
-                    "x86_stack_words_by_position",
-                    x86_stack_words_by_position.unwrap(),
-                ),
-                PassAccess::read(
-                    "x86_stack_prefix_by_position",
-                    x86_stack_prefix_by_position.unwrap(),
-                ),
-                PassAccess::read_write(
-                    "x86_location_by_semantic",
-                    x86_location_by_semantic.unwrap(),
-                ),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.allocation.functions",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
+                PassAccess::read("x86_stack_words_by_position", x86_stack_words_by_position.unwrap()),
+                PassAccess::initialize_read_write("x86_stack_prefix_by_position", x86_stack_prefix_by_position.unwrap()),
+                PassAccess::read_write("x86_location_by_semantic", x86_location_by_semantic.unwrap()),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
-                PassAccess::read("x86_function_start", x86_function_start.unwrap()),
                 PassAccess::read("x86_function_end", x86_function_end.unwrap()),
-                PassAccess::read(
-                    "x86_stack_words_by_position",
-                    x86_stack_words_by_position.unwrap(),
-                ),
-                PassAccess::read(
-                    "x86_stack_prefix_by_position",
-                    x86_stack_prefix_by_position.unwrap(),
-                ),
-                PassAccess::read_write(
-                    "x86_register_analysis_by_function",
-                    x86_register_analysis_by_function.unwrap(),
-                ),
-                PassAccess::write(
-                    "x86_stack_slot_count_by_function",
-                    x86_stack_slot_count_by_function.unwrap(),
-                ),
-                PassAccess::write(
-                    "x86_frame_slot_count_by_function",
-                    x86_frame_slot_count_by_function.unwrap(),
-                ),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.place.words",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
+                PassAccess::read_write("x86_register_analysis_by_function", x86_register_analysis_by_function.unwrap()),
+                PassAccess::write("x86_stack_slot_count_by_function", x86_stack_slot_count_by_function.unwrap()),
+                PassAccess::write("x86_frame_slot_count_by_function", x86_frame_slot_count_by_function.unwrap()),
                 PassAccess::read("semantic_lir_local_total", semantic_local_total),
                 PassAccess::read("semantic_lir_locals", semantic_locals),
                 PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
-                PassAccess::write("x86_place_words_by_local", x86_place_words_by_local.unwrap()),
-            ],
-        })?;
-        let x86_place_scan = x86_place_scan_resources.expect("x86 stack scan resources");
-        graph.add_pass(PassDesc {
-            name: "lir.x86.place_scan.local",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read("scan_input", x86_place_words_by_local.unwrap()),
-                PassAccess::write("scan_local_prefix", x86_place_scan.local_prefix),
-                PassAccess::write("scan_block_sum", x86_place_scan.block_sum),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.place_scan.apply",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read("scan_local_prefix", x86_place_scan.local_prefix),
-                PassAccess::read("scan_block_sum", x86_place_scan.block_sum),
-                PassAccess::write("scan_output_prefix", x86_place_prefix_by_local.unwrap()),
-                PassAccess::write("scan_total", x86_place_word_total.unwrap()),
+                PassAccess::initialize_read_write("x86_place_words_by_local", x86_place_words_by_local.unwrap()),
+                PassAccess::write("x86_stack_word_total", x86_stack_word_total.unwrap()),
+                PassAccess::write("x86_place_word_total", x86_place_word_total.unwrap()),
+                PassAccess::write("x86_place_prefix_by_local", x86_place_prefix_by_local.unwrap()),
+                PassAccess::read_write("step_program_sync", step_program_sync),
+                PassAccess::read_write("scan_group_sums", opt_scan_group_sums),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -6329,6 +6228,7 @@ fn lowering_compiler_graph_builder(
                 PassAccess::write("wasm_frame_slots", wasm.frame_slots),
             ],
         })?;
+        let (target_scan_local, target_scan_block_sum) = wasm_frame_scan.expect("Wasm frame scan");
         graph.add_pass(PassDesc {
             name: "lir.wasm.frame_scan.local",
             phase: target_phase,
@@ -6571,37 +6471,17 @@ fn lowering_compiler_graph_builder(
         ],
     };
     graph.add_pass(PassDesc {
-        name: "lir.target.count_scan.local",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_input", target_counts),
-            PassAccess::write("scan_local_prefix", target_scan_local),
-            PassAccess::write("scan_block_sum", target_scan_block_sum),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.count_scan.apply",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_local_prefix", target_scan_local),
-            PassAccess::read("scan_block_sum", target_scan_block_sum),
-            PassAccess::write("scan_output_prefix", target_offsets),
-            PassAccess::write("scan_total", target_total),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.target.semantic_page_plan",
         phase: target_phase,
-        dispatch_domain: target_domain,
+        dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("target_lir_offset", target_offsets),
-            PassAccess::read("target_lir_total", target_total),
+            PassAccess::read("target_lir_count", target_counts),
+            PassAccess::initialize_read_write("target_lir_offset", target_offsets),
+            PassAccess::initialize_read_write("target_lir_total", target_total),
             PassAccess::write("target_semantic_pages", target_semantic_pages),
+            PassAccess::read_write("scan_group_sums", opt_scan_group_sums),
+            PassAccess::read_write("step_program_sync", step_program_sync),
         ],
     })?;
     if let Some(wasm) = wasm_abi {
@@ -6721,17 +6601,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
     ))?;
-    let function_scan_local = graph.add_resource(workspace(
-        "lir.target.function_scan_local",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
-    ))?;
-    let function_scan_blocks = capacities.semantic_instructions.max(1).div_ceil(256);
-    let function_scan_block_sum = graph.add_resource(workspace(
-        "lir.target.function_scan_block_sum",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(function_scan_blocks),
-    ))?;
     let function_count = graph.add_resource(ResourceDesc {
         name: "lir.target.function_count",
         domain: ResourceDomain::Declarations,
@@ -6764,43 +6633,7 @@ fn lowering_compiler_graph_builder(
         usage: WorkspaceUsageClass::Storage,
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.functions.mark",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("opt_ir_total", opt_total),
-            PassAccess::read("semantic_schedule_order", schedule_order),
-            PassAccess::read("opt_ir_source_hir", opt_source_hir),
-            PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
-            PassAccess::write("function_start_flag", function_flags),
-            PassAccess::write("function_index_by_semantic", function_index_by_semantic),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.function_scan.local",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_input", function_flags),
-            PassAccess::write("scan_local_prefix", function_scan_local),
-            PassAccess::write("scan_block_sum", function_scan_block_sum),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.function_scan.apply",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_local_prefix", function_scan_local),
-            PassAccess::read("scan_block_sum", function_scan_block_sum),
-            PassAccess::write("scan_output_prefix", function_prefix),
-            PassAccess::write("scan_total", function_count),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.functions.scatter_starts",
+        name: "lir.target.build_function_ranges",
         phase: target_phase,
         dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
@@ -6809,23 +6642,16 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_source_hir", opt_source_hir),
             PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
             PassAccess::read("target_lir_offset", target_offsets),
-            PassAccess::read("function_start_flag", function_flags),
-            PassAccess::read("function_prefix", function_prefix),
-            PassAccess::write("function_start", function_starts),
-            PassAccess::write("compact_function_id", compact_function_ids),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.functions.finalize",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
             PassAccess::read("target_lir_total", target_total),
-            PassAccess::read("function_count", function_count),
-            PassAccess::read("function_start", function_starts),
-            PassAccess::read("compact_function_id", compact_function_ids),
+            PassAccess::initialize_read_write("function_start_flag", function_flags),
+            PassAccess::initialize_read_write("function_prefix", function_prefix),
+            PassAccess::initialize_read_write("function_count", function_count),
+            PassAccess::initialize_read_write("function_start", function_starts),
+            PassAccess::initialize_read_write("compact_function_id", compact_function_ids),
             PassAccess::write("target_function", functions),
             PassAccess::write("function_index_by_semantic", function_index_by_semantic),
+            PassAccess::read_write("scan_group_sums", opt_scan_group_sums),
+            PassAccess::read_write("step_program_sync", step_program_sync),
         ],
     })?;
     if target == LoweringTarget::X86_64 {
@@ -9013,21 +8839,16 @@ mod tests {
             ("lir.wasm.frame_scan.apply", "scan/words/apply_counted_word_carries"),
             ("lir.wasm.frame_bounds", "codegen/lir/wasm/functions/assign_wasm_frame_offsets"),
             ("lir.wasm.count", "codegen/lir/wasm/instructions/count_wasm_instructions"),
-            ("lir.target.count_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.target.count_scan.apply", "scan/words/apply_counted_word_carries"),
             ("lir.wasm.scatter", "codegen/lir/wasm/instructions/scatter_wasm_instructions"),
             ("lir.wasm.scatter.replay", "codegen/lir/wasm/instructions/scatter_wasm_instructions"),
             ("lir.wasm.validate", "codegen/lir/wasm/instructions/validate_wasm_instruction_counts"),
-            ("lir.target.functions.mark", "codegen/lir/functions/mark_target_function_starts"),
-            ("lir.target.function_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.target.function_scan.apply", "scan/words/apply_counted_word_carries"),
             (
-                "lir.target.functions.scatter_starts",
-                "codegen/lir/functions/scatter_target_function_starts",
+                "lir.target.semantic_page_plan",
+                "codegen/lir/functions/plan_target_semantic_pages",
             ),
             (
-                "lir.target.functions.finalize",
-                "codegen/lir/functions/publish_target_function_ranges",
+                "lir.target.build_function_ranges",
+                "codegen/lir/functions/build_target_function_ranges",
             ),
             ("lir.wasm.byte_count", "codegen/lir/wasm/instructions/count_wasm_instruction_bytes"),
             ("lir.target.byte_scan.local", "scan/words/scan_counted_word_blocks"),
@@ -9103,20 +8924,12 @@ mod tests {
                 "lir.x86.allocation.words",
                 "codegen/lir/x86/allocation/allocate_x86_registers_and_spill_words",
             ),
-            ("lir.x86.stack_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.x86.stack_scan.apply", "scan/words/apply_counted_word_carries"),
             (
-                "lir.x86.allocation.locations",
-                "codegen/lir/x86/allocation/write_x86_spill_locations",
-            ),
-            (
-                "lir.x86.allocation.functions",
-                "codegen/lir/x86/allocation/summarize_x86_function_spills",
+                "lir.x86.assign_spill_layout",
+                "codegen/lir/x86/allocation/assign_x86_spill_layout",
             ),
             ("lir.x86.inline.analyze", "codegen/lir/x86/liveness/classify_x86_inline_candidates"),
             ("lir.x86.count", "codegen/lir/x86/instructions/count_x86_instructions"),
-            ("lir.target.count_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.target.count_scan.apply", "scan/words/apply_counted_word_carries"),
             ("lir.x86.scatter", "codegen/lir/x86/instructions/scatter_x86_instructions"),
             ("lir.x86.scatter.replay", "codegen/lir/x86/instructions/scatter_x86_instructions"),
             ("lir.x86.locations", "codegen/lir/x86/allocation/write_x86_instruction_locations"),
@@ -9124,16 +8937,13 @@ mod tests {
             ("lir.x86.validate", "codegen/lir/x86/instructions/validate_x86_instruction_counts"),
             ("lir.x86.resolve", "codegen/lir/x86/instructions/resolve_x86_instruction_operands"),
             ("lir.x86.resolve.replay", "codegen/lir/x86/instructions/resolve_x86_instruction_operands"),
-            ("lir.target.functions.mark", "codegen/lir/functions/mark_target_function_starts"),
-            ("lir.target.function_scan.local", "scan/words/scan_counted_word_blocks"),
-            ("lir.target.function_scan.apply", "scan/words/apply_counted_word_carries"),
             (
-                "lir.target.functions.scatter_starts",
-                "codegen/lir/functions/scatter_target_function_starts",
+                "lir.target.semantic_page_plan",
+                "codegen/lir/functions/plan_target_semantic_pages",
             ),
             (
-                "lir.target.functions.finalize",
-                "codegen/lir/functions/publish_target_function_ranges",
+                "lir.target.build_function_ranges",
+                "codegen/lir/functions/build_target_function_ranges",
             ),
             (
                 "lir.x86.decl_slots.scatter",

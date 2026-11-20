@@ -76,6 +76,7 @@ impl GpuX86ArtifactStage {
         workspace: &CompilerGraphWorkspace,
         allocations: &CompilerGraphAllocations,
         capacities: LoweringCapacities,
+        include_object: bool,
         metadata: GpuOptIrMetadataView<'_>,
         total: &LaniusBuffer<u32>,
         core: &LaniusBuffer<X86LirCore>,
@@ -226,7 +227,7 @@ impl GpuX86ArtifactStage {
                 &sync,
                 X86_LAYOUT_PROGRAM_SLOT,
                 groups,
-                u32::from(runtime_reference_capacity != 0),
+                u32::from(include_object),
             )
         };
         let [small, large] = step_program_group_counts();
@@ -775,6 +776,7 @@ mod tests {
             &workspace,
             &allocations,
             capacities,
+            false,
             GpuOptIrMetadataView::from_semantic(semantic),
             &total,
             &core,

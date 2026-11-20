@@ -3,16 +3,17 @@
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
-use super::{
-    counted_scans::{GpuResidentExclusiveScan, GraphScanContract},
-    lowering_ir::TargetLirFunction,
+use super::lowering_ir::{
+    LOWERING_PROGRAM_SLOTS, LoweringCapacities, TARGET_FUNCTION_PROGRAM_SLOT, TargetLirFunction,
 };
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
-    operations::ComputeOperation,
-    passes_core::PassData,
+    operations::{
+        STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     resource_registry::ResourceMap,
 };
 
@@ -38,18 +39,12 @@ pub(crate) struct GpuTargetFunctionView<'a> {
 /// supplies only the exact scanned target offset for each scheduled OptIR row, so this stage
 /// never scans or allocates scratch proportional to expanded target capacity.
 pub(crate) struct GpuTargetFunctionTable {
-    mark: ComputeOperation,
-    scatter: ComputeOperation,
-    finalize: ComputeOperation,
-    scan: GpuResidentExclusiveScan,
+    programs: [StepProgramOperation; 2],
+    semantic_capacity: u32,
+    function_capacity: u32,
     _params: LaniusBuffer<FunctionParams>,
-    _flags: LaniusBuffer<u32>,
-    _prefix: LaniusBuffer<u32>,
-    _starts: LaniusBuffer<u32>,
-    _compact_ids: LaniusBuffer<u32>,
     _count: LaniusBuffer<u32>,
     _rows: LaniusBuffer<TargetLirFunction>,
-    _index_by_semantic: LaniusBuffer<u32>,
 }
 
 impl GpuTargetFunctionTable {
@@ -64,7 +59,6 @@ impl GpuTargetFunctionTable {
         semantic_capacity: u32,
         target_capacity: u32,
         function_capacity: u32,
-        opt_total: &LaniusBuffer<u32>,
     ) -> Result<Self> {
         let semantic_capacity = semantic_capacity.max(1);
         let target_capacity = target_capacity.max(1);
@@ -74,16 +68,9 @@ impl GpuTargetFunctionTable {
                 .resource_id(name)
                 .with_context(|| format!("target function graph is missing {name}"))
         };
-        let alias_u32 = |name: &str, rows: u32| -> Result<LaniusBuffer<u32>> {
-            workspace
-                .alias(graph, resource(name)?, rows.max(1) as usize)
-                .map_err(anyhow::Error::msg)
-        };
-        let flags = alias_u32("lir.target.function_flags", semantic_capacity)?;
-        let prefix = alias_u32("lir.target.function_prefix", semantic_capacity)?;
-        let starts = alias_u32("lir.target.function_starts", function_capacity)?;
-        let compact_ids = alias_u32("lir.target.compact_function_ids", function_capacity)?;
-        let count = alias_u32("lir.target.function_count", 1)?;
+        let count = workspace
+            .alias(graph, resource("lir.target.function_count")?, 1)
+            .map_err(anyhow::Error::msg)?;
         let rows = workspace
             .alias(
                 graph,
@@ -91,8 +78,6 @@ impl GpuTargetFunctionTable {
                 function_capacity as usize,
             )
             .map_err(anyhow::Error::msg)?;
-        let index_by_semantic =
-            alias_u32("lir.target.function_index_by_semantic", function_capacity)?;
         let params = uniform_from_val(
             device,
             "lir.target.functions.params",
@@ -103,82 +88,37 @@ impl GpuTargetFunctionTable {
                 reserved: 0,
             },
         );
-        let context = (graph, allocations);
-        let mark = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            resources,
-            "lir.target.functions.mark",
-            &load(
-                kernels,
-                "lir.target.functions.mark",
-                "codegen/lir/functions/mark_target_function_starts",
-            )?,
-            &params,
-            semantic_capacity.max(function_capacity),
-        )?;
-        let scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            allocations,
-            GraphScanContract {
-                local_pass: "lir.target.function_scan.local",
-                apply_pass: "lir.target.function_scan.apply",
-                count: "lir.opt.total",
-                input: "lir.target.function_flags",
-                local: "lir.target.function_scan_local",
-                block_sum: "lir.target.function_scan_block_sum",
-                output: "lir.target.function_prefix",
-                total: "lir.target.function_count",
-            },
-            semantic_capacity,
-            opt_total,
-            &flags,
-            &prefix,
-            &count,
-        )?;
-        let scatter = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            resources,
-            "lir.target.functions.scatter_starts",
-            &load(
-                kernels,
-                "lir.target.functions.scatter_starts",
-                "codegen/lir/functions/scatter_target_function_starts",
-            )?,
-            &params,
-            semantic_capacity,
-        )?;
-        let finalize = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            resources,
-            "lir.target.functions.finalize",
-            &load(
-                kernels,
-                "lir.target.functions.finalize",
-                "codegen/lir/functions/publish_target_function_ranges",
-            )?,
-            &params,
-            function_capacity,
-        )?;
-
+        let sync = workspace
+            .alias(
+                graph,
+                resource("step_program_sync")?,
+                STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let mut resources = resources.clone();
+        resources.buffer("gParams", &params);
+        let pass = kernels.kernel("codegen/lir/functions/build_target_function_ranges");
+        let variant = |groups| {
+            StepProgramOperation::new(
+                device,
+                &(graph, allocations),
+                &resources,
+                "lir.target.build_function_ranges",
+                pass,
+                &sync,
+                TARGET_FUNCTION_PROGRAM_SLOT,
+                groups,
+                0,
+            )
+        };
+        let [small, large] = step_program_group_counts();
         Ok(Self {
-            mark,
-            scatter,
-            finalize,
-            scan,
+            programs: [variant(small)?, variant(large)?],
+            semantic_capacity,
+            function_capacity,
             _params: params,
-            _flags: flags,
-            _prefix: prefix,
-            _starts: starts,
-            _compact_ids: compact_ids,
             _count: count,
             _rows: rows,
-            _index_by_semantic: index_by_semantic,
         })
     }
 
@@ -190,14 +130,14 @@ impl GpuTargetFunctionTable {
         }
     }
 
-    pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.mark.record(encoder)?;
-        self.scan.record(encoder)?;
-        self.scatter.record(encoder)?;
-        self.finalize.record(encoder)
+    pub(crate) fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
+        let rows = job.map_or(self.semantic_capacity.max(self.function_capacity), |job| {
+            job.semantic_instructions.max(job.hir_nodes)
+        });
+        self.programs[step_program_group_variant(u64::from(rows))].record(encoder)
     }
-}
-
-fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData> {
-    Ok(kernels.kernel(shader).clone())
 }

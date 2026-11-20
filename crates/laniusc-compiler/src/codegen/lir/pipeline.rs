@@ -132,10 +132,14 @@ impl TargetStage {
         }
     }
 
-    fn record_before_target_pages(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+    fn record_before_target_pages(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
         match self {
-            Self::X86_64(stage) => stage.record_before_target_pages(encoder),
-            Self::Wasm(stage) => stage.record_before_target_pages(encoder),
+            Self::X86_64(stage) => stage.record_before_target_pages(encoder, job),
+            Self::Wasm(stage) => stage.record_before_target_pages(encoder, job),
         }
     }
 
@@ -987,9 +991,10 @@ impl GpuLoweringPipeline {
         };
         let program_slots = if object_readback.is_some() {
             LOWERING_PROGRAM_SLOTS
+        } else if matches!(target, TargetStage::X86_64(_)) {
+            super::lowering_ir::X86_OBJECT_PROGRAM_SLOT as usize
         } else {
-            super::lowering_ir::X86_LAYOUT_PROGRAM_SLOT as usize
-                + usize::from(matches!(target, TargetStage::X86_64(_)))
+            super::lowering_ir::X86_SPILL_PROGRAM_SLOT as usize
         };
         let status_readback_bytes = status_bytes + 8 + LOWERING_PROGRAM_FAILURE_BYTES;
         let (status_readback, status_binding, status_base) = match object_readback {
@@ -1268,7 +1273,7 @@ impl GpuLoweringPipeline {
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(self.target.compiler_phase());
         }
-        self.target.record_before_target_pages(encoder)?;
+        self.target.record_before_target_pages(encoder, job)?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "codegen.target.layout.done");
         }

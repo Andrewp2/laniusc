@@ -6,9 +6,11 @@ use encase::ShaderType;
 #[cfg(test)]
 use crate::codegen::lir::lowering_ir::{X86LirCore, X86LirLocations, X86LirOperands};
 use {crate::codegen::lir::{
-        counted_scans::{GpuResidentExclusiveScan, GraphScanContract},
         function_ranges::GpuTargetFunctionTable,
-        lowering_ir::{LoweringCapacities, SEMANTIC_LIR_PAGE_ROWS, TARGET_LIR_PAGE_ROWS},
+        lowering_ir::{
+            LOWERING_PROGRAM_SLOTS, LoweringCapacities, SEMANTIC_LIR_PAGE_ROWS,
+            TARGET_LIR_PAGE_ROWS, X86_SPILL_PROGRAM_SLOT,
+        },
         optimization::{GpuOptIrView, lowering_allocations_with_opt},
         target_pages::GpuTargetPagePlanner,
     }, super::{emission::GpuX86ArtifactStage, objects::GpuX86ObjectStage}};
@@ -16,7 +18,10 @@ use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphWorkspace},
     kernels::KernelRegistry,
-    operations::ComputeOperation,
+    operations::{
+        ComputeOperation, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     passes_core::PassData,
     resource_registry::ResourceMap,
     timer::GpuTimer,
@@ -80,8 +85,6 @@ pub(crate) struct GpuX86LirStage {
     count_pages: Vec<ComputeOperation>,
     pages: Vec<X86LirPage>,
     decl_slots_scatter: ComputeOperation,
-    place_words: ComputeOperation,
-    place_scan: GpuResidentExclusiveScan,
     frame_finalize: ComputeOperation,
     analysis_clear: ComputeOperation,
     analysis_index: ComputeOperation,
@@ -93,24 +96,15 @@ pub(crate) struct GpuX86LirStage {
     if_convert: ComputeOperation,
     allocation_prepare: ComputeOperation,
     allocation_words: ComputeOperation,
-    stack_scan: GpuResidentExclusiveScan,
-    allocation_locations: ComputeOperation,
-    allocation_functions: ComputeOperation,
+    spill_layout: [StepProgramOperation; 2],
+    spill_rows: u32,
     inline_analyze: ComputeOperation,
-    count_scan: GpuResidentExclusiveScan,
     target_pages: GpuTargetPagePlanner,
     functions: GpuTargetFunctionTable,
     _count_params: Vec<LaniusBuffer<CountParams>>,
     _decl_slot_params: LaniusBuffer<DeclSlotParams>,
     _analysis_params: LaniusBuffer<X86AnalysisParams>,
     _allocation_params: LaniusBuffer<X86AnalysisParams>,
-    _stack_words: LaniusBuffer<u32>,
-    _stack_prefix: LaniusBuffer<u32>,
-    _stack_total: LaniusBuffer<u32>,
-    _place_words: LaniusBuffer<u32>,
-    _place_prefix: LaniusBuffer<u32>,
-    _place_total: LaniusBuffer<u32>,
-    _place_count: LaniusBuffer<u32>,
     _counts: LaniusBuffer<u32>,
     _offsets: LaniusBuffer<u32>,
     #[cfg(test)]
@@ -189,13 +183,6 @@ impl GpuX86LirStage {
         let counts = alias_u32("lir.x86.count_by_semantic", semantic_capacity)?;
         let offsets = alias_u32("lir.x86.offset_by_semantic", semantic_capacity)?;
         let total = alias_u32("lir.x86.total", 1)?;
-        let stack_words = alias_u32("lir.x86.stack_words_by_position", semantic_capacity)?;
-        let stack_prefix = alias_u32("lir.x86.stack_prefix_by_position", semantic_capacity)?;
-        let stack_total = alias_u32("lir.x86.stack_word_total", 1)?;
-        let place_words_buffer = alias_u32("lir.x86.place_words_by_local", capacities.local_capacity())?;
-        let place_prefix = alias_u32("lir.x86.place_prefix_by_local", capacities.local_capacity())?;
-        let place_total = alias_u32("lir.x86.place_word_total", 1)?;
-        let place_count = alias_u32("lir.semantic.local_total", 1)?;
         let core = workspace
             .alias(graph, resource("lir.x86.core")?, target_page_rows as usize)
             .map_err(anyhow::Error::msg)?;
@@ -276,25 +263,10 @@ impl GpuX86LirStage {
             "lir.x86.allocation.words",
             "codegen/lir/x86/allocation/allocate_x86_registers_and_spill_words",
         )?;
-        let allocation_locations_pass = load(
-            kernels,
-            "lir.x86.allocation.locations",
-            "codegen/lir/x86/allocation/write_x86_spill_locations",
-        )?;
-        let allocation_functions_pass = load(
-            kernels,
-            "lir.x86.allocation.functions",
-            "codegen/lir/x86/allocation/summarize_x86_function_spills",
-        )?;
         let inline_analyze_pass = load(
             kernels,
             "lir.x86.inline.analyze",
             "codegen/lir/x86/liveness/classify_x86_inline_candidates",
-        )?;
-        let place_words_pass = load(
-            kernels,
-            "lir.x86.place.words",
-            "codegen/lir/x86/allocation/count_x86_local_place_words",
         )?;
         let decl_slots_scatter_pass = load(
             kernels,
@@ -387,29 +359,6 @@ impl GpuX86LirStage {
             })
             .collect::<Result<Vec<_>>>()
             .context("construct x86 instruction-count operations")?;
-        let count_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            &allocations,
-            GraphScanContract {
-                local_pass: "lir.target.count_scan.local",
-                apply_pass: "lir.target.count_scan.apply",
-                count: "lir.opt.total",
-                input: "lir.x86.count_by_semantic",
-                local: "lir.target.count_scan_local",
-                block_sum: "lir.target.count_scan_block_sum",
-                output: "lir.x86.offset_by_semantic",
-                total: "lir.x86.total",
-            },
-            semantic_capacity,
-            opt.count,
-            &counts,
-            &offsets,
-            &total,
-        )
-        .context("construct x86 instruction-count scan")?;
         let target_pages = GpuTargetPagePlanner::new(
             device,
             kernels,
@@ -519,28 +468,8 @@ impl GpuX86LirStage {
             semantic_capacity,
             target_capacity,
             capacities.hir_nodes,
-            opt.count,
         )
         .context("construct x86 target-function table")?;
-        let place_words = ComputeOperation::direct_with_uniform(
-            device, &context, &resources, "lir.x86.place.words",
-            &place_words_pass, &decl_slot_params, capacities.local_capacity(),
-        )?;
-        let place_scan = GpuResidentExclusiveScan::new(
-            device, kernels, graph, workspace, &allocations,
-            GraphScanContract {
-                local_pass: "lir.x86.place_scan.local",
-                apply_pass: "lir.x86.place_scan.apply",
-                count: "lir.semantic.local_total",
-                input: "lir.x86.place_words_by_local",
-                local: "lir.x86.place_scan_local",
-                block_sum: "lir.x86.place_scan_block_sum",
-                output: "lir.x86.place_prefix_by_local",
-                total: "lir.x86.place_word_total",
-            },
-            capacities.local_capacity(), &place_count, &place_words_buffer,
-            &place_prefix, &place_total,
-        ).context("construct parallel x86 declaration-place scan")?;
         let decl_slots_scatter = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -655,47 +584,29 @@ impl GpuX86LirStage {
             &allocation_params,
             semantic_capacity,
         )?;
-        let stack_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            &allocations,
-            GraphScanContract {
-                local_pass: "lir.x86.stack_scan.local",
-                apply_pass: "lir.x86.stack_scan.apply",
-                count: "lir.opt.total",
-                input: "lir.x86.stack_words_by_position",
-                local: "lir.x86.stack_scan_local",
-                block_sum: "lir.x86.stack_scan_block_sum",
-                output: "lir.x86.stack_prefix_by_position",
-                total: "lir.x86.stack_word_total",
-            },
-            semantic_capacity,
-            opt.count,
-            &stack_words,
-            &stack_prefix,
-            &stack_total,
-        )
-        .context("construct parallel x86 spill-layout scan")?;
-        let allocation_locations = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.allocation.locations",
-            &allocation_locations_pass,
-            &allocation_params,
-            semantic_capacity,
+        let sync = alias_u32(
+            "step_program_sync",
+            (STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS) as u32,
         )?;
-        let allocation_functions = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "lir.x86.allocation.functions",
-            &allocation_functions_pass,
-            &allocation_params,
-            capacities.hir_nodes.max(1),
-        )?;
+        let mut spill_resources = resources.clone();
+        spill_resources.buffer("gParams", &allocation_params);
+        spill_resources.buffer("place_params", &decl_slot_params);
+        let spill_pass = kernels.kernel("codegen/lir/x86/allocation/assign_x86_spill_layout");
+        let variant = |groups| {
+            StepProgramOperation::new(
+                device,
+                &context,
+                &spill_resources,
+                "lir.x86.assign_spill_layout",
+                spill_pass,
+                &sync,
+                X86_SPILL_PROGRAM_SLOT,
+                groups,
+                0,
+            )
+        };
+        let [small, large] = step_program_group_counts();
+        let spill_layout = [variant(small)?, variant(large)?];
         let inline_analyze = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -712,6 +623,7 @@ impl GpuX86LirStage {
             workspace,
             &allocations,
             capacities,
+            include_object,
             metadata,
             &total,
             &core,
@@ -739,8 +651,6 @@ impl GpuX86LirStage {
             count_pages,
             pages,
             decl_slots_scatter,
-            place_words,
-            place_scan,
             frame_finalize,
             analysis_clear,
             analysis_index,
@@ -752,24 +662,15 @@ impl GpuX86LirStage {
             if_convert,
             allocation_prepare,
             allocation_words,
-            stack_scan,
-            allocation_locations,
-            allocation_functions,
+            spill_layout,
+            spill_rows: semantic_capacity.max(capacities.local_capacity()).max(capacities.hir_nodes),
             inline_analyze,
-            count_scan,
             target_pages,
             functions,
             _count_params: count_params,
             _decl_slot_params: decl_slot_params,
             _analysis_params: analysis_params,
             _allocation_params: allocation_params,
-            _stack_words: stack_words,
-            _stack_prefix: stack_prefix,
-            _stack_total: stack_total,
-            _place_words: place_words_buffer,
-            _place_prefix: place_prefix,
-            _place_total: place_total,
-            _place_count: place_count,
             _counts: counts,
             _offsets: offsets,
             #[cfg(test)]
@@ -855,12 +756,11 @@ impl GpuX86LirStage {
             stamp(timer, encoder, "codegen.x86.if_convert.done");
             self.allocation_prepare.record(encoder)?;
             self.allocation_words.record(encoder)?;
-            self.stack_scan.record(encoder)?;
-            self.allocation_locations.record(encoder)?;
-            self.allocation_functions.record(encoder)?;
+            let rows = job.map_or(self.spill_rows, |job| {
+                job.semantic_instructions.max(job.local_capacity()).max(job.hir_nodes)
+            });
+            self.spill_layout[step_program_group_variant(u64::from(rows))].record(encoder)?;
             stamp(timer, encoder, "codegen.x86.allocation.parallel.done");
-            self.place_words.record(encoder)?;
-            self.place_scan.record(encoder)?;
             self.decl_slots_scatter.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.decl_slots.done");
             self.inline_analyze.record(encoder)?;
@@ -883,8 +783,9 @@ impl GpuX86LirStage {
     pub(crate) fn record_before_target_pages(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.record_after_counts_prefix(encoder)
+        self.record_after_counts_prefix(encoder, job)
     }
 
     pub(crate) fn record_measure_page(
@@ -957,17 +858,20 @@ impl GpuX86LirStage {
         Ok(())
     }
 
-    fn record_after_counts_prefix(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.count_scan.record(encoder)?;
-        self.target_pages.record(encoder)?;
-        self.functions.record(encoder)?;
+    fn record_after_counts_prefix(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
+        self.target_pages.record(encoder, job)?;
+        self.functions.record(encoder, job)?;
         self.frame_finalize.record(encoder)
     }
 
     #[cfg(test)]
     fn record_lir(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.record_counts(encoder)?;
-        self.record_after_counts_prefix(encoder)?;
+        self.record_after_counts_prefix(encoder, None)?;
         for page in &self.pages {
             page.record(encoder, true)?;
         }

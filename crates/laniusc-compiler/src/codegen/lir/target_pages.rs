@@ -3,12 +3,18 @@
 use anyhow::{Context, Result};
 use encase::ShaderType;
 
-use super::lowering_ir::{LoweringCapacities, TARGET_LIR_PAGE_ROWS, TargetSemanticPage};
+use super::lowering_ir::{
+    LOWERING_PROGRAM_SLOTS, LoweringCapacities, TARGET_LIR_PAGE_ROWS, TARGET_PAGE_PROGRAM_SLOT,
+    TargetSemanticPage,
+};
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
-    operations::ComputeOperation,
+    operations::{
+        STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     resource_registry::ResourceMap,
 };
 
@@ -22,7 +28,8 @@ struct TargetPagePlanParams {
 }
 
 pub(crate) struct GpuTargetPagePlanner {
-    operation: ComputeOperation,
+    programs: [StepProgramOperation; 2],
+    semantic_capacity: u32,
     _params: LaniusBuffer<TargetPagePlanParams>,
     _pages: LaniusBuffer<TargetSemanticPage>,
 }
@@ -60,26 +67,44 @@ impl GpuTargetPagePlanner {
                 page_rows: TARGET_LIR_PAGE_ROWS,
             },
         );
-        let pass = kernels
-            .kernel("codegen/lir/functions/plan_target_semantic_pages")
-            .clone();
-        let operation = ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, allocations),
-            resources,
-            "lir.target.semantic_page_plan",
-            &pass,
-            &params,
-            page_count,
-        )?;
+        let sync = workspace
+            .alias(
+                graph,
+                graph.resource_id("step_program_sync").context("lowering graph has no program sync")?,
+                STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS,
+            )
+            .map_err(anyhow::Error::msg)?;
+        let mut resources = resources.clone();
+        resources.buffer("gParams", &params);
+        let pass = kernels.kernel("codegen/lir/functions/plan_target_semantic_pages");
+        let variant = |groups| {
+            StepProgramOperation::new(
+                device,
+                &(graph, allocations),
+                &resources,
+                "lir.target.semantic_page_plan",
+                pass,
+                &sync,
+                TARGET_PAGE_PROGRAM_SLOT,
+                groups,
+                0,
+            )
+        };
+        let [small, large] = step_program_group_counts();
         Ok(Self {
-            operation,
+            programs: [variant(small)?, variant(large)?],
+            semantic_capacity: capacities.semantic_instructions,
             _params: params,
             _pages: pages,
         })
     }
 
-    pub fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.operation.record(encoder)
+    pub fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
+    ) -> Result<()> {
+        let rows = job.map_or(self.semantic_capacity, |job| job.semantic_instructions);
+        self.programs[step_program_group_variant(u64::from(rows))].record(encoder)
     }
 }

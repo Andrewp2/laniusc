@@ -111,7 +111,6 @@ pub(crate) struct GpuWasmLirStage {
     abi_functions_op: ComputeOperation,
     declaration_indices: ComputeOperation,
     attach_bodies: ComputeOperation,
-    count_scan: GpuResidentExclusiveScan,
     target_pages: GpuTargetPagePlanner,
     functions: GpuTargetFunctionTable,
     byte_scan: GpuResidentExclusiveScan,
@@ -403,28 +402,6 @@ impl GpuWasmLirStage {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        let count_scan = GpuResidentExclusiveScan::new(
-            device,
-            kernels,
-            graph,
-            workspace,
-            &allocations,
-            GraphScanContract {
-                local_pass: "lir.target.count_scan.local",
-                apply_pass: "lir.target.count_scan.apply",
-                count: "lir.opt.total",
-                input: "lir.wasm.count_by_semantic",
-                local: "lir.target.count_scan_local",
-                block_sum: "lir.target.count_scan_block_sum",
-                output: "lir.wasm.offset_by_semantic",
-                total: "lir.wasm.total",
-            },
-            semantic_capacity,
-            opt.count,
-            &counts,
-            &offsets,
-            &total,
-        )?;
         let target_pages = GpuTargetPagePlanner::new(
             device,
             kernels,
@@ -645,7 +622,6 @@ impl GpuWasmLirStage {
             semantic_capacity,
             target_capacity,
             capacities.hir_nodes,
-            opt.count,
         )?;
         let byte_scan = GpuResidentExclusiveScan::new(
             device,
@@ -739,7 +715,6 @@ impl GpuWasmLirStage {
             abi_functions_op,
             declaration_indices,
             attach_bodies,
-            count_scan,
             target_pages,
             functions,
             byte_scan,
@@ -915,16 +890,16 @@ impl GpuWasmLirStage {
     pub(crate) fn record_before_target_pages(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        self.count_scan.record(encoder)?;
-        self.target_pages.record(encoder)?;
+        self.target_pages.record(encoder, job)?;
         self.param_width.record(encoder)?;
         self.param_scan.record(encoder)?;
         self.local_width.record(encoder)?;
         self.local_scan.record(encoder)?;
         self.abi_functions_op.record(encoder)?;
         self.declaration_indices.record(encoder)?;
-        self.functions.record(encoder)
+        self.functions.record(encoder, job)
     }
 
     pub(crate) fn record_measure_page(
@@ -974,7 +949,7 @@ impl GpuWasmLirStage {
 
     #[cfg(test)]
     fn record_after_counts(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.record_before_target_pages(encoder)?;
+        self.record_before_target_pages(encoder, None)?;
         for page in &self.pages {
             page.record_measure(encoder)?;
         }
