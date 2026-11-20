@@ -791,7 +791,7 @@ pub(in crate::type_checker) const MATCH_EXPRS_TYPE: ReflectedComputeSpec = typec
     HirNodes,
     "type_checker/matches/type_match_exprs"
 )
-.with_indirect_dispatch("hir_active_dispatch_args");
+.with_indirect_dispatch("match_hir_dispatch_args");
 
 pub(in crate::type_checker) const MATCH_EXPRS_TYPE_INFERENCE: ReflectedComputeSpec =
     MATCH_EXPRS_TYPE.with_name("type_check.modules.type_match_exprs.inference");

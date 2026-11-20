@@ -6153,7 +6153,7 @@ fn build_graph(
             name,
             if name == CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS {
                 "inference_arg_list_args"
-            } else if name == MATCH_PAYLOADS_TYPE_INFERENCE.name {
+            } else if name == MATCH_PAYLOADS_TYPE_INFERENCE.name || name == MATCH_EXPRS_TYPE_INFERENCE.name {
                 "match_hir_dispatch_args"
             } else if name == CALLS_RETURN_TYPE_INDEX_PASS || name == CALLS_RETURN_IMPORTED_FIELDS_PASS {
                 "type_live_row_args"

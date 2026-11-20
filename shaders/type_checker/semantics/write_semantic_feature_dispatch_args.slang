@@ -17,6 +17,8 @@ StructuredBuffer<uint> hir_active_count;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<uint> compact_type_arg_count;
 StructuredBuffer<uint> compact_predicate_count;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<uint> compact_match_payload_row_count;
 StructuredBuffer<uint> semantic_feature_flags;
 RWStructuredBuffer<uint> method_token_dispatch_args;
 RWStructuredBuffer<uint> method_hir_dispatch_args;
@@ -95,7 +97,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     write_record_args(predicate_hir_dispatch_args, active_hir, predicate_or_method_work);
     write_record_args(predicate_compact_dispatch_args, active_predicates, predicates);
     write_fixed_args(predicate_single_dispatch_args, 1u, predicate_or_method_work);
-    write_record_args(match_hir_dispatch_args, active_hir, match_syntax);
+    // Match operations index the two compact HIR families directly.
+    uint match_rows = min(active_hir, max(compact_match_arm_count[0u], compact_match_payload_row_count[0u]));
+    write_record_args(match_hir_dispatch_args, match_rows, match_syntax);
     // Parent applications may come from concrete imported aliases, even when
     // this source unit has no angle-bracket operands of its own.
     write_record_args(explicit_application_dispatch_args, active_hir,

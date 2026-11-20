@@ -263,7 +263,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         resources,
         passes,
         MATCH_EXPRS_TYPE,
-        inputs.hir_active_dispatch_args,
+        &match_hir_dispatch_args,
     )?;
 
     Ok(ProjectionBindGroups {
