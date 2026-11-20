@@ -885,8 +885,8 @@ static NAMED_DRIVER_SHARD_UNDECIDED: AtomicBool = AtomicBool::new(false);
 /// Runs `configure_driver_shader_cache` before `main` in every binary that
 /// links the compiler (the CLI, test binaries, tools), while the process has
 /// its only thread: environment writes would race with other threads later.
-/// It also registers the main thread's exit wait for the driver's worker
-/// threads (`process_exit`).
+/// It also registers the main thread's exit handler, which ends the process
+/// without running library exit handlers (`process_exit`).
 #[cfg(target_os = "linux")]
 #[used]
 #[unsafe(link_section = ".init_array")]

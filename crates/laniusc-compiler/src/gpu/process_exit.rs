@@ -18,33 +18,27 @@
 //! `__cxa_atexit` handler, whatever order the libraries registered those in.
 //! [`register_before_main`] registers one such destructor for the main thread.
 //! If the process loaded the driver, the destructor waits for the
-//! pipeline-cache writer and until no other thread of the process is running,
-//! then registers an `on_exit` handler. glibc runs a handler registered during
-//! `exit` first, and passes it the exit status: it flushes C stdio and ends the
-//! process with `_exit(status)`, so no library exit handler runs. The kernel
-//! releases the device as it does for a killed process. Rust has already
-//! flushed its standard streams when `exit` runs, and the compiler writes its
-//! pipeline cache before `main` returns.
+//! pipeline-cache writer, then registers an `on_exit` handler. glibc runs a
+//! handler registered during `exit` first, and passes it the exit status: it
+//! flushes C stdio and ends the process with `_exit(status)`, so no library
+//! exit handler runs. The kernel releases the device as it does for a killed
+//! process. Rust has already flushed its standard streams when `exit` runs,
+//! and the compiler writes its pipeline cache before `main` returns.
+//!
+//! The exit does not wait for the driver's workers. After a pipeline has been
+//! used some number of times the driver compiles it again on one worker
+//! thread. For the daemon this is 20 to 50 s of CPU after 45 to 345 builds of
+//! a 33,000-line program, in every process: the next process compiles the same
+//! pipelines again. An exit that waited for that worker took 30 s after 63
+//! builds. `_exit` ends the worker with the process, and no exit handler runs
+//! beside it.
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Set once this process created a wgpu instance, which loads the driver.
 static DRIVER_LOADED: AtomicBool = AtomicBool::new(false);
 
-/// How long the exit waits for busy threads before it exits anyway. The
-/// longest background compile measured was about 8 s of CPU.
-const MAX_WAIT: Duration = Duration::from_secs(30);
-/// The interval between two looks at the process's threads. A compiling
-/// worker is running nearly all the time, so two looks 1 ms apart find it;
-/// an exit with idle threads costs about 1 ms.
-const POLL: Duration = Duration::from_millis(1);
-/// How many looks in a row must find every other thread waiting.
-const QUIET_POLLS: u32 = 2;
-
-/// Records that the driver is loaded, so the exit waits for its threads.
+/// Records that the driver is loaded, so the exit ends with `_exit`.
 pub(crate) fn note_driver_loaded() {
     DRIVER_LOADED.store(true, Ordering::Release);
 }
@@ -74,7 +68,7 @@ unsafe extern "C" {
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 pub(crate) unsafe fn register_before_main() {
     unsafe extern "C" fn wait_at_exit(_: *mut std::ffi::c_void) {
-        if wait_for_driver_threads() {
+        if wait_for_cache_writer() {
             // SAFETY: registering an exit function while `exit` runs is
             // allowed; glibc calls it before the functions registered earlier.
             unsafe { on_exit(end_process, std::ptr::null_mut()) };
@@ -94,76 +88,13 @@ pub(crate) unsafe fn register_before_main() {
     unsafe { __cxa_thread_atexit_impl(wait_at_exit, std::ptr::null_mut(), dso_symbol) };
 }
 
-/// Waits until no other thread of this process is running, if the driver was
-/// loaded, and returns whether it was. It must not panic: it runs inside
-/// `exit`.
+/// Waits for the pipeline-cache writer, if the driver was loaded, and returns
+/// whether it was. It must not panic: it runs inside `exit`.
 #[cfg_attr(not(all(target_os = "linux", target_env = "gnu")), allow(dead_code))]
-fn wait_for_driver_threads() -> bool {
+fn wait_for_cache_writer() -> bool {
     if !DRIVER_LOADED.load(Ordering::Acquire) {
         return false;
     }
-    let start = Instant::now();
     super::device::wait_for_background_persist();
-    let Some(own) = own_tid() else {
-        return true;
-    };
-    let mut quiet = 0;
-    let mut busy_seen = false;
-    while start.elapsed() < MAX_WAIT {
-        if other_thread_running(&own) {
-            quiet = 0;
-            busy_seen = true;
-        } else {
-            quiet += 1;
-            if quiet == QUIET_POLLS {
-                break;
-            }
-        }
-        std::thread::sleep(POLL);
-    }
-    if busy_seen && crate::options::get().report.host_timing {
-        eprintln!(
-            "[gpu_compile_host_timer] exit.driver_threads_wait: {:.3}ms",
-            start.elapsed().as_secs_f64() * 1000.0
-        );
-    }
     true
-}
-
-/// This thread's id, from `/proc/thread-self` (`<pid>/task/<tid>`).
-fn own_tid() -> Option<std::ffi::OsString> {
-    let link = std::fs::read_link("/proc/thread-self").ok()?;
-    link.file_name().map(ToOwned::to_owned)
-}
-
-/// Whether a thread other than `own` is running or ready to run.
-fn other_thread_running(own: &std::ffi::OsStr) -> bool {
-    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
-        return false;
-    };
-    tasks.flatten().any(|task| {
-        task.file_name() != own
-            && std::fs::read(task.path().join("stat"))
-                .ok()
-                .is_some_and(|stat| thread_state(&stat) == Some(b'R'))
-    })
-}
-
-/// The state field of `/proc/<pid>/task/<tid>/stat`: the first character
-/// after the `)` that closes the thread name, which may itself contain `)`.
-fn thread_state(stat: &[u8]) -> Option<u8> {
-    let close = stat.iter().rposition(|&byte| byte == b')')?;
-    stat.get(close + 2).copied()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thread_state_follows_the_last_closing_parenthesis() {
-        assert_eq!(thread_state(b"12 (a) b) S 1 2"), Some(b'S'));
-        assert_eq!(thread_state(b"12 (worker) R 1 2"), Some(b'R'));
-        assert_eq!(thread_state(b"12 (worker"), None);
-    }
 }

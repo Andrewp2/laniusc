@@ -34,14 +34,22 @@ device.
    destructors before any `atexit` or `__cxa_atexit` handler, whatever order
    the libraries registered those in.
 2. If a wgpu instance was created, the destructor waits for the
-   pipeline-cache writer, then until two looks 1 ms apart find no other
-   thread of the process running (`/proc/self/task/*/stat`), for at most 30 s.
-   With `LANIUS_REPORT=host-timing` it prints
-   `exit.driver_threads_wait` when it had to wait.
+   pipeline-cache writer.
 3. It then registers an `on_exit` handler. glibc runs a handler registered
    during `exit` first and passes it the exit status. The handler flushes C
    stdio and calls `_exit(status)`, so no library exit handler runs. The
-   kernel releases the device as it does for a killed process.
+   kernel releases the device as it does for a killed process, and a driver
+   worker that is still compiling ends with the process.
+
+The exit does not wait for the driver's workers. It did until 2026-11-19:
+the destructor polled `/proc/self/task/*/stat` until no other thread was
+running, for at most 30 s. After a pipeline has been used some number of
+times the driver compiles it again on one worker thread, and the daemon
+reaches that after about 25 builds of the settings program. The worker then
+used 20 CPU-seconds after 45 builds and 48 CPU-seconds after 345 builds, and
+a new process does the same work again. A daemon asked to shut down while the
+worker ran took 4.6 s to exit after 40 builds and the full 30 s after 63.
+Without the wait it exits in 0.3 s.
 
 Rust has flushed its standard streams before `exit` runs, and the compiler
 writes its pipeline cache before `main` returns. The driver's shader cache
@@ -59,6 +67,8 @@ thread, or that never created an instance, exits as before.
 | Wait only (`retained`) | 30 | 29 | 0 | 1 (the LLVM segfault) |
 | Wait, then `_exit` (`retained`) | 14 | 14 | 0 | 0 |
 | Wait, then `_exit` (`native_c`) | 8 | 8 | 0 | 0 |
+| `_exit` without the wait (`native_c`) | 8 | 8 | 0 | 0 |
+| `_exit` without the wait (daemon shutdown after 40 to 63 builds) | 3 | 3 | 0 | 0 |
 
 The race is rare on a quiet machine, so a clean count is weaker evidence
 than the two cores.
