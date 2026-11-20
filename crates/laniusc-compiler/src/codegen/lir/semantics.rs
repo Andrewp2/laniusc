@@ -2029,7 +2029,7 @@ impl GpuSemanticLoweringStage {
         operations.strings.record_job(encoder, job)?;
         stamp!("lowering.semantic.strings.done");
         if let Some(sorter) = &self.semantic_sorter {
-            sorter.record_timed(encoder, timer.as_deref_mut(), job.map(|job| job.semantic_instructions))?;
+            sorter.record_for_job(encoder, job.map(|job| job.semantic_instructions))?;
         }
         stamp!("lowering.semantic.schedule.done");
         Ok(())
@@ -2478,7 +2478,7 @@ mod tests {
         let sync = alias_u32(
             "step_program_sync",
             crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
-                * super::super::optimization::OPTIMIZATION_PROGRAM_SLOTS,
+                * super::super::lowering_ir::LOWERING_PROGRAM_SLOTS,
         );
 
         // Use the production graph bindings as well as the production shader:
@@ -2598,167 +2598,18 @@ mod tests {
         page_capacity: u32,
     }
 
-    #[repr(C)]
-    #[derive(Clone, Copy, ShaderType)]
-    struct WasmRadixTestParams {
-        target_capacity: u32,
-        max_blocks: u32,
-        key_step: u32,
-        reserved: u32,
-    }
-
     #[test]
-    fn physical_gpu_stably_sorts_wasm_schedule_across_bucket_scan_tiles() {
-        let gpu = device::global();
-        let radix_layout = TargetScheduleRadixLayout::packed_width();
-        let count = 70_000u32;
-        let blocks = count.div_ceil(256);
-        let slots = blocks * 256;
-        let key_words = (0..count)
-            .map(|row| {
-                [
-                    (row * 17) % 5,
-                    (row * 13) % 11,
-                    (row * 7) % 19,
-                    !((row * 3) % 23),
-                ]
-            })
-            .collect::<Vec<_>>();
-        let target_total = storage_ro_from_u32s(&gpu.device, "test.schedule.total", &[count]);
-        let packed_keys = key_words
-            .iter()
-            .copied()
-            .map(|key| packed_schedule_key(radix_layout, key))
-            .collect::<Vec<_>>();
-        let keys = storage_ro_from_bytes::<TargetScheduleKey>(
-            &gpu.device,
-            "test.schedule.keys",
-            &words(&packed_keys),
-            count as usize,
-        );
-        let order_a =
-            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_a", count as usize);
-        let order_b =
-            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.order_b", count as usize);
-        let histogram =
-            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.histogram", slots as usize);
-        let global_prefix =
-            storage_rw_for_array::<u32>(&gpu.device, "test.schedule.global_prefix", slots as usize);
-        let bucket_total = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.bucket_total", 256);
-
-        let histogram_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.histogram",
-            "main",
-            "codegen/lir/scheduling/count_target_schedule_buckets",
-        )
-        .unwrap();
-        let scatter_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.scatter",
-            "main",
-            "codegen/lir/scheduling/scatter_target_schedule_rows",
-        )
-        .unwrap();
-        let bucket_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.buckets",
-            "main",
-            "codegen/lir/scheduling/scan_target_schedule_buckets",
-        )
-        .unwrap();
-
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("test.schedule.encoder"),
-            });
-        for key_step in 0..radix_layout.steps {
-            let params = uniform_from_val(
-                &gpu.device,
-                &format!("test.schedule.radix.{key_step}"),
-                &WasmRadixTestParams {
-                    target_capacity: count,
-                    max_blocks: blocks,
-                    key_step,
-                    reserved: radix_layout.packed_bits,
-                },
-            );
-            let (input, output) = if key_step % 2 == 0 {
-                (&order_a, &order_b)
-            } else {
-                (&order_b, &order_a)
-            };
-            let histogram_group = make_group(
-                &gpu.device,
-                &histogram_pass,
-                "test.schedule.histogram.group",
-                &[
-                    ("gParams", params.as_entire_binding()),
-                    ("target_lir_total", target_total.as_entire_binding()),
-                    ("target_schedule_key", keys.as_entire_binding()),
-                    ("target_schedule_order_in", input.as_entire_binding()),
-                    ("target_schedule_histogram", histogram.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            let scatter_group = make_group(
-                &gpu.device,
-                &scatter_pass,
-                "test.schedule.scatter.group",
-                &[
-                    ("gParams", params.as_entire_binding()),
-                    ("target_lir_total", target_total.as_entire_binding()),
-                    ("target_schedule_key", keys.as_entire_binding()),
-                    ("target_schedule_order_in", input.as_entire_binding()),
-                    (
-                        "target_schedule_global_prefix",
-                        global_prefix.as_entire_binding(),
-                    ),
-                    ("target_schedule_bucket_total", bucket_total.as_entire_binding()),
-                    ("target_schedule_order_out", output.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            record_direct(&mut encoder, &histogram_pass, &histogram_group, count).unwrap();
-            let bucket_group = make_group(
-                &gpu.device,
-                &bucket_pass,
-                "test.schedule.buckets.group",
-                &[
-                    ("gBuckets", params.as_entire_binding()),
-                    ("target_lir_total", target_total.as_entire_binding()),
-                    ("target_schedule_histogram", histogram.as_entire_binding()),
-                    ("target_schedule_global_prefix", global_prefix.as_entire_binding()),
-                    ("target_schedule_bucket_total", bucket_total.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            record_direct(&mut encoder, &bucket_pass, &bucket_group, 256 * 256).unwrap();
-            record_direct(&mut encoder, &scatter_pass, &scatter_group, count).unwrap();
-        }
-        let readback = readback_bytes(
-            &gpu.device,
-            "test.schedule.order.readback",
-            count as usize * 4,
-            count as usize,
-        );
-        order_b.copy_to(&mut encoder, 0, &readback, 0, u64::from(count) * 4);
-        gpu.queue.submit(Some(encoder.finish()));
-
-        let actual = read_words(&gpu.device, &readback);
-        let mut expected = (0..count).collect::<Vec<_>>();
-        expected.sort_by_key(|&row| {
-            let key = key_words[row as usize];
-            [key[1], key[2], key[3]]
-        });
-        assert_eq!(actual, expected);
+    fn physical_gpu_stably_sorts_wasm_schedule_across_workgroups() {
+        check_resident_schedule(70_000, TargetScheduleRadixLayout::packed_width());
     }
 
     #[test]
     fn physical_gpu_resident_scheduler_handles_odd_width_without_record_allocations() {
+        check_resident_schedule(257, TargetScheduleRadixLayout::packed_width());
+    }
+
+    fn check_resident_schedule(count: u32, radix_layout: TargetScheduleRadixLayout) {
         let gpu = device::global();
-        let count = 257u32;
         let capacities = LoweringCapacities {
             source_bytes: count,
             tokens: 128,
@@ -2802,7 +2653,6 @@ mod tests {
             })
             .collect::<Vec<_>>();
         total.write(&gpu.queue, 0, &count.to_le_bytes());
-        let radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
         let packed_keys = key_words
             .iter()
             .copied()
@@ -2825,7 +2675,6 @@ mod tests {
             &order,
         )
         .unwrap();
-        assert_eq!(radix_layout.steps, 4);
         let before = crate::gpu::passes_core::this_thread_gpu_activity();
         let mut encoder = gpu
             .device
@@ -2834,8 +2683,7 @@ mod tests {
             });
         sorter.record(&mut encoder).unwrap();
         let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
-        // Histogram, bucket scan and scatter per digit.
-        assert_eq!(activity.compute_passes, 3 * 4);
+        assert_eq!(activity.compute_passes, 1);
         assert_eq!(
             (activity.pipelines, activity.buffers_created, activity.buffers_released),
             (0, 0, 0),

@@ -5,6 +5,7 @@ use encase::ShaderType;
 
 use super::{
     lowering_ir::{
+        LOWERING_PROGRAM_SLOTS,
         LoweringCapacities,
         LoweringStatus,
         SemanticLirAggregateElement,
@@ -40,9 +41,6 @@ use crate::gpu::{
     resource_registry::ResourceMap,
     timer::GpuTimer,
 };
-
-pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
-pub(super) const OPTIMIZATION_PROGRAM_FAILURE_BYTES: usize = OPTIMIZATION_PROGRAM_SLOTS * 4;
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -429,7 +427,7 @@ impl GpuOptimizationStage {
             .alias(
                 graph,
                 resource("step_program_sync")?,
-                STEP_PROGRAM_SYNC_WORDS * OPTIMIZATION_PROGRAM_SLOTS,
+                STEP_PROGRAM_SYNC_WORDS * LOWERING_PROGRAM_SLOTS,
             )
             .map_err(anyhow::Error::msg)?;
         resources.buffer("gParams", &params);

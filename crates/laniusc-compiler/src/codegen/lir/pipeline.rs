@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 
 use super::{
     lowering_ir::{
+        LOWERING_PROGRAM_FAILURE_BYTES, LOWERING_PROGRAM_SLOTS,
         LoweringArtifactKind,
         LoweringCapacities,
         LoweringStatus,
@@ -17,9 +18,7 @@ use super::{
         lowering_compiler_graph_for_artifact,
         lowering_resource_bytes_for_artifact,
     },
-    optimization::{
-        GpuOptimizationStage, OPTIMIZATION_PROGRAM_FAILURE_BYTES, OPTIMIZATION_PROGRAM_SLOTS,
-    },
+    optimization::GpuOptimizationStage,
     semantics::{
         GpuSemanticHirInputs,
         GpuSemanticLoweringStage,
@@ -986,7 +985,7 @@ impl GpuLoweringPipeline {
             TargetStage::X86_64(stage) => stage.object_metadata_readback().cloned(),
             TargetStage::Wasm(_) => None,
         };
-        let status_readback_bytes = status_bytes + 8 + OPTIMIZATION_PROGRAM_FAILURE_BYTES;
+        let status_readback_bytes = status_bytes + 8 + LOWERING_PROGRAM_FAILURE_BYTES;
         let (status_readback, status_binding, status_base) = match object_readback {
             Some(buffer) => (
                 buffer,
@@ -1011,7 +1010,7 @@ impl GpuLoweringPipeline {
             status_base as u64,
             status_bytes as u64,
         )?;
-        let program_failed_copies = (0..OPTIMIZATION_PROGRAM_SLOTS)
+        let program_failed_copies = (0..LOWERING_PROGRAM_SLOTS)
             .map(|slot| {
                 crate::gpu::operations::CopyBufferOperation::new(
                     &(&graph, &status_allocations),
@@ -1641,10 +1640,10 @@ impl GpuLoweringPipeline {
             first_unsupported_target_op: word(9),
         };
         let totals = std::mem::size_of::<LoweringStatus>() / 4;
-        for slot in 0..OPTIMIZATION_PROGRAM_SLOTS {
+        for slot in 0..LOWERING_PROGRAM_SLOTS {
             anyhow::ensure!(
                 word(totals + 2 + slot) == 0,
-                "optimizer step program {slot} synchronization failed",
+                "lowering step program {slot} synchronization failed",
             );
         }
         let (semantic_rows, target_rows) = (word(totals), word(totals + 1));

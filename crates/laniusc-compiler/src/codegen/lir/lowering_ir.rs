@@ -161,6 +161,11 @@ impl HostService {
 /// the expression suborders and sentinel encodings (ten radix bytes).
 pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 10;
 
+pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
+pub(super) const SCHEDULE_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
+pub(super) const LOWERING_PROGRAM_SLOTS: usize = SCHEDULE_PROGRAM_SLOT as usize + 1;
+pub(super) const LOWERING_PROGRAM_FAILURE_BYTES: usize = LOWERING_PROGRAM_SLOTS * 4;
+
 /// Capacity-derived bit layout for the semantic schedule key.
 ///
 /// The three ordering fields are packed into one continuous LSD bit stream instead of
@@ -344,90 +349,6 @@ struct X86ArtifactGraphResources {
     /// Only an object build reads them, so an executable build reserves one row.
     runtime_reference: ResourceId,
     runtime_reference_flag: ResourceId,
-}
-
-#[derive(Clone, Copy)]
-struct ScheduleGraphResources {
-    total: ResourceId,
-    keys: ResourceId,
-    order: ResourceId,
-    order_tmp: ResourceId,
-    histogram: ResourceId,
-    global_prefix: ResourceId,
-    bucket_total: ResourceId,
-}
-
-fn add_schedule_graph_passes(
-    graph: &mut CompilerGraphBuilder,
-    phase: CompilerPhase,
-    domain: ResourceDomain,
-    resources: ScheduleGraphResources,
-    radix_steps: u32,
-) -> Result<(), String> {
-    let names = [
-        "lir.semantic.schedule.histogram.even",
-        "lir.semantic.schedule.scan.buckets.even",
-        "lir.semantic.schedule.scatter.even",
-        "lir.semantic.schedule.histogram.odd",
-        "lir.semantic.schedule.scan.buckets.odd",
-        "lir.semantic.schedule.scatter.odd",
-    ];
-    let mut directions = Vec::with_capacity(2);
-    for base in [0usize, 3usize] {
-        let (order_in, order_out) = if base == 0 {
-            (resources.order, resources.order_tmp)
-        } else {
-            (resources.order_tmp, resources.order)
-        };
-        directions.push([
-            PassDesc {
-                name: names[base],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("target_lir_total", resources.total),
-                    PassAccess::read("target_schedule_key", resources.keys),
-                    PassAccess::initialize_read_write("target_schedule_order_in", order_in),
-                    PassAccess::write("target_schedule_histogram", resources.histogram),
-                ],
-            },
-            PassDesc {
-                name: names[base + 1],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("target_lir_total", resources.total),
-                    PassAccess::read("target_schedule_histogram", resources.histogram),
-                    PassAccess::write("target_schedule_global_prefix", resources.global_prefix),
-                    PassAccess::write("target_schedule_bucket_total", resources.bucket_total),
-                ],
-            },
-            PassDesc {
-                name: names[base + 2],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("target_lir_total", resources.total),
-                    PassAccess::read("target_schedule_key", resources.keys),
-                    PassAccess::read("target_schedule_order_in", order_in),
-                    PassAccess::read("target_schedule_global_prefix", resources.global_prefix),
-                    PassAccess::read("target_schedule_bucket_total", resources.bucket_total),
-                    PassAccess::write("target_schedule_order_out", order_out),
-                ],
-            },
-        ]);
-    }
-    let mut body = Vec::with_capacity(6);
-    let starts_in_temporary = radix_steps % 2 != 0;
-    if starts_in_temporary {
-        body.extend(directions[1].clone());
-        body.extend(directions[0].clone());
-    } else {
-        body.extend(directions[0].clone());
-        body.extend(directions[1].clone());
-    }
-    graph.add_repeated_region(radix_steps.div_ceil(2), body)?;
-    Ok(())
 }
 
 #[repr(C)]
@@ -3837,7 +3758,7 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationNodes,
         LoweringCapacities::bytes::<u32>(
             (crate::gpu::operations::STEP_PROGRAM_SYNC_WORDS
-                * super::optimization::OPTIMIZATION_PROGRAM_SLOTS) as u32,
+                * LOWERING_PROGRAM_SLOTS) as u32,
         ),
     ))?;
     let opt_scan_group_sums = graph.add_resource(workspace(
@@ -4338,7 +4259,7 @@ fn lowering_compiler_graph_builder(
         "lowering.status_readback",
         ResourceDomain::ArtifactBytes,
         ResourceClass::External,
-        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + super::optimization::OPTIMIZATION_PROGRAM_SLOTS]>(1),
+        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + LOWERING_PROGRAM_SLOTS]>(1),
     )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
@@ -4846,34 +4767,18 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
-    let schedule_capacity = capacities.semantic_instructions;
-    let schedule_order = graph.add_resource(workspace(
-        "lir.semantic.schedule_order",
+    let schedule = add_step_radix_resources(
+        &mut graph,
         ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_capacity),
-    ))?;
-    let schedule_order_tmp = graph.add_resource(workspace(
-        "lir.semantic.schedule_order_tmp",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_capacity),
-    ))?;
-    let schedule_blocks = schedule_capacity.max(1).div_ceil(256);
-    let schedule_slots = schedule_blocks.saturating_mul(256);
-    let schedule_histogram = graph.add_resource(workspace(
-        "lir.semantic.schedule_histogram",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots),
-    ))?;
-    let schedule_global_prefix = graph.add_resource(workspace(
-        "lir.semantic.schedule_global_prefix",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots),
-    ))?;
-    let schedule_bucket_total = graph.add_resource(workspace(
-        "lir.semantic.schedule_bucket_total",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(256),
-    ))?;
+        capacities.semantic_instructions,
+        [
+            "lir.semantic.schedule_order",
+            "lir.semantic.schedule_order_tmp",
+            "lir.semantic.schedule_histogram",
+            "lir.semantic.schedule_bucket_total",
+        ],
+    )?;
+    let schedule_order = schedule.order;
     let byte_lengths = graph.add_resource(workspace(
         match target {
             LoweringTarget::X86_64 => "lir.x86.byte_lengths",
@@ -5178,7 +5083,7 @@ fn lowering_compiler_graph_builder(
                 "artifact.x86.object.metadata_readback",
                 ResourceDomain::ArtifactBytes,
                 ResourceClass::External,
-                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + super::optimization::OPTIMIZATION_PROGRAM_SLOTS]>(1),
+                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2 + LOWERING_PROGRAM_SLOTS]>(1),
             )?,
         })
     } else {
@@ -5454,22 +5359,20 @@ fn lowering_compiler_graph_builder(
             capacities.hir_nodes,
         ));
     }
-    let schedule_resources = ScheduleGraphResources {
-        total: semantic_total,
-        keys: semantic_schedule,
-        order: schedule_order,
-        order_tmp: schedule_order_tmp,
-        histogram: schedule_histogram,
-        global_prefix: schedule_global_prefix,
-        bucket_total: schedule_bucket_total,
-    };
-    add_schedule_graph_passes(
-        &mut graph,
-        CompilerPhase::SemanticLowering,
-        ResourceDomain::SemanticInstructions,
-        schedule_resources,
-        schedule_radix_layout.steps,
-    )?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.sort_schedule",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::SemanticInstructions,
+        accesses: vec![
+            PassAccess::read("target_lir_total", semantic_total),
+            PassAccess::read("target_schedule_key", semantic_schedule),
+            PassAccess::initialize_read_write("target_schedule_order", schedule_order),
+            PassAccess::initialize_read_write("target_schedule_temporary", schedule.temporary_order),
+            PassAccess::initialize_read_write("target_schedule_histogram", schedule.histogram),
+            PassAccess::initialize_read_write("target_schedule_bucket_total", schedule.bucket_total),
+            PassAccess::initialize_read_write("step_program_sync", step_program_sync),
+        ],
+    })?;
     // A program binds every table its steps use. Each table must stay
     // live for the whole dispatch, including temporary scan and sort data.
     graph.add_pass(PassDesc {
@@ -8228,54 +8131,6 @@ fn lowering_compiler_graph_builder(
 mod tests {
     use super::*;
 
-    /// The schedule radix loop runs every digit: one histogram, scan and
-    /// scatter per direction, starting in the direction the step parity
-    /// selects, with each scatter writing the order the other direction
-    /// reads, for `steps.div_ceil(2)` iterations.
-    fn assert_schedule_radix_region(graph: &CompilerGraph, steps: u32) {
-        let region = graph
-            .repeated_regions()
-            .iter()
-            .find(|region| {
-                graph.passes()[region.first_pass.index()]
-                    .name
-                    .starts_with("lir.semantic.schedule.histogram.")
-            })
-            .expect("schedule radix region");
-        assert_eq!(region.iterations, steps.div_ceil(2));
-        assert!(2 * region.iterations - steps <= 1, "at most one extra digit pass");
-        let body = &graph.passes()[region.first_pass.index()..][..region.pass_count as usize];
-        let half = body.len() / 2;
-        assert!(half > 2 && body.len() == 2 * half, "two complete directions");
-        let (first, second) = if steps % 2 == 0 { ("even", "odd") } else { ("odd", "even") };
-        for (passes, direction) in [(&body[..half], first), (&body[half..], second)] {
-            assert_eq!(passes[0].name, format!("lir.semantic.schedule.histogram.{direction}"));
-            assert_eq!(passes[half - 1].name, format!("lir.semantic.schedule.scatter.{direction}"));
-            assert!(passes[1..half - 1].iter().all(|pass| {
-                pass.name.starts_with("lir.semantic.schedule.scan.") && pass.name.ends_with(direction)
-            }));
-        }
-        let order = |pass: &PassDesc, binding: &str| {
-            pass.accesses
-                .iter()
-                .find(|access| access.binding == binding)
-                .map(|access| access.resource)
-                .unwrap_or_else(|| panic!("{} binds {binding}", pass.name))
-        };
-        assert_ne!(
-            order(&body[0], "target_schedule_order_in"),
-            order(&body[half], "target_schedule_order_in")
-        );
-        assert_eq!(
-            order(&body[half - 1], "target_schedule_order_out"),
-            order(&body[half], "target_schedule_order_in")
-        );
-        assert_eq!(
-            order(&body[2 * half - 1], "target_schedule_order_out"),
-            order(&body[0], "target_schedule_order_in")
-        );
-    }
-
     /// A multi-hop pointer jump over chains of up to `rows` links: an a-to-b
     /// and a b-to-a round per iteration, each round following
     /// `POINTER_JUMP_HOPS` links, enough iterations to reach every root.
@@ -9003,8 +8858,6 @@ mod tests {
         let small = TargetScheduleRadixLayout::for_capacities(small_capacities);
         assert_eq!(small.packed_bits, 0x8000_d354);
         assert_eq!(small.steps, 6);
-        let graph = lowering_compiler_graph(small_capacities, LoweringTarget::Wasm).unwrap();
-        assert_schedule_radix_region(&graph, small.steps);
 
         let odd_capacities = LoweringCapacities {
             source_bytes: 4_096,
@@ -9020,8 +8873,6 @@ mod tests {
         let odd = TargetScheduleRadixLayout::for_capacities(odd_capacities);
         assert_eq!(odd.packed_bits, 0x8000_820f);
         assert_eq!(odd.steps, 4);
-        let graph = lowering_compiler_graph(odd_capacities, LoweringTarget::Wasm).unwrap();
-        assert_schedule_radix_region(&graph, odd.steps);
     }
 
     #[test]
@@ -9157,8 +9008,6 @@ mod tests {
                 "identity OptIR must take ownership of semantic operand storage"
             );
             assert_hop_jump_region(&graph, "lir.semantic.execution_rank", capacities.hir_nodes);
-            let schedule_layout = TargetScheduleRadixLayout::for_capacities(capacities);
-            assert_schedule_radix_region(&graph, schedule_layout.steps);
             assert_hop_jump_region(
                 &graph,
                 "lir.opt.dominators.depth",
@@ -9275,6 +9124,7 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             ("lir.status.clear", "codegen/lir/semantics/instructions/clear_lowering_status"),
+            ("lir.semantic.sort_schedule", "codegen/lir/scheduling/sort_semantic_schedule"),
             ("lir.semantic.project", "codegen/lir/semantics/instructions/project_semantic_values"),
             (
                 "lir.semantic.execution_rank.step_a_to_b",
