@@ -32,9 +32,10 @@ use crate::gpu::{
     kernels::KernelRegistry,
     operations::{
         ClearBuffersOperation,
-        STEP_PROGRAM_MAX_GROUPS,
         STEP_PROGRAM_SYNC_WORDS,
         StepProgramOperation,
+        step_program_group_counts,
+        step_program_group_variant,
     },
     resource_registry::ResourceMap,
     timer::GpuTimer,
@@ -432,13 +433,7 @@ impl GpuOptimizationStage {
             )
             .map_err(anyhow::Error::msg)?;
         resources.buffer("gParams", &params);
-        // 164 groups took less time across both settings lowerings on the
-        // RTX 3090. Other adapters keep the 64-group launch limit.
-        let large_groups = if crate::gpu::device::is_rtx_3090_vulkan() {
-            STEP_PROGRAM_MAX_GROUPS
-        } else {
-            64
-        };
+        let [small_groups, large_groups] = step_program_group_counts();
         let variants = |resources: &ResourceMap<'_>, name, key, slot| -> Result<_> {
             let pass = kernels.kernel(key);
             let variant = |groups, validate| {
@@ -455,7 +450,7 @@ impl GpuOptimizationStage {
                 )
             };
             Ok([
-                [variant(1, 0)?, variant(1, 1)?],
+                [variant(small_groups, 0)?, variant(small_groups, 1)?],
                 [
                     variant(large_groups, 0)?,
                     variant(large_groups, 1)?,
@@ -550,7 +545,7 @@ impl GpuOptimizationStage {
             .max(capacities.optimization_edge_capacity())
             .max(capacities.hir_nodes);
         let validate = usize::from(validate_structure);
-        self.control_flow[usize::from(rows > 4096)][validate]
+        self.control_flow[step_program_group_variant(u64::from(rows))][validate]
             .record(encoder)?;
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "optimization.structure.done");
@@ -561,11 +556,11 @@ impl GpuOptimizationStage {
         // Hardware fills clear the full sparse tables before the program's
         // resident workgroups start walking the active demand rows.
         self.clear_sparse_demands.record(encoder);
-        self.block_arguments[usize::from(argument_rows > 4096)][validate]
+        self.block_arguments[step_program_group_variant(u64::from(argument_rows))][validate]
             .record(encoder)?;
         let value_rows = capacities.optimization_value_capacity()
             .max(capacities.optimization_use_capacity());
-        self.ssa_values[usize::from(value_rows > 4096)][validate].record(encoder)
+        self.ssa_values[step_program_group_variant(u64::from(value_rows))][validate].record(encoder)
     }
 
     pub(crate) fn program_sync(&self) -> &LaniusBuffer<u32> {

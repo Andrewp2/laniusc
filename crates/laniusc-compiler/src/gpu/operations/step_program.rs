@@ -25,6 +25,32 @@ struct Launch {
     reserved: u32,
 }
 
+/// A job whose largest table has at most this many rows runs its programs
+/// with one workgroup: a step then costs under 2 us, and one group needs no
+/// wait for other groups.
+const SINGLE_GROUP_ROWS: u64 = 4096;
+
+/// The group counts a stage builds each program for: `[small jobs, large
+/// jobs]`. `step_program_group_variant` picks between them for a job.
+///
+/// 164 groups took less time than 64 and 328 across both settings lowerings
+/// on the RTX 3090 (`codegen/lir/optimization.rs`). Other adapters use 64:
+/// a dispatch with more groups than the device runs at once fails its wait.
+pub(crate) fn step_program_group_counts() -> [u32; 2] {
+    let large = if crate::gpu::device::is_rtx_3090_vulkan() {
+        STEP_PROGRAM_MAX_GROUPS
+    } else {
+        64
+    };
+    [1, large]
+}
+
+/// Index into `step_program_group_counts` for a job whose largest table has
+/// `rows` rows.
+pub(crate) fn step_program_group_variant(rows: u64) -> usize {
+    usize::from(rows > SINGLE_GROUP_ROWS)
+}
+
 pub(crate) struct StepProgramOperation {
     operation: ComputeOperation,
     sync: LaniusBuffer<u32>,

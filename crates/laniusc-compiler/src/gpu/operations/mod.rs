@@ -51,6 +51,8 @@ pub(crate) use step_program::{
     STEP_PROGRAM_MAX_GROUPS,
     STEP_PROGRAM_SYNC_WORDS,
     StepProgramOperation,
+    step_program_group_counts,
+    step_program_group_variant,
 };
 
 fn record_direct(
