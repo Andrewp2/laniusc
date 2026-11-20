@@ -98,14 +98,41 @@ void emit_header_and_wrapper(X86ArtifactLayout layout)
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
 }
 
+// Body lanes can meet at the edge of a word. Update the bytes this
+// lane owns together while preserving both neighboring fragments.
+void store_fragment(uint word, uint shift, uint bytes, uint value)
+{
+    uint mask = (0xffffffffu >> ((4u - bytes) * 8u)) << shift;
+    uint old = artifact_bytes[word];
+    for (;;)
+    {
+        uint next = (old & ~mask) | ((value << shift) & mask);
+        uint prior;
+        InterlockedCompareExchange(artifact_bytes[word], old, next, prior);
+        if (prior == old) return;
+        old = prior;
+    }
+}
+
+void store_packed(uint pos, uint bytes, uint value)
+{
+    if (pos >= gParams.artifact_capacity) return;
+    bytes = min(bytes, gParams.artifact_capacity - pos);
+    uint word = pos >> 2u;
+    uint within = pos & 3u;
+    uint first = min(bytes, 4u - within);
+    store_fragment(word, within * 8u, first, value);
+    if (bytes > first)
+        store_fragment(word + 1u, 0u, bytes - first, value >> (first * 8u));
+}
+
 void emit_rodata_word(uint word_row, X86ArtifactLayout layout)
 {
     uint byte_count = min(layout.rodata_length, semantic_lir_string_pool_len[0u]);
     uint byte_start = word_row * 4u;
     if (byte_start >= byte_count) return;
     uint packed = semantic_lir_string_data[word_row];
-    for (uint byte_i = 0u; byte_i < 4u && byte_start + byte_i < byte_count; byte_i += 1u)
-        store_byte(layout.rodata_offset + byte_start + byte_i, packed >> (byte_i * 8u));
+    store_packed(layout.rodata_offset + byte_start, min(4u, byte_count - byte_start), packed);
 }
 
 [shader("compute")]
@@ -210,8 +237,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             op.b = resolve_plan_word(op, cursor, layout);
         }
         X86Code code = x86_encode(op);
-        for (uint i = 0u; i < code.length; i += 1u)
-            store_byte(cursor + i, x86_code_byte(code, i));
+        for (uint i = 0u; i < code.length; i += 4u)
+        {
+            uint packed = i == 0u ? code.w0 : i == 4u ? code.w1 : i == 8u ? code.w2 : code.w3;
+            store_packed(cursor + i, min(4u, code.length - i), packed);
+        }
         cursor += code.length;
     }
     if (record_runtime_reference && runtime_reference.x != 0u)
