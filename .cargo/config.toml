@@ -9,3 +9,7 @@ RUST_TEST_THREADS = { value = "16" }
 # This is a default: a `LANIUS_CHECK` set in the shell replaces it, so add
 # `indirect-dispatch` to that list to keep the check.
 LANIUS_CHECK = { value = "indirect-dispatch" }
+# Each checkout keeps its own pipeline and driver shader caches. The default,
+# the user's cache directory, would be shared by every checkout: the driver's
+# shards are never pruned, and each checkout adds the kernels it changes.
+LANIUS_PIPELINE_CACHE_DIR = { value = "target/wgpu-pipeline-cache", relative = true }

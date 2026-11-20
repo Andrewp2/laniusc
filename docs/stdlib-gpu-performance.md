@@ -155,8 +155,15 @@ in place did not invalidate its entry. laniusc now sets
 so every laniusc binary shares one shard, `laniusc<n>.bin`/`.toc`. An upgrade
 compiles only the kernels that changed.
 
-Unless one of the `__GL_SHADER_DISK_CACHE*` variables is set, the cache lives
-in `<LANIUS_PIPELINE_CACHE_DIR>/nvidia`. The driver's default, `~/.cache/nvidia`,
+**Cache directory.** The caches are in `LANIUS_PIPELINE_CACHE_DIR`, else in
+`$XDG_CACHE_HOME/laniusc/pipelines`, else in `~/.cache/laniusc/pipelines`.
+Until 2026-11-19 the default was `target/wgpu-pipeline-cache` under the
+working directory, so the first compile in every other directory started
+cold. `.cargo/config.toml` sets the variable to that path for builds and
+tests of this repository, so each checkout keeps its own caches.
+
+Unless one of the `__GL_SHADER_DISK_CACHE*` variables is set, the driver cache
+is in `<cache directory>/nvidia`. The driver's default, `~/.cache/nvidia`,
 is shared with every application and capped at 1 GiB. Once full it evicts:
 one 1.6 s start took 236 s.
 
@@ -170,6 +177,12 @@ shard pays one cold start per kernel change, after which it stays warm. A
 `laniusc check` run beside a daemon took 71.4 s the first time: it compiled
 563 pipelines into a fresh 20 MB `laniusc1`. The next concurrent check took
 0.8 s.
+
+Measured again on 2026-11-19 (`66d2aa350`, RTX 3090, 633 pipelines): a
+`laniusc check` started beside a running test binary compiled all 633
+pipelines and took 57.5 s. Tests that run the CLI under a 4 s limit fail for
+this reason after a kernel change, until the second shard holds the changed
+kernels. The shards are never pruned and reached 937 MB in one checkout.
 
 **Pipeline cache file only (`LANIUS_DRIVER_SHADER_CACHE=0`).** This turns the
 driver cache off. It applies only when none of the four `__GL_SHADER_DISK_CACHE*`
@@ -199,7 +212,21 @@ Measured on 2026-10-15 (pin `89341837`, tip `d81d20d5`):
 - An upgrade compiled 44 of 569 pipelines.
 
 The driver cache stays the default because the file-only mode is slower to
-start.
+start. On 2026-11-19 (`66d2aa350`, 12 interleaved `laniusc check` runs each)
+the medians were 1,081 ms with the driver cache and 1,252 ms with the file.
+In file mode, six checks started beside a running test binary took
+1.03–1.23 s each. File mode is not the default for a second reason: the set
+file was 34 MB after checks and 55 MB after a daemon start, and a set file
+over 64 MiB cannot seed the next kernel set (see the cap below), so a kernel
+change would then compile every pipeline.
+
+One cache file per kernel, named by a hash of its SPIR-V, was tried on
+2026-11-19 and not kept. With the missing 87 kernels compiled in one start,
+the files were the expected sizes (33.6 MB for 626 kernels) and the next
+start took 1.04 s. On a start that compiled all 633 kernels, the driver
+returned up to 2.4 MB of cache data for kernels of about 10 KB (204 MB in
+total), 58 kernels compiled again on each of the next two starts, and only
+the fourth start was warm. The cause is not known.
 
 **The 100 MB VkPipelineCache cap.** NVIDIA's VkPipelineCache data stops
 growing near 100 MB. A set file seeded from a full one never gains new

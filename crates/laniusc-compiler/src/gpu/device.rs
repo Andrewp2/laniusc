@@ -829,13 +829,25 @@ fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, RegisteredPipeline
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Where the pipeline cache files live: `LANIUS_PIPELINE_CACHE_DIR`, else
-/// `target/wgpu-pipeline-cache`.
+/// Where the pipeline cache files and the driver's shader cache are:
+/// `LANIUS_PIPELINE_CACHE_DIR`, else `laniusc/pipelines` in the user's cache
+/// directory (`$XDG_CACHE_HOME`, else `$HOME/.cache`). The default does not
+/// depend on the working directory: with `target/wgpu-pipeline-cache` under
+/// the working directory, the first compile in every other directory compiled
+/// every pipeline again (57 to 138 s). Without a home directory the directory
+/// is under the working directory. `.cargo/config.toml` sets the variable for
+/// builds and tests of this repository, so each checkout keeps its own cache.
 fn pipeline_cache_dir() -> PathBuf {
-    crate::options::get()
-        .pipeline_cache_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("target").join("wgpu-pipeline-cache"))
+    if let Some(dir) = crate::options::get().pipeline_cache_dir.clone() {
+        return dir;
+    }
+    let var = |name| std::env::var_os(name).map(PathBuf::from).filter(|dir| dir.is_absolute());
+    var("XDG_CACHE_HOME")
+        .or_else(|| var("HOME").map(|home| home.join(".cache")))
+        .map_or_else(
+            || PathBuf::from("target").join("wgpu-pipeline-cache"),
+            |cache| cache.join("laniusc").join("pipelines"),
+        )
 }
 
 const NVIDIA_VENDOR_ID: u32 = 0x10de;

@@ -14,7 +14,7 @@
 //! A person running the compiler:
 //! - `LANIUS_BACKEND`: `auto`, `vulkan`, `dx12`, `metal` or `gl`.
 //! - `LANIUS_ALLOW_SOFTWARE_ADAPTER=1`: accept a software adapter.
-//! - `LANIUS_PIPELINE_CACHE_DIR`: where the pipeline cache files live.
+//! - `LANIUS_PIPELINE_CACHE_DIR`: where the pipeline caches are stored.
 //! - `LANIUS_DRIVER_SHADER_CACHE=0`: turn NVIDIA's own shader cache off.
 //! - `LANIUS_READBACK_TIMEOUT_MS`: how long a readback may take.
 //! - `LANIUS_SHADER_ARTIFACT_ROOT`: load kernels from another directory.
