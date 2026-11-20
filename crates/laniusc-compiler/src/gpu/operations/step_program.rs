@@ -142,7 +142,7 @@ impl StepProgramOperation {
             dispatch: ProgramDispatch::Graph(operation),
             sync: sync.clone(),
             offset,
-            _launch: launch,
+            _launch: Some(launch),
         })
     }
 
