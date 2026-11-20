@@ -2,11 +2,8 @@
 // scan's leading zero. The round's term-lane dispatch sizes this pass.
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.projection_schema.retained_schema_round_state;
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void count_retained_schema_requests(uint lane)
 {
-    uint lane = ps_lane(id);
     uint n = ps_round_terms();
     if (lane > n) return;
     uint entry = lane == 0u ? RT_INVALID : ps_entry(ps_round_lo()+lane-1u);

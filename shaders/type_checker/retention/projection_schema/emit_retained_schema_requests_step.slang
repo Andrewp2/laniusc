@@ -3,11 +3,8 @@
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.projection_schema.retained_schema_round_state;
 RWStructuredBuffer<uint4> sb_requests;
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void emit_retained_schema_requests(uint q)
 {
-    uint q = ps_lane(id);
     if (q >= ps_round_count()) return;
     uint lo = 0u; uint hi = ps_round_terms();
     while (lo+1u < hi)

@@ -4,11 +4,8 @@
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.projection_schema.retained_schema_round_state;
 import type_checker.retention.substitution.retained_substitution_results;
-[shader("compute")]
-[numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+public void publish_projected_schema_field_types(uint q)
 {
-    uint q = ps_lane(id);
     if (q >= ps_round_count()) return;
     uint run = ps_config[PS_CFG_RUN];
     uint2 result = uint2(RT_INVALID,SB_INVARIANT);

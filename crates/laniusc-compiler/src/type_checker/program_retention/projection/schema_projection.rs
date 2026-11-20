@@ -2,33 +2,19 @@
 //! context. Each round's frontier contains the terms appended since the
 //! previous round; one request per schema record realizes its field type.
 //!
-//! The rounds run on the GPU without a readback between them
-//! (docs/compiler-retained-projection.md, "Schema rounds"). `advance_retained_schema_round`
-//! opens a round from the store's term count and `size_retained_schema_dispatches` sizes its
-//! requests from the scan; every wide pass of a round dispatches from the
-//! indirect arguments those one-lane kernels write, so a converged or
-//! stopped round costs only empty dispatches. Each round substitutes in its
-//! own chained run. The caller reads `ps_status` with its next readback and
-//! hands it to [`SchemaProjection::settle`], which resumes a stopped round
-//! on the host's full substitution path or records more rounds.
+//! One program prepares the round's requests. Substitution records its own
+//! batch, and the publication program writes the realized field types. The
+//! caller reads `ps_status` with its next readback. An unfinished round can
+//! resume through the full substitution path.
+
 use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
-use crate::type_checker::program_retention::substitution::{Launch, read_many_labeled, record_timed};
+use crate::type_checker::program_retention::substitution::read_many_labeled;
 
-const KEYS: [&str; 6] = [
-    "type_checker/retention/projection_schema/count_retained_schema_requests",
-    "type_checker/retention/projection_schema/scan_retained_schema_request_counts",
-    "type_checker/retention/projection_schema/emit_retained_schema_requests",
-    "type_checker/retention/projection_schema/publish_projected_schema_field_types",
-    "type_checker/retention/projection_schema/advance_retained_schema_round",
-    "type_checker/retention/projection_schema/size_retained_schema_dispatches",
-];
-const K_PLAN: usize = 0;
-const K_SCAN: usize = 1;
-const K_REQUESTS: usize = 2;
-const K_CONSUME: usize = 3;
-const K_ROUND: usize = 4;
-const K_SIZE: usize = 5;
+const PREPARE: &str = "type_checker/retention/projection_schema/prepare_retained_schema_requests";
+const PUBLISH: &str = "type_checker/retention/projection_schema/publish_retained_schema_fields";
+const PREPARE_FAILED: usize = 9;
+const PUBLISH_FAILED: usize = 10;
 
 /// `ps_status` words (common.slang `PS_*`).
 pub(super) const STATUS_WORDS: usize = 16;
@@ -68,24 +54,14 @@ pub struct SchemaReport {
     pub resumed: u32,
 }
 
-/// What a dispatch's workgroups come from.
-#[derive(Clone, Copy)]
-enum Lanes {
-    Groups(u32),
-    /// The round's term lanes (`ps_indirect` word 0).
-    Terms,
-    /// The round's requests (`ps_indirect` word 3).
-    Requests,
-}
-
 struct Kernels {
     device: std::sync::Arc<wgpu::Device>,
     queue: std::sync::Arc<wgpu::Queue>,
-    passes: Vec<PassData>,
+    prepare: PassData,
+    publish: PassData,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     configs: Vec<wgpu::Buffer>,
     cursor: usize,
-    pending: Vec<(usize, wgpu::BindGroup, Lanes)>,
 }
 
 impl Kernels {
@@ -110,14 +86,14 @@ impl Kernels {
         Ok(())
     }
 
-    /// Queues one dispatch of `kernel`; `flush` records the queued ones in
-    /// one compute pass.
-    fn dispatch(
+    #[allow(clippy::too_many_arguments)]
+    fn record(
         &mut self,
+        encoder: &mut wgpu::CommandEncoder,
         store: &Store,
-        kernel: usize,
+        prepare: bool,
+        options: bool,
         config: [u32; 8],
-        lanes: Lanes,
         extra: &[(&str, &wgpu::Buffer)],
         report: &mut SchemaReport,
     ) -> Result<()> {
@@ -127,46 +103,47 @@ impl Kernels {
         let cfg = &self.configs[self.cursor];
         self.cursor += 1;
         self.queue.write_buffer_counted(cfg, 0, &words_bytes(&config));
-        let pass = &self.passes[kernel];
+        let (key, pass, slot, failure_word, rows) = if prepare {
+            (
+                PREPARE, &self.prepare, super::super::PREPARE_SCHEMA_SYNC_SLOT,
+                PREPARE_FAILED, store.capacity.arenas[A_TERMS],
+            )
+        } else {
+            (
+                PUBLISH, &self.publish, super::super::PUBLISH_SCHEMA_SYNC_SLOT,
+                PUBLISH_FAILED, config[4],
+            )
+        };
         let names = reflected_names(pass);
-        let mut bindings = Vec::new();
+        let mut bindings = Vec::with_capacity(names.len());
         for name in &names {
             let n = name.as_str();
-            let b = if n == "ps_config" { Some(cfg) } else { None }
+            if matches!(n, "step_program_sync" | "program_launch") {
+                continue;
+            }
+            let buffer = if n == "ps_config" { Some(cfg) } else { None }
                 .or_else(|| self.buffers.get(n))
                 .or_else(|| extra.iter().find(|(k, _)| *k == n).map(|(_, b)| *b))
                 .or_else(|| store.buffers.get(n))
-                .ok_or_else(|| anyhow!("{} binds unknown {n}", pass.shader_id))?;
-            bindings.push((n, b.as_entire_binding()));
+                .ok_or_else(|| anyhow!("{key} binds unknown {n}"))?;
+            bindings.push((n, buffer.as_entire_binding()));
         }
-        let group = passes_core::bind_group::create_bind_group_from_bindings(
-            &self.device,
-            Some(&pass.shader_id),
-            pass,
-            0,
-            &bindings,
+        let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+        let program = StepProgramOperation::new_reflected(
+            &self.device, key, pass, &bindings, &store.step_program_sync,
+            slot, groups, u32::from(options),
         )?;
-        self.pending.push((kernel, group, lanes));
+        program.record(encoder)?;
+        passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_counted(
+            &store.step_program_sync,
+            StepProgramOperation::failed_offset(slot),
+            &self.buffers["ps_status"],
+            (failure_word * 4) as u64,
+            4,
+        );
         report.dispatches += 1;
         Ok(())
-    }
-
-    fn flush(&mut self, encoder: &mut wgpu::CommandEncoder) {
-        let indirect = &self.buffers["ps_indirect"];
-        let steps = self
-            .pending
-            .iter()
-            .map(|(kernel, group, lanes)| {
-                let launch = match *lanes {
-                    Lanes::Groups(groups) => Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1),
-                    Lanes::Terms => Launch::Indirect(indirect, 0),
-                    Lanes::Requests => Launch::Indirect(indirect, 12),
-                };
-                (&self.passes[*kernel], group, launch)
-            })
-            .collect::<Vec<_>>();
-        record_timed(encoder, "retained_schema", &steps);
-        self.pending.clear();
     }
 }
 
@@ -185,7 +162,7 @@ impl SchemaProjection {
         for (name, bytes, indirect) in [
             ("ps_status", STATUS_WORDS as u64 * 4, false),
             ("ps_round", 32, false),
-            ("ps_indirect", 32, true),
+            ("ps_scan_total", 4, false),
             ("pj_schema_ranges", 8, false),
             ("pj_schema_fields", 8, false),
         ] {
@@ -195,14 +172,11 @@ impl SchemaProjection {
             kernels: Kernels {
                 device: gpu.device.clone(),
                 queue: gpu.queue.clone(),
-                passes: KEYS
-                    .iter()
-                    .map(|key| make_pass_data_from_shader_key(&gpu.device, key, "main", key))
-                    .collect::<Result<_>>()?,
+                prepare: make_pass_data_from_shader_key(&gpu.device, PREPARE, "main", PREPARE)?,
+                publish: make_pass_data_from_shader_key(&gpu.device, PUBLISH, "main", PUBLISH)?,
                 buffers,
                 configs: Vec::new(),
                 cursor: 0,
-                pending: Vec::new(),
             },
             engine: RetainedSubstitution::new_with_device(gpu, capacity)?,
             requests: SubstitutionRequests::new_with_device(&gpu.device, FIRST_ROWS),
@@ -276,16 +250,9 @@ impl SchemaProjection {
             let gate = if i == 0 { 0 } else { runs[i - 1] };
             let config = self.config(0, run, gate, generation);
             let k = &mut self.kernels;
-            k.dispatch(&guard, K_ROUND, config, Lanes::Groups(1), &gate_extra, &mut report)?;
-            k.dispatch(&guard, K_PLAN, config, Lanes::Terms, &[], &mut report)?;
-            for (mode, lanes) in [(0, Lanes::Terms), (1, Lanes::Groups(1)), (2, Lanes::Terms)] {
-                let mut config = config;
-                config[0] = mode;
-                k.dispatch(&guard, K_SCAN, config, lanes, &[], &mut report)?;
-            }
-            k.dispatch(&guard, K_SIZE, config, Lanes::Groups(1), &request_extra, &mut report)?;
-            k.dispatch(&guard, K_REQUESTS, config, Lanes::Requests, &request_extra, &mut report)?;
-            k.flush(&mut encoder);
+            let mut extra = gate_extra.to_vec();
+            extra.extend_from_slice(&request_extra);
+            k.record(&mut encoder, &guard, true, false, config, &extra, &mut report)?;
             let mut consumer = |encoder: &mut wgpu::CommandEncoder,
                                 guard: &Store,
                                 run: u32,
@@ -293,11 +260,15 @@ impl SchemaProjection {
                                 counts: &wgpu::Buffer|
              -> Result<()> {
                 let mut config = config;
+                let close = i + 1 == rounds;
                 config[1] = run;
-                let extra = [("sb_results", results), ("sb_counts", counts)];
-                k.dispatch(guard, K_CONSUME, config, Lanes::Requests, &extra, &mut report)?;
-                k.flush(encoder);
-                Ok(())
+                config[2] = if close { run } else { 0 };
+                let extra = [
+                    ("sb_results", results),
+                    ("sb_counts", counts),
+                    request_extra[1],
+                ];
+                k.record(encoder, guard, false, close, config, &extra, &mut report)
             };
             let dispatches = self
                 .engine
@@ -305,10 +276,6 @@ impl SchemaProjection {
             drop(consumer);
             report.substitution_dispatches += dispatches?;
         }
-        let close = self.config(1, 0, runs[rounds - 1], generation);
-        self.kernels
-            .dispatch(&guard, K_ROUND, close, Lanes::Groups(1), &gate_extra, &mut report)?;
-        self.kernels.flush(&mut encoder);
         self.kernels.queue.submit(Some(encoder.finish()));
         self.report = report;
         Ok(())
@@ -346,6 +313,7 @@ impl SchemaProjection {
 
     fn settle_inner(&mut self, store: &ProgramRetention, status: &[u32], reopen: bool) -> Result<(SchemaReport, bool)> {
         let mut status = status.to_vec();
+        check_sync(&status)?;
         let mut ran = false;
         if reopen && status[S_STOP] == STOP_CONVERGED {
             self.kernels.queue.write_buffer_counted(
@@ -356,6 +324,7 @@ impl SchemaProjection {
             self.record_chain(store, false)?;
             ran = true;
             status = self.read_status()?;
+            check_sync(&status)?;
         }
         loop {
             match status[S_STOP] {
@@ -392,6 +361,7 @@ impl SchemaProjection {
             }
             ran = true;
             status = self.read_status()?;
+            check_sync(&status)?;
         }
     }
 
@@ -413,11 +383,11 @@ impl SchemaProjection {
             let config = self.config(1, 0, 0, guard.generation);
             self.kernels.cursor = 0;
             let mut encoder = self.kernels.device.create_command_encoder(&Default::default());
-            self.kernels
-                .dispatch(&guard, K_SIZE, config, Lanes::Groups(1), &request_extra, &mut report)?;
-            self.kernels
-                .dispatch(&guard, K_REQUESTS, config, Lanes::Requests, &request_extra, &mut report)?;
-            self.kernels.flush(&mut encoder);
+            let (_, counts) = self.engine.chain_buffers()
+                .ok_or_else(|| anyhow!("schema substitution buffers are not allocated"))?;
+            let mut extra = request_extra.clone();
+            extra.push(("sb_counts", counts));
+            self.kernels.record(&mut encoder, &guard, true, true, config, &extra, &mut report)?;
             self.kernels.queue.submit(Some(encoder.finish()));
         }
         let substitution = match self.engine.run(store, &self.requests) {
@@ -441,16 +411,19 @@ impl SchemaProjection {
         let counts = published.counts.clone();
         let guard = store.store.lock().unwrap();
         let mut encoder = self.kernels.device.create_command_encoder(&Default::default());
-        let consume = self.config(1, run, 0, guard.generation);
-        let extra = [("sb_results", &results), ("sb_counts", &counts)];
-        self.kernels
-            .dispatch(&guard, K_CONSUME, consume, Lanes::Requests, &extra, &mut report)?;
-        let close = self.config(1, 0, run, guard.generation);
-        self.kernels
-            .dispatch(&guard, K_ROUND, close, Lanes::Groups(1), &extra, &mut report)?;
-        self.kernels.flush(&mut encoder);
+        let consume = self.config(1, run, run, guard.generation);
+        let extra = [("sb_results", &results), ("sb_counts", &counts), request_extra[1]];
+        self.kernels.record(&mut encoder, &guard, false, true, consume, &extra, &mut report)?;
         self.kernels.queue.submit(Some(encoder.finish()));
         self.report = report;
         Ok(())
     }
+}
+
+
+fn check_sync(status: &[u32]) -> Result<()> {
+    if status[PREPARE_FAILED] != 0 || status[PUBLISH_FAILED] != 0 || status[S_ERROR] & 4 != 0 {
+        bail!("retained schema program failed to synchronize");
+    }
+    Ok(())
 }

@@ -14,19 +14,14 @@
 // running and the host records more.
 import type_checker.retention.projection_schema.retained_schema_workspace;
 import type_checker.retention.substitution.retained_substitution_results;
-RWStructuredBuffer<uint> ps_round;
-RWStructuredBuffer<uint> ps_indirect;
-[shader("compute")]
-[numthreads(1,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+import type_checker.retention.projection_schema.retained_schema_round_state;
+public void advance_retained_schema_round(uint mode)
 {
-    ps_write_dispatch(ps_indirect, 0u, 0u);
-    ps_write_dispatch(ps_indirect, 3u, 0u);
     ps_round[4] = 0u;
     uint gate = ps_config[PS_CFG_GATE_RUN];
     if (gate != 0u && sb_counts[SB_C_SYNC_FAILED] != 0u)
     {
-        InterlockedOr(ps_status[PS_ERROR], 2u);
+        InterlockedOr(ps_status[PS_ERROR], 4u);
         ps_status[PS_STOP] = PS_STOP_FAILED;
         return;
     }
@@ -55,12 +50,11 @@ void main(uint3 id: SV_DispatchThreadID)
         ps_status[PS_STOP] = PS_STOP_CONVERGED;
         return;
     }
-    if (ps_config[PS_CFG_MODE] == 1u) return;
+    if (mode == 1u) return;
     ps_status[PS_LO] = hi;
     ps_round[0] = lo;
     ps_round[1] = hi;
     ps_round[2] = ps_status[PS_BASE];
     ps_round[3] = 0u;
     ps_round[4] = 1u;
-    ps_write_dispatch(ps_indirect, 0u, hi - lo + 1u);
 }

@@ -6,16 +6,11 @@
 // buffers and resumes the round (mode 1, which runs while the round is
 // armed in ps_round even when its flag was cleared by a later gate).
 import type_checker.retention.projection_schema.retained_schema_workspace;
-RWStructuredBuffer<uint> ps_round;
-RWStructuredBuffer<uint> ps_indirect;
-RWStructuredBuffer<uint> sb_request_count;
-[shader("compute")]
-[numthreads(1,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+import type_checker.retention.projection_schema.retained_schema_round_state;
+public RWStructuredBuffer<uint> sb_request_count;
+public void reserve_retained_schema_requests(bool resume)
 {
-    ps_write_dispatch(ps_indirect, 3u, 0u);
     sb_request_count[0] = 0u;
-    bool resume = ps_config[PS_CFG_MODE] == 1u;
     if (ps_status[PS_STOP] != PS_STOP_RUNNING || (!resume && ps_round[4] == 0u)) return;
     if (ps_status[PS_ERROR] != 0u)
     {
@@ -40,5 +35,4 @@ void main(uint3 id: SV_DispatchThreadID)
         return;
     }
     sb_request_count[0] = count;
-    ps_write_dispatch(ps_indirect, 3u, count);
 }

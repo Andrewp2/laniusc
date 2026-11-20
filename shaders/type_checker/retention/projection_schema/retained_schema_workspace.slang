@@ -5,6 +5,7 @@ __exported import type_checker.retention.retention_store;
 // generation, the request capacity and the field capacity.
 public StructuredBuffer<uint> ps_config;
 public RWStructuredBuffer<uint> ps_scan_a;
+public RWStructuredBuffer<uint> ps_scan_total;
 public RWStructuredBuffer<uint> ps_scan_b;
 public RWStructuredBuffer<uint> ps_blocks;
 // Written by one-lane kernels; read by the round's one-lane kernels.
@@ -25,16 +26,14 @@ public static const uint PS_BASE = 4u;          // fields written by committed r
 public static const uint PS_DEMAND_REQUESTS = 5u;
 public static const uint PS_DEMAND_FIELDS = 6u;
 public static const uint PS_ROUNDS = 7u;        // committed rounds
+public static const uint PS_PREPARE_FAILED = 9u;
+public static const uint PS_PUBLISH_FAILED = 10u;
 public static const uint PS_TERMS = 8u;         // store terms at the last close
 public static const uint PS_STOP_RUNNING = 0u;
 public static const uint PS_STOP_CONVERGED = 1u;
 public static const uint PS_STOP_UNPUBLISHED = 2u;
 public static const uint PS_STOP_CAPACITY = 3u;
 public static const uint PS_STOP_FAILED = 4u;
-// ps_round words: lo, hi, base, count, armed. ps_indirect: the term-lane
-// dispatch (hi - lo + 1 lanes) at word 0, the request-lane dispatch
-// (count lanes) at word 3.
-public uint ps_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint ps_scan(uint i) { return ps_scan_a[i]; }
 public uint ps_entry(uint term)
 {
@@ -48,12 +47,4 @@ public uint ps_entry(uint term)
     uint4 d3 = rt_dir[(def-1u)*RT_DIR_WORDS+3u];
     return d0.x == decl && (d0.y == 5u || d0.y == 6u) &&
         d0.w == RT_DIR_COMMITTED && d3.w == 0u ? def-1u : RT_INVALID;
-}
-// Writes a dispatch of `lanes` lanes (256 per workgroup) at `at`.
-public void ps_write_dispatch(RWStructuredBuffer<uint> args, uint at, uint lanes)
-{
-    uint groups = (lanes + 255u) / 256u;
-    args[at] = min(groups, 65535u);
-    args[at + 1u] = groups == 0u ? 0u : (groups + 65534u) / 65535u;
-    args[at + 2u] = 1u;
 }
