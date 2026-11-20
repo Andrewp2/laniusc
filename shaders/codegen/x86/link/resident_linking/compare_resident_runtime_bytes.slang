@@ -1,8 +1,10 @@
-// One lane per (object, runtime byte): marks an object whose native runtime
-// differs from the entry object's. The plan keeps only the body of an object
-// whose runtime is byte-identical (link.rs shared_runtime_text_plans).
-
+// The link may keep only an object's body when its runtime matches the
+// entry object's byte for byte. Compare the live runtime ranges, excluding
+// the trailing bridge bytes in both objects.
 import codegen.x86.link.resident_linking.resident_link_layout;
+
+static const uint GROUP_LANES = 256u;
+static const uint GROUPS_PER_OBJECT = 8u;
 
 uint entry_object()
 {
@@ -12,32 +14,53 @@ uint entry_object()
     return INVALID;
 }
 
-bool runtime_range(uint object, out uint start, out uint end)
+bool runtime_range(uint object, out uint start, out uint length)
 {
     uint text_len, rodata_len, entry, body_start, body_end;
     object_geometry(object, text_len, rodata_len, entry, body_start, body_end);
-    start = body_end;
-    end = text_len >= BRIDGE_BYTES ? text_len - BRIDGE_BYTES : 0u;
-    return text_len >= BRIDGE_BYTES && body_end < end;
+    uint end = text_len >= BRIDGE_BYTES ? text_len - BRIDGE_BYTES : 0u;
+    start = slot_word(object, 8u) + body_end;
+    length = end > body_end ? end - body_end : 0u;
+    // The plan will reject invalid object geometry.
+    return length != 0u && text_len <= slot_word(object, 12u);
+}
+
+uint runtime_word(uint start, uint bytes)
+{
+    uint word = start >> 2u;
+    uint shift = (start & 3u) * 8u;
+    uint value = st_text[word] >> shift;
+    if (bytes * 8u > 32u - shift)
+        value |= st_text[word + 1u] << (32u - shift);
+    return value & (0xffffffffu >> ((4u - bytes) * 8u));
 }
 
 [shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+[numthreads(GROUP_LANES, 1, 1)]
+void main(uint3 group: SV_GroupID, uint lane: SV_GroupIndex)
 {
-    uint lane = rl_lane(tid);
-    uint object = lane / max(gRL.runtime_cap_max, 1u);
-    uint i = lane % max(gRL.runtime_cap_max, 1u);
-    if (object >= gRL.object_count)
+    uint block = group.x + group.y * 65535u;
+    uint object = block / GROUPS_PER_OBJECT;
+    if (object >= gRL.object_count || meta_word(object, 6u) == 1u)
         return;
     uint entry = entry_object();
-    if (entry == INVALID || object == entry || meta_word(object, 6u) == 1u)
+    if (entry == INVALID)
         return;
-    uint start, end, entry_start, entry_end;
-    if (!runtime_range(object, start, end) || !runtime_range(entry, entry_start, entry_end))
+    uint start, length, entry_start, entry_length;
+    if (!runtime_range(object, start, length) ||
+        !runtime_range(entry, entry_start, entry_length) || length != entry_length)
         return;
-    if (end - start != entry_end - entry_start || i >= end - start)
-        return;
-    if (object_text_byte(object, start + i) != object_text_byte(entry, entry_start + i))
-        rl_objects[object * OBJECT_WORDS + OB_MISMATCH] = 1u;
+    uint offset = 4u * ((block % GROUPS_PER_OBJECT) * GROUP_LANES + lane);
+    bool mismatch = false;
+    for (; offset < length; offset += 4u * GROUPS_PER_OBJECT * GROUP_LANES)
+    {
+        uint bytes = min(4u, length - offset);
+        if (runtime_word(start + offset, bytes) != runtime_word(entry_start + offset, bytes))
+        {
+            mismatch = true;
+            break;
+        }
+    }
+    if (WaveActiveAnyTrue(mismatch) && WaveIsFirstLane())
+        atomic_u32_or(rl_objects, object * OBJECT_WORDS + OB_MISMATCH, 1u);
 }

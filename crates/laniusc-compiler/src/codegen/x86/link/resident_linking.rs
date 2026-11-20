@@ -905,7 +905,7 @@ impl GpuX86Linker {
 
         // Slot table (resident_link_layout.slang).
         let mut slot_words = Vec::with_capacity(objects.len() * SLOT_WORDS);
-        let (mut symbol_cap_total, mut reloc_cap_total, mut text_cap_max) = (0u64, 0u64, 0u32);
+        let (mut symbol_cap_total, mut reloc_cap_total) = (0u64, 0u64);
         let (mut text_cap_sum, mut rodata_cap_sum) = (0u64, 0u64);
         for (object, &index) in objects.iter().zip(&chosen) {
             let slot = &state.slots[index];
@@ -936,7 +936,6 @@ impl GpuX86Linker {
             ]);
             symbol_cap_total += u64::from(undefined) + u64::from(definitions);
             reloc_cap_total += u64::from(reloc) + u64::from(runtime);
-            text_cap_max = text_cap_max.max(text);
             text_cap_sum += u64::from(text);
             rodata_cap_sum += u64::from(rodata);
         }
@@ -956,8 +955,9 @@ impl GpuX86Linker {
         let binding_count = (binding_rows.len() / 4) as u32;
         let hash_size = (2 * symbol_cap_total.max(binding_count)).max(64).next_power_of_two();
         let small_size = (2 * symbol_cap_total).max(64).next_power_of_two();
+        // Eight 256-lane workgroups per object, matching the compare kernel.
         let compare_lanes = object_count
-            .checked_mul(text_cap_max.max(1))
+            .checked_mul(8 * 256)
             .context("resident x86 link runtime comparison exceeds u32 lanes")?;
         let params = [
             object_count,
@@ -967,7 +967,7 @@ impl GpuX86Linker {
             hash_size - 1,
             small_size - 1,
             routes.route_capacity,
-            text_cap_max,
+            0,
             0,
             0,
             0,

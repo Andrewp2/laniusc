@@ -20,7 +20,7 @@ public struct RLParams
     public uint hash_mask;
     public uint small_mask;
     public uint route_capacity;
-    public uint runtime_cap_max;
+    public uint reserved0;
     public uint import_count;
     public uint text_len_total;
     public uint output_len;
