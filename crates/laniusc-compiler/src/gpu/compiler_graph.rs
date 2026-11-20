@@ -342,6 +342,19 @@ pub(crate) struct CompilerGraphDiagnosticNode {
     pub dispatch_domain: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub graph_managed_working_set_bytes: Option<u64>,
+    /// The shader key of the pass's kernel, when the pass names one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kernel: Option<&'static str>,
+    /// One row per declared access, in declaration order.
+    pub accesses: Vec<CompilerGraphDiagnosticAccess>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CompilerGraphDiagnosticAccess {
+    pub binding: &'static str,
+    pub resource: &'static str,
+    pub reads: bool,
+    pub writes: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1970,6 +1983,17 @@ impl CompilerGraph {
                 dispatch_domain: pass.dispatch_domain.diagnostic_name(),
                 graph_managed_working_set_bytes: workspace
                     .map(|workspace| self.graph_managed_working_set_bytes(workspace, id)),
+                kernel: self.pass_kernels.get(id).copied().flatten(),
+                accesses: pass
+                    .accesses
+                    .iter()
+                    .map(|access| CompilerGraphDiagnosticAccess {
+                        binding: access.binding,
+                        resource: self.resources[access.resource.index()].name,
+                        reads: access.mode.reads(),
+                        writes: access.mode.writes(),
+                    })
+                    .collect(),
             })
             .collect();
 
