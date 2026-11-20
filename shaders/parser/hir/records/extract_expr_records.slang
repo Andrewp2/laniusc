@@ -25,7 +25,7 @@ StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-RWStructuredBuffer<uint> hir_expr_record;
+RWStructuredBuffer<uint4> hir_expr_record;
 RWStructuredBuffer<uint> hir_expr_name_role;
 RWStructuredBuffer<uint> hir_expr_result_root_node;
 
@@ -90,11 +90,6 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_TRY_EXPR = 36u;
 
-static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
-static const uint HIR_EXPR_RECORD_RIGHT = 2u;
-static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint HIR_EXPR_NAME_ROLE_NONE = 0u;
 static const uint HIR_EXPR_NAME_ROLE_SELF = 1u;
 
@@ -328,11 +323,7 @@ uint binary_tail_chain_result(uint tail)
 
 void write_expr_record(uint i, uint form, uint left, uint right, uint value_token)
 {
-    uint base = i * HIR_EXPR_RECORD_STRIDE;
-    hir_expr_record[base + HIR_EXPR_RECORD_FORM] = form;
-    hir_expr_record[base + HIR_EXPR_RECORD_LEFT] = left;
-    hir_expr_record[base + HIR_EXPR_RECORD_RIGHT] = right;
-    hir_expr_record[base + HIR_EXPR_RECORD_VALUE_TOKEN] = value_token;
+    hir_expr_record[i] = uint4(form, left, right, value_token);
 }
 
 void publish_expr_result(uint i, uint result)
