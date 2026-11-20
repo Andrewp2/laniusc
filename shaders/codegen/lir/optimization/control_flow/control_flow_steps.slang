@@ -192,6 +192,9 @@ public void scatter_control_flow_edges(uint block_id, uint block_count, uint edg
         InterlockedMax(lowering_status[0u].required_capacity, edge_total);
         lowering_status[0u].available_capacity = gParams.edge_capacity;
     }
+    // The program calls this for block 0 of a job without blocks, so that
+    // the capacity check above runs. Such a job has no block row to read.
+    if (block_id >= block_count) return;
 
     uint start = opt_ir_edge_prefix[block_id];
     uint expected = opt_ir_edge_count_by_block[block_id];
