@@ -49,7 +49,10 @@ use crate::gpu::{
         ResourceDomain,
     },
     device,
-    operations::{ComputeOperation, CopyBufferOperation},
+    operations::{
+        CopyBufferOperation, STEP_PROGRAM_SYNC_WORDS, StepProgramOperation,
+        step_program_group_counts, step_program_group_variant,
+    },
     passes_core::{PassData, make_main_pass},
     resource_registry::ResourceMap,
     workspace::WorkspaceUsageClass,
@@ -69,6 +72,7 @@ pub(crate) const READY_ROUTES_PUBLISHED: u32 = 1;
 pub(crate) const READY_ABI_CERTIFIED: u32 = 2;
 
 const STATUS_WORDS: usize = 16;
+const STATUS_PROGRAM_FAILURE: usize = 3;
 const STATUS_FAILURE_BASE: usize = 4;
 
 pub(crate) fn is_provisional_identity(identity: [u32; 3]) -> bool {
@@ -377,13 +381,8 @@ struct FinalizeGraph {
     materialized: MaterializedCompilerGraph,
 }
 
-const PASS_CLEAR: &str = "codegen.x86.finalize.clear";
-const PASS_OBJECTS: &str = "codegen.x86.finalize.objects";
-const PASS_ROUTES: &str = "codegen.x86.finalize.routes";
-const PASS_CLASSIFY: &str = "codegen.x86.finalize.classify";
-const PASS_CHECK: &str = "codegen.x86.finalize.check";
-const PASS_EMIT_SYMBOLS: &str = "codegen.x86.finalize.emit_symbols";
-const PASS_EMIT_IDENTITY: &str = "codegen.x86.finalize.emit_identity";
+const PASS_FINALIZE: &str = "codegen.x86.finalize_symbol_columns";
+const COPY_PROGRAM_FAILURE: &str = "codegen.x86.finalize.program_failure.readback";
 const COPY_STATUS: &str = "codegen.x86.finalize.status.readback";
 const COPY_SYMBOLS: &str = "codegen.x86.finalize.symbols.readback";
 const COPY_IDENTITY: &str = "codegen.x86.finalize.identity.readback";
@@ -404,13 +403,7 @@ pub(crate) struct X86FinalizeSubmitted {
 }
 
 pub(crate) struct GpuX86SymbolFinalizer {
-    clear: PassData,
-    objects: PassData,
-    routes: PassData,
-    classify: PassData,
-    check: PassData,
-    emit_symbols: PassData,
-    emit_identity: PassData,
+    finalize: PassData,
     buffers: CapacityBufferCache,
     graph: Mutex<Option<FinalizeGraph>>,
     output: Mutex<OutputCapacity>,
@@ -421,19 +414,12 @@ impl GpuX86SymbolFinalizer {
     pub(crate) fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         // A shader key reuses the pipeline a daemon prepared before it
         // reported ready. The first build constructs this finalizer.
-        macro_rules! load {
-            ($label:literal, $shader:literal) => {
-                make_main_pass!(&gpu.device, $label, shader: $shader)?
-            };
-        }
         Ok(Self {
-            clear: load!("codegen_x86_finalize_clear", "codegen/x86/symbol_finalization/clear_symbol_finalization_state"),
-            objects: load!("codegen_x86_finalize_objects", "codegen/x86/symbol_finalization/validate_object_symbol_ranges"),
-            routes: load!("codegen_x86_finalize_routes", "codegen/x86/symbol_finalization/check_symbol_route_readiness"),
-            classify: load!("codegen_x86_finalize_classify", "codegen/x86/symbol_finalization/claim_provisional_symbol_identity_words"),
-            check: load!("codegen_x86_finalize_check", "codegen/x86/symbol_finalization/check_symbol_identity_word_ownership"),
-            emit_symbols: load!("codegen_x86_finalize_emit_symbols", "codegen/x86/symbol_finalization/publish_finalized_symbols"),
-            emit_identity: load!("codegen_x86_finalize_emit_identity", "codegen/x86/symbol_finalization/write_finalized_symbol_identity_words"),
+            finalize: make_main_pass!(
+                &gpu.device,
+                PASS_FINALIZE,
+                shader: "codegen/x86/symbol_finalization/finalize_symbol_columns"
+            )?,
             buffers: CapacityBufferCache::default(),
             graph: Mutex::new(None),
             output: Mutex::new(OutputCapacity {
@@ -621,30 +607,12 @@ impl GpuX86SymbolFinalizer {
         resources.buffer("fin_readiness", routes.readiness);
         resources.buffer("fin_readback", &readback);
 
-        let symbol_lanes = transfer.symbol_count.max(1);
-        let operations = [
-            (
-                PASS_CLEAR,
-                &self.clear,
-                transfer.identity_word_count().max(STATUS_WORDS as u32),
-            ),
-            (PASS_OBJECTS, &self.objects, transfer.object_count().max(1)),
-            (PASS_ROUTES, &self.routes, 1),
-            (PASS_CLASSIFY, &self.classify, symbol_lanes),
-            (PASS_CHECK, &self.check, symbol_lanes),
-            (PASS_EMIT_SYMBOLS, &self.emit_symbols, symbol_lanes),
-            (
-                PASS_EMIT_IDENTITY,
-                &self.emit_identity,
-                transfer.identity_word_count().max(1),
-            ),
-        ]
-        .into_iter()
-        .map(|(name, pass, lanes)| {
-            ComputeOperation::direct(device, graph, &resources, name, pass, lanes)
-                .map(|operation| (operation, lanes))
-        })
-        .collect::<Result<Vec<_>>>()?;
+        let sync = graph.buffer::<u32>("step_program_sync")?;
+        let rows = transfer.symbol_count.max(transfer.identity_word_count()).max(transfer.object_count());
+        let groups = step_program_group_counts()[step_program_group_variant(u64::from(rows))];
+        let operation = StepProgramOperation::new(
+            device, graph, &resources, PASS_FINALIZE, &self.finalize, &sync, 0, groups, 0,
+        )?;
 
         let status = graph.buffer::<u32>("fin_status")?;
         let symbols_out = graph.buffer::<u32>("fin_symbols_out")?;
@@ -652,9 +620,7 @@ impl GpuX86SymbolFinalizer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.finalize.encoder"),
         });
-        for (operation, lanes) in &operations {
-            operation.record_elements(&mut encoder, *lanes)?;
-        }
+        operation.record(&mut encoder)?;
         CopyBufferOperation::new(
             graph,
             COPY_STATUS,
@@ -665,6 +631,18 @@ impl GpuX86SymbolFinalizer {
             &readback,
             0,
             (STATUS_WORDS * 4) as u64,
+        )?
+        .record(&mut encoder);
+        CopyBufferOperation::new(
+            graph,
+            COPY_PROGRAM_FAILURE,
+            "step_program_sync",
+            &sync,
+            StepProgramOperation::failed_offset(0),
+            "fin_readback",
+            &readback,
+            (STATUS_PROGRAM_FAILURE * 4) as u64,
+            4,
         )?
         .record(&mut encoder);
         if symbol_copy_bytes != 0 {
@@ -737,6 +715,10 @@ impl GpuX86SymbolFinalizer {
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
             .collect::<Vec<_>>();
+        anyhow::ensure!(
+            status_words[STATUS_PROGRAM_FAILURE] == 0,
+            "x86 symbol finalization step program synchronization failed",
+        );
         if let Some(failure) = FAILURE_KINDS.iter().enumerate().find_map(|(code, &kind)| {
             let detail = status_words[STATUS_FAILURE_BASE + code];
             (detail != u32::MAX).then_some(X86FinalizeFailure { kind, detail })
@@ -822,6 +804,7 @@ impl GpuX86SymbolFinalizer {
         let mut graph = CompilerGraphBuilder::new();
         for (name, class, bytes) in [
             ("fin_objects", ResourceClass::Input, objects * 16),
+            ("step_program_sync", ResourceClass::Workspace, (STEP_PROGRAM_SYNC_WORDS * 4) as u64),
             (
                 "fin_symbols_in",
                 ResourceClass::Input,
@@ -863,43 +846,22 @@ impl GpuX86SymbolFinalizer {
                 })
                 .map_err(anyhow::Error::msg)?;
         }
-        for (name, pass, first_writes) in [
-            (
-                PASS_CLEAR,
-                &self.clear,
-                &["fin_word_owner", "fin_word_preserved", "fin_status"][..],
-            ),
-            (PASS_OBJECTS, &self.objects, &[][..]),
-            (PASS_ROUTES, &self.routes, &[][..]),
-            (PASS_CLASSIFY, &self.classify, &["fin_symbol_final"][..]),
-            (PASS_CHECK, &self.check, &[][..]),
-            (
-                PASS_EMIT_SYMBOLS,
-                &self.emit_symbols,
-                &["fin_symbols_out"][..],
-            ),
-            (
-                PASS_EMIT_IDENTITY,
-                &self.emit_identity,
-                &["fin_identity_out"][..],
-            ),
-        ] {
-            let modes = first_writes
-                .iter()
-                .map(|&binding| (binding, AccessMode::Write))
-                .collect::<Vec<_>>();
-            graph
-                .add_reflected_compute_pass_by_name_with_modes(
-                    name,
-                    CompilerPhase::Artifact,
-                    ResourceDomain::Declarations,
-                    &pass.reflection,
-                    &modes,
-                )
-                .map_err(anyhow::Error::msg)?;
-        }
+        let writes = [
+            "fin_word_owner", "fin_word_preserved", "fin_status", "fin_symbol_final",
+            "fin_symbols_out", "fin_identity_out", "step_program_sync",
+        ].map(|name| (name, AccessMode::Write));
+        graph
+            .add_reflected_compute_pass_by_name_with_modes(
+                PASS_FINALIZE,
+                CompilerPhase::Artifact,
+                ResourceDomain::Declarations,
+                &self.finalize.reflection,
+                &writes,
+            )
+            .map_err(anyhow::Error::msg)?;
         for (name, source, destination) in [
             (COPY_STATUS, "fin_status", "fin_readback"),
+            (COPY_PROGRAM_FAILURE, "step_program_sync", "fin_readback"),
             (COPY_SYMBOLS, "fin_symbols_out", "fin_readback"),
             (COPY_IDENTITY, "fin_identity_out", "fin_readback"),
         ] {

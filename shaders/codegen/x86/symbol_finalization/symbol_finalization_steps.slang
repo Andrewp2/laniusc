@@ -1,23 +1,22 @@
-// One lane per symbol. A provisional symbol takes its route's final identity
-// and claims the three identity words it will rewrite. Its route row must be
-// written for this build and name a final identity (an instance rank below
-// the readiness instance count, or a DeclNative identity); routes are flat,
-// so a row never names another use. Rows no symbol names are not read. Every other symbol
-// marks the words its identity bytes cover as preserved; its bytes and hash
-// are copied unchanged.
-
 import codegen.x86.symbol_finalization.symbol_finalization_layout;
+import codegen.x86.symbol_finalization.symbol_publication_predicate;
 
-StructuredBuffer<uint4> fin_readiness;
-StructuredBuffer<uint4> fin_routes;
-StructuredBuffer<uint4> fin_objects;
-StructuredBuffer<uint> fin_symbols_in;
-StructuredBuffer<uint> fin_identity_in;
 RWStructuredBuffer<uint> fin_word_owner;
 RWStructuredBuffer<uint> fin_word_preserved;
-// (final identity, first rewritten identity word or INVALID)
+public RWStructuredBuffer<uint> fin_status;
+StructuredBuffer<uint4> fin_objects;
+StructuredBuffer<uint4> fin_readiness;
+StructuredBuffer<uint4> fin_routes;
+StructuredBuffer<uint> fin_symbols_in;
+StructuredBuffer<uint> fin_identity_in;
 RWStructuredBuffer<uint4> fin_symbol_final;
-RWStructuredBuffer<uint> fin_status;
+RWStructuredBuffer<uint> fin_symbols_out;
+RWStructuredBuffer<uint> fin_identity_out;
+
+uint identity_words(uint byte_len)
+{
+    return (byte_len >> 2u) + ((byte_len & 3u) != 0u ? 1u : 0u);
+}
 
 void fail(uint code, uint detail)
 {
@@ -53,13 +52,58 @@ uint identity_word_at(uint byte_index)
     return word;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+public void clear_finalize_row(uint i)
 {
-    uint symbol_i = finalize_lane(tid);
-    if (symbol_i >= gFinalize.symbol_count)
-        return;
+    if (i < gFinalize.identity_word_count)
+    {
+        fin_word_owner[i] = INVALID;
+        fin_word_preserved[i] = 0u;
+    }
+    if (i < STATUS_WORDS)
+        fin_status[i] = i >= STATUS_FAILURE_BASE ? INVALID : 0u;
+}
+
+public void validate_object_range(uint object_i)
+{
+    uint4 object = fin_objects[object_i];
+    uint symbol_end = object.x + object.y;
+    uint word_end = object.z + identity_words(object.w);
+    bool valid = symbol_end >= object.x && word_end >= object.z &&
+        symbol_end <= gFinalize.symbol_count && word_end <= gFinalize.identity_word_count;
+    if (object_i == 0u)
+        valid = valid && object.x == 0u && object.z == 0u;
+    else
+    {
+        uint4 previous = fin_objects[object_i - 1u];
+        valid = valid && object.x == previous.x + previous.y &&
+            object.z == previous.z + identity_words(previous.w);
+    }
+    if (object_i + 1u == gFinalize.object_count)
+    {
+        valid = valid && symbol_end == gFinalize.symbol_count &&
+            word_end == gFinalize.identity_word_count;
+        fin_status[STATUS_SYMBOL_DEMAND] = symbol_end;
+        fin_status[STATUS_IDENTITY_DEMAND] = word_end;
+    }
+    if (!valid)
+        InterlockedMin(fin_status[failure_slot(FAIL_OBJECT_MALFORMED)], object_i);
+}
+
+public void check_route_readiness()
+{
+    uint4 readiness = fin_readiness[0u];
+    if (readiness.x != gFinalize.generation)
+        fail(FAIL_READINESS, READINESS_GENERATION);
+    if ((readiness.y & READY_ROUTES_PUBLISHED) == 0u)
+        fail(FAIL_READINESS, READINESS_ROUTES_UNPUBLISHED);
+    if ((readiness.y & READY_ABI_CERTIFIED) == 0u)
+        fail(FAIL_READINESS, READINESS_ABI_UNCERTIFIED);
+    if (readiness.w > gFinalize.route_capacity)
+        fail(FAIL_READINESS, READINESS_ROUTE_TABLE_SHORT);
+}
+
+public void claim_symbol_words(uint symbol_i)
+{
     fin_symbol_final[symbol_i] = uint4(0u, 0u, 0u, INVALID);
     if (gFinalize.object_count == 0u)
     {
@@ -142,4 +186,46 @@ void main(uint3 tid: SV_DispatchThreadID)
     fin_symbol_final[symbol_i] = uint4(route.xyz, word_base);
     for (uint i = 0u; i < 3u; i += 1u)
         InterlockedMin(fin_word_owner[word_base + i], symbol_i);
+}
+
+public void check_symbol_claims(uint symbol_i)
+{
+    uint word_base = fin_symbol_final[symbol_i].w;
+    if (word_base == INVALID)
+        return;
+    for (uint i = 0u; i < 3u; i += 1u)
+    {
+        uint owner = fin_word_owner[word_base + i];
+        if (fin_word_preserved[word_base + i] != 0u || owner == INVALID ||
+            fin_symbol_final[owner].w != word_base)
+        {
+            InterlockedMin(fin_status[failure_slot(FAIL_IDENTITY_OVERLAP)], symbol_i);
+            return;
+        }
+    }
+}
+
+public void publish_symbol(uint symbol_i)
+{
+    uint row = symbol_i * SYMBOL_WORDS;
+    uint4 final_identity = fin_symbol_final[symbol_i];
+    uint2 hash = final_identity.w == INVALID
+        ? uint2(fin_symbols_in[row], fin_symbols_in[row + 1u])
+        : identity_hash(final_identity.xyz);
+    fin_symbols_out[row] = hash.x;
+    fin_symbols_out[row + 1u] = hash.y;
+    for (uint i = 2u; i < SYMBOL_WORDS; i += 1u)
+        fin_symbols_out[row + i] = fin_symbols_in[row + i];
+}
+
+public void publish_identity_word(uint word)
+{
+    uint owner = fin_word_owner[word];
+    if (owner == INVALID)
+    {
+        fin_identity_out[word] = fin_identity_in[word];
+        return;
+    }
+    uint4 final_identity = fin_symbol_final[owner];
+    fin_identity_out[word] = final_identity[word - final_identity.w];
 }
