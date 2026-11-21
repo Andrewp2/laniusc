@@ -2,12 +2,6 @@ import type_checker.retention.method_routes.retained_method_route_workspace;
 public void begin_retained_method_routing(uint i, uint requests)
 {
 
-    uint lanes=max(requests,mr_config[3]);
-    if (requests!=0u && i<lanes)
-    {
-        uint slots,stride; mr_env_slots.GetDimensions(slots,stride);
-        for (uint at=i;at<slots;at+=lanes) mr_env_slots[at]=0u;
-    }
     if (i<requests) { mr_out[i]=uint4(0u,0u,0u,0u); mr_selected[i]=uint4(RT_INVALID,0u,0u,0u); }
     if (i<mr_config[3]) { mr_reach[i]=0u; mr_values_a[i]=RT_UNKNOWN; mr_values_b[i]=RT_UNKNOWN; }
     if (i!=0u) return;

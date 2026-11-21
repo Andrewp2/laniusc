@@ -1,3 +1,4 @@
+import shared.collectives.step_program;
 import type_checker.retention.discovery.discovery_admission;
 public RWStructuredBuffer<uint4> sb_requests;
 public RWStructuredBuffer<uint> sb_request_count;
@@ -84,36 +85,51 @@ void collect_discovery_use(uint root, uint lane, uint use, uint owner)
     if (root != 0u) InterlockedAdd(dg_status[9],1u);
 }
 
-// One lane owns a new instance, including the entire edge range for its
-// body. Reserve that range once, then classify and enqueue its calls.
-public void collect_instance_requests(uint owner)
+groupshared uint discovery_body_base;
+
+// One workgroup reserves the edge range for a body and classifies its
+// uses in parallel. Every lane in the group enters with the same owner.
+public void collect_instance_requests(uint owner, uint lane)
 {
-    uint4 instance = dg_instances[2u * owner];
-    uint entry = dg_entry(instance.x);
+    uint entry = dg_entry(dg_instances[2u * owner].x);
     if (entry == RT_INVALID) return;
-    uint4 directory = rt_dir[entry * RT_DIR_WORDS + 3u];
-    uint base;
-    InterlockedAdd(dg_status[2u], directory.x, base);
-    uint end = base + directory.x;
-    InterlockedMax(dg_status[5u], end);
-    uint capacity; uint stride;
-    dg_edges.GetDimensions(capacity, stride);
-    if (end > capacity || end < base)
+    uint count = rt_dir[entry * RT_DIR_WORDS + 3u].x;
+    if (lane == 0u)
     {
-        InterlockedOr(dg_status[3u], 2u);
-        return;
+        uint base;
+        InterlockedAdd(dg_status[2u], count, base);
+        InterlockedMax(dg_status[5u], base + count);
+        uint capacity; uint stride;
+        dg_edges.GetDimensions(capacity, stride);
+        if (base > capacity || count > capacity - base)
+        {
+            InterlockedOr(dg_status[3u], 2u);
+            discovery_body_base = RT_INVALID;
+        }
+        else
+        {
+            uint depth = dg_instances[2u * owner + 1u].z;
+            dg_instances[2u * owner + 1u] = uint4(base, count, depth, 0u);
+            discovery_body_base = base;
+        }
     }
-    uint depth = dg_instances[2u * owner + 1u].z;
-    dg_instances[2u * owner + 1u] = uint4(base, directory.x, depth, 0u);
-    uint first = rt_dir[entry * RT_DIR_WORDS + 2u].w;
-    for (uint edge = base; edge < end; ++edge)
+    GroupMemoryBarrierWithGroupSync();
+    uint base = discovery_body_base;
+    if (base != RT_INVALID)
     {
-        uint use = first + (edge - base);
-        dg_edge_owner[edge] = uint2(owner, use);
-        dg_edges[edge] = uint4(0u);
-        dg_targets[edge] = uint2(0u, RT_NONE);
-        collect_discovery_use(0u, edge, use, owner);
+        uint first = rt_dir[entry * RT_DIR_WORDS + 2u].w;
+        for (uint offset = lane; offset < count; offset += STEP_PROGRAM_GROUP_LANES)
+        {
+            uint edge = base + offset;
+            uint use = first + offset;
+            dg_edge_owner[edge] = uint2(owner, use);
+            dg_edges[edge] = uint4(0u);
+            dg_targets[edge] = uint2(0u, RT_NONE);
+            collect_discovery_use(0u, edge, use, owner);
+        }
     }
+    // All lanes must have consumed the shared base before it is reused.
+    GroupMemoryBarrierWithGroupSync();
 }
 
 public void collect_root_request(uint use)

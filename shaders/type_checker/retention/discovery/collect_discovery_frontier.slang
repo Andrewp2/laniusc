@@ -5,7 +5,7 @@ import type_checker.retention.discovery.collect_retained_requests_program;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 id : SV_DispatchThreadID)
+void main(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
     uint lane = dg_lane(id);
     if (lane == 0u && dg_proof_identity[0u] != 0u && !dg_proofs_current())
@@ -20,6 +20,8 @@ void main(uint3 id : SV_DispatchThreadID)
     else
     {
         DiscoveryFrontier frontier = discovery_frontier();
-        if (lane < frontier.hi - frontier.lo) collect_instance_requests(frontier.lo + lane);
+        uint owner = group.x + group.y * 65535u;
+        if (owner < frontier.hi - frontier.lo)
+            collect_instance_requests(frontier.lo + owner, local.x);
     }
 }

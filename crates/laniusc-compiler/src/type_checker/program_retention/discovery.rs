@@ -37,6 +37,7 @@ const CLOSED_WAVE_PROGRAM: &str = "type_checker/retention/discovery/expand_close
 const WAVE_PROGRAM: &str = "type_checker/retention/discovery/expand_retained_discovery_wave";
 // DG_SORT_BLOCK in discovery_workspace.slang.
 const RANK_BLOCK_ROWS: u32 = 512;
+const RANK_PAIRWISE_ROWS: u32 = 2048;
 const COLLECT: usize = 0;
 const RESOLVE: usize = 1;
 const PUBLISH_RANKS: usize = 2;
@@ -47,6 +48,7 @@ const EXPAND_CLOSED_WAVE: usize = 6;
 const COLLECT_FRONTIER: usize = 7;
 const EXPAND_WAVE: usize = 8;
 const VALIDATE_TERMS: usize = 9;
+const RANK_SMALL_INSTANCES: usize = 10;
 const KERNELS: &[&str] = &[
     COLLECT_PROGRAM,
     RESOLVE_PROGRAM,
@@ -58,6 +60,7 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/collect_discovery_frontier",
     WAVE_PROGRAM,
     "type_checker/retention/discovery/validate_discovery_terms",
+    "type_checker/retention/discovery/rank_small_retained_batches",
 ];
 const STATUS_WORDS: usize = 32;
 const METHOD_ROUTES_SYNC_FAILED: usize = 31;
@@ -514,7 +517,7 @@ impl RetainedDiscovery {
                         }
                     }
                 }
-                // One lane expands each newly interned instance's uses.
+                // One workgroup collects each newly interned instance's uses.
                 report.waves += 1;
                 config[0] = 0;
                 config[1] = lo;
@@ -1174,12 +1177,22 @@ impl RetainedDiscovery {
         report: &mut DiscoveryReport,
     ) -> Result<()> {
         let terms = status[STATUS_WORDS + super::A_TERMS];
+        // Small batches can rank independently in each workgroup. Keep
+        // the block sort's subquadratic work for larger batches.
+        let small = status[0] <= RANK_PAIRWISE_ROWS;
+        if !small {
+            config[13] = status[0].next_power_of_two();
+            self.ensure("dg_order", u64::from(config[13]) * 4)?;
+        }
         self.config_cursor = 0;
         let guard = store.store.lock().unwrap();
         let mut encoder = self.encoder();
-        config[13] = status[0].max(1).next_power_of_two();
         self.record(&mut encoder, &guard, VALIDATE_TERMS, config, extra, terms, report)?;
-        self.record(&mut encoder, &guard, RANK_INSTANCES, config, extra, config[13], report)?;
+        if small {
+            self.record(&mut encoder, &guard, RANK_SMALL_INSTANCES, config, extra, status[0], report)?;
+        } else {
+            self.record(&mut encoder, &guard, RANK_INSTANCES, config, extra, config[13], report)?;
+        }
         let rows = uses.max(status[0]).max(status[2]);
         self.record(&mut encoder, &guard, PUBLISH_RANKS, config, extra, rows, report)?;
         let commands = self.finish(encoder);
@@ -1224,7 +1237,6 @@ impl RetainedDiscovery {
             ("dg_roots", uses.max(1) as u64 * 16),
             ("dg_errors", (uses as u64 + e) * 16),
             ("dg_req_meta", r * 16),
-            ("dg_order", i * 4),
             ("dg_rank", i * 4),
             ("dg_receipt", ClosedTraitPublication::RECEIPT_WORDS as u64 * 4),
             ("dg_wave", u64::from(WAVE_CLOSED_RAN + 1) * 4),
@@ -1277,7 +1289,7 @@ impl RetainedDiscovery {
             .collect::<Vec<_>>();
         let label = match self.pending.as_slice() {
             [(kernel, ..)] => KERNELS[*kernel],
-            _ => "retained_discovery",
+            _ => "type_checker/retention/discovery/publish_retained_discovery",
         };
         super::substitution::record_timed(encoder, label, &steps);
         self.pending.clear();
@@ -1367,6 +1379,8 @@ impl RetainedDiscovery {
             let counts = step_program_group_counts();
             let groups = if kernel == RANK_INSTANCES {
                 lanes.div_ceil(RANK_BLOCK_ROWS).min(counts[1])
+            } else if kernel == COLLECT {
+                lanes.div_ceil(4).clamp(1, counts[1])
             } else {
                 counts[step_program_group_variant(u64::from(lanes))]
             };
@@ -1407,7 +1421,12 @@ impl RetainedDiscovery {
             0,
             &entries,
         )?;
-        self.pending.push((kernel, bind, lanes.div_ceil(256).max(1)));
+        let groups = if kernel == RANK_SMALL_INSTANCES || (kernel == COLLECT_FRONTIER && config[4] == 0) {
+            lanes
+        } else {
+            lanes.div_ceil(256)
+        };
+        self.pending.push((kernel, bind, groups.max(1)));
         report.dispatches += 1;
         Ok(())
     }

@@ -6,6 +6,14 @@ import type_checker.retention.discovery.discovery_admission;
 
 public StructuredBuffer<uint> dg_receipt;
 
+public void collect_frontier_requests(StepProgram program, DiscoveryFrontier frontier)
+{
+    uint group = program.lane / STEP_PROGRAM_GROUP_LANES;
+    uint lane = program.lane % STEP_PROGRAM_GROUP_LANES;
+    for (uint owner = frontier.lo + group; owner < frontier.hi; owner += program.groups)
+        collect_instance_requests(owner, lane);
+}
+
 public bool collect_retained_requests(inout StepProgram program, DiscoveryFrontier frontier)
 {
     if (dg_status[29] != 0u)
@@ -35,8 +43,7 @@ public bool collect_retained_requests(inout StepProgram program, DiscoveryFronti
     }
     else
     {
-        for (uint owner = frontier.lo + program.lane; owner < frontier.hi; owner += program.lanes)
-            collect_instance_requests(owner);
+        collect_frontier_requests(program, frontier);
     }
     if (!step_barrier(program)) return false;
     if (program.lane == 0u)

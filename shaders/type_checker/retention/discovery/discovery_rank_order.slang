@@ -39,15 +39,18 @@ int compare_environment(uint a, uint b)
     return 0;
 }
 
+public int compare_instance_rows(uint4 x, uint4 y)
+{
+    int c = dg_decl_cmp(x.x, y.x);
+    return c != 0 ? c : compare_environment(x.y, y.y);
+}
+
 int compare_instance(uint a, uint b)
 {
     if (a == b) return 0;
     if (a == RT_INVALID) return 1;
     if (b == RT_INVALID) return -1;
-    uint4 x = dg_instances[2u * a];
-    uint4 y = dg_instances[2u * b];
-    int c = dg_decl_cmp(x.x, y.x);
-    return c != 0 ? c : compare_environment(x.y, y.y);
+    return compare_instance_rows(dg_instances[2u * a], dg_instances[2u * b]);
 }
 
 public struct InstanceOrder : IDgCompare

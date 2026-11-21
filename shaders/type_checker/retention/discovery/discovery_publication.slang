@@ -18,12 +18,11 @@ public void publish_discovered_instances(uint lane, uint mode)
     if(dg_status[3]!=0u || dg_status[6]!=RT_INVALID || dg_status[10]!=0u) return;
     if (mode == 1u)
     {
-        if(lane<dg_status[1])
+        if (lane < dg_status[0u] && dg_instances[2u * lane].x != 0u)
         {
-            uint instance=dg_order[lane];
-            uint4 i0=dg_instances[2u*instance]; uint4 i1=dg_instances[2u*instance+1u];
-            pj_instances[2u*lane]=i0;
-            pj_instances[2u*lane+1u]=uint4(i1.xy,0u,0u);
+            uint rank = dg_rank[lane];
+            pj_instances[2u * rank] = dg_instances[2u * lane];
+            pj_instances[2u * rank + 1u] = uint4(dg_instances[2u * lane + 1u].xy, 0u, 0u);
         }
         if(lane<dg_status[2]) { pj_routes[lane]=route_of(dg_edges[lane],false); pj_targets[lane]=dg_targets[lane]; }
         if(lane<rt_counts[RT_A_USES]) dg_root_routes[lane]=route_of(dg_roots[lane],true);

@@ -28,6 +28,15 @@ public bool resolve_retained_method_routes<R : IMethodResults>(
     inout StepProgram program, uint requests, R results)
 {
     uint nodes = mr_config[3u];
+    // The table is sized for the request capacity. Use all lanes to clear
+    // it even when the live wave has only a few requests and proof nodes.
+    if (requests != 0u)
+    {
+        uint slots; uint stride;
+        mr_env_slots.GetDimensions(slots, stride);
+        for (uint slot = program.lane; slot < slots; slot += program.lanes)
+            mr_env_slots[slot] = 0u;
+    }
     for (uint row = program.lane; row < max(max(requests, nodes), 1u); row += program.lanes)
         begin_retained_method_routing(row, requests);
     if (!step_barrier(program)) return false;
