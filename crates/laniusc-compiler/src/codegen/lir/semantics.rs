@@ -19,7 +19,7 @@ use super::{
         SemanticLirParam,
         SemanticLirString,
         TargetScheduleKey,
-        TargetScheduleRadixLayout,
+        TargetScheduleKeyLayout,
     },
     scheduling::GpuStableScheduleSorter,
 };
@@ -1380,7 +1380,6 @@ impl GpuSemanticLoweringStage {
                     capacities.semantic_instructions.max(1) as usize,
                 )
                 .map_err(anyhow::Error::msg)?;
-            let radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
             let sorter = GpuStableScheduleSorter::new_semantic(
                 device,
                 kernels,
@@ -1388,7 +1387,6 @@ impl GpuSemanticLoweringStage {
                 workspace,
                 &allocations,
                 capacities.semantic_instructions.max(1),
-                radix_layout,
                 &total,
                 &keys,
                 &order,
@@ -1426,7 +1424,7 @@ impl GpuSemanticLoweringStage {
                 lir_capacity: capacities.semantic_instructions.max(1),
                 n_tokens: capacities.tokens,
                 resident_rows: semantic_resident_rows,
-                schedule_packed_bits: TargetScheduleRadixLayout::for_capacities(capacities)
+                schedule_packed_bits: TargetScheduleKeyLayout::for_capacities(capacities)
                     .packed_bits,
                 reserved0: 0,
                 reserved1: 0,
@@ -2085,7 +2083,7 @@ mod tests {
             .collect()
     }
 
-    fn packed_schedule_key(layout: TargetScheduleRadixLayout, raw: [u32; 4]) -> [u32; 3] {
+    fn packed_schedule_key(layout: TargetScheduleKeyLayout, raw: [u32; 4]) -> [u32; 3] {
         let mut packed = 0u128;
         let mut destination_bit = 0u32;
         for (field, value) in [raw[3], raw[2], raw[1]].into_iter().enumerate() {
@@ -2126,7 +2124,7 @@ mod tests {
                 target_instructions: 1,
                 artifact_bytes: 1,
             };
-            let layout = TargetScheduleRadixLayout::for_capacities(capacities);
+            let layout = TargetScheduleKeyLayout::for_capacities(capacities);
             let key = |tie| {
                 let words = packed_schedule_key(layout, [0, 1, 1, tie]);
                 u128::from(words[0])
@@ -2535,15 +2533,15 @@ mod tests {
 
     #[test]
     fn physical_gpu_stably_sorts_wasm_schedule_across_workgroups() {
-        check_resident_schedule(70_000, TargetScheduleRadixLayout::packed_width());
+        check_resident_schedule(70_000, TargetScheduleKeyLayout::packed_width());
     }
 
     #[test]
     fn physical_gpu_resident_scheduler_handles_odd_width_without_record_allocations() {
-        check_resident_schedule(257, TargetScheduleRadixLayout::packed_width());
+        check_resident_schedule(257, TargetScheduleKeyLayout::packed_width());
     }
 
-    fn check_resident_schedule(count: u32, radix_layout: TargetScheduleRadixLayout) {
+    fn check_resident_schedule(count: u32, key_layout: TargetScheduleKeyLayout) {
         let gpu = device::global();
         let capacities = LoweringCapacities {
             source_bytes: count,
@@ -2577,8 +2575,9 @@ mod tests {
             .map(|row| {
                 [
                     (row * 17) % 5,
-                    (row * 13) % 11,
-                    (row * 7) % 19,
+                    // Exercise all three packed words and repeated keys.
+                    ((row * 13) % 11) * 0x1_0001,
+                    ((row * 7) % 19) * 0x1_0001,
                     match row % 3 {
                         0 => (row * 3) % 23,
                         1 => 0x7fff_ffff - ((row * 3) % 23),
@@ -2591,7 +2590,7 @@ mod tests {
         let packed_keys = key_words
             .iter()
             .copied()
-            .map(|key| packed_schedule_key(radix_layout, key))
+            .map(|key| packed_schedule_key(key_layout, key))
             .collect::<Vec<_>>();
         keys.write(&gpu.queue, 0, &words(&packed_keys));
         let kernels =
@@ -2604,7 +2603,6 @@ mod tests {
             &workspace,
             &workspace.allocations(),
             count,
-            radix_layout,
             &total,
             &keys,
             &order,

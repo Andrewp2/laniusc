@@ -75,19 +75,3 @@ TargetScheduleKey target_schedule_pack(
     }
     return key;
 }
-
-uint target_schedule_word(TargetScheduleKey key, uint word)
-{
-    return word == 0u ? key.word0 : word == 1u ? key.word1 : key.word2;
-}
-
-uint target_schedule_radix_key(TargetScheduleKey key, uint key_step, uint packed_bits)
-{
-    uint source_bit = key_step * 8u;
-    uint word = source_bit / 32u;
-    uint shift = source_bit % 32u;
-    uint result = target_schedule_word(key, word) >> shift;
-    if (shift > 24u && word < 2u)
-        result |= target_schedule_word(key, word + 1u) << (32u - shift);
-    return result & 0xffu;
-}

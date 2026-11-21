@@ -1504,8 +1504,7 @@ struct LoweringStatus
 };
 
 // Capacity-packed lexicographic target scheduling key. Fields are encoded in
-// least-significant order as execution tie, execution rank, execution region,
-// then function ID. The radix stage consumes the packed bytes directly.
+// least-significant order as execution tie, execution rank, then execution region.
 struct TargetScheduleKey
 {
     uint word0;

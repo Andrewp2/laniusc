@@ -154,8 +154,8 @@ impl HostService {
 
 /// Resident schedule keys contain three packed `u32` words. The default
 /// five-MiB frontend-unit bound needs at most 76 significant bits, including
-/// the expression suborders and sentinel encodings (ten radix bytes).
-pub(crate) const TARGET_SCHEDULE_MAX_RADIX_STEPS: u32 = 10;
+/// the expression suborders and sentinel encodings.
+pub(crate) const TARGET_SCHEDULE_MAX_KEY_BITS: u32 = 80;
 
 pub(super) const OPTIMIZATION_PROGRAM_SLOTS: usize = 3;
 pub(super) const SEMANTIC_FUNCTION_PROGRAM_SLOT: u32 = OPTIMIZATION_PROGRAM_SLOTS as u32;
@@ -171,24 +171,19 @@ pub(super) const LOWERING_PROGRAM_FAILURE_BYTES: usize = LOWERING_PROGRAM_SLOTS 
 
 /// Capacity-derived bit layout for the semantic schedule key.
 ///
-/// The three ordering fields are packed into one continuous LSD bit stream instead of
-/// rounding each field independently to bytes. Expression ties occupy the
-/// source representation's high `0x7fff_ffff - depth` band; the radix key
-/// extractor maps that band above all ordinary local-row ties and below the
-/// `u32::MAX` sentinel. Function identity is intentionally absent: compact HIR
-/// functions follow flat source order, every execution region is a global
-/// packed-token position inside its owning function's source span, and those
-/// spans do not overlap. Region order therefore already partitions and orders
-/// functions. Digit zero initializes the identity order in whichever ping-pong
-/// buffer makes the last scatter finish in the canonical order.
+/// The three ordering fields are packed from least to most significant.
+/// The packer maps expression ties from the high `0x7fff_ffff - depth` band
+/// above all ordinary local-row ties and below the `u32::MAX` sentinel.
+/// Compact HIR functions follow flat source order, and every execution
+/// region is a global packed-token position in its owning function's
+/// nonoverlapping source span. Region order also orders functions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TargetScheduleRadixLayout {
+pub(crate) struct TargetScheduleKeyLayout {
     pub(crate) packed_bits: u32,
-    pub(crate) steps: u32,
     pub(crate) total_bits: u32,
 }
 
-impl TargetScheduleRadixLayout {
+impl TargetScheduleKeyLayout {
     pub(crate) fn for_capacities(capacities: LoweringCapacities) -> Self {
         let token_or_hir = capacities.tokens.max(capacities.hir_nodes);
         let ordinary_tie_capacity = capacities.semantic_instructions.max(token_or_hir);
@@ -197,17 +192,14 @@ impl TargetScheduleRadixLayout {
         // Keep the deepest expression above all ordinary local-row ties.
         let expression_tie_capacity = capacities.hir_nodes.saturating_mul(128);
         let bits = [
-            radix_bits_for_capacity(ordinary_tie_capacity.saturating_add(expression_tie_capacity)),
-            radix_bits_for_capacity(token_or_hir),
-            radix_bits_for_capacity(token_or_hir),
+            schedule_bits_for_capacity(ordinary_tie_capacity.saturating_add(expression_tie_capacity)),
+            schedule_bits_for_capacity(token_or_hir),
+            schedule_bits_for_capacity(token_or_hir),
         ];
         let total_bits = bits.iter().copied().sum::<u32>();
-        let steps = total_bits.div_ceil(8);
         let packed_bits = (1u32 << 31) | bits[0] | (bits[1] << 6) | (bits[2] << 12);
-        debug_assert!(steps > 0);
         Self {
             packed_bits,
-            steps,
             total_bits,
         }
     }
@@ -216,13 +208,12 @@ impl TargetScheduleRadixLayout {
     pub(crate) const fn packed_width() -> Self {
         Self {
             packed_bits: (1 << 31) | 24 | (24 << 6) | (24 << 12),
-            steps: 9, // This fixed-width test fixture uses three 24-bit fields.
             total_bits: 72,
         }
     }
 }
 
-fn radix_bits_for_capacity(capacity: u32) -> u32 {
+fn schedule_bits_for_capacity(capacity: u32) -> u32 {
     (u32::BITS - capacity.leading_zeros()).max(1)
 }
 
@@ -4556,18 +4547,16 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
-    let schedule = add_step_radix_resources(
-        &mut graph,
+    let schedule_order = graph.add_resource(workspace(
+        "lir.semantic.schedule_order",
         ResourceDomain::SemanticInstructions,
-        capacities.semantic_instructions,
-        [
-            "lir.semantic.schedule_order",
-            "lir.semantic.schedule_order_tmp",
-            "lir.semantic.schedule_histogram",
-            "lir.semantic.schedule_bucket_total",
-        ],
-    )?;
-    let schedule_order = schedule.order;
+        LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+    ))?;
+    let schedule_temporary = graph.add_resource(workspace(
+        "lir.semantic.schedule_order_tmp",
+        ResourceDomain::SemanticInstructions,
+        LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+    ))?;
     let byte_lengths = graph.add_resource(workspace(
         match target {
             LoweringTarget::X86_64 => "lir.x86.byte_lengths",
@@ -5086,12 +5075,12 @@ fn lowering_compiler_graph_builder(
         None
     };
 
-    let schedule_radix_layout = TargetScheduleRadixLayout::for_capacities(capacities);
-    if schedule_radix_layout.steps > TARGET_SCHEDULE_MAX_RADIX_STEPS {
+    let schedule_layout = TargetScheduleKeyLayout::for_capacities(capacities);
+    if schedule_layout.total_bits > TARGET_SCHEDULE_MAX_KEY_BITS {
         return Err(format!(
             "semantic schedule requires {} packed bits, exceeding the {}-bit resident key capacity",
-            schedule_radix_layout.total_bits,
-            TARGET_SCHEDULE_MAX_RADIX_STEPS * 8,
+            schedule_layout.total_bits,
+            TARGET_SCHEDULE_MAX_KEY_BITS,
         ));
     }
     // The dense expression band begins at 0x4000_0000. With 128
@@ -5111,9 +5100,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("target_lir_total", semantic_total),
             PassAccess::read("target_schedule_key", semantic_schedule),
             PassAccess::initialize_read_write("target_schedule_order", schedule_order),
-            PassAccess::initialize_read_write("target_schedule_temporary", schedule.temporary_order),
-            PassAccess::initialize_read_write("target_schedule_histogram", schedule.histogram),
-            PassAccess::initialize_read_write("target_schedule_bucket_total", schedule.bucket_total),
+            PassAccess::initialize_read_write("target_schedule_temporary", schedule_temporary),
             PassAccess::initialize_read_write("step_program_sync", step_program_sync),
         ],
     })?;
@@ -8165,8 +8152,8 @@ mod tests {
     }
 
     #[test]
-    fn semantic_schedule_radix_bit_packing_tracks_capacity() {
-        let layout = TargetScheduleRadixLayout::for_capacities(LoweringCapacities {
+    fn semantic_schedule_bit_packing_tracks_capacity() {
+        let layout = TargetScheduleKeyLayout::for_capacities(LoweringCapacities {
             source_bytes: 1_000_000,
             tokens: 100_000,
             hir_nodes: 65_000,
@@ -8178,7 +8165,6 @@ mod tests {
             artifact_bytes: 1,
         });
         assert_eq!(layout.packed_bits, 0x8001_1458);
-        assert_eq!(layout.steps, 8);
         assert_eq!(layout.total_bits, 58);
 
         let small_capacities = LoweringCapacities {
@@ -8192,9 +8178,8 @@ mod tests {
             target_instructions: 1,
             artifact_bytes: 1,
         };
-        let small = TargetScheduleRadixLayout::for_capacities(small_capacities);
+        let small = TargetScheduleKeyLayout::for_capacities(small_capacities);
         assert_eq!(small.packed_bits, 0x8000_d354);
-        assert_eq!(small.steps, 6);
 
         let odd_capacities = LoweringCapacities {
             source_bytes: 4_096,
@@ -8207,9 +8192,8 @@ mod tests {
             target_instructions: 1,
             artifact_bytes: 1,
         };
-        let odd = TargetScheduleRadixLayout::for_capacities(odd_capacities);
+        let odd = TargetScheduleKeyLayout::for_capacities(odd_capacities);
         assert_eq!(odd.packed_bits, 0x8000_820f);
-        assert_eq!(odd.steps, 4);
     }
 
     #[test]
@@ -8223,9 +8207,8 @@ mod tests {
         )
         .unwrap()
         .bucketed();
-        let layout = TargetScheduleRadixLayout::for_capacities(capacities);
+        let layout = TargetScheduleKeyLayout::for_capacities(capacities);
         assert_eq!(layout.total_bits, 76);
-        assert_eq!(layout.steps, TARGET_SCHEDULE_MAX_RADIX_STEPS);
         lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap();
     }
 
@@ -8244,8 +8227,8 @@ mod tests {
         };
         // This fits the packed key, but its deepest expression would leave
         // the dense source tie band and sort before its own producer.
-        let layout = TargetScheduleRadixLayout::for_capacities(capacities);
-        assert!(layout.steps <= TARGET_SCHEDULE_MAX_RADIX_STEPS);
+        let layout = TargetScheduleKeyLayout::for_capacities(capacities);
+        assert!(layout.total_bits <= TARGET_SCHEDULE_MAX_KEY_BITS);
         let error = lowering_compiler_graph(capacities, LoweringTarget::X86_64).unwrap_err();
         assert!(error.contains("8388608-node dense expression tie bound"));
     }
