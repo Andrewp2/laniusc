@@ -3178,6 +3178,7 @@ fn build_graph(
         _module_status as "module_status" in Declarations => module_rows * 4;
         _module_dispatch_args as "module_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _import_edge_set_state as "import_edge_set_state" in Declarations => record_rows * 8;
+        _item_import_set_state as "item_import_set_state" in Declarations => record_rows * 8;
         _interface_public_decl_count as "interface_public_decl_count" in Declarations => 4;
         _interface_public_decl_local_id as "interface_public_decl_local_id" in Declarations => record_rows * 4;
         _interface_public_decl_index_by_local as "interface_public_decl_index_by_local" in Declarations => record_rows * 4;
@@ -4405,10 +4406,8 @@ fn build_graph(
         operation.register_kernel(&mut graph, kernels)?;
     }
     for operation in [
-        RESOLVE_LOCAL_TYPE_PATHS,
-        RESOLVE_LOCAL_VALUE_PATHS,
-        RESOLVE_IMPORTED_TYPE_PATHS,
-        RESOLVE_IMPORTED_VALUE_PATHS,
+        RESOLVE_UNQUALIFIED_TYPE_PATHS,
+        RESOLVE_UNQUALIFIED_VALUE_PATHS,
     ] {
         operation.register_kernel(&mut graph, kernels)?;
     }

@@ -1,16 +1,9 @@
-// GPU local unqualified path resolution for one namespace table.
-//
-// Scheduling contract:
-// - Dispatch after declaration lookup tables are materialized.
-// - This pass initializes one resolved declaration/status array and resolves
-//   one-segment HIR path expressions against declarations in the owner module.
-// - Imported visibility and qualified module-prefix paths are handled by later
-//   passes over the same arrays.
-// - It does not scan source bytes, use hashes, perform CPU lookup, or apply
-//   same-source shortcuts.
+// Resolve each unqualified path in its local namespace, then in the
+// imported-public index. Dependency pages consume the published status.
 
 import shared.buffers.gpu_index;
 import type_checker.modules.decl_lookup;
+import type_checker.modules.import_visible_lookup;
 
 struct Params
 {
@@ -35,6 +28,13 @@ StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> decl_lookup_state;
 
+StructuredBuffer<uint> import_visible_count_out;
+StructuredBuffer<uint> import_visible_key_module_id;
+StructuredBuffer<uint> import_visible_key_name_id;
+StructuredBuffer<uint> import_visible_key_to_decl_id;
+StructuredBuffer<uint> import_visible_status;
+StructuredBuffer<uint> import_visible_lookup_state;
+
 RWStructuredBuffer<uint> resolved_decl;
 RWStructuredBuffer<uint> resolved_status;
 
@@ -49,6 +49,9 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_SKIPPED = 1u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
 static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
+static const uint PATH_RESOLVE_STATUS_AMBIGUOUS = 4u;
+static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
+static const uint IMPORT_VISIBLE_STATUS_AMBIGUOUS = 1u;
 static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
 static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
 
@@ -72,6 +75,29 @@ DeclLookupResult find_decl(uint module_id, uint name_id)
         min(decl_count_out[0], gParams.capacity),
         decl_module_id, decl_namespace, decl_name_id,
         decl_parent_type_decl, decl_lookup_state);
+}
+
+uint visible_capacity()
+{
+    return gParams.reserved == 0u ? gParams.capacity : gParams.reserved;
+}
+
+uint active_visible_count()
+{
+    return min(import_visible_count_out[0], visible_capacity());
+}
+
+uint find_visible_row(uint module_id, uint name_id)
+{
+    return import_visible_lookup_find(
+        module_id,
+        name_id,
+        active_visible_count(),
+        visible_capacity(),
+        import_visible_key_module_id,
+        import_visible_key_name_id,
+        import_visible_key_to_decl_id,
+        import_visible_lookup_state);
 }
 
 [shader("compute")]
@@ -102,18 +128,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint name_id = path_segment_name_id[path_segment_base[path_i]];
     DeclLookupResult found = find_decl(owner_module, name_id);
-    uint decl_i = found.unique();
-    if (found.matches > 1u)
+    if (found.matches != 0u)
     {
-        resolved_status[path_i] = 4u; // Ambiguous visible name.
-        return;
-    }
-    if (decl_i == INVALID)
-    {
-        resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED;
+        resolved_decl[path_i] = found.unique();
+        resolved_status[path_i] = found.matches == 1u
+            ? PATH_RESOLVE_STATUS_OK : PATH_RESOLVE_STATUS_AMBIGUOUS;
         return;
     }
 
-    resolved_decl[path_i] = decl_i;
-    resolved_status[path_i] = PATH_RESOLVE_STATUS_OK;
+    uint row = find_visible_row(owner_module, name_id);
+    uint visibility = row == INVALID ? INVALID : import_visible_status[row];
+    if (visibility == IMPORT_VISIBLE_STATUS_OK)
+    {
+        resolved_decl[path_i] = import_visible_key_to_decl_id[row];
+        resolved_status[path_i] = PATH_RESOLVE_STATUS_OK;
+    }
+    else
+        resolved_status[path_i] = visibility == IMPORT_VISIBLE_STATUS_AMBIGUOUS
+            ? PATH_RESOLVE_STATUS_AMBIGUOUS : PATH_RESOLVE_STATUS_UNRESOLVED;
 }

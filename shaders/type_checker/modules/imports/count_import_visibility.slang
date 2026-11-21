@@ -13,6 +13,7 @@
 
 import shared.buffers.gpu_index;
 import shared.search.range_query;
+import type_checker.modules.import_edge_set;
 
 struct Params
 {
@@ -27,6 +28,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_status;
 StructuredBuffer<uint> import_module_id;
+StructuredBuffer<uint> import_item_name_id;
 StructuredBuffer<uint> import_target_module_id;
 StructuredBuffer<uint> decl_type_key_count_out;
 StructuredBuffer<uint> decl_value_key_count_out;
@@ -38,6 +40,7 @@ StructuredBuffer<uint> decl_type_public_prefix;
 StructuredBuffer<uint> decl_value_public_prefix;
 StructuredBuffer<uint> decl_module_id;
 
+RWStructuredBuffer<uint> item_import_set_state;
 RWStructuredBuffer<uint> import_visible_type_count;
 RWStructuredBuffer<uint> import_visible_value_count;
 
@@ -46,6 +49,11 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint IMPORT_STATUS_OK = 0u;
+
+public struct ItemImportStatus : IImportEdgeStatusSource
+{
+    public static uint status(uint row) { return import_status[row]; }
+}
 uint linear_thread_id(uint3 dtid)
 {
     return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
@@ -173,6 +181,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint importing_module = import_module_id[import_i];
     uint target_module = import_target_module_id[import_i];
+    // Cycle validation has finalized the local import statuses. Index the
+    // explicit item names before the visibility scatter applies precedence.
+    import_edge_set_insert<ItemImportStatus>(import_i, active_import_count(),
+        import_module_id, import_item_name_id, item_import_set_state);
     if (import_status[import_i] != IMPORT_STATUS_OK || importing_module == INVALID ||
         target_module == INVALID)
         return;

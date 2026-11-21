@@ -17,6 +17,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> import_edge_set_state;
+RWStructuredBuffer<uint> item_import_set_state;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -27,5 +28,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, MAX_GROUPS_X * WG_SIZE);
     if (row < import_edge_set_capacity(gParams.import_capacity))
+    {
         import_edge_set_state[row] = IMPORT_EDGE_SET_EMPTY;
+        item_import_set_state[row] = IMPORT_EDGE_SET_EMPTY;
+    }
 }

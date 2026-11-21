@@ -24,9 +24,13 @@ groupshared uint g_reduce[SCOPE_LANES];
 // The signature walk's stack (lane 0, after the lanes place the pushes).
 groupshared uint g_stack[STACK_LIMIT];
 
-// Combines one value per lane; every lane gets the result.
+// A full workgroup in one wave can reduce without shared memory. Smaller
+// waves use the workgroup reduction so every lane receives the same result.
 uint group_reduce(uint value, uint op)
 {
+    if (WaveGetLaneCount() >= SCOPE_LANES)
+        return op == OP_ADD ? WaveActiveSum(value)
+            : (op == OP_MIN ? WaveActiveMin(value) : WaveActiveBitOr(value));
     g_reduce[g_lane] = value;
     GroupMemoryBarrierWithGroupSync();
     uint result = g_reduce[0u];
@@ -357,18 +361,31 @@ void check_method_signature(uint row, uint first, uint count)
         uint other = chunk + g_lane;
         bool pushed = other < first + count && mem(other, B_VALUE_HI) == symbol &&
             mem(other, B_KIND) == M_PARAMETER;
-        g_reduce[g_lane] = pushed ? 1u : 0u;
-        GroupMemoryBarrierWithGroupSync();
-        uint before = 0u;
-        uint total = 0u;
-        for (uint i = 0u; i < SCOPE_LANES; ++i)
+        uint flag = uint(pushed);
+        uint before;
+        uint total;
+        if (WaveGetLaneCount() >= SCOPE_LANES)
         {
-            uint flag = g_reduce[i];
-            if (i < g_lane)
-                before += flag;
-            total += flag;
+            // The stack is ordered by row, independently of wave lane order.
+            uint mask = WaveActiveBitOr(flag << g_lane);
+            before = countbits(mask & ((1u << g_lane) - 1u));
+            total = countbits(mask);
         }
-        GroupMemoryBarrierWithGroupSync();
+        else
+        {
+            g_reduce[g_lane] = flag;
+            GroupMemoryBarrierWithGroupSync();
+            before = 0u;
+            total = 0u;
+            for (uint i = 0u; i < SCOPE_LANES; ++i)
+            {
+                uint other_flag = g_reduce[i];
+                if (i < g_lane)
+                    before += other_flag;
+                total += other_flag;
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
         if (pushed && depth + before < STACK_LIMIT)
             g_stack[depth + before] = mem(other, B_TYPE);
         depth += total;

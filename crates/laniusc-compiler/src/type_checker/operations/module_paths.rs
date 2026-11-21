@@ -281,7 +281,7 @@ pub(in crate::type_checker) const IMPORT_EDGE_SET_CLEAR: ReflectedComputeSpec = 
     "type_check.modules.import_edges.clear",
     Declarations,
     "type_checker/modules/imports/clear_import_edge_set";
-    writes ["import_edge_set_state"]
+    writes ["import_edge_set_state", "item_import_set_state"]
 );
 
 pub(in crate::type_checker) const IMPORT_EDGE_SET_BUILD: ReflectedComputeSpec =
@@ -317,6 +317,7 @@ pub(in crate::type_checker) const IMPORT_VISIBILITY_COUNT: ReflectedComputeSpec 
         ; writes ["import_visible_type_count", "import_visible_value_count"]
         ; resources [
             typecheck_resource!("import_count_out" => "import_record_count_out", Read),
+            typecheck_resource!("item_import_set_state" => "item_import_set_state", ReadWrite),
             typecheck_resource!("decl_type_public_flag" => "type_instance_arg_ref_tag", Read),
             typecheck_resource!("decl_value_public_flag" => "type_instance_arg_ref_payload", Read),
             typecheck_resource!("decl_type_public_prefix" => "decl_status", Read),
@@ -457,67 +458,42 @@ pub(in crate::type_checker) const IMPORT_VISIBLE_AMBIGUITY_VALIDATE: ReflectedCo
     .with_aliases(IMPORT_VISIBLE_STATUS_VALIDATE_ALIASES)
     .with_indirect_dispatch("import_visible_validate_dispatch_args");
 
-const RESOLVE_LOCAL_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("resolved_decl" => "resolved_type_decl", Write),
-    typecheck_resource!("resolved_status" => "resolved_type_status", Write),
-];
-const RESOLVE_LOCAL_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
-    typecheck_resource!("resolved_decl" => "resolved_value_decl", Write),
-    typecheck_resource!("resolved_status" => "resolved_value_status", Write),
-];
-
-pub(in crate::type_checker) const RESOLVE_LOCAL_TYPE_PATHS: ReflectedComputeSpec = typecheck_pass!(
-    "type_check.modules.paths.resolve_local_type",
-    HirNodes,
-    "type_checker/modules/paths/resolve_local_paths"
-)
-.with_aliases(RESOLVE_LOCAL_TYPE_ALIASES)
-.with_indirect_dispatch("path_dispatch_args");
-pub(in crate::type_checker) const RESOLVE_LOCAL_VALUE_PATHS: ReflectedComputeSpec =
-    typecheck_pass!(
-        "type_check.modules.paths.resolve_local_value",
-        HirNodes,
-        "type_checker/modules/paths/resolve_local_paths"
-    )
-    .with_aliases(RESOLVE_LOCAL_VALUE_ALIASES)
-    .with_indirect_dispatch("path_dispatch_args");
-
-const RESOLVE_IMPORTED_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+const RESOLVE_UNQUALIFIED_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("import_visible_count_out" => "import_visible_type_count_out", Read),
     typecheck_resource!("import_visible_key_module_id" => "import_visible_type_key_module_id", Read),
     typecheck_resource!("import_visible_key_name_id" => "import_visible_type_key_name_id", Read),
     typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_type_key_to_decl_id", Read),
     typecheck_resource!("import_visible_status" => "import_visible_type_status", Read),
     typecheck_resource!("import_visible_lookup_state" => "import_visible_type_lookup_state", Read),
-    typecheck_resource!("resolved_decl" => "resolved_type_decl", ReadWrite),
-    typecheck_resource!("resolved_status" => "resolved_type_status", ReadWrite),
+    typecheck_resource!("resolved_decl" => "resolved_type_decl", Write),
+    typecheck_resource!("resolved_status" => "resolved_type_status", Write),
 ];
-const RESOLVE_IMPORTED_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
+const RESOLVE_UNQUALIFIED_VALUE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[
     typecheck_resource!("import_visible_count_out" => "import_visible_value_count_out", Read),
     typecheck_resource!("import_visible_key_module_id" => "import_visible_value_key_module_id", Read),
     typecheck_resource!("import_visible_key_name_id" => "import_visible_value_key_name_id", Read),
     typecheck_resource!("import_visible_key_to_decl_id" => "import_visible_value_key_to_decl_id", Read),
     typecheck_resource!("import_visible_status" => "import_visible_value_status", Read),
     typecheck_resource!("import_visible_lookup_state" => "import_visible_value_lookup_state", Read),
-    typecheck_resource!("resolved_decl" => "resolved_value_decl", ReadWrite),
-    typecheck_resource!("resolved_status" => "resolved_value_status", ReadWrite),
+    typecheck_resource!("resolved_decl" => "resolved_value_decl", Write),
+    typecheck_resource!("resolved_status" => "resolved_value_status", Write),
 ];
 
-pub(in crate::type_checker) const RESOLVE_IMPORTED_TYPE_PATHS: ReflectedComputeSpec =
+pub(in crate::type_checker) const RESOLVE_UNQUALIFIED_TYPE_PATHS: ReflectedComputeSpec =
     typecheck_pass!(
-        "type_check.modules.paths.resolve_imported_type",
+        "type_check.modules.paths.resolve_unqualified_type",
         HirNodes,
-        "type_checker/modules/paths/resolve_imported_paths"
+        "type_checker/modules/paths/resolve_unqualified_paths"
     )
-    .with_aliases(RESOLVE_IMPORTED_TYPE_ALIASES)
+    .with_aliases(RESOLVE_UNQUALIFIED_TYPE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
-pub(in crate::type_checker) const RESOLVE_IMPORTED_VALUE_PATHS: ReflectedComputeSpec =
+pub(in crate::type_checker) const RESOLVE_UNQUALIFIED_VALUE_PATHS: ReflectedComputeSpec =
     typecheck_pass!(
-        "type_check.modules.paths.resolve_imported_value",
+        "type_check.modules.paths.resolve_unqualified_value",
         HirNodes,
-        "type_checker/modules/paths/resolve_imported_paths"
+        "type_checker/modules/paths/resolve_unqualified_paths"
     )
-    .with_aliases(RESOLVE_IMPORTED_VALUE_ALIASES)
+    .with_aliases(RESOLVE_UNQUALIFIED_VALUE_ALIASES)
     .with_indirect_dispatch("path_dispatch_args");
 
 const RESOLVE_QUALIFIED_TYPE_ALIASES: &[crate::gpu::compiler_graph::ReflectedResourceAlias] = &[

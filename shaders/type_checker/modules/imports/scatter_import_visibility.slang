@@ -15,6 +15,7 @@
 import shared.buffers.gpu_index;
 import shared.search.range_query;
 import shared.buffers.status;
+import type_checker.modules.import_edge_set;
 
 struct Params
 {
@@ -31,6 +32,7 @@ StructuredBuffer<uint> import_status;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_module_id;
 StructuredBuffer<uint> import_item_name_id;
+StructuredBuffer<uint> item_import_set_state;
 StructuredBuffer<uint> import_visible_count;
 StructuredBuffer<uint> import_visible_count_out;
 StructuredBuffer<uint> import_visible_prefix;
@@ -182,18 +184,10 @@ uint public_decl_row_for_local_index(uint begin, uint end, uint local_i)
                : INVALID;
 }
 
-// Whether an item import of `name` in `module` shadows module imports.
-bool item_import_names(uint module, uint name)
+public struct ItemImportStatus : IImportEdgeStatusSource
 {
-    uint count = active_import_count();
-    for (uint import_i = 0u; import_i < count; import_i += 1u)
-    {
-        if (import_item_name_id[import_i] == name && import_module_id[import_i] == module &&
-            import_status[import_i] == IMPORT_STATUS_OK)
-            return true;
-    }
-    return false;
-}
+    public static uint status(uint row) { return import_status[row]; }
+};
 
 void write_invalid_row(uint visible_i)
 {
@@ -251,7 +245,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint name = decl_name_id[decl_i];
     uint item = import_item_name_id[import_i];
-    if (item != INVALID ? name != item : item_import_names(importing_module, name))
+    if (item != INVALID ? name != item :
+        import_edge_set_contains<ItemImportStatus>(importing_module, name,
+            active_import_count(), import_module_id, import_item_name_id, item_import_set_state))
     {
         write_invalid_row(visible_i);
         return;

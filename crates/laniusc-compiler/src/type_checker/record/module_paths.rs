@@ -121,13 +121,8 @@ fn record_module_path_prepare(
         "typecheck.modules.import_visible_tables.done",
     );
     ComputeOperation::record_pair(
-        &state.bind_groups.resolve_local_type_paths,
-        &state.bind_groups.resolve_local_value_paths,
-        encoder,
-    )?;
-    ComputeOperation::record_pair(
-        &state.bind_groups.resolve_imported_type_paths,
-        &state.bind_groups.resolve_imported_value_paths,
+        &state.bind_groups.resolve_unqualified_type_paths,
+        &state.bind_groups.resolve_unqualified_value_paths,
         encoder,
     )?;
     state.bind_groups.clear_type_path_types.record(encoder)?;

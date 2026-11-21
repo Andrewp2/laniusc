@@ -652,41 +652,23 @@ pub(in crate::type_checker) fn create_with_passes(
         &resource_buffers.module_by_canonical_id,
     );
 
-    let resolve_local_type_paths = ComputeOperation::indirect_spec(
+    let resolve_unqualified_type_paths = ComputeOperation::indirect_spec(
         device,
         graph,
         &import_visible_type_resources,
         passes,
-        RESOLVE_LOCAL_TYPE_PATHS,
+        RESOLVE_UNQUALIFIED_TYPE_PATHS,
         &path_dispatch_args,
     )?;
 
-    let mut resolve_local_value_resources = import_visible_value_resources.clone();
-    resolve_local_value_resources.buffer("gParams", &import_visibility_mark_params);
-    let resolve_local_value_paths = ComputeOperation::indirect_spec(
+    let mut resolve_unqualified_value_resources = import_visible_value_resources.clone();
+    resolve_unqualified_value_resources.buffer("gParams", &import_visibility_mark_params);
+    let resolve_unqualified_value_paths = ComputeOperation::indirect_spec(
         device,
         graph,
-        &resolve_local_value_resources,
+        &resolve_unqualified_value_resources,
         passes,
-        RESOLVE_LOCAL_VALUE_PATHS,
-        &path_dispatch_args,
-    )?;
-
-    let resolve_imported_type_paths = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &import_visible_type_resources,
-        passes,
-        RESOLVE_IMPORTED_TYPE_PATHS,
-        &path_dispatch_args,
-    )?;
-
-    let resolve_imported_value_paths = ComputeOperation::indirect_spec(
-        device,
-        graph,
-        &import_visible_value_resources,
-        passes,
-        RESOLVE_IMPORTED_VALUE_PATHS,
+        RESOLVE_UNQUALIFIED_VALUE_PATHS,
         &path_dispatch_args,
     )?;
 
@@ -798,10 +780,8 @@ pub(in crate::type_checker) fn create_with_passes(
             import_visible_validate_dispatch_args: import_visible_validate_dispatch_args_group,
             initialize_import_visible_keys,
             validate_import_visible_keys,
-            resolve_local_type_paths,
-            resolve_local_value_paths,
-            resolve_imported_type_paths,
-            resolve_imported_value_paths,
+            resolve_unqualified_type_paths,
+            resolve_unqualified_value_paths,
             resolve_qualified_type_paths,
             resolve_qualified_value_paths,
             clear_type_path_types,

@@ -110,6 +110,8 @@ fn generic_option_and_result_variant_payloads_refer_to_their_enum_parameters() {
         0,
         &[
             include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/function.lani"),
+            include_str!("../stdlib/core/mem.lani"),
             include_str!("../stdlib/core/panic.lani"),
             include_str!("../stdlib/core/result.lani"),
             include_str!("../stdlib/core/option.lani"),
@@ -224,6 +226,7 @@ fn generic_vec_public_methods_remain_exported_under_inherent_implementations() {
         common::semantic_interface_with_timeout(0, &[
             include_str!("../stdlib/alloc/allocator.lani"),
             include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/function.lani"),
             include_str!("../stdlib/core/mem.lani"),
             include_str!("../stdlib/core/result.lani"),
             include_str!("../stdlib/core/option.lani"),
@@ -255,6 +258,8 @@ fn public_option_methods_export_their_explicit_parameter_types() {
         0,
         &[
             include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/function.lani"),
+            include_str!("../stdlib/core/mem.lani"),
             include_str!("../stdlib/core/panic.lani"),
             include_str!("../stdlib/core/result.lani"),
             include_str!("../stdlib/core/option.lani"),
@@ -326,11 +331,20 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 "{name}: impl scope"
             );
             assert_eq!(inherited.type_binding_slot(), 0);
-            assert_eq!(method.method_type_parameter_count(), 1);
-            assert_eq!(members.iter().filter(|member|
+            let own_parameters: Vec<_> = members.iter().enumerate().filter(|(_, member)|
                 member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
-                    && member.value_hi == method.value_hi).count(), 0,
-                "{name}: T belongs to the implementation, not a method header");
+                    && member.value_hi == method.value_hi).collect();
+            let argument_parameter = if name == "and" {
+                assert_eq!(method.method_type_parameter_count(), 2);
+                assert_eq!(own_parameters.len(), 1, "and<U> declares one method parameter");
+                let (index, parameter) = own_parameters[0];
+                assert_eq!(parameter.type_binding_slot(), 1, "U follows the receiver's T");
+                artifact.implementations[implementation_index].first_member + index as u32
+            } else {
+                assert_eq!(method.method_type_parameter_count(), 1, "{name}");
+                assert!(own_parameters.is_empty(), "{name}: the only type parameter is the impl's T");
+                receiver_argument.payload_lo
+            };
             if matches!(name, "unwrap_or" | "contains") {
                 assert_eq!(
                     ty.kind,
@@ -347,7 +361,7 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 GpuSemanticInterfaceTypeKind::Declaration as u32,
                 "{name}"
             );
-            assert_eq!(ty.edge_count, 1, "{name}: Option<T> parameter");
+            assert_eq!(ty.edge_count, 1, "{name}: Option parameter");
             let child =
                 &artifact.types[artifact.type_edges[ty.first_edge as usize].type_index as usize];
             assert_eq!(
@@ -356,8 +370,8 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 "{name}"
             );
             assert_eq!(
-                child.payload_lo, receiver_argument.payload_lo,
-                "{name}: same impl parameter identity"
+                child.payload_lo, argument_parameter,
+                "{name}: Option argument refers to the declared type parameter"
             );
         }
     }

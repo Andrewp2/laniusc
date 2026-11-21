@@ -88,6 +88,7 @@ module_path_buffers! {
     pub(super) import_target_module_id: LaniusBuffer<u32>,
     pub(super) import_status: LaniusBuffer<u32>,
     pub(super) import_edge_set_state: LaniusBuffer<u32>,
+    pub(super) item_import_set_state: LaniusBuffer<u32>,
     pub(super) decl_module_file_id: LaniusBuffer<u32>,
     pub(super) decl_module_id: LaniusBuffer<u32>,
     pub(super) decl_name_token: LaniusBuffer<u32>,
@@ -255,6 +256,9 @@ impl Buffers {
             import_edge_set_state: import_record_capacity
                 .checked_mul(2)
                 .expect("import-edge set capacity overflow");
+            item_import_set_state: import_record_capacity
+                .checked_mul(2)
+                .expect("item import set capacity overflow");
         );
         // Declaration tables are retained through module/path resolution, but they
         // are not part of the x86 handoff. Use parser token/tree workspaces that
@@ -434,6 +438,7 @@ impl Buffers {
             import_target_dependency_module_id,
             import_status,
             import_edge_set_state,
+            item_import_set_state,
             decl_module_file_id,
             decl_module_id,
             decl_name_token,

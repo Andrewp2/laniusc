@@ -97,8 +97,9 @@ uint frame_count(uint row) { return frame_kind(row) == 1u ? type_instance_arg_co
 // immutable inputs except the private rows this lane allocates.
 bool normalize<Graph : IScopedTypeGraph>(uint3 input, uint base, out uint2 result, out uint failure)
 {
-    for (uint i = 0u; i < DEPTH_LIMIT; i++)
-        { walk_env_a[base + i] = INVALID; walk_env_b[base + i] = INVALID; }
+    uint initialized = 1u;
+    walk_env_a[base] = INVALID;
+    walk_env_b[base] = INVALID;
     uint alias_expansions = 0u;
     uint created_count = 0u;
     uint depth = 0u;
@@ -205,7 +206,7 @@ bool normalize<Graph : IScopedTypeGraph>(uint3 input, uint base, out uint2 resul
         {
             if (depth == 0u)
             {
-                for (uint i = 0u; i < DEPTH_LIMIT; i++)
+                for (uint i = 0u; i < initialized; i++)
                 {
                     if (walk_env_a[base + i] != INVALID) type_instance_kind[walk_env_a[base + i]] = 0u;
                     if (walk_env_b[base + i] != INVALID) type_instance_kind[walk_env_b[base + i]] = 0u;
@@ -276,6 +277,13 @@ bool normalize<Graph : IScopedTypeGraph>(uint3 input, uint base, out uint2 resul
         else { tag = type_instance_elem_ref_tag[ref.y]; payload = type_instance_elem_ref_payload[ref.y]; }
         if (depth + 1u == DEPTH_LIMIT) { failure = 2u; return false; }
         depth++;
+        // Reuse a frame's private environments when visiting siblings.
+        if (depth == initialized)
+        {
+            walk_env_a[base + depth] = INVALID;
+            walk_env_b[base + depth] = INVALID;
+            initialized++;
+        }
         walk_ref[base + depth] = uint3(tag, payload, ref.z); walk_next[base + depth] = INVALID;
     }
 }
