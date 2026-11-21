@@ -944,9 +944,6 @@ impl GpuTypeChecker {
         self.status_buf.write(queue, 0, &status_init_bytes());
         let dependency_types_present =
             dependency_pages.is_some_and(GpuDependencyInterfacePages::has_type_references);
-        let application_types_required =
-            generic_param_record_passes_required(hir_items.parser_feature_flags)
-                || dependency_types_present;
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
@@ -1469,14 +1466,8 @@ impl GpuTypeChecker {
                 canonical_synchronous,
             )?;
             bind_groups.calls.substitution.record_job_start(encoder)?;
-            if let Some(index) = &bind_groups.type_instances.index_closed_applications {
-                index.record(encoder)?;
-            }
             if let Some(closure) = &bind_groups.type_instances.source_field_closure {
                 closure.record(encoder)?;
-            }
-            if let Some(index) = &bind_groups.type_instances.index_generated_applications {
-                index.record(encoder)?;
             }
             if let Some(project) = &bind_groups.type_instances.project_imported_fields {
                 project.record(encoder)?;
@@ -1488,14 +1479,8 @@ impl GpuTypeChecker {
                     timer.stamp(encoder, "typecheck.methods.done");
                 }
             }
-            if members_required {
-                bind_groups
-                    .type_instances
-                    .member_receivers
-                    .record(encoder)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.member_receivers.done");
-                }
+            if members_required || structs_required {
+                bind_groups.type_instances.list_aggregate_roots.record(encoder)?;
             }
             if struct_field_index_passes_required(parser_feature_flags) {
                 record_struct_field_key_passes_with_passes(
@@ -1508,13 +1493,6 @@ impl GpuTypeChecker {
                 bind_groups.type_instances.member_results.record(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.member_results.done");
-                }
-                bind_groups
-                    .type_instances
-                    .member_substitute
-                    .record(encoder)?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.member_substitute.done");
                 }
             }
             if structs_required {
@@ -1592,24 +1570,10 @@ impl GpuTypeChecker {
                 if members_required {
                     bind_groups
                         .type_instances
-                        .member_receivers
-                        .record_invocation(
-                            encoder,
-                            &bind_groups.type_instances.member_receivers_after_match,
-                        )?;
-                    bind_groups
-                        .type_instances
                         .member_results
                         .record_invocation(
                             encoder,
                             &bind_groups.type_instances.member_results_after_match,
-                        )?;
-                    bind_groups
-                        .type_instances
-                        .member_substitute
-                        .record_invocation(
-                            encoder,
-                            &bind_groups.type_instances.member_substitute_after_match,
                         )?;
                 }
             }
@@ -1805,17 +1769,6 @@ impl GpuTypeChecker {
             if methods_required {
                 bind_groups.methods.resolve.record(encoder)?;
             }
-            for operation in [
-                &bind_groups.calls.return_type_index_clear,
-                &bind_groups.calls.return_type_source_index,
-            ]
-            .into_iter()
-            .flatten()
-            {
-                if application_types_required {
-                    operation.record(encoder)?;
-                }
-            }
             // Every winner change invalidates the old impl environment. Rebuild
             // explicit and inferred claims before materializing under the winner.
             let regenerate_call_claims = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
@@ -1918,9 +1871,8 @@ impl GpuTypeChecker {
                     contexts.record(encoder)?;
                 }
                 if let Some(records) = &bind_groups.calls.record_literal_inference {
-                    if let Some(index) = &bind_groups.calls.return_type_index {
-                        index.record_as(encoder, compiler_graph::CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS)?;
-                    }
+                    // Record contexts resolve field types by canonical ID. The
+                    // structural index is refreshed after result materialization.
                     records.contexts.record(encoder)?;
                     bind_groups.calls.environment_admission.record_context(
                         encoder,
@@ -1965,9 +1917,10 @@ impl GpuTypeChecker {
                     materialize_returns(encoder)?;
                 }
                 if members_required {
-                    bind_groups.type_instances.member_receivers_inference.record(encoder)?;
-                    bind_groups.type_instances.member_results_inference.record(encoder)?;
-                    bind_groups.type_instances.member_substitute_inference.record(encoder)?;
+                    bind_groups.type_instances.member_results.record_invocation(
+                        encoder,
+                        &bind_groups.type_instances.member_results_inference,
+                    )?;
                 }
                 if matches_required {
                     module_path
@@ -2364,24 +2317,10 @@ impl GpuTypeChecker {
             if members_required {
                 bind_groups
                     .type_instances
-                    .member_receivers
-                    .record_invocation(
-                        encoder,
-                        &bind_groups.type_instances.member_receivers_after_array,
-                    )?;
-                bind_groups
-                    .type_instances
                     .member_results
                     .record_invocation(
                         encoder,
                         &bind_groups.type_instances.member_results_after_array,
-                    )?;
-                bind_groups
-                    .type_instances
-                    .member_substitute
-                    .record_invocation(
-                        encoder,
-                        &bind_groups.type_instances.member_substitute_after_array,
                     )?;
             }
             // Array literals validate against substituted struct-field contexts.

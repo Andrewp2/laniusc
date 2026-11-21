@@ -14,11 +14,12 @@ import type_checker.types.aggregates.struct_field_lookup;
 import shared.buffers.status;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;
-import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
+StructuredBuffer<uint> nested_literal_roots;
+StructuredBuffer<uint> aggregate_root_counts;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
@@ -38,17 +39,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_STRUCT_LITERAL = 28u;
 static const uint DEPTH_LIMIT = 64u;
 
-// The nearest struct-literal ancestor of `node` (INVALID: none).
-uint literal_parent(uint node, uint count)
-{
-    uint ancestor = compact_hir_core[node].parent;
-    for (uint steps = 0u; ancestor < count && steps < count; steps++)
-    {
-        if (compact_hir_core[ancestor].kind == HIR_STRUCT_LITERAL) return ancestor;
-        ancestor = compact_hir_core[ancestor].parent;
-    }
-    return INVALID;
-}
+#include "literal_parent.slang"
 
 // The ordinal of the field of `literal` whose value is `child` (INVALID: none).
 uint field_ordinal_of(uint literal, uint child, uint fields)
@@ -131,14 +122,15 @@ bool child_context(uint node, HirField value, uint child, uint count, uint field
 }
 
 [shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+[numthreads(32, 1, 1)]
+void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
-    uint root = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
+    if (local.x != 0u) return;
+    uint lane = group.x + group.y * 65535u;
+    if (lane >= aggregate_root_counts[1u]) return;
+    uint root = nested_literal_roots[lane];
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
-    if (root >= count || compact_hir_core[root].kind != HIR_STRUCT_LITERAL) return;
     if (!inference_item_active(compact_hir_core[root].token_start)) return;
-    if (literal_parent(root, count) != INVALID) return;
     if (struct_lit_context_decl_token[root] >= gParams.n_tokens &&
         !imported_record_fields_available(struct_lit_context_instance[root])) return;
     uint fields = min(compact_field_count[0u], gParams.n_hir_nodes);

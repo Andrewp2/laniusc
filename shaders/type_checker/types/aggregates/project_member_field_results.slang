@@ -1,22 +1,17 @@
 import shared.semantics.semantic_interface_layout;
 import type_checker.checked_types.mutable_checked_type_graph;
+import type_checker.constants.constant_atoms_identity;
+import type_checker.concrete_types.concrete_type_closure;
 import type_checker.checked_types.checked_index_reference;
 import type_checker.substitution.scoped_reference_substitution;
-// HIR member field result projection.
-//
-// The preceding member-receiver pass records the initial receiver type for
-// every member-chain root and links consecutive member nodes. One lane owns
-// each independent chain and carries the exact result ref through sorted
-// (struct, field-name) lookups. Generic fields are substituted before the next
-// transition, so layout and result types remain receiver-dependent at every
-// depth without token rescans or fixed retry counts.
-
+// One lane resolves a complete member/index chain. The receiver of the
+// next link is the checked result of the current one, held in the lane.
+// The worklist contains only links with valid member tokens and excludes call callees.
 import shared.syntax.hir_records;
 import shared.buffers.status;
 import type_checker.types.aggregates.struct_field_lookup;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;
-import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -31,7 +26,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_field_lookup_state;
@@ -47,14 +41,29 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> member_next_node;
-StructuredBuffer<uint> member_chain_root_ref_tag;
-StructuredBuffer<uint> member_chain_root_ref_payload;
 
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
 RWStructuredBuffer<uint> member_result_field_ordinal;
 RWStructuredBuffer<uint> member_result_field_node;
+StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> method_decl_receiver_ref_tag;
+StructuredBuffer<uint> method_decl_receiver_ref_payload;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
+StructuredBuffer<uint> call_result_instance;
+StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> member_chain_roots;
+StructuredBuffer<uint> aggregate_root_counts;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -70,14 +79,10 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint WG_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
-
-uint linear_thread_id(uint3 dtid)
-{
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
-
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_TRY_EXPR = 36u;
+static const uint NAME_ROLE_SELF = 1u;
 uint active_hir_node_count()
 {
     return min(gParams.n_hir_nodes, compact_hir_count[0u]);
@@ -191,30 +196,162 @@ uint type_head_token_for_compact_node(uint type_node)
     return valid_token(owner) ? owner : INVALID;
 }
 
-bool member_expr_is_call_callee(uint node)
+uint name_token(uint node)
 {
-    if (!valid_node(node) || compact_hir_core[node].kind != HIR_MEMBER_EXPR)
-        return false;
-    uint call_node = compact_hir_expr_parent[node];
-    return valid_node(call_node) &&
-           compact_hir_core[call_node].kind == HIR_CALL_EXPR &&
-           compact_hir_payload[call_node].a == node;
+    if (!valid_node(node)) return INVALID;
+    uint kind = compact_hir_core[node].kind;
+    if (kind != HIR_NAME_EXPR && kind != HIR_PATH_EXPR) return INVALID;
+    uint token = compact_hir_payload[node].d;
+    return valid_token(token) ? token : INVALID;
 }
 
-void publish_member_field_chain_for_root(uint member_node)
+bool decl_ref(uint token, out uint tag, out uint payload)
 {
-    if (member_expr_is_call_callee(member_node))
-        return;
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    uint decl = valid_token(token) ? visible_decl[token] : INVALID;
+    if (!valid_token(decl)) return false;
+    tag = decl_type_ref_tag[decl]; payload = decl_type_ref_payload[decl];
+    return tag != TYPE_REF_INVALID && payload != INVALID;
+}
 
-    uint receiver_node = compact_hir_payload[member_node].b;
-    if (valid_node(receiver_node) && (compact_hir_core[receiver_node].kind == HIR_MEMBER_EXPR ||
-        compact_hir_core[receiver_node].kind == HIR_INDEX_EXPR))
-        return;
-    uint receiver_tag = member_chain_root_ref_tag[member_node];
-    uint receiver_payload = member_chain_root_ref_payload[member_node];
-    if (receiver_tag == TYPE_REF_INVALID || receiver_payload == INVALID)
-        return;
+bool value_ref(uint token, out uint tag, out uint payload)
+{
+    if (decl_ref(token, tag, payload)) return true;
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_token(token)) return false;
+    uint ty = visible_type[token];
+    uint decl = visible_decl[token];
+    if (ty == 0u && valid_token(decl)) ty = visible_type[decl];
+    if (ty == 0u) return false;
+    tag = TYPE_REF_SCALAR; payload = ty;
+    return true;
+}
 
+bool call_ref(uint node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR) return false;
+    tag = call_inference_result_tag[node]; payload = call_inference_result_payload[node];
+    if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
+    uint instance = call_result_instance[node];
+    if (concrete_instance_is_closed<MutableCheckedTypeGraph, CheckedSourceConstantGraph,
+        CheckedSourceConstantEnvironment>(instance, mutable_type_capacity(),
+            checked_source_constant_parameter_capacity()))
+    {
+        tag = TYPE_REF_INSTANCE;
+        payload = instance;
+        return true;
+    }
+    uint callee = compact_hir_payload[node].a;
+    uint token = name_token(callee);
+    uint declaration = valid_token(token) ? call_fn_index[token] : INVALID;
+    if (valid_token(declaration))
+    {
+        if (type_decl_generic_param_count[declaration] != 0u) return false;
+        tag = fn_return_ref_tag[declaration];
+        payload = fn_return_ref_payload[declaration];
+        if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
+    }
+    uint ty = valid_token(token) ? call_return_type[token] : 0u;
+    if (ty == 0u) return false;
+    tag = TYPE_REF_SCALAR;
+    payload = ty;
+    return true;
+}
+
+bool self_ref(uint member, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    uint receiver = compact_hir_payload[member].b;
+    if (!valid_node(receiver) || compact_hir_core[receiver].kind != HIR_NAME_EXPR ||
+        compact_hir_payload[receiver].b != NAME_ROLE_SELF) return false;
+    uint fn = compact_hir_nearest_fn[member];
+    if (!valid_node(fn)) return false;
+    uint token = compact_hir_payload[fn].b;
+    if (!valid_token(token)) return false;
+    tag = method_decl_receiver_ref_tag[token];
+    payload = method_decl_receiver_ref_payload[token];
+    return tag != TYPE_REF_INVALID && payload != INVALID;
+}
+
+// The receiver's own published expression type. Parenthesized receivers,
+// struct literals and matches have no name token of their own: payload.d of
+// a member is the receiver's first source token, which is `(` for a group.
+bool slot_ref(uint node, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    if (!valid_node(node)) return false;
+    // A try can publish its payload after expression projection. An
+    // argument-free local nominal is complete at its question-mark token,
+    // so the member pass can use that type before the projected slot catches up.
+    HirCore core = compact_hir_core[node];
+    if (core.kind == HIR_TRY_EXPR && call_inference_round[0u] != 0u &&
+        core.token_end != 0u && valid_token(core.token_end - 1u))
+    {
+        uint token = core.token_end - 1u;
+        uint row = decl_type_ref_payload[token];
+        if (decl_type_ref_tag[token] == TYPE_REF_INSTANCE && row < mutable_type_capacity() &&
+            type_instance_kind[row] == 1u && type_instance_arg_count[row] == 0u &&
+            valid_token(type_instance_decl_token[row]))
+        {
+            tag = TYPE_REF_INSTANCE;
+            payload = row;
+            return true;
+        }
+    }
+    tag = call_inference_result_tag[node]; payload = call_inference_result_payload[node];
+    if (tag != TYPE_REF_INVALID && payload != INVALID) return true;
+    tag = TYPE_REF_INVALID; payload = INVALID;
+    return false;
+}
+
+bool seed_receiver(uint node, out uint tag, out uint payload)
+{
+    uint kind = compact_hir_core[node].kind;
+    HirPayload p = compact_hir_payload[node];
+    uint receiver = p.b;
+    uint token = kind == HIR_MEMBER_EXPR && valid_token(p.d) ? p.d : name_token(receiver);
+    if (call_ref(receiver, tag, payload) || value_ref(token, tag, payload)) return true;
+    if (kind == HIR_MEMBER_EXPR && self_ref(node, tag, payload)) return true;
+    uint receiver_name = name_token(receiver);
+    if (receiver_name != token && value_ref(receiver_name, tag, payload)) return true;
+    return slot_ref(receiver, tag, payload);
+}
+
+void clear_member_result(uint token)
+{
+    member_result_ref_tag[token] = TYPE_REF_INVALID;
+    member_result_ref_payload[token] = INVALID;
+    member_result_context_instance[token] = INVALID;
+    member_result_field_ordinal[token] = INVALID;
+    member_result_field_node[token] = INVALID;
+}
+
+void publish_visible_member_type(uint token, uint tag, uint payload)
+{
+    uint ty = 0u;
+    if (tag == TYPE_REF_SCALAR)
+        ty = payload;
+    else if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : payload;
+        if (slot != INVALID) ty = 8192u + slot;
+    }
+    else if (tag == TYPE_REF_INSTANCE)
+    {
+        uint kind = payload < mutable_type_capacity() ? type_instance_kind[payload] : 0u;
+        if (kind < 1u || kind > 4u)
+        {
+            record_min_token_error(status, token, 3u, 0u);
+            return;
+        }
+        if (valid_token(payload)) ty = visible_type[payload];
+    }
+    if (ty != 0u) visible_type[token] = ty;
+}
+
+void resolve_member_chain(inout uint member_node, uint receiver_tag, uint receiver_payload)
+{
     uint steps = 0u;
     while (valid_node(member_node) &&
            steps < active_hir_node_count())
@@ -235,18 +372,6 @@ void publish_member_field_chain_for_root(uint member_node)
         }
         if (kind != HIR_MEMBER_EXPR) return;
         uint member_token = compact_hir_payload[member_node].c;
-        if (!valid_token(member_token) || member_expr_is_call_callee(member_node))
-            return;
-
-        // Receiver initialization is a traversal input, not the field's
-        // result type. A failed lookup must not leave the receiver masquerading
-        // as a selected value in return or argument checking.
-        member_result_ref_tag[member_token] = TYPE_REF_INVALID;
-        member_result_ref_payload[member_token] = INVALID;
-        member_result_context_instance[member_token] = INVALID;
-        member_result_field_ordinal[member_token] = INVALID;
-        member_result_field_node[member_token] = INVALID;
-
         // Member selection automatically dereferences references. The value
         // still carries its reference type; only lookup uses the referent.
         for (uint depth = 0u; depth < 64u && receiver_tag == TYPE_REF_INSTANCE &&
@@ -323,6 +448,7 @@ void publish_member_field_chain_for_root(uint member_node)
         member_result_field_node[member_token] = field_token;
         member_result_ref_tag[member_token] = tag;
         member_result_ref_payload[member_token] = payload;
+        publish_visible_member_type(member_token, tag, payload);
 
         receiver_tag = tag;
         receiver_payload = payload;
@@ -331,14 +457,30 @@ void publish_member_field_chain_for_root(uint member_node)
     }
 }
 
+#include "member_chain_workgroup.slang"
+
 [shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+[numthreads(MEMBER_CHAIN_WORKGROUP_LANES, 1, 1)]
+void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
-    uint node = inference_listed_hir_row(linear_thread_id(dtid));
-    if (!valid_node(node)) return;
+    if (local.x % MEMBER_CHAIN_LANES != 0u) return;
+    uint lane = (group.x + group.y * 65535u) * MEMBER_CHAINS_PER_WORKGROUP
+        + local.x / MEMBER_CHAIN_LANES;
+    if (lane >= aggregate_root_counts[0u]) return;
+    uint node = member_chain_roots[lane];
     HirCore core = compact_hir_core[node];
-    if ((core.kind != HIR_MEMBER_EXPR && core.kind != HIR_INDEX_EXPR) ||
-        !inference_item_active(core.token_start)) return;
-    publish_member_field_chain_for_root(node);
+    if (core.kind == HIR_INDEX_EXPR && member_next_node[node] == INVALID) return;
+    if (!inference_item_active(core.token_start)) return;
+
+    uint tag; uint payload;
+    if (seed_receiver(node, tag, payload)) resolve_member_chain(node, tag, payload);
+
+    // A failed receiver or lookup invalidates every unresolved link. The
+    // chain's links share its enclosing function and inference activity.
+    for (uint steps = 0u; valid_node(node) && steps < active_hir_node_count(); steps++)
+    {
+        if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
+            clear_member_result(compact_hir_payload[node].c);
+        node = member_next_node[node];
+    }
 }

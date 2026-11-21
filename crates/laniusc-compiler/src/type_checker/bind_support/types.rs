@@ -124,68 +124,29 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     )?;
     let decl_refs_for_bindings =
         decl_refs.invocation(graph, TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.name)?;
-    let member_receivers = indirect_hir(
-        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_PASS,
-        "type_checker/types/aggregates/seed_member_receivers",
+    let list_aggregate_roots = indirect_hir(
+        compiler_graph::LIST_AGGREGATE_ROOTS_PASS,
+        compiler_graph::LIST_AGGREGATE_ROOTS_KERNEL,
     )?;
-    let member_receivers_after_match = member_receivers.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_MATCH_PASS,
-    )?;
-    let member_receivers_after_array = member_receivers.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS,
-    )?;
-    let member_results = indirect_hir(
-        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_PASS,
-        "type_checker/types/aggregates/project_member_field_results",
-    )?;
-    let member_results_after_match = member_results.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS,
-    )?;
-    let member_results_after_array = member_results.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS,
-    )?;
-    let member_substitute = indirect_token(
-        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
-        "type_checker/types/aggregates/publish_substituted_member_types",
-    )?;
-    let member_substitute_after_match = member_substitute.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
-    )?;
-    let member_substitute_after_array = member_substitute.invocation(
-        graph,
-        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
-    )?;
-    // The rounds' member passes visit the listed active blocks
-    // (calls/inference_blocks.slang).
-    let listed = |name, kernel, args: &str| {
+    let aggregate_roots = |name, kernel, args| {
         ComputeOperation::indirect(
-            device,
-            graph,
-            resources,
-            name,
-            &passes.kernel(kernel),
+            device, graph, resources, name, &passes.kernel(kernel),
             &typed_buffer_from_resources(resources, args)?,
         )
     };
-    let member_receivers_inference = listed(
-        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
-        "type_checker/types/aggregates/seed_member_receivers",
-        "inference_hir_list_args",
-    )?;
-    let member_results_inference = listed(
-        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
+    let member_results = aggregate_roots(
+        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_PASS,
         "type_checker/types/aggregates/project_member_field_results",
-        "inference_hir_list_args",
+        "member_chain_root_args",
     )?;
-    let member_substitute_inference = listed(
-        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
-        "type_checker/types/aggregates/publish_substituted_member_types",
-        "inference_token_list_args",
+    let member_results_after_match = member_results.invocation(
+        graph, compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS,
+    )?;
+    let member_results_after_array = member_results.invocation(
+        graph, compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS,
+    )?;
+    let member_results_inference = member_results.invocation(
+        graph, compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
     )?;
     // These scans are recorded before aggregate comparison begins, so the
     // aggregate scan workspace can safely serve both relations without
@@ -243,14 +204,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS,
             &hir_dispatch_args,
         )?,
-        index_closed_applications: if generic_param_record_passes_required(parser_feature_flags) {
-            Some(indirect_token(
-                compiler_graph::TYPE_INSTANCES_INDEX_CLOSED_APPLICATIONS_PASS,
-                "type_checker/types/instances/index_closed_applications",
-            )?)
-        } else {
-            None
-        },
         source_field_closure: if generic_param_record_passes_required(parser_feature_flags) {
             Some(crate::type_checker::substitution::FieldClosureOperations::new(
                 device,
@@ -263,16 +216,6 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             None
         },
-        index_generated_applications: if generic_param_record_passes_required(parser_feature_flags)
-        {
-            Some(indirect_token(
-                compiler_graph::TYPE_INSTANCES_INDEX_GENERATED_APPLICATIONS_PASS,
-                "type_checker/types/instances/index_closed_applications",
-            )?)
-        } else {
-            None
-        },
-        member_receivers,
         project_imported_fields: if generic_param_record_passes_required(parser_feature_flags) {
             Some(indirect_token(
                 compiler_graph::TYPE_INSTANCES_PROJECT_IMPORTED_FIELDS_PASS,
@@ -281,17 +224,11 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         } else {
             None
         },
-        member_receivers_after_match,
-        member_receivers_after_array,
-        member_receivers_inference,
+        list_aggregate_roots,
         member_results,
         member_results_after_match,
         member_results_after_array,
         member_results_inference,
-        member_substitute,
-        member_substitute_after_match,
-        member_substitute_after_array,
-        member_substitute_inference,
         struct_init_clear: ComputeOperation::direct(
             device,
             graph,
@@ -308,9 +245,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
             compiler_graph::TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS,
             "type_checker/types/aggregates/project_struct_init_fields",
         )?,
-        nested_struct_init_contexts: indirect_hir(
+        nested_struct_init_contexts: aggregate_roots(
             compiler_graph::TYPE_INSTANCES_NESTED_STRUCT_INIT_CONTEXTS_PASS,
             "type_checker/types/aggregates/propagate_nested_struct_contexts",
+            "nested_literal_root_args",
         )?,
         struct_init_substitute: indirect_token(
             compiler_graph::TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,

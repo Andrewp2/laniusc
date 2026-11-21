@@ -14,6 +14,9 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> type_semantic_row_by_token;
 RWStructuredBuffer<uint> type_semantic_scan_input;
 RWStructuredBuffer<uint> member_next_node;
+RWStructuredBuffer<uint> aggregate_root_counts;
+RWStructuredBuffer<uint> member_chain_root_args;
+RWStructuredBuffer<uint> nested_literal_root_args;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -24,6 +27,17 @@ static const uint MAX_GROUPS_X = 65535u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
+    if (i == 0u)
+    {
+        aggregate_root_counts[0u] = 0u;
+        aggregate_root_counts[1u] = 0u;
+        member_chain_root_args[0u] = 0u;
+        member_chain_root_args[1u] = 1u;
+        member_chain_root_args[2u] = 1u;
+        nested_literal_root_args[0u] = 0u;
+        nested_literal_root_args[1u] = 1u;
+        nested_literal_root_args[2u] = 1u;
+    }
     if (i < gParams.n_tokens)
         type_semantic_row_by_token[i] = INVALID;
     if (i < gParams.n_hir_nodes)

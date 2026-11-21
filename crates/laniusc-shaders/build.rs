@@ -298,7 +298,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/semantics/project_generic_native_word_counts"
             | "type_checker/semantics/publish_checked_member_layouts"
             | "type_checker/types/aggregates/project_member_field_results"
-            | "type_checker/types/aggregates/publish_substituted_member_types"
             | "type_checker/types/aggregates/propagate_nested_struct_contexts"
             | "type_checker/types/aggregates/substitute_struct_init_field_types"
             | "type_checker/types/aggregates/project_array_return_references"

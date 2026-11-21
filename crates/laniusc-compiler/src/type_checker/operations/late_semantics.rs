@@ -195,10 +195,6 @@ impl SemanticProjectionOperations {
                     "type_checker/types/instances/clear_type_application_index",
                 ),
                 (
-                    "type_check.body_specialization.index_applications",
-                    "type_checker/types/instances/index_closed_applications",
-                ),
-                (
                     "type_check.body_specialization.index_generated_applications",
                     "type_checker/types/instances/index_closed_applications",
                 ),
@@ -207,16 +203,8 @@ impl SemanticProjectionOperations {
                     compiler_graph::IMPORTED_FIELDS_KERNEL,
                 ),
                 (
-                    "type_check.body_specialization.member_receivers",
-                    "type_checker/types/aggregates/seed_member_receivers",
-                ),
-                (
                     "type_check.body_specialization.member_results",
                     "type_checker/types/aggregates/project_member_field_results",
-                ),
-                (
-                    "type_check.body_specialization.member_substitute",
-                    "type_checker/types/aggregates/publish_substituted_member_types",
                 ),
                 (
                     "type_check.body_specialization.literal_contexts",
@@ -324,6 +312,18 @@ impl SemanticProjectionOperations {
                     )
                     .map(|operation| (required_feature, operation));
                 }
+                let aggregate_args = match name {
+                    "type_check.body_specialization.member_results" => Some("member_chain_root_args"),
+                    "type_check.body_specialization.nested_literal_contexts" => Some("nested_literal_root_args"),
+                    _ => None,
+                };
+                if let Some(args) = aggregate_args {
+                    return ComputeOperation::indirect(
+                        device, graph, resources, name, &passes.kernel(kernel),
+                        &typed_buffer_from_resources(resources, args)?,
+                    )
+                    .map(|operation| (required_feature, operation));
+                }
                 let capacity = if let Some(&(_, tag_column, _, _)) = reference_pass {
                     let tags: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, tag_column)?;
@@ -341,10 +341,8 @@ impl SemanticProjectionOperations {
                 } else if matches!(
                     name,
                     "type_check.body_specialization.clear_application_index"
-                        | "type_check.body_specialization.index_applications"
                         | "type_check.body_specialization.index_generated_applications"
                         | "type_check.body_specialization.imported_fields"
-                        | "type_check.body_specialization.member_substitute"
                         | "type_check.body_specialization.literal_substitute"
                 ) {
                     // These passes run one lane per type expression token.

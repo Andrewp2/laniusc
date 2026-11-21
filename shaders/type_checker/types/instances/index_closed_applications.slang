@@ -24,7 +24,7 @@ StructuredBuffer<uint> token_count;
 
 void index_closed_application(uint instance, uint buckets, uint capacity)
 {
-    if (type_instance_lookup_present[instance] != 0u) return;
+    if (type_instance_lookup_present[instance] != 0u || type_instance_kind[instance] == 0u) return;
     uint hash;
     if (!scoped_type_ref_hash<ScopedCheckedTypeGraph>(3u, instance, 0xffffffffu,
         capacity, gParams.n_tokens, hash)) return;

@@ -315,16 +315,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         substitution: crate::type_checker::substitution::SubstitutionOperations::new(
             device, graph, resources, passes,
         )?,
-        return_type_index_clear: optional_generic(
-            compiler_graph::CALLS_RETURN_TYPE_INDEX_CLEAR_PASS,
-            "type_checker/types/instances/clear_type_application_index",
-            &token_dispatch_args,
-        )?,
-        return_type_source_index: optional_generic(
-            compiler_graph::CALLS_RETURN_TYPE_SOURCE_INDEX_PASS,
-            "type_checker/types/instances/index_closed_applications",
-            &token_dispatch_args,
-        )?,
         call_roots: CallRootListOperations {
             clear_count: crate::gpu::operations::ClearBufferOperation::entire(
                 graph,
@@ -444,9 +434,10 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     compiler_graph::CALLS_RECORD_CONTEXTS_PASS,
                     "type_checker/calls/results/project_record_contexts",
                 )?,
-                nested_contexts: listed(
-                    compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
-                    "type_checker/types/aggregates/propagate_nested_struct_contexts",
+                nested_contexts: ComputeOperation::indirect(
+                    device, graph, resources, compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
+                    &passes.kernel("type_checker/types/aggregates/propagate_nested_struct_contexts"),
+                    &typed_buffer_from_resources(resources, "nested_literal_root_args")?,
                 )?,
                 fields_and_references: ComputeOperation::indirect(
                     device,
