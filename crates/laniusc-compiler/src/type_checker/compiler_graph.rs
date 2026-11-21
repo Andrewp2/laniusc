@@ -3406,11 +3406,11 @@ fn build_graph(
         _method_lookup_next as "method_lookup_next" in Declarations => hir_rows * 4;
     });
     graph_resources!(graph, Workspace {
-        member_result_context_instance in Tokens => token_rows * 4;
-        member_result_ref_tag in Tokens => token_rows * 4;
-        member_result_ref_payload in Tokens => token_rows * 4;
+        _member_result_context_instance as "member_result_context_instance" in Tokens => token_rows * 4;
+        _member_result_ref_tag as "member_result_ref_tag" in Tokens => token_rows * 4;
+        _member_result_ref_payload as "member_result_ref_payload" in Tokens => token_rows * 4;
         member_result_field_ordinal in Tokens => token_rows * 4;
-        member_result_field_node in Tokens => token_rows * 4;
+        _member_result_field_node as "member_result_field_node" in Tokens => token_rows * 4;
         struct_init_field_context_instance in Tokens => token_rows * 4;
         struct_init_field_expected_ref_tag in Tokens => token_rows * 4;
         struct_init_field_expected_ref_payload in Tokens => token_rows * 4;
