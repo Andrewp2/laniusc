@@ -173,7 +173,6 @@ impl SchemaProjection {
         for (name, bytes, indirect) in [
             ("ps_status", STATUS_WORDS as u64 * 4, false),
             ("ps_round", 32, false),
-            ("ps_scan_total", 4, false),
             ("pj_schema_ranges", 8, false),
             ("pj_schema_fields", 8, false),
         ] {
@@ -237,9 +236,6 @@ impl SchemaProjection {
         // Every table is sized from the store's term capacity, which no
         // chained run grows: a run that would grow it does not publish.
         self.kernels.ensure("pj_schema_ranges", terms * 8, !first)?;
-        self.kernels.ensure("ps_scan_a", (terms + 1) * 4, false)?;
-        self.kernels.ensure("ps_scan_b", (terms + 1) * 4, false)?;
-        self.kernels.ensure("ps_blocks", (terms + 1).div_ceil(256) * 4, false)?;
         self.kernels.ensure("pj_schema_fields", u64::from(self.field_capacity) * 8, true)?;
         self.engine.begin_chain(&self.requests, self.rounds as usize)?;
         let mut extra = self.engine.chain_bindings()?;

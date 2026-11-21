@@ -178,7 +178,6 @@ pub mod words {
     pub const OVERFLOW_EDGES: u32 = 2;
     pub const OVERFLOW_MEMO: u32 = 4;
     pub const OVERFLOW_STORE: u32 = 8;
-    pub const OVERFLOW_LANES: u32 = 16;
 }
 
 /// Words per published result: `(result, status, failed node, failed env)`,
@@ -205,17 +204,17 @@ pub const USES_KERNEL: &str = "tests/request_substitution_for_retained_uses";
 pub const CONSUMER_KERNEL: &str = "tests/check_retained_substitution_publication";
 
 /// Rounds of the first batch; each further batch of one attempt doubles.
-/// A round is one expansion round, the scatter or one evaluation level, so
+/// A round is one expansion round or one evaluation level, so
 /// an attempt with `e` nonempty expansion rounds and `v` nonempty levels
-/// needs `e + v + 2` rounds. The settings app's runs need at most 7.
+/// needs `e + v + 1` rounds.
 const FIRST_BATCH_ROUNDS: u32 = 8;
 pub(super) const FIRST_BATCH_OPTIONS: u32 = (FIRST_BATCH_ROUNDS << 1) | 1;
 /// Rounds one attempt can need: every expansion round lowers the frontier's
 /// largest level and every evaluation round raises the level, so each side
-/// has at most `LEVELS` nonempty rounds plus the round that ends it (the
-/// scatter ends expansion). An attempt that is not final after this many
+/// has at most `LEVELS` nonempty rounds plus a final planner round.
+/// An attempt that is not final after this many
 /// recorded rounds lost its phase; the run fails closed.
-const ROUND_BOUND: u32 = 2 * (LEVELS + 1);
+const ROUND_BOUND: u32 = 2 * LEVELS + 1;
 
 /// Run numbers, shared by every engine of the process: a run number names
 /// one run.
@@ -693,9 +692,6 @@ impl RetainedSubstitution {
             }
             report.rolled_back_terms += counts[words::STORE_ROLLED_BACK];
             let overflow = counts[words::OVERFLOW];
-            if overflow & words::OVERFLOW_LANES != 0 {
-                bail!("retained substitution needs an expansion round wider than 2^32 lanes");
-            }
             let mut grew = false;
             if overflow & !words::OVERFLOW_STORE != 0 {
                 let next = self.capacity.grown(overflow, &counts);
@@ -874,7 +870,6 @@ impl RetainedSubstitution {
             ("sb_task_key", tasks * 16, false),
             ("sb_task_res", tasks * 16, false),
             ("sb_task_fail", tasks * 8, false),
-            ("sb_order", tasks * 4, false),
             ("sb_edges", c.edges.max(1) as u64 * 8, false),
             ("sb_memo", slots * 12, false),
             ("sb_term_keys", tasks * 16, false),

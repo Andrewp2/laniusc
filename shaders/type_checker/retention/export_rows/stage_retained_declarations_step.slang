@@ -243,7 +243,7 @@ public void stage_retained_declarations(uint row)
         high.w = tokens;
         uint side_base = rt_alloc(RT_A_SEG_SIDE, RT_SIDE_WORDS * side_total);
         // Source provenance: the body's text and one record per token,
-        // filled by steps 12b/12c; the file key is (library, unit, file).
+        // filled by write_retained_body_text; the file key is (library, unit, file).
         uint2 text = body_text_range(first_token, tokens);
         uint text_words = (text.y - text.x + 3u) >> 2u;
         uint text_base = rt_alloc(RT_A_SEG_BYTES, text_words);

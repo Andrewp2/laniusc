@@ -542,26 +542,23 @@ All semantic work runs on the GPU. The host allocates buffers, clears job
 scratch, submits one command buffer per attempt and reads the 96 status
 words and 256 scratch words.
 
-The export records 187 dispatches per attempt: 28 kernels, including 79
-translation/advance pairs and the three scan kernels, which run twice. Empty translation
-heights dispatch no translation workgroups, but their advance dispatches
-still run. The settings export receipt is recorded in the
-[retained-program checkpoint](compiler-gpu-instantiation.md#retained-program-checkpoint-2026-11-14);
-it does not measure the complete path without source replay.
+The export records three step programs per attempt. Canonical translation
+visits occupied heights in increasing order. Each round runs the lanes for
+canonical records of that height, with a barrier before the next height.
 
 | Step | Lanes | Work |
 | --- | --- | --- |
-| 00, 04, 07, 09, 16 | 1 lane | transaction, plans and reservations |
+| 00, 07, 09, 16 | 1 lane | transaction and reservations |
 | 01 | one per generic parameter | `ParamId` interning and the job's parameter map |
 | 01b | one per HIR row, token and variant | declaration-token map, callee and pattern marks |
 | 02 | one per HIR row | `DeclId` interning, trait `Self`, scan flags, token spans |
-| 03, 05 | one per canonical record | height buckets |
-| 06 | one per record of the current height, 79 indirect rounds | children are always translated first |
+| 03 | one per canonical record | validate live records and mark occupied heights |
+| 06 | one per canonical record, filtered by height | translate children before their parents |
 | 08 | uint4 prefix scan over rows | row counts, use counts, directory counts and segment counts together |
 | 10 | one per declaration | directory, binders, signature, schema, segment |
 | 11 | one per body row | segment rows |
 | 12 | one per side index × 7 tables | side records |
-| 12b, 12c | one per job token | clear, then copy, body text; token records |
+| body text | one workgroup per segment at a time | copy each packed word and build each token record |
 | 13 | one per parameter, field and variant payload | signatures and schema |
 | 14 | one per call | use records |
 | 14b | one per HIR row, predicate and method | trait-fact flags and per-owner counts |

@@ -17,6 +17,11 @@ import type_checker.retention.projection.validate_projected_semantic_rows_step;
 void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
     StepProgram program = step_program_begin(group, local, program_launch.groups, program_launch.slot);
+    if (program.lane == 0u)
+    {
+        pj_status[PJ_S_LAYOUT_ROUND_CHANGED] = 0u;
+        pj_status[PJ_S_PATTERN_ROUND_CHANGED] = 0u;
+    }
     uint type_rows = pj_type_rows();
     for (uint row = program.lane; row < type_rows; row += program.lanes)
     {
@@ -33,10 +38,9 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     uint completed_layouts = 0u;
     for (uint round = 0u; round < layout_rounds; ++round)
     {
-        // Clear the next word while other lanes may still read the previous one.
-        uint changed = PJ_S_PROGRAM_CHANGED + (round & 1u);
-        if (program.lane == 0u) pj_status[changed] = 0u;
-        if (!step_barrier(program)) return;
+        uint changed = PJ_S_LAYOUT_ROUND_CHANGED + round % 3u;
+        // The round's ending barrier makes the next counter ready.
+        if (program.lane == 0u) pj_status[PJ_S_LAYOUT_ROUND_CHANGED + (round + 1u) % 3u] = 0u;
         for (uint row = RT_FIRST_TERM + program.lane; row < terms; row += program.lanes)
             compute_closed_type_layouts(row, changed);
         if (!step_barrier(program)) return;
@@ -61,9 +65,8 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
         uint pattern_rounds = pj_config[PJ_CFG_PATTERN_ROUNDS];
         for (uint round = 0u; round < pattern_rounds; ++round)
         {
-            uint changed = PJ_S_PROGRAM_CHANGED + (round & 1u);
-            if (program.lane == 0u) pj_status[changed] = 0u;
-            if (!step_barrier(program)) return;
+            uint changed = PJ_S_PATTERN_ROUND_CHANGED + round % 3u;
+            if (program.lane == 0u) pj_status[PJ_S_PATTERN_ROUND_CHANGED + (round + 1u) % 3u] = 0u;
             for (uint row = program.lane; row < payloads; row += program.lanes)
                 project_retained_pattern_payloads(row, changed);
             if (!step_barrier(program)) return;

@@ -20,15 +20,14 @@
 //   00 begin        open the transaction, publish the root dispatch
 //   01 roots        one lane per request: validate, create the root tasks
 //   02 plan         plans one round of step 3: the next expansion
-//                   frontier (tasks created by the last round), the
-//                   scatter, or the next nonempty level
-//   03 step         expansion: one lane per (frontier task, child index);
-//                   scatter: one lane per task, bucket by level;
-//                   evaluation: one lane per task of the level
+//                   frontier (tasks created by the last round), or the
+//                   next nonempty level
+//   03 step         expansion: one lane resolves a task's children;
+//                   evaluation: one lane per task, filtered by level
 //   04 publish      one lane per request
 //   05 finish       commit, or roll back the store terms of the attempt
 //   06 rollback     one lane per store term slot
-// Rounds of (02, 03) run expansion, then the scatter, then evaluation, so
+// Rounds of (02, 03) run expansion, then evaluation, so
 // the two share the rounds a batch records.
 // A task's level is height(term) + height(env) - 1 (height(term) for
 // env 0). Every child task has a strictly lower level, so evaluation in
@@ -66,8 +65,6 @@ public struct SbMemoEntry
     public uint task;
 }
 public globallycoherent RWStructuredBuffer<SbMemoEntry> sb_memo;
-// Live tasks ordered by level.
-public globallycoherent RWStructuredBuffer<uint> sb_order;
 
 public uint4 sb_task_result(uint task, out uint2 fault)
 {
@@ -87,10 +84,10 @@ public uint4 sb_task_result(uint task, out uint2 fault)
 
 public uint sb_task_capacity()
 {
-    uint a; uint b; uint c; uint d; uint s;
+    uint a; uint b; uint c; uint s;
     sb_task_key.GetDimensions(a, s); sb_task_res.GetDimensions(b, s);
-    sb_task_fail.GetDimensions(c, s); sb_order.GetDimensions(d, s);
-    return min(min(a, b), min(c, d));
+    sb_task_fail.GetDimensions(c, s);
+    return min(min(a, b), c);
 }
 
 public uint sb_edge_capacity() { uint n; uint s; sb_edges.GetDimensions(n, s); return n; }

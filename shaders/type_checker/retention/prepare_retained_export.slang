@@ -10,8 +10,6 @@ import type_checker.retention.export_types.intern_retained_generic_parameters_st
 import type_checker.retention.export_types.index_retained_declaration_tokens_step;
 import type_checker.retention.export_types.collect_retained_body_metadata_step;
 import type_checker.retention.export_types.count_retained_type_heights_step;
-import type_checker.retention.export_types.plan_retained_type_height_buckets_step;
-import type_checker.retention.export_types.scatter_retained_types_by_height_step;
 import type_checker.retention.export_types.translate_retained_canonical_types_step;
 import type_checker.retention.export_types.reserve_retained_export_rows_step;
 
@@ -43,19 +41,17 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
         count_retained_type_heights(row);
     if (!step_barrier(program)) return;
 
-    if (program.lane == 0u) plan_retained_type_height_buckets();
-    if (!step_barrier(program)) return;
-    for (uint row = program.lane; row < records; row += program.lanes)
-        scatter_retained_types_by_height(row);
-    if (!step_barrier(program)) return;
-
-    for (uint height = 1u; height < RT_X_HEIGHTS; ++height)
+    for (uint block = 0u; block < (RT_X_HEIGHTS + 31u) / 32u; ++block)
     {
-        uint count = rt_x_counts[RT_X_BUCKET + height];
-        if (count == 0u) continue;
-        for (uint row = program.lane; row < count; row += program.lanes)
-            translate_retained_canonical_types(row, height, count);
-        if (!step_barrier(program)) return;
+        uint occupied = rt_x_counts[RT_X_HEIGHT_MASK + block];
+        while (occupied != 0u)
+        {
+            uint height = block * 32u + uint(firstbitlow(occupied));
+            for (uint record = CT_FIRST_RECORD + program.lane; record < records; record += program.lanes)
+                translate_retained_canonical_types(record, height);
+            if (!step_barrier(program)) return;
+            occupied &= occupied - 1u;
+        }
     }
 
     if (!scan_export_rows(program, rows, rt_x_flags, rt_x_scan, rt_x_counts, RT_X_SCAN_TOTAL)) return;

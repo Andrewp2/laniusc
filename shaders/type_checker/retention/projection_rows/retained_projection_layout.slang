@@ -141,4 +141,7 @@ public static const uint PJ_IMPORTED_COMPLETE = 0x80000000u;
 public static const uint PJ_EXPR_DEPTH = 256u;
 
 public static const uint PJ_S_PROGRAM_FAILED = 61u;
-public static const uint PJ_S_PROGRAM_CHANGED = 62u; // two alternating round counters
+// Three counters per set of rounds. Lanes can still read the prior
+// round's counter while another group clears the next round's counter.
+public static const uint PJ_S_LAYOUT_ROUND_CHANGED = 26u;
+public static const uint PJ_S_PATTERN_ROUND_CHANGED = 29u;

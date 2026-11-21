@@ -1782,7 +1782,6 @@ fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'st
         ("rt_x_param_key", param_slots * 4, false),
         ("rt_x_param_val", param_slots * 4, false),
         ("rt_x_term_map", records * 4, false),
-        ("rt_x_order", records * 4, false),
         ("rt_x_args", args * 4, false),
         ("rt_x_row", rows * 16, false),
         ("rt_x_use_env_slot", rows * 4, false),

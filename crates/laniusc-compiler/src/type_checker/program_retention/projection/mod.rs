@@ -1042,6 +1042,8 @@ impl RetainedProjection {
         let n = grown(self.rank_capacity, capacity) as u64;
         let slots = (n * 2).next_power_of_two();
         let d = &self.device;
+        // RankCounts is ten words padded to a 16-byte alignment in storage.
+        let scan_sums_bytes = u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS) * 48;
         self.ranks = [
             ("pj_info", storage(d, "pj_info", n * INFO_WORDS * 16, false)),
             (
@@ -1050,8 +1052,8 @@ impl RetainedProjection {
             ),
             ("pj_errors", storage(d, "pj_errors", n * 16, false)),
             ("pj_identity", storage(d, "pj_identity", slots * 4, false)),
-            ("pj_scan_sums", storage(d, "pj_scan_sums", u64::from(crate::gpu::operations::STEP_PROGRAM_MAX_GROUPS) * 4, false)),
-            ("pj_scan_total", storage(d, "pj_scan_total", COLUMNS as u64 * 4, false)),
+            ("pj_scan_sums", storage(d, "pj_scan_sums", scan_sums_bytes, false)),
+            ("pj_scan_total", storage(d, "pj_scan_total", 8, false)),
         ]
         .into_iter()
         .collect();

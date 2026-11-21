@@ -38,6 +38,19 @@ public uint job_source_byte(uint offset)
     return word < words ? (rt_job_source[word] >> ((offset & 3u) * 8u)) & 0xffu : 0u;
 }
 
+public uint job_source_word(uint offset, uint bytes)
+{
+    uint words; uint stride;
+    rt_job_source.GetDimensions(words, stride);
+    uint index = offset >> 2u;
+    uint shift = (offset & 3u) * 8u;
+    uint value = index < words ? rt_job_source[index] >> shift : 0u;
+    if (shift != 0u && bytes * 8u + shift > 32u && index + 1u < words)
+        value |= rt_job_source[index + 1u] << (32u - shift);
+    if (bytes < 4u) value &= (1u << (bytes * 8u)) - 1u;
+    return value;
+}
+
 public uint job_file_start(uint file)
 {
     uint count; uint stride;

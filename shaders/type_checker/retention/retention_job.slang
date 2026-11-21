@@ -37,14 +37,12 @@ public StructuredBuffer<HirVariant> compact_variants;
 //   rt_x_counts       RT_X_* words
 //   rt_x_param_key/val  token + 1 -> ParamId (open addressing)
 //   rt_x_term_map     canonical ID -> TermId (RT_UNKNOWN when untranslatable)
-//   rt_x_order        canonical IDs grouped by height
 //   rt_x_args         translated arguments, at their canonical arg base
 //   rt_x_row          per HIR row: (DeclId, directory entry, segment, token end)
 public RWStructuredBuffer<uint> rt_x_counts;
 public globallycoherent RWStructuredBuffer<uint> rt_x_param_key;
 public globallycoherent RWStructuredBuffer<uint> rt_x_param_val;
 public globallycoherent RWStructuredBuffer<uint> rt_x_term_map;
-public globallycoherent RWStructuredBuffer<uint> rt_x_order;
 public globallycoherent RWStructuredBuffer<uint> rt_x_args;
 public globallycoherent RWStructuredBuffer<uint4> rt_x_row;
 // A use that needs a new environment keeps the claimed slot plus one until
@@ -71,7 +69,7 @@ public globallycoherent RWStructuredBuffer<uint> rt_x_fn_by_token;
 //                     RT_X_VARIANT_BIT | variant index; 0 when none (step 01b)
 public globallycoherent RWStructuredBuffer<uint> rt_x_decl_by_token;
 //   rt_x_seg_token    job segment ordinal -> the body's first token (step 10),
-//                     ascending, so a token finds its body by binary search
+//                     for the group that writes the segment's token records
 public globallycoherent RWStructuredBuffer<uint> rt_x_seg_token;
 // rt_x_callee: row -> syntax marks (step 1b): RT_X_MARK_CALLEE when the
 // row is a call's callee (a callee row's HIR parent is not necessarily its
@@ -102,8 +100,7 @@ public static const uint RT_STAT_UNTRANSLATED = 3u; // exported references whose
 
 // rt_x_counts layout.
 public static const uint RT_X_HEIGHTS = 80u;          // height buckets
-public static const uint RT_X_BUCKET = 0u;            // + h: records of height h
-public static const uint RT_X_BUCKET_BASE = 80u;      // + h: first rt_x_order index of height h
+public static const uint RT_X_HEIGHT_MASK = 0u;        // bitset of occupied heights
 public static const uint RT_X_SCAN_N = 161u;          // items of the current uint4 scan
 public static const uint RT_X_SCAN_TOTAL = 164u;      // + 4: its totals
 public static const uint RT_X_BASE = 168u;            // + arena: the job's reserved base

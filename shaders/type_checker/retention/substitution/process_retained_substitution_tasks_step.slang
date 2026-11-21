@@ -2,14 +2,8 @@
 // step 2 left. No lane of a step writes the phase, so every lane of one
 // dispatch takes the same branch.
 //
-// Expansion: one lane per (frontier task, child index). Resolves the child
-// under the task's environment and writes the task's edge: an immediate
-// value or failure, or the child's (possibly new) task. Each lane handles
-// exactly one edge (and compares its argument with the earlier ones, at
-// most 63); new tasks form the next frontier.
-//
-// Scatter: one lane per task. Places each live task in its level's block of
-// sb_order.
+// Expansion: one lane resolves all the edges of a frontier task under its
+// environment. New child tasks form the next frontier.
 //
 // Evaluation: one lane per task of the current level. Every child
 // result is final (children have lower levels). The first failing child in
@@ -113,48 +107,34 @@ void stage_result(uint task, uint term, uint env, RtTermKey key, EdgeArgs args)
 
 void expand_round(uint lane)
 {
-    uint arity_stride = sb_counts[SB_C_FRONTIER_ARITY];
-    if (arity_stride == 0u) return;
-    uint task = sb_counts[SB_C_FRONTIER_LO] + lane / arity_stride;
-    uint index = lane % arity_stride;
+    uint task = sb_counts[SB_C_FRONTIER_LO] + lane;
     if (task >= sb_counts[SB_C_FRONTIER_HI]) return;
     uint4 key = sb_task_key[task];
     if ((key.z & SB_DEAD) != 0u) return;
-    if (index >= rt_term_arity(key.y)) return;
-    // A repeated argument (Pair<D, D>) shares the first occurrence's edge,
-    // so two lanes of one task never race to create one child task.
-    uint child = rt_term_arg(key.y, index);
-    for (uint j = 0u; j < index; j++)
+    SbBinder binder = sb_binder(key.x);
+    uint arity = rt_term_arity(key.y);
+    uint resolved = 0u;
+    for (uint index = 0u; index < arity; ++index)
     {
-        if (rt_term_arg(key.y, j) == child)
+        uint child = rt_term_arg(key.y, index);
+        // Repeated arguments share the first occurrence's edge.
+        uint first = 0u;
+        while (first < index && rt_term_arg(key.y, first) != child) ++first;
+        if (first < index)
+            sb_edges[key.w + index] = uint2(first, SB_EDGE_SAME);
+        else
         {
-            sb_edges[key.w + index] = uint2(j, SB_EDGE_SAME);
-            return;
+            sb_edges[key.w + index] = sb_edge(sb_resolve(binder, child));
+            ++resolved;
         }
     }
-    SbBinder b = sb_binder(key.x);
-    sb_edges[key.w + index] = sb_edge(sb_resolve(b, child));
-    InterlockedAdd(sb_counts[SB_C_EDGES_RESOLVED], 1u);
+    InterlockedAdd(sb_counts[SB_C_EDGES_RESOLVED], resolved);
 }
 
-void scatter_round(uint task)
+void eval_round(uint task)
 {
-    if (sb_counts[SB_C_PHASE] != SB_PHASE_SCATTER) return;
-    if (task >= min(sb_counts[SB_C_TASKS], sb_task_capacity())) return;
-    uint level = sb_task_key[task].z;
-    if ((level & SB_DEAD) != 0u) return;
-    uint at;
-    InterlockedAdd(sb_counts[SB_C_LEVEL_CURSOR + level], 1u, at);
-    sb_order[sb_counts[SB_C_LEVEL_BASE + level] + at] = task;
-}
-
-void eval_round(uint lane)
-{
-    if (sb_counts[SB_C_PHASE] != SB_PHASE_EVAL) return;
-    uint level = sb_counts[SB_C_LEVEL];
-    if (level >= SB_LEVELS || lane >= sb_counts[SB_C_LEVEL_COUNT + level]) return;
-    uint task = sb_order[sb_counts[SB_C_LEVEL_BASE + level] + lane];
     uint4 key = sb_task_key[task];
+    if (key.z != sb_counts[SB_C_LEVEL]) return;
     uint env = key.x;
     uint term = key.y;
     uint base = key.w;
@@ -273,6 +253,5 @@ void eval_round(uint lane)
 public void process_retained_substitution_tasks(uint row, uint phase)
 {
     if (phase == SB_PHASE_EXPAND) expand_round(row);
-    else if (phase == SB_PHASE_SCATTER) scatter_round(row);
     else if (phase == SB_PHASE_EVAL) eval_round(row);
 }

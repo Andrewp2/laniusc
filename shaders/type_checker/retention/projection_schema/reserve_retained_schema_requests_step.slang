@@ -1,5 +1,5 @@
-// One lane, after the scan. Sizes the round's requests from the scan's
-// total: it writes the substitution's request count, or zero when the
+// One lane, after emitting requests, publishes the allocated count,
+// or zero when the
 // round is not armed. A round without
 // schema records converges. A round whose requests or fields exceed their
 // buffers stops with PS_STOP_CAPACITY and its demands; the host grows the
@@ -17,9 +17,8 @@ public void reserve_retained_schema_requests(bool resume)
         ps_status[PS_STOP] = PS_STOP_FAILED;
         return;
     }
-    uint count = ps_scan_a[ps_round[1] - ps_round[0]];
+    uint count = ps_round_count();
     uint base = ps_round[2];
-    ps_round[3] = count;
     if (count == 0u)
     {
         ps_round[4] = 0u;

@@ -17,9 +17,9 @@ uint fail(uint record)
     return RT_UNKNOWN;
 }
 
-public void translate_retained_canonical_types(uint lane, uint height, uint count)
+public void translate_retained_canonical_types(uint record, uint height)
 {
-    uint record = rt_x_order[rt_x_counts[RT_X_BUCKET_BASE + height] - count + lane];
+    if ((rt_input_ct_meta[record].y & 0xffffu) != height || rt_x_term_map[record] == RT_UNKNOWN) return;
 
     uint4 head = rt_input_ct_head[record];
     uint kind = head.x & 0xffu;

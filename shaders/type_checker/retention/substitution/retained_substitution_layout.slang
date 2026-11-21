@@ -47,7 +47,6 @@ public static const uint SB_ROUND_LOG = 128u;
 
 // Phases.
 public static const uint SB_PHASE_EXPAND = 1u;
-public static const uint SB_PHASE_SCATTER = 2u;
 public static const uint SB_PHASE_EVAL = 3u;
 public static const uint SB_PHASE_DONE = 4u;
 public static const uint SB_PHASE_OVERFLOW = 5u;
@@ -66,8 +65,6 @@ public static const uint SB_OVERFLOW_TASKS = 1u;
 public static const uint SB_OVERFLOW_EDGES = 2u;
 public static const uint SB_OVERFLOW_MEMO = 4u;
 public static const uint SB_OVERFLOW_STORE = 8u;
-// An expansion round wider than 2^32 lanes: a dispatch limit, not a table.
-public static const uint SB_OVERFLOW_LANES = 16u;
 
 // sb_counts layout.
 public static const uint SB_C_PHASE = 0u;
@@ -78,7 +75,6 @@ public static const uint SB_C_DEMAND_TASKS = 4u;
 public static const uint SB_C_DEMAND_EDGES = 5u;
 public static const uint SB_C_FRONTIER_LO = 6u;
 public static const uint SB_C_FRONTIER_HI = 7u;
-public static const uint SB_C_FRONTIER_ARITY = 8u;
 public static const uint SB_C_NEXT_ARITY = 9u;
 public static const uint SB_C_ROUNDS = 10u;        // expansion rounds with a nonempty frontier
 public static const uint SB_C_LEVEL = 11u;
@@ -104,8 +100,6 @@ public static const uint SB_C_STORE_DEMAND_ARGS = 30u;
 public static const uint SB_C_REQUEST_DEMAND = 31u; // the producer's request count when it exceeds the capacity
 public static const uint SB_C_STATUS = 32u;        // + status: published results per status
 public static const uint SB_C_LEVEL_COUNT = 64u;   // + level: live tasks
-public static const uint SB_C_LEVEL_BASE = 320u;   // + level: first sb_order index
-public static const uint SB_C_LEVEL_CURSOR = 576u; // + level: scatter cursor
 public static const uint SB_C_ROUND_LOG = 832u;    // + round: frontier tasks of the round
 public static const uint SB_C_EVAL_LANES = 960u;
 public static const uint SB_C_MAX_ARITY = 961u;

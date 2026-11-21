@@ -267,40 +267,31 @@ than its parent, and a binding is lower than the ENV that holds it.
 | --- | --- | --- |
 | 00 begin | 1 | refuse an oversized request count; open the attempt, save the store's term watermark and status words |
 | 01 roots | one per request | validate; resolve the term and the ENV's closed evaluation to immediates or root tasks |
-| 02 plan | 1 | plan one round of step 03: the next frontier (tasks created since the last plan, `frontier × max arity` lanes), the scatter after an empty frontier, or the next nonempty level |
-| 03 step | by phase | expansion: one lane per (frontier task, argument) resolves one edge, creating the child task if new, and a repeated argument shares the first occurrence's edge; scatter: one lane per task buckets live tasks by level (counts are kept at creation); evaluation: one lane per task of the level checks the operands' kinds, interns the task's result, or fails |
+| 02 plan | 1 | plan the next expansion frontier or the next nonempty evaluation level |
+| 03 step | one per task | expansion: resolve the task's arguments and create any new child tasks; evaluation: tasks at this level check the operands' kinds and intern their result |
 | 04 publish | one per request | choose each outcome; `CAPACITY` everywhere after an overflow |
 | 05 finish | 1 | restore the store's status words; commit, or restore the store's term counters |
 | 06 rollback | one per store term slot | clear slots of terms an overflowed attempt interned |
 
-Work is O(tasks + edges) lane steps. An expansion lane also compares its
-argument with the earlier arguments of the same task (at most 63), and a
-binder search reads at most 64 words. An eval lane reads its task's
+An expansion lane compares each argument with its earlier arguments
+(at most 63), and a binder search reads at most 64 words. Each evaluation
+round checks the task table for tasks at that level. An eval lane reads its task's
 arguments, and an ENV task also reads its owner's binder (at most 64
 slots). No lane walks a term DAG, a body or a table.
 
 The dependency span is the number of expansion rounds plus the number of
 nonempty levels. Both are bounded by the term height plus the
-environment height, and each by the 256 task levels. Indirect dispatch
-arguments make empty rounds dispatch no workgroups. A round is one
-dispatch of the planner and one of the step. Expansion, the scatter and
-evaluation share the rounds: an attempt with `e` nonempty expansion
-rounds and `v` nonempty levels needs `e + v + 2` rounds (the scatter runs
-in the round whose plan found the frontier empty, and the last plan finds
-no level left). The host records one batch of `k` rounds and the end
-steps (`k` = 8, 21 dispatches). It submits the batch and reads the status
+environment height, and each by the 256 task levels. Expansion and evaluation
+share the rounds. An attempt with `e` nonempty expansion rounds and `v`
+nonempty levels needs `e + v + 1` rounds, including the final planner round.
+The host records one step program for the first eight rounds. It submits
+the batch and reads the status
 words, then records batches of `2k`, `4k`, … until the attempt is final.
-An attempt that is not final after `2 × (256 + 1)` = 514 recorded rounds
+An attempt that is not final after `2 × 256 + 1` = 513 recorded rounds
 lost its phase: the run fails closed (below).
 
-Before the planners and steps were merged, a batch recorded `k`
-expansion rounds, the scatter and `k` evaluation rounds (38 dispatches for
-`k` = 8). Every run of the settings app needs at most 7 rounds (at most 2
-expansion rounds and 3 levels), so its 9 runs per build record 189
-dispatches instead of 342 and still read one batch each.
-
-Measured on the focused tests (this desktop's GPU, release build, host wall
-time per run including readbacks):
+Historical focused test results for the earlier dispatched implementation
+(release build, host wall time per run including readbacks):
 
 | Fixture | Requests | Tasks | Edges resolved | Rounds (expand + eval) | Max frontier | Dispatches | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -347,8 +338,7 @@ store's term arena.
   requests. There is no frontend rerun and no replay. Every retry grows a
   table, and the attempt count has no cap below the device limits. An
   attempt that overflows without a table to grow is an error.
-- A table larger than the device's storage-binding limit, and an expansion
-  round wider than 2^32 lanes (`OVERFLOW_LANES`), are errors.
+- A table larger than the device's storage-binding limit is an error.
 - **Errors fail closed.** Any host error during a run, including a
   readback failure, a lost phase or a device limit, clears the store's
   `READY` bit, clears the engine's publication and writes 0 to the `STATE`

@@ -4,10 +4,6 @@ __exported import type_checker.retention.retention_store;
 // a consumer reads, the run a round gate checks (0: none), the store
 // generation, the request capacity and the field capacity.
 public StructuredBuffer<uint> ps_config;
-public RWStructuredBuffer<uint> ps_scan_a;
-public RWStructuredBuffer<uint> ps_scan_total;
-public RWStructuredBuffer<uint> ps_scan_b;
-public RWStructuredBuffer<uint> ps_blocks;
 // Written by one-lane kernels; read by the round's one-lane kernels.
 public globallycoherent RWStructuredBuffer<uint> ps_status;
 public RWStructuredBuffer<uint2> pj_schema_ranges;
@@ -20,7 +16,7 @@ public static const uint PS_CFG_REQUEST_CAPACITY = 4u;
 public static const uint PS_CFG_FIELD_CAPACITY = 5u;
 // ps_status words. The host writes them once per projection (lo 32).
 public static const uint PS_LO = 1u;            // first term of the next round
-public static const uint PS_ERROR = 2u;         // 1: store not ready, 2: scan overflow
+public static const uint PS_ERROR = 2u;         // 1: store not ready, 2: request count overflow
 public static const uint PS_STOP = 3u;          // PS_STOP_* below
 public static const uint PS_BASE = 4u;          // fields written by committed rounds
 public static const uint PS_DEMAND_REQUESTS = 5u;
@@ -34,7 +30,6 @@ public static const uint PS_STOP_CONVERGED = 1u;
 public static const uint PS_STOP_UNPUBLISHED = 2u;
 public static const uint PS_STOP_CAPACITY = 3u;
 public static const uint PS_STOP_FAILED = 4u;
-public uint ps_scan(uint i) { return ps_scan_a[i]; }
 public uint ps_entry(uint term)
 {
     if (term < RT_FIRST_TERM || term >= rt_counts[RT_A_TERMS] ||

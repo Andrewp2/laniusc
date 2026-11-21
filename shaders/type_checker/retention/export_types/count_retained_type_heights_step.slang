@@ -1,6 +1,5 @@
-// Export step 3: one lane per canonical record of the job. Counts records by
-// height, so step 6 can translate every record after all of its children
-// (a child's height is below its parent's).
+// One lane per canonical record. Mark the occupied heights so translation
+// visits only levels with live records.
 import type_checker.canonicalization.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
@@ -39,5 +38,5 @@ public void count_retained_type_heights(uint record)
         if (height != 0u) rt_invariant(RT_INV_HEIGHT);
         return;
     }
-    InterlockedAdd(rt_x_counts[RT_X_BUCKET + height], 1u);
+    InterlockedOr(rt_x_counts[RT_X_HEIGHT_MASK + (height >> 5u)], 1u << (height & 31u));
 }

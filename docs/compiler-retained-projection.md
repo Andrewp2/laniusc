@@ -112,7 +112,7 @@ The plan readback is the first one after the last discovery wave.
 | `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
 | `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results, matched receivers and receiver parameters |
 | substitution | engine | a chain of one run (`begin_chain`, `record_chained`); a run that does not publish runs again on the full path (`RetainedSubstitution::run`), where capacity overflow retries inside the engine |
-| schema round, plan, scan × 3, size, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
+| schema round | one lane per new stored term, then one per substitution result | realize fields and payloads under the nominal's binder; repeat for newly created nominal types |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `03b_type_arguments` | one per TermId, up to 32 operands | publish nominal arguments and typed constant atoms for lowering |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
@@ -560,10 +560,10 @@ The complete `retained_` filter passes 25 tests after proof integration.
 
 ### Compound nominal schemas
 
-After body substitution, schema realization scans each newly appended term
-frontier. A parallel prefix scan places one request per nominal schema record;
-each request substitutes the declared field or payload under the closed nominal
-application itself. A lane per result writes a closed field map. Newly created
+After body substitution, one lane per newly appended closed nominal term
+reserves its field range and emits the requests for that range. Each request
+substitutes the declared field or payload under the closed nominal application.
+A lane per result writes a closed field map. Newly created
 nominal field types enter the next frontier. The host never constructs an
 environment or a field type.
 
@@ -575,25 +575,22 @@ body substitution publication stays current throughout projection.
 
 ### Schema rounds
 
-The rounds run without a readback between them (`projection/schema.rs`).
+The rounds run without a readback between them (`projection/schema_projection.rs`).
 The host records a chain of rounds after the projection substitution and
 before the check; the check's readback returns `ps_status`. Each round is:
 
-| Kernel | Lanes | Work |
+| Step | Lanes | Work |
 | --- | --- | --- |
-| `04_round` mode 0 | one | gate on the previous round's run, commit that round's fields, arm the terms the store gained since the last round |
-| `00_plan` | round terms + 1, indirect | schema records per term |
-| `01_scan` modes 0, 1, 2 | indirect, one workgroup, indirect | inclusive block scan for any round width |
-| `05_size` | one | request count, request-lane dispatch, capacity check |
-| `02_requests` | round requests, indirect | one request per schema record |
+| Open round | one | gate on the previous round's run, commit its fields and arm the new terms |
+| Emit requests | one per term | reserve one block per closed nominal and write its requests |
+| Check capacity | one | publish the complete request count or record the buffer demand |
 | substitution | engine | a chained run |
-| `03_consume` | round requests, indirect | the field map |
+| Publish fields | one per request | write the field map |
 
-A chain ends with `04_round` mode 1, which gates the last run and converges
+A chain closes by checking the last run and converges
 when the store has no term past the last round. The round state (next first
 term, field base, committed rounds) lives in `ps_status`; the armed round in
-`ps_round`, which the wide passes read; their workgroups come from
-`ps_indirect`. Every table is sized from the store's term capacity, which a
+`ps_round`. Every table is sized from the store's term capacity, which a
 chained run never grows, and from the request and field capacities.
 
 `ps_status` word 3 says how the chain ended:
@@ -602,12 +599,12 @@ chained run never grows, and from the request and field capacities.
 | --- | --- | --- |
 | 0 | every recorded round ran and the store gained terms | records twice the rounds (kept for later projections, at most 64) |
 | 1 | converged: no new term, or new terms without schema records | done |
-| 2 | a round's run did not publish (overflow, or not final after its first batch) | resumes the armed round: `05_size` mode 1, `02_requests`, the full substitution path, `03_consume`, `04_round` mode 1 |
+| 2 | a round's run did not publish (overflow, or not final after its first batch) | re-emits the armed round's requests, runs full substitution, publishes its fields and closes the round |
 | 3 | a round's requests or fields exceed their buffers | grows them to the demand (fields preserved), then resumes as for 2 |
-| 4 | the store is not ready or a scan overflowed | fails the projection |
+| 4 | the store is not ready or the request count overflowed | fails the projection |
 
-A stopped round dispatches no workgroups after the stop, and its fields are
-not committed, so a retry never publishes a partial round. When the
+A stopped round leaves its field values invalid until the retry publishes the
+whole round. When the
 projection substitution itself ran again on the full path, rounds that had
 converged run again for the terms that path interned. The gate takes one
 run's publication word. The trait solve's verdict needs no input here: it
