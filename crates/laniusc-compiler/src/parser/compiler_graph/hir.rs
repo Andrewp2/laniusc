@@ -144,12 +144,6 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
                 | "hir_semantic_parent_value_a"
                 | "hir_semantic_parent_value_b"
                 | "hir_path_root_owner"
-                | "hir_path_segment_owner_a"
-                | "hir_path_segment_owner_b"
-                | "hir_path_segment_link_a"
-                | "hir_path_segment_link_b"
-                | "hir_path_segment_rank_a"
-                | "hir_path_segment_rank_b"
                 | "hir_path_segment_count"
                 | "hir_stmt_context_link_a"
                 | "hir_stmt_context_link_b"
@@ -439,12 +433,6 @@ pub(super) fn register_resources(
         "hir_list_rank_node",
         "hir_item_kind",
         "hir_path_root_owner",
-        "hir_path_segment_owner_a",
-        "hir_path_segment_owner_b",
-        "hir_path_segment_link_a",
-        "hir_path_segment_link_b",
-        "hir_path_segment_rank_a",
-        "hir_path_segment_rank_b",
         "hir_path_segment_count",
         "hir_type_alias_owner_link_a",
         "hir_type_alias_owner_link_b",
@@ -1457,43 +1445,6 @@ fn register_item_paths_and_type_aliases(
     indirect(graph, "hir_path_segment_root", "tree_active_dispatch_args")?;
     static_pass(
         graph,
-        &passes.hir_path_segment_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_path_segment_links",
-        &[
-            "hir_path_segment_owner_a",
-            "hir_path_segment_link_a",
-            "hir_path_segment_rank_a",
-            "hir_path_segment_owner_b",
-            "hir_path_segment_link_b",
-            "hir_path_segment_rank_b",
-        ],
-    )?;
-    // The links pass marks the path segments itself; the scan and the
-    // compact scatter list them, and the walk runs over that list.
-    graph.mark_pass_bindings_initialize(
-        "hir_path_segment_links",
-        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
-    )?;
-    register_list_rank_listing(graph, passes, ListRankInvocation::PathSegments)?;
-    register_list_rank_propagation(
-        graph,
-        capacity,
-        passes,
-        ListRankInvocation::PathSegments,
-        "hir_path_segment_owner_a",
-        "hir_path_segment_owner_b",
-        "hir_path_segment_link_a",
-        "hir_path_segment_link_b",
-        "hir_path_segment_rank_a",
-        "hir_path_segment_rank_b",
-    )?;
-    static_pass(
-        graph,
         &passes.hir_path_segment_scatter,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
@@ -1502,7 +1453,7 @@ fn register_item_paths_and_type_aliases(
     indirect(
         graph,
         "hir_path_segment_scatter",
-        "hir_list_rank_dispatch_args",
+        "tree_active_dispatch_args",
     )?;
 
     static_pass(
@@ -3656,13 +3607,12 @@ fn register_canonical_materialization(
             ("tree_count_status", "partial_parse_status", None),
             ("owner_local_prefix", "hir_semantic_local_prefix", None),
             ("owner_block_prefix", "hir_semantic_block_prefix_a", None),
-            ("path_segment_owner", "hir_path_segment_owner_a", None),
-            ("path_segment_rank", "hir_path_segment_rank_a", None),
             ("family_count", "hir_path_segment_table_count", None),
             ("path_segments", "hir_path_segment_rows", None),
             ("canonical_status", "hir_canonical_status", None),
         ],
     )?;
+    indirect(graph, "hir_canonical_path_segment_scatter", "tree_active_dispatch_args")?;
     clear(
         graph,
         CANONICAL_PATH_CLEAR,

@@ -74,7 +74,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeArgLinksP
             ),
             (
                 "hir_type_path_owner_by_leaf".into(),
-                b.hir_type_path_leaf_link_b.as_entire_binding(),
+                b.hir_type_path_owner_by_leaf.as_entire_binding(),
             ),
             (
                 "hir_bound_path_owner_by_leaf".into(),

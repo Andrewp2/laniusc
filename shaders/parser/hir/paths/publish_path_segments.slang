@@ -1,51 +1,41 @@
-// Finalize canonical path segment counts from pointer-jumped owner/ordinal rows.
-//
-// The pass runs over the path segment list (hir_list_rank_node) that the
-// segment links pass marked.
+// Count the segments of each owned path for owner-ordered compaction.
 
+import parser.hir.paths.path_tree;
 import shared.buffers.atomics;
-import generated_parse_production_ids;
 
 struct Params { uint n; uint uses_status_count; uint retain_debug_rows; };
 ConstantBuffer<Params> gHirPath;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> hir_path_root_owner;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_path_segment_owner_a;
-StructuredBuffer<uint> hir_path_segment_rank_a;
-StructuredBuffer<uint> hir_list_rank_node;
-StructuredBuffer<uint> hir_list_rank_count;
 RWStructuredBuffer<uint> hir_path_segment_count;
 
-static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 uint linear_thread_id(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE; }
 uint active_node_count() { return gHirPath.uses_status_count != 0u ? min(gHirPath.n, tree_count_status[5u]) : gHirPath.n; }
-bool valid_node(uint node) { return node != INVALID && node < active_node_count(); }
-bool is_path_segment(uint prod)
-{
-    return prod == PROD_PATH_IDENT || prod == PROD_PATH_IDENT_ARGS ||
-           prod == PROD_TYPE_PATH_IDENT || prod == PROD_BOUND_TYPE_PATH_IDENT ||
-           prod == PROD_ARRAY_LENGTH_PATH_IDENT || prod == PROD_CAST_TYPE_PATH_IDENT;
-}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint row = linear_thread_id(dtid);
-    if (row >= hir_list_rank_count[0u])
+    uint root = linear_thread_id(dtid);
+    uint active = active_node_count();
+    if (root >= active)
         return;
-    uint node = hir_list_rank_node[row];
-    if (!valid_node(node) || !is_path_segment(node_kind[node]))
+    uint owner = path_root_owner(hir_path_root_owner[root]);
+    if (owner >= active)
         return;
-    uint owner = hir_path_segment_owner_a[node];
-    if (!valid_node(owner))
-        return;
+    uint count = 0u;
+    for (uint segment = path_first_segment(root, active, first_child, node_kind);
+         segment < active;
+         segment = path_next_segment(segment, active, first_child, next_sibling, node_kind))
+        ++count;
     uint owner_row = gHirPath.retain_debug_rows != 0u ? owner : hir_token_pos[owner];
-    if (owner_row == INVALID)
-        return;
-    atomic_u32_max(hir_path_segment_count, owner_row, hir_path_segment_rank_a[node] + 1u);
+    if (owner_row != PATH_TREE_INVALID && count != 0u)
+        atomic_u32_max(hir_path_segment_count, owner_row, count);
 }

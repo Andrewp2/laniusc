@@ -36,6 +36,12 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
+            (
+                "hir_path_root_owner".into(),
+                b.hir_path_root_owner.as_entire_binding(),
+            ),
             (
                 "owner_local_prefix".into(),
                 b.hir_semantic_local_prefix.as_entire_binding(),
@@ -43,14 +49,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalPath
             (
                 "owner_block_prefix".into(),
                 b.hir_semantic_block_prefix_a.as_entire_binding(),
-            ),
-            (
-                "path_segment_owner".into(),
-                b.hir_path_segment_owner_a.as_entire_binding(),
-            ),
-            (
-                "path_segment_rank".into(),
-                b.hir_path_segment_rank_a.as_entire_binding(),
             ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (

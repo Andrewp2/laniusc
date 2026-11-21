@@ -38,7 +38,6 @@ pub enum ListRankInvocation {
     ArrayElements,
     StringRecords,
     StringOffsets,
-    PathSegments,
     TypeRoots,
     VariantPayloadOwners,
     BinarySpans,
@@ -53,7 +52,6 @@ impl ListRankInvocation {
             Self::ArrayElements => "hir_array_element_rank.mark_rows",
             Self::StringRecords => "hir_string_compact_local",
             Self::StringOffsets => "hir_string_offset_local",
-            Self::PathSegments => "hir_path_segment_rank.mark_rows",
             Self::TypeRoots => "hir_type_root_rank.mark_rows",
             Self::VariantPayloadOwners => "hir_variant_payload_owner_rank.mark_rows",
             Self::BinarySpans => "hir_binary_span_rank.mark_rows",
@@ -68,7 +66,6 @@ impl ListRankInvocation {
             Self::ArrayElements => "hir_array_element_rank.scan_blocks",
             Self::StringRecords => "hir_string_compact.scan_blocks",
             Self::StringOffsets => "hir_string_offset.scan_blocks",
-            Self::PathSegments => "hir_path_segment_rank.scan_blocks",
             Self::TypeRoots => "hir_type_root_rank.scan_blocks",
             Self::VariantPayloadOwners => "hir_variant_payload_owner_rank.scan_blocks",
             Self::BinarySpans => "hir_binary_span_rank.scan_blocks",
@@ -83,7 +80,6 @@ impl ListRankInvocation {
             Self::ArrayElements => "hir_array_element_rank_compact_scatter",
             Self::StringRecords => "hir_string_compact_scatter",
             Self::StringOffsets => "hir_string_offset_scatter",
-            Self::PathSegments => "hir_path_segment_rank_compact_scatter",
             Self::TypeRoots => "hir_type_root_rank_compact_scatter",
             Self::VariantPayloadOwners => "hir_variant_payload_owner_rank_compact_scatter",
             Self::BinarySpans => "hir_binary_span_rank_compact_scatter",
@@ -104,10 +100,6 @@ impl ListRankInvocation {
             Self::ArrayElements => (
                 "hir_array_element_rank_step.a_to_b",
                 "hir_array_element_rank_step.b_to_a",
-            ),
-            Self::PathSegments => (
-                "hir_path_segment_step.a_to_b",
-                "hir_path_segment_step.b_to_a",
             ),
             Self::TypeRoots => (
                 "hir_type_root_owner_step.a_to_b",

@@ -1,7 +1,7 @@
-// Publish pointer-jumped path leaf nodes onto HIR path/type records and expose
-// leaf-to-owner links for bound predicate paths.
+// Resolve each path and publish its leaf on both the path and its type owner.
 
 import generated_parse_production_ids;
+import parser.hir.paths.path_tree;
 import shared.buffers.atomics;
 
 struct Params
@@ -20,7 +20,8 @@ StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_parent;
 StructuredBuffer<uint> hir_semantic_dense_node;
-StructuredBuffer<uint> hir_type_path_leaf_value_a;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_token_pos;
 
 RWStructuredBuffer<uint> hir_type_value_node;
@@ -52,6 +53,16 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+uint find_path_leaf(uint path, uint active)
+{
+    uint leaf = INVALID;
+    for (uint segment = path_first_segment(path, active, first_child, node_kind);
+         segment < active;
+         segment = path_next_segment(segment, active, first_child, next_sibling, node_kind))
+        leaf = segment;
+    return leaf;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -60,19 +71,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gHirType.n || !valid_node(node))
         return;
 
-    if (hir_kind[node] == HIR_PATH_EXPR)
-    {
-        uint leaf = hir_type_path_leaf_value_a[node];
-        hir_type_path_leaf_node[node] = leaf;
-    }
+    if (hir_kind[node] != HIR_PATH_EXPR)
+        return;
+
+    uint leaf = find_path_leaf(node, active_node_count());
+    hir_type_path_leaf_node[node] = leaf;
 
     // A type path root can sit below arbitrary grammar forwarding nodes. Join
-    // the root to its nearest semantic HIR owner instead of assuming it is the
-    // raw first child of the type row.
-    if (node_kind[node] != PROD_TYPE_PATH && node_kind[node] != PROD_PATH &&
-        node_kind[node] != PROD_BOUND_TYPE_PATH && node_kind[node] != PROD_ARRAY_LENGTH_PATH &&
-        node_kind[node] != PROD_CAST_TYPE_PATH)
-        return;
+    // it to its nearest semantic HIR owner.
     uint path_row = hir_node_dense_id[node];
     uint owner_row = path_row != INVALID && path_row < active_node_count()
         ? hir_semantic_parent[path_row]
@@ -84,7 +90,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_type_form[owner] != HIR_TYPE_FORM_PATH)
         return;
 
-    uint leaf = hir_type_path_leaf_value_a[node];
     hir_type_value_node[owner] = node;
     hir_type_path_leaf_node[owner] = leaf;
     if (valid_node(leaf))

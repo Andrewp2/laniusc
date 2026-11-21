@@ -62,24 +62,13 @@ pub(in crate::parser) const HIR_STRUCT_RANK_SCAN: &str = "hir_struct_rank.scan_b
 pub(in crate::parser) const HIR_ENUM_RANK_SCAN: &str = "hir_enum_rank.scan_blocks";
 pub(in crate::parser) const HIR_MATCH_RANK_SCAN: &str = "hir_match_rank.scan_blocks";
 pub(in crate::parser) const HIR_PATH_SEGMENT_SCAN: &str = "hir_canonical_path_segment_prefix";
-pub(in crate::parser) const HIR_TYPE_PATH_LEAF_STEPS: [&str; 8] = [
-    "hir_type_path_leaf_step.0",
-    "hir_type_path_leaf_step.1",
-    "hir_type_path_leaf_step.2",
-    "hir_type_path_leaf_step.3",
-    "hir_type_path_leaf_step.4",
-    "hir_type_path_leaf_step.5",
-    "hir_type_path_leaf_step.6",
-    "hir_type_path_leaf_step.7",
-];
-pub(in crate::parser) const HIR_TYPE_PATH_LEAF_FINALIZE: &str = "hir_type_path_leaf_step.finalize";
 pub(in crate::parser) const HIR_LITERAL_STATUS_CLEAR: &str = "parser.hir_literal_status.clear";
 pub(in crate::parser) const TREE_DEPTH_STATUS_CLEAR: &str = "parser.tree_depth_status.clear";
 pub(in crate::parser) const HIR_EXPR_NAME_ROLE_CLEAR: &str = "parser.hir_expr_name_role.clear";
 pub(in crate::parser) const SOURCE_FILE_TOKEN_END_CLEAR: &str =
     "parser.source_file_token_end.clear";
-pub(in crate::parser) const HIR_TYPE_PATH_LEAF_LINK_B_CLEAR: &str =
-    "parser.hir_type_path_leaf_link_b.clear";
+pub(in crate::parser) const HIR_TYPE_PATH_OWNER_BY_LEAF_CLEAR: &str =
+    "parser.hir_type_path_owner_by_leaf.clear";
 pub(in crate::parser) const TOKEN_FILE_ID_CLEAR: &str = "parser.token_file_id.clear";
 pub(in crate::parser) const HIR_WALK_STATE_CLEAR: &str = "parser.hir_walk_state.clear";
 pub(in crate::parser) const TOKEN_FILE_ID_COPY: &str = "parser.token_file_id.copy";
@@ -107,7 +96,7 @@ pub(in crate::parser) struct ParserClearOperations {
     hir_literal_status: ClearBufferOperation,
     hir_expr_name_role: ClearBufferOperation,
     source_file_token_end: ClearBufferOperation,
-    hir_type_path_leaf_link_b: ClearBufferOperation,
+    hir_type_path_owner_by_leaf: ClearBufferOperation,
     hir_walk_state: ClearBufferOperation,
     hir_item_kind: ClearBufferOperation,
     hir_path_root_owner: ClearBufferOperation,
@@ -157,11 +146,11 @@ impl ParserClearOperations {
         self.source_file_token_end.record(encoder);
     }
 
-    pub(in crate::parser) fn record_hir_type_path_leaf_link_b(
+    pub(in crate::parser) fn record_hir_type_path_owner_by_leaf(
         &self,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        self.hir_type_path_leaf_link_b.record(encoder);
+        self.hir_type_path_owner_by_leaf.record(encoder);
     }
 
     pub(in crate::parser) fn record_hir_walk_state(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -730,11 +719,11 @@ impl ParserCompilerGraph {
                 "source_file_token_end",
                 &buffers.source_file_token_end,
             )?,
-            hir_type_path_leaf_link_b: ClearBufferOperation::range(
+            hir_type_path_owner_by_leaf: ClearBufferOperation::range(
                 &self.materialized,
-                HIR_TYPE_PATH_LEAF_LINK_B_CLEAR,
-                "hir_type_path_leaf_link_b",
-                &buffers.hir_type_path_leaf_link_b,
+                HIR_TYPE_PATH_OWNER_BY_LEAF_CLEAR,
+                "hir_type_path_owner_by_leaf",
+                &buffers.hir_type_path_owner_by_leaf,
                 0,
                 u64::from(buffers.tree_capacity) * 4,
             )?,
@@ -1025,10 +1014,7 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_type_len_operand"
             | "hir_type_path_leaf_node"
             | "hir_bound_path_owner_by_leaf"
-            | "hir_type_path_leaf_link_a"
-            | "hir_type_path_leaf_link_b"
-            | "hir_type_path_leaf_value_a"
-            | "hir_type_path_leaf_value_b"
+            | "hir_type_path_owner_by_leaf"
             | "hir_type_arg_start"
             | "hir_type_arg_count"
             | "hir_type_arg_next"
@@ -1126,10 +1112,7 @@ fn retained_debug_parser_output(name: &str) -> bool {
             | "hir_type_len_operand"
             | "hir_type_path_leaf_node"
             | "hir_bound_path_owner_by_leaf"
-            | "hir_type_path_leaf_link_a"
-            | "hir_type_path_leaf_link_b"
-            | "hir_type_path_leaf_value_a"
-            | "hir_type_path_leaf_value_b"
+            | "hir_type_path_owner_by_leaf"
             | "hir_type_arg_start"
             | "hir_type_arg_count"
             | "hir_type_arg_next"
@@ -1888,10 +1871,7 @@ fn build_graph(
         ("hir_type_arg_start", tree_rows * 4),
         ("hir_type_arg_count", tree_rows * 4),
         ("hir_type_arg_next", tree_rows * 4),
-        ("hir_type_path_leaf_link_a", tree_rows * 4),
-        ("hir_type_path_leaf_link_b", tree_rows * 4),
-        ("hir_type_path_leaf_value_a", tree_rows * 4),
-        ("hir_type_path_leaf_value_b", tree_rows * 4),
+        ("hir_type_path_owner_by_leaf", tree_rows * 4),
         ("hir_canonical_alias_to_dense", tree_rows * 4),
         ("hir_canonical_anchor_owner", input_token_rows * 4),
         ("hir_canonical_status", 13 * 4),
@@ -1946,12 +1926,6 @@ fn build_graph(
             )?;
         }
     }
-    graph.add_resource_alias(
-        "hir_type_path_owner_by_leaf",
-        graph
-            .resource_id("hir_type_path_leaf_link_b")
-            .expect("type-path leaf link graph resource"),
-    )?;
     graph.mark_zero_initialized(
         graph
             .resource_id("hir_bound_path_owner_by_leaf")
@@ -3120,8 +3094,6 @@ fn build_graph(
             "hir_type_len_token",
             "hir_type_len_operand",
             "hir_type_path_leaf_node",
-            "hir_type_path_leaf_link_a",
-            "hir_type_path_leaf_value_a",
             "hir_type_arg_start",
             "hir_type_arg_count",
             "hir_type_arg_next",
@@ -3135,90 +3107,11 @@ fn build_graph(
         CompilerPhase::Hir,
         &[("hir_walk_state", "hir_walk_state")],
     )?;
-    let type_path_leaf_steps =
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity) as usize;
-    for (step, &name) in HIR_TYPE_PATH_LEAF_STEPS
-        .iter()
-        .take(type_path_leaf_steps)
-        .enumerate()
-    {
-        let (link_in, value_in, link_out, value_out) = if step % 2 == 0 {
-            (
-                "hir_type_path_leaf_link_a",
-                "hir_type_path_leaf_value_a",
-                "hir_type_path_leaf_link_b",
-                "hir_type_path_leaf_value_b",
-            )
-        } else {
-            (
-                "hir_type_path_leaf_link_b",
-                "hir_type_path_leaf_value_b",
-                "hir_type_path_leaf_link_a",
-                "hir_type_path_leaf_value_a",
-            )
-        };
-        reflected(
-            &mut graph,
-            name,
-            CompilerPhase::Hir,
-            ResourceDomain::RawNodes,
-            passes.hir_type_path_leaf_step.graph_pass(),
-            &[
-                ("tree_count_status", "partial_parse_status", None),
-                (
-                    "hir_type_path_leaf_link_in",
-                    link_in,
-                    Some(AccessMode::Read),
-                ),
-                (
-                    "hir_type_path_leaf_value_in",
-                    value_in,
-                    Some(AccessMode::Read),
-                ),
-                (
-                    "hir_type_path_leaf_link_out",
-                    link_out,
-                    Some(AccessMode::Write),
-                ),
-                (
-                    "hir_type_path_leaf_value_out",
-                    value_out,
-                    Some(AccessMode::Write),
-                ),
-            ],
-        )?;
-        indirect(&mut graph, name, "tree_active_dispatch_args")?;
-    }
-    if type_path_leaf_steps % 2 == 1 {
-        graph.add_pass(PassDesc {
-            name: HIR_TYPE_PATH_LEAF_FINALIZE,
-            phase: CompilerPhase::Hir,
-            dispatch_domain: ResourceDomain::RawNodes,
-            accesses: vec![
-                PassAccess::read(
-                    "hir_type_path_leaf_link_b",
-                    graph.resource_id("hir_type_path_leaf_link_b").unwrap(),
-                ),
-                PassAccess::write(
-                    "hir_type_path_leaf_link_a",
-                    graph.resource_id("hir_type_path_leaf_link_a").unwrap(),
-                ),
-                PassAccess::read(
-                    "hir_type_path_leaf_value_b",
-                    graph.resource_id("hir_type_path_leaf_value_b").unwrap(),
-                ),
-                PassAccess::write(
-                    "hir_type_path_leaf_value_a",
-                    graph.resource_id("hir_type_path_leaf_value_a").unwrap(),
-                ),
-            ],
-        })?;
-    }
     clear(
         &mut graph,
-        HIR_TYPE_PATH_LEAF_LINK_B_CLEAR,
+        HIR_TYPE_PATH_OWNER_BY_LEAF_CLEAR,
         CompilerPhase::Hir,
-        &[("hir_type_path_leaf_link_b", "hir_type_path_leaf_link_b")],
+        &[("hir_type_path_owner_by_leaf", "hir_type_path_owner_by_leaf")],
     )?;
     static_pass(
         &mut graph,
@@ -3808,11 +3701,6 @@ mod tests {
             "hir_enum_variant_scatter",
             "hir_item_fields",
             "hir_path_segment_root",
-            "hir_path_segment_links",
-            "hir_path_segment_rank.scan_blocks",
-            "hir_path_segment_rank_compact_scatter",
-            "hir_path_segment_step.a_to_b",
-            "hir_path_segment_step.b_to_a",
             "hir_path_segment_scatter",
             "hir_type_alias_owner_init",
             crate::parser::passes::hir::types::walk_type_alias_owners::A_TO_B,

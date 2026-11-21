@@ -9,6 +9,5 @@ pub mod seed_type_roots;
 /// Type alias owner propagation pointer-jump pass.
 pub mod walk_type_alias_owners;
 /// Propagates type path leaf rows through nested type syntax.
-pub mod walk_type_path_leaves;
 /// Root-owner pointer-jump pass.
 pub mod walk_type_roots;

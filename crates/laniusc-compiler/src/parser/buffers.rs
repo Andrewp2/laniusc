@@ -1248,17 +1248,8 @@ impl ParserBuffers {
         // its detailed readbacks.
         let hir_bound_path_owner_by_leaf = graph_buffer!(u32, "hir_bound_path_owner_by_leaf");
         let hir_path_root_owner = graph_buffer!(u32, "hir_path_root_owner");
-        let hir_path_segment_owner_a = graph_buffer!(u32, "hir_path_segment_owner_a");
-        let hir_path_segment_owner_b = graph_buffer!(u32, "hir_path_segment_owner_b");
-        let hir_path_segment_link_a = graph_buffer!(u32, "hir_path_segment_link_a");
-        let hir_path_segment_link_b = graph_buffer!(u32, "hir_path_segment_link_b");
-        let hir_path_segment_rank_a = graph_buffer!(u32, "hir_path_segment_rank_a");
-        let hir_path_segment_rank_b = graph_buffer!(u32, "hir_path_segment_rank_b");
         let hir_path_segment_count = graph_buffer!(u32, "hir_path_segment_count");
-        let hir_type_path_leaf_link_a = graph_buffer!(u32, "hir_type_path_leaf_link_a");
-        let hir_type_path_leaf_link_b = graph_buffer!(u32, "hir_type_path_leaf_link_b");
-        let hir_type_path_leaf_value_a = graph_buffer!(u32, "hir_type_path_leaf_value_a");
-        let hir_type_path_leaf_value_b = graph_buffer!(u32, "hir_type_path_leaf_value_b");
+        let hir_type_path_owner_by_leaf = graph_buffer!(u32, "hir_type_path_owner_by_leaf");
         // Production canonical HIR compaction consumes the pointer-jumped
         // owner/rank relation directly. These raw linked-list summaries remain
         // graph workspace in production and become retained outputs only for
@@ -1844,12 +1835,6 @@ impl ParserBuffers {
                     hir_type_alias_owner_value_b => hir_type_alias_owner_value_a,
                 ),
                 finalizer!(
-                    crate::parser::compiler_graph::HIR_TYPE_PATH_LEAF_FINALIZE,
-                    tree_bytes;
-                    hir_type_path_leaf_link_b => hir_type_path_leaf_link_a,
-                    hir_type_path_leaf_value_b => hir_type_path_leaf_value_a,
-                ),
-                finalizer!(
                     crate::parser::passes::hir::records::walk_expr_result_roots::FINALIZE,
                     tree_bytes;
                     hir_expr_result_root_scratch_node => hir_expr_result_root_node,
@@ -2222,17 +2207,8 @@ impl ParserBuffers {
             hir_type_path_leaf_node,
             hir_bound_path_owner_by_leaf,
             hir_path_root_owner,
-            hir_path_segment_owner_a,
-            hir_path_segment_owner_b,
-            hir_path_segment_link_a,
-            hir_path_segment_link_b,
-            hir_path_segment_rank_a,
-            hir_path_segment_rank_b,
             hir_path_segment_count,
-            hir_type_path_leaf_link_a,
-            hir_type_path_leaf_link_b,
-            hir_type_path_leaf_value_a,
-            hir_type_path_leaf_value_b,
+            hir_type_path_owner_by_leaf,
             hir_type_arg_start,
             hir_type_arg_count,
             hir_type_arg_next,

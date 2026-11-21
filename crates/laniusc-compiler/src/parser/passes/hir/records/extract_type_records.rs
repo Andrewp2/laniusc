@@ -110,14 +110,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
                 "hir_type_arg_next".into(),
                 b.hir_type_arg_next.as_entire_binding(),
             ),
-            (
-                "hir_type_path_leaf_link_a".into(),
-                b.hir_type_path_leaf_link_a.as_entire_binding(),
-            ),
-            (
-                "hir_type_path_leaf_value_a".into(),
-                b.hir_type_path_leaf_value_a.as_entire_binding(),
-            ),
         ])
     }
 }

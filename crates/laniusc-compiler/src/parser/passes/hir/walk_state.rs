@@ -27,7 +27,6 @@ const WORDS_PER_REGION: u64 = 2;
 /// Walks that use the early exit. Each has its own slot of round regions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::parser) enum HirWalk {
-    TypePathLeaf,
     ContextRelations,
     ExprResultRoot,
     TypeAliasOwner,
@@ -36,8 +35,8 @@ pub(in crate::parser) enum HirWalk {
     ListRank(ListRankInvocation),
 }
 
-const FIXED_WALKS: u64 = 6;
-const LIST_RANK_INVOCATIONS: u64 = 10;
+const FIXED_WALKS: u64 = 5;
+const LIST_RANK_INVOCATIONS: u64 = 9;
 const WALK_SLOTS: u64 = FIXED_WALKS + LIST_RANK_INVOCATIONS;
 
 /// Size of the `hir_walk_state` graph resource.
@@ -47,12 +46,11 @@ pub(in crate::parser) const HIR_WALK_STATE_BYTES: u64 =
 impl HirWalk {
     const fn slot(self) -> u64 {
         match self {
-            Self::TypePathLeaf => 0,
-            Self::ContextRelations => 1,
-            Self::ExprResultRoot => 2,
-            Self::TypeAliasOwner => 3,
-            Self::EnumVariantRank => 4,
-            Self::StructFieldRank => 5,
+            Self::ContextRelations => 0,
+            Self::ExprResultRoot => 1,
+            Self::TypeAliasOwner => 2,
+            Self::EnumVariantRank => 3,
+            Self::StructFieldRank => 4,
             Self::ListRank(invocation) => {
                 FIXED_WALKS
                     + match invocation {
@@ -62,10 +60,9 @@ impl HirWalk {
                         ListRankInvocation::ArrayElements => 3,
                         ListRankInvocation::StringRecords => 4,
                         ListRankInvocation::StringOffsets => 5,
-                        ListRankInvocation::PathSegments => 6,
-                        ListRankInvocation::TypeRoots => 7,
-                        ListRankInvocation::VariantPayloadOwners => 8,
-                        ListRankInvocation::BinarySpans => 9,
+                        ListRankInvocation::TypeRoots => 6,
+                        ListRankInvocation::VariantPayloadOwners => 7,
+                        ListRankInvocation::BinarySpans => 8,
                     }
             }
         }
@@ -135,13 +132,11 @@ mod tests {
             ListRankInvocation::ArrayElements,
             ListRankInvocation::StringRecords,
             ListRankInvocation::StringOffsets,
-            ListRankInvocation::PathSegments,
             ListRankInvocation::TypeRoots,
             ListRankInvocation::VariantPayloadOwners,
             ListRankInvocation::BinarySpans,
         ];
         let mut slots: Vec<u64> = [
-            HirWalk::TypePathLeaf,
             HirWalk::ContextRelations,
             HirWalk::ExprResultRoot,
             HirWalk::TypeAliasOwner,

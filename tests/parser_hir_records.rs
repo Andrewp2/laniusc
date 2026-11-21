@@ -6477,13 +6477,13 @@ impl A<i32> for S {}
 
 #[test]
 fn parser_compact_hir_preserves_long_where_bound_paths() {
-    let parsed = parse_resident_source(
-        r#"
-fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
-    return value;
-}
-"#,
+    let count = 129;
+    let names = (0..count).map(|i| format!("segment{i}")).collect::<Vec<_>>();
+    let qualified = names.join("::");
+    let source = format!(
+        "fn keep<T>(value: T) -> T where T: {qualified} {{ return value; }}"
     );
+    let parsed = parse_resident_source(&source);
     assert!(parsed.ll1.accepted);
     assert_eq!(parsed.hir_compact_predicate_bound.len(), 1);
     let bound = parsed.hir_compact_predicate_bound[0] as usize;
@@ -6492,7 +6492,18 @@ fn keep<T>(value: T) -> T where T: a::b::c::d::e::f::g::h::i::j {
         .iter()
         .position(|owner| *owner as usize == bound)
         .expect("long bound must retain its compact path row");
-    assert_eq!(parsed.hir_path_segment_count[path], 10);
+    assert_eq!(parsed.hir_path_segment_count[path], count as u32);
+    let start = parsed.hir_path_segment_start[path] as usize;
+    for ordinal in 0..count {
+        let row = start + ordinal;
+        assert_eq!(parsed.hir_path_segment_path[row], path as u32);
+        assert_eq!(parsed.hir_path_segment_ordinal[row], ordinal as u32);
+    }
+    let tokens = &parsed.hir_path_segment_name_token[start..start + count];
+    assert!(tokens.windows(2).all(|pair| pair[0] < pair[1]));
+    let raw_bound = parsed.hir_canonical_dense_to_raw[bound] as usize;
+    let leaf = parsed.hir_type_path_leaf_node[raw_bound] as usize;
+    assert_eq!(parsed.hir_token_pos[leaf], tokens[count - 1]);
 }
 
 #[test]

@@ -37,23 +37,13 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirPathSegmentSc
                 },
             ),
             ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
+            (
+                "hir_path_root_owner".into(),
+                b.hir_path_root_owner.as_entire_binding(),
+            ),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            (
-                "hir_path_segment_owner_a".into(),
-                b.hir_path_segment_owner_a.as_entire_binding(),
-            ),
-            (
-                "hir_path_segment_rank_a".into(),
-                b.hir_path_segment_rank_a.as_entire_binding(),
-            ),
-            (
-                "hir_list_rank_node".into(),
-                b.hir_list_rank_node.as_entire_binding(),
-            ),
-            (
-                "hir_list_rank_count".into(),
-                b.hir_list_rank_count.as_entire_binding(),
-            ),
             (
                 "hir_path_segment_count".into(),
                 b.hir_path_segment_count.as_entire_binding(),

@@ -247,11 +247,9 @@ pub struct ParserPasses {
         hir::records::clear_call_and_member_records::HirRecordClearCallsPass,
     pub hir_spans: hir::spans::compute_hir_spans::HirSpansPass,
     pub hir_type_fields: hir::records::extract_type_records::HirTypeFieldsPass,
-    pub hir_type_path_leaf_step: hir::types::walk_type_path_leaves::HirTypePathLeafStepPass,
     pub hir_type_path_leaf_scatter:
         hir::types::publish_type_path_leaves::HirTypePathLeafScatterPass,
     pub hir_path_segment_root: hir::paths::seed_path_roots::HirPathSegmentRootPass,
-    pub hir_path_segment_links: hir::paths::link_path_segments::HirPathSegmentLinksPass,
     pub hir_path_segment_scatter: hir::paths::publish_path_segments::HirPathSegmentScatterPass,
     pub hir_list_rank_prefix_local: hir::lists::mark_list_rows::HirListRankPrefixLocalPass,
     pub hir_list_rank_compact_scatter: hir::lists::compact_list_rows::HirListRankCompactScatterPass,
@@ -496,15 +494,9 @@ impl ParserPasses {
             )?,
             hir_spans: hir::spans::compute_hir_spans::HirSpansPass::new(device)?,
             hir_type_fields: hir::records::extract_type_records::HirTypeFieldsPass::new(device)?,
-            hir_type_path_leaf_step: hir::types::walk_type_path_leaves::HirTypePathLeafStepPass::new(
-                device,
-            )?,
             hir_type_path_leaf_scatter:
                 hir::types::publish_type_path_leaves::HirTypePathLeafScatterPass::new(device)?,
             hir_path_segment_root: hir::paths::seed_path_roots::HirPathSegmentRootPass::new(device)?,
-            hir_path_segment_links: hir::paths::link_path_segments::HirPathSegmentLinksPass::new(
-                device,
-            )?,
             hir_path_segment_scatter: hir::paths::publish_path_segments::HirPathSegmentScatterPass::new(
                 device,
             )?,
@@ -1045,7 +1037,7 @@ pub fn record_canonical_hir_materialization(
         crate::parser::compiler_graph::HIR_PATH_SEGMENT_SCAN,
     )?;
     p.hir_canonical_path_segment_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &ctx.buffers.tree_active_dispatch_args)?;
     ctx.buffers.clear_operations().record_phase(
         crate::parser::compiler_graph::hir::CANONICAL_PATH_CLEAR,
         ctx.encoder,
