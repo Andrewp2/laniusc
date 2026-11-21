@@ -15,8 +15,6 @@ use crate::{
             CompilerGraphBuilder,
             CompilerPhase,
             MaterializedCompilerGraph,
-            PassAccess,
-            PassDesc,
             PhaseResetPlan,
             ReflectedResourceBinding,
             ResourceClass,
