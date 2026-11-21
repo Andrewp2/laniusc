@@ -13,10 +13,9 @@ import type_checker.trait_solver.owned_type_constraint_contract;
 // scan. Atom interning is exact and unique across the catalog and batch arenas.
 public bool ts_catalog_span(uint table, uint first, uint count)
 {
-    SolverTable descriptor;
-    return ts_descriptor(table, descriptor) &&
-        (count != 0u || first == 0u) && first <= descriptor.catalog_count &&
-        count <= descriptor.catalog_count - first;
+    uint directory; uint prefix; uint suffix;
+    return ts_input_table_rows(table, directory, prefix, suffix) &&
+        (count != 0u || first == 0u) && first <= prefix && count <= prefix - first;
 }
 public bool ts_catalog_row(uint table, uint row)
 { return ts_catalog_span(table, row, 1u); }
@@ -195,8 +194,7 @@ public SolverStatus ts_admit_catalog_predicate(uint row)
     return ts_admit_predicate(row);
 }
 
-// 02_09 admits an implementation row in two dispatches (definition_admission:
-// ts_admit_implementation_head, then ts_admit_implementation_members).
+// Check the head before admitting its parameter coverage and method span.
 public SolverStatus ts_admit_catalog_implementation_head(uint row)
 {
     uint4 low; uint4 middle; uint4 high;
@@ -208,8 +206,6 @@ public SolverStatus ts_admit_catalog_implementation_head(uint row)
         !ts_catalog_span(7u, middle.x, middle.y) ||
         !ts_catalog_span(10u, middle.z, middle.w) ||
         !ts_catalog_span(8u, high.x, high.y)) return ts_invalid(1u, row, TS_INVALID);
-    SolverStatus status = ts_admit_catalog_atom(low.x);
-    if (status.state != TS_VALID) return status;
     return ts_admit_implementation_head(row);
 }
 
@@ -227,27 +223,12 @@ public SolverStatus ts_admit_catalog_implementation_members(uint row)
 
 public SolverStatus ts_admit_catalog_method(uint row)
 {
-    uint4 method; uint2 tail; uint4 implementation; uint4 span; uint parent;
-    if (!ts_catalog_row(10u, row) || !ts_read4(10u, row, 0u, method) ||
-        !ts_read2(10u, row, 4u, tail) || !ts_catalog_row(9u, method.x) ||
-        !ts_read8(9u, method.x, implementation, span) ||
-        !ts_catalog_span(10u, span.z, span.w) || row < span.z || row - span.z >= span.w)
+    // The owning implementation validates every method in its span.
+    // Check the backlink so a method omitted from all spans still fails.
+    uint implementation; uint4 span;
+    if (!ts_word(10u, row, 0u, implementation) || !ts_read4(9u, implementation, 4u, span) ||
+        row < span.z || row - span.z >= span.w)
         return ts_invalid(1u, row, 10u);
-    if (method.y == TS_INVALID || (method.y & 0xc0000000u) != 0x80000000u ||
-        method.w > 3u || tail.y != 0u || !ts_catalog_callable_atom(method.z) ||
-        !ts_catalog_row(2u, tail.x) || !ts_owned_identity_matches(method.z, tail.x, 8u, 9u) ||
-        !ts_word(2u, tail.x, 3u, parent) || parent != implementation.y)
-        return ts_invalid(14u, row, method.x);
-    if (row != span.z)
-    {
-        uint previous;
-        if (!ts_word(10u, row - 1u, 1u, previous) || previous >= method.y)
-            return ts_invalid(14u, row, row - 1u);
-    }
-    SolverStatus status = ts_admit_inherited_method_environment(tail.x, implementation.y);
-    if (status.state != TS_VALID) return status;
-    // Exact membership of target atom + owner in accepted Callable records is
-    // checked by the catalog index phase; no per-method full-table scan here.
     return ts_ok();
 }
 

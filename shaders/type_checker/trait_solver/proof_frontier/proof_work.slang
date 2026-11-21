@@ -122,11 +122,12 @@ public bool pps_raise_word(uint table, uint row, uint field, uint value, out uin
 public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint first)
 {
     first = TS_INVALID;
-    uint4 span; uint accepted;
-    if (!pps_building() || !ts_batch_is_building() || !pps_descriptor(table, span, accepted))
-        return ts_invalid(66u, subject, table);
     if (count == 0u) { first = 0u; return ts_ok(); }
+    // The lane checked both receipts. Initialization admitted the directory,
+    // and allocation can only grow the reserved count up to capacity.
+    // If a peer fails, this lane's writes remain in the rejected suffix.
     uint address = PPS_DIRECTORY + table * 6u + 1u;
+    uint capacity = trait_solver_proof_store[address + 1u];
     uint limit = table == PPS_WORK ? PPS_LOGICAL_WORK_LIMIT : TS_INVALID;
     // The active lanes of a subgroup that reserve rows of one table take
     // them with one exchange: a compare-exchange per lane on the table's
@@ -137,15 +138,16 @@ public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint f
     uint lanes = shared ? WaveActiveSum(count) : count;
     uint before = shared ? WavePrefixSum(count) : 0u;
     bool leader = !shared || WaveIsFirstLane();
-    uint outcome = 0u; uint expected = span.y;
+    uint outcome = 0u; uint expected = 0u;
     if (leader)
     {
+        expected = trait_solver_proof_store[address];
         outcome = 3u;
         [loop]
         for (uint attempt = 0u; attempt < PPS_ATOMIC_ATTEMPTS; attempt++)
         {
             if (expected > limit || lanes > limit - expected) { outcome = 1u; break; }
-            if (expected > span.z || lanes > span.z - expected || lanes >= TS_INVALID - expected)
+            if (expected > capacity || lanes > capacity - expected || lanes >= TS_INVALID - expected)
             { outcome = 2u; break; }
             uint previous;
             InterlockedCompareExchange(trait_solver_proof_store[address], expected, expected + lanes, previous);
@@ -160,7 +162,7 @@ public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint f
     }
     uint required = lanes > TS_INVALID - expected ? TS_INVALID : expected + lanes;
     if (outcome == 1u) return ts_limit(72u, table, required, limit);
-    if (outcome == 2u) return ts_limit(69u, table, required, span.z);
+    if (outcome == 2u) return ts_limit(69u, table, required, capacity);
     if (outcome == 3u) return ts_limit(8u, subject, PPS_ATOMIC_ATTEMPTS + 1u, PPS_ATOMIC_ATTEMPTS);
     first = expected + before;
     return ts_ok();

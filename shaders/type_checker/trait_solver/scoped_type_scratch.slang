@@ -11,6 +11,16 @@ import type_checker.concrete_types.concrete_type_equality;
 import type_checker.scoped_types.scoped_type_equality;
 import type_checker.scoped_types.scoped_type_hash;
 import shared.buffers.thread_scratch;
+import type_checker.trait_solver.type_constraint_structure;
+
+public interface IScopedNodeGraph : IParameterScopedTypeGraph, ITypeNodeFields {}
+
+[ForceInline]
+TypeNodeFields scoped_node_fields<Graph : IScopedNodeGraph>(uint node, bool read, bool classify)
+{
+    return Graph.node_fields(node, read, select(classify, TYPE_NODE_NOMINAL_HEADER, 0u),
+        select(classify, TYPE_NODE_ELEMENT | TYPE_NODE_LENGTH, TYPE_NODE_ELEMENT));
+}
 
 // Hash frames, 2 cells per depth: (ref, next), then (count, 0, 0, 0).
 #define SCOPED_TYPE_HASH_WALK scoped_type_ref_hash_scratch
@@ -23,7 +33,11 @@ import shared.buffers.thread_scratch;
 #define SH_SET_NEXT(d, v) scratch_set_word(SCRATCH_SCOPED_HASH + (d) * 2u, 3u, v)
 #define SH_COUNT(d) scratch_word(SCRATCH_SCOPED_HASH + (d) * 2u + 1u, 0u)
 #define SH_SET_COUNT(d, v) scratch_set_word(SCRATCH_SCOPED_HASH + (d) * 2u + 1u, 0u, v)
+#define SH_GRAPH IScopedNodeGraph
+#define SH_NODE_FIELDS scoped_node_fields
 #include "../scoped_types/scoped_type_hash_walk.slang"
+#undef SH_NODE_FIELDS
+#undef SH_GRAPH
 #undef SCOPED_TYPE_HASH_WALK
 #undef SCOPED_TYPE_HASH_FRAMES
 #undef SH_REF
@@ -56,7 +70,11 @@ uint scoped_type_equality_next_increment(uint depth)
 #define SE_NEXT_INCREMENT(d) scoped_type_equality_next_increment(d)
 #define SE_COUNT(d) scratch_word(SCRATCH_SCOPED_EQUALITY + (d) * 2u + 1u, 3u)
 #define SE_SET_COUNT(d, v) scratch_set_word(SCRATCH_SCOPED_EQUALITY + (d) * 2u + 1u, 3u, v)
+#define SE_GRAPH IScopedNodeGraph
+#define SE_NODE_FIELDS scoped_node_fields
 #include "../scoped_types/scoped_type_equality_walk.slang"
+#undef SE_NODE_FIELDS
+#undef SE_GRAPH
 #undef SCOPED_TYPE_EQUALITY_WALK
 #undef SCOPED_TYPE_EQUALITY_FRAMES
 #undef SE_PAIR
@@ -69,7 +87,7 @@ uint scoped_type_equality_next_increment(uint depth)
 #undef SE_SET_COUNT
 
 // One graph namespace, as scoped_type_refs_equal.
-public bool scoped_type_refs_equal_scratch<Graph : IParameterScopedTypeGraph>(
+public bool scoped_type_refs_equal_scratch<Graph : IScopedNodeGraph>(
     uint left_tag, uint left_payload, uint left_context,
     uint right_tag, uint right_payload, uint right_context, uint type_capacity,
     uint token_capacity)

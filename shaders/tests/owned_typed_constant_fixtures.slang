@@ -1,3 +1,4 @@
+import type_checker.concrete_types.concrete_type_equality;
 import shared.semantics.primitive_types;
 // Focused synthetic typed-constant graphs; no source parser or host evaluator.
 import type_checker.trait_solver.owned_type_constraint_engine;
@@ -112,6 +113,8 @@ struct TypedLeftGraph : IOwnedConstraintPatternGraph
     static uint owned_parameter(uint owner, uint atom, bool constant, out uint index)
     { return typed_owned(owner, atom, constant, index); }
     static uint metadata(uint node, uint field) { return typed_metadata(0u, node, field); }
+    static TypeNodeFields node_fields(uint node, bool read, uint nominal, uint element)
+    { return type_node_fields<TypedLeftGraph>(node, read, nominal, element); }
     static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { tag = 0u; payload = INVALID; return false; }
 }
@@ -128,6 +131,8 @@ struct TypedRightGraph : IOwnedConstraintPatternGraph
     static uint owned_parameter(uint owner, uint atom, bool constant, out uint index)
     { return typed_owned(owner, atom, constant, index); }
     static uint metadata(uint node, uint field) { return typed_metadata(1u, node, field); }
+    static TypeNodeFields node_fields(uint node, bool read, uint nominal, uint element)
+    { return type_node_fields<TypedRightGraph>(node, read, nominal, element); }
     static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { tag = 0u; payload = INVALID; return false; }
 }

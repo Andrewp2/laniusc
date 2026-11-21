@@ -1,3 +1,4 @@
+import type_checker.trait_solver.scoped_type_scratch;
 import shared.semantics.constant_value;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.constant_atoms;
@@ -334,6 +335,12 @@ public uint ts_graph_metadata(uint instance, uint field)
     bool admitted = ts_read_admitted_node(instance, low, high);
     return select(admitted, ts_node_row_field(low, high, field), TS_INVALID);
 }
+public TypeNodeFields ts_graph_fields(uint instance, bool read, uint nominal, uint element)
+{
+    uint4 low = uint4(0u); uint4 high = uint4(0u);
+    bool admitted = read && ts_read_admitted_node(instance, low, high);
+    return ts_node_row_fields(low, high, admitted, nominal, element);
+}
 public bool ts_graph_argument(uint instance, uint slot, out uint tag, out uint payload)
 {
     tag = 0u; payload = TS_INVALID; uint4 low; uint2 ref;
@@ -346,7 +353,7 @@ public bool ts_graph_argument(uint instance, uint slot, out uint tag, out uint p
 // Root admission substitutes a type or a constant parameter at one call site
 // per visited leaf: substitute_parameter(constant) is exactly
 // substitute_constant_parameter (constant) or substitute_type_parameter.
-public interface ITsAdmissionGraph : IParameterScopedTypeGraph
+public interface ITsAdmissionGraph : IScopedNodeGraph
 {
     static bool substitute_parameter(uint environment, uint reference, bool constant,
         out uint tag, out uint payload);
@@ -391,6 +398,8 @@ public struct TraitSolverTypeGraph : ITsAdmissionGraph
     }
     public static uint metadata(uint instance, uint field)
     { return ts_graph_metadata(instance, field); }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    { return ts_graph_fields(instance, read, nominal, element); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     { return ts_graph_argument(instance, slot, tag, payload); }
 }
@@ -426,6 +435,8 @@ public struct CatalogTraitSolverTypeGraph : ITsAdmissionGraph
     }
     public static uint metadata(uint instance, uint field)
     { return ts_graph_metadata(instance, field); }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    { return ts_graph_fields(instance, read, nominal, element); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     { return ts_graph_argument(instance, slot, tag, payload); }
 }

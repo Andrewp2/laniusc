@@ -94,20 +94,3 @@ public bool ts_equal_admitted_goals(SolverGoal left, SolverGoal right)
     }
     return true;
 }
-
-public SolverStatus ts_environment_is_closed(uint environment, uint visible_owner, out bool closed)
-{
-    closed = true; uint4 env;
-    if (!ts_environment_header(environment, env)) return ts_invalid(1u, environment, TS_INVALID);
-    // Admission already proved full structural validity. The second pass only
-    // classifies remaining exact caller parameters, including unused bindings.
-    for (uint i = 0u; i < env.z; i++)
-    {
-        uint root; uint visits;
-        if (!ts_word(12u, env.y + i, 2u, root)) return ts_invalid(1u, environment, env.y + i);
-        SolverStatus status = ts_admit_root(root, TS_INVALID, visible_owner, true, visits);
-        if (status.state == TS_INVALID_INPUT && status.detail == 10u) { closed = false; continue; }
-        if (status.state != TS_VALID) return status;
-    }
-    return ts_ok();
-}

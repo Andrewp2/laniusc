@@ -10,76 +10,23 @@ import type_checker.trait_solver.checked_graph_operations;
 import type_checker.trait_solver.catalog_admission.catalog_row_admission;
 import type_checker.trait_solver.catalog_admission.definition_admission;
 import type_checker.trait_solver.proof_goal_equality;
+import type_checker.trait_solver.catalog.catalog_io;
 
 // Frozen host provenance supplies the exact accepted call_hir -> actual owner
 // inventory and public-unit registry. Packet equality checks below preserve it;
 // they do not reconstruct lexical source ownership from a numeric HIR row.
 public bool ts_batch_row(uint table, uint row)
 {
-    SolverTable desc;
-    return ts_descriptor(table, desc) && row >= desc.catalog_count &&
-        row - desc.catalog_count < desc.batch_count;
+    uint directory; uint prefix; uint suffix;
+    return ts_input_table_rows(table, directory, prefix, suffix) &&
+        row >= prefix && row - prefix < suffix;
 }
 public bool ts_batch_span(uint table, uint first, uint count)
 {
-    SolverTable desc;
-    if (!ts_descriptor(table, desc)) return false;
+    uint directory; uint prefix; uint suffix;
+    if (!ts_input_table_rows(table, directory, prefix, suffix)) return false;
     if (count == 0u) return first == 0u;
-    return first >= desc.catalog_count &&
-        first - desc.catalog_count <= desc.batch_count &&
-        count <= desc.batch_count - (first - desc.catalog_count);
-}
-
-public SolverStatus ts_applicable_predicate_count(uint owner, out uint count)
-{
-    count = 0u;
-    uint original = owner;
-    for (uint depth = 0u; owner != TS_INVALID; depth++)
-    {
-        if (depth == TS_DEPTH_LIMIT) return ts_limit(6u, original, depth + 1u, TS_DEPTH_LIMIT);
-        if (ts_owner_chain_contains(original, depth, owner)) return ts_invalid(5u, original, owner);
-        uint4 low; uint4 high;
-        if (!ts_catalog_row(2u, owner) || !ts_read4(2u, owner, 0u, low) ||
-            !ts_read4(2u, owner, 4u, high) || !ts_catalog_span(8u, high.z, high.w))
-            return ts_invalid(3u, original, owner);
-        if (high.w >= TS_INVALID - count) return ts_limit(19u, original, TS_INVALID, TS_INVALID - 1u);
-        count += high.w;
-        owner = low.w;
-    }
-    return ts_ok();
-}
-[ForceInline]
-public SolverStatus ts_applicable_predicate_at(uint owner, uint ordinal, out uint predicate)
-{
-    uint count;
-    return ts_applicable_predicate_lookup(owner, ordinal, false, count, predicate);
-}
-// The applicable predicate count, then (unless count_only) the predicate at
-// ordinal. Both uses share one count site.
-public SolverStatus ts_applicable_predicate_lookup(uint owner, uint ordinal, bool count_only,
-    out uint count, out uint predicate)
-{
-    predicate = TS_INVALID;
-    SolverStatus status = ts_applicable_predicate_count(owner, count);
-    if (status.state != TS_VALID || count_only) return status;
-    if (ordinal >= count) return ts_invalid(22u, owner, ordinal);
-    for (uint depth = 0u; depth < TS_DEPTH_LIMIT && owner != TS_INVALID; depth++)
-    {
-        uint4 low; uint4 high;
-        if (!ts_read4(2u, owner, 0u, low) || !ts_read4(2u, owner, 4u, high))
-            return ts_invalid(1u, owner, TS_INVALID);
-        if (ordinal < high.w)
-        {
-            predicate = high.z + ordinal;
-            uint actual_owner;
-            if (!ts_word(8u, predicate, 1u, actual_owner) || actual_owner != owner)
-                return ts_invalid(3u, predicate, owner);
-            return ts_ok();
-        }
-        ordinal -= high.w;
-        owner = low.w;
-    }
-    return ts_invalid(3u, owner, ordinal);
+    return first >= prefix && first - prefix <= suffix && count <= suffix - (first - prefix);
 }
 
 public SolverStatus ts_admit_batch_atom(uint atom)
@@ -262,8 +209,16 @@ public SolverStatus ts_admit_batch_environment(uint environment, uint owner_kind
             if (extra.y != 1u || owner.z != environment) return ts_invalid(3u, environment, owner_row);
             expected_owner = owner.y; caller_owner = owner.y;
         }
-        status = ts_admit_environment(environment, expected_owner, caller_owner, owner_kind);
-        if (status.state != TS_VALID || owner_kind == 1u) return status;
+        bool closed;
+        status = ts_admit_environment(environment, expected_owner, caller_owner, owner_kind, closed);
+        if (status.state != TS_VALID) return status;
+        if (owner_kind == 1u)
+        {
+            // Call result word 7 is scratch until reduction replaces the row.
+            // The owner link above gives this environment a unique call.
+            return ts_output_write(4u, owner_row, 7u, closed ? 2u : 1u) ?
+                ts_ok() : ts_invalid(1u, owner_row, 4u);
+        }
         header_row = extra.z; header_call = true;
     }
     if (status.state != TS_VALID) return status;
@@ -316,27 +271,21 @@ public SolverStatus ts_read_batch_assumption(uint assumption, out uint4 row)
     if (any(tail != uint2(0u, 0u))) return ts_invalid(21u, assumption, 14u);
     return ts_ok();
 }
+// Verify the backlink for every assumption, including rows not enumerated
+// by a context. A context admits the contents of every row in its span.
 public SolverStatus ts_admit_batch_assumption(uint assumption)
 {
-    uint4 row; uint4 context; uint4 extra;
-    SolverStatus status = ts_read_batch_assumption(assumption, row);
-    if (status.state != TS_VALID) return status;
-    status = ts_batch_context_header(row.x, context, extra);
-    if (status.state != TS_VALID) return status;
-    return ts_admit_batch_assumption_in(assumption, row, context, extra);
-}
-// The checks that follow the header (context, extra) of the claimed row.x.
-public SolverStatus ts_admit_batch_assumption_in(uint assumption, uint4 row,
-    uint4 context, uint4 extra)
-{
-    SolverStatus status;
-    if (extra.y == 2u || assumption < context.w || assumption - context.w >= extra.x || row.z != context.z)
+    uint4 row; uint first; uint count;
+    if (!ts_read4(14u, assumption, 0u, row) ||
+        !ts_word(13u, row.x, 3u, first) || !ts_word(13u, row.x, 4u, count) ||
+        assumption < first || assumption - first >= count)
         return ts_invalid(3u, assumption, row.x);
-    uint predicate;
-    status = ts_applicable_predicate_at(context.y, assumption - context.w, predicate);
-    if (status.state != TS_VALID) return status;
-    if (row.y != predicate) return ts_invalid(3u, assumption, row.y);
-    if (extra.y == 0u)
+    return ts_ok();
+}
+
+SolverStatus ts_admit_batch_assumption_in(uint assumption, uint4 row, uint mode)
+{
+    if (mode == 0u)
     {
         if (row.w != TS_INVALID) return ts_invalid(3u, assumption, row.w);
         return ts_ok();
@@ -362,136 +311,71 @@ public SolverStatus ts_read_batch_obligation(uint obligation, out uint4 row)
     if (row.w != 0u) return ts_invalid(21u, obligation, 16u);
     return ts_ok();
 }
+// Verify that every obligation belongs to its claimed call's span. The call
+// admits the environment and contents of the whole span.
 public SolverStatus ts_admit_batch_obligation(uint obligation)
 {
-    uint4 row; uint4 call; uint4 extra;
-    SolverStatus status = ts_read_batch_obligation(obligation, row);
-    if (status.state != TS_VALID) return status;
-    status = ts_batch_call_header(row.x, call, extra);
-    if (status.state != TS_VALID) return status;
-    return ts_admit_batch_obligation_in(obligation, row, call, extra);
-}
-// The checks that follow the header (call, extra) of the claimed row.x:
-// the span and callee checks naming the predicate to look up, the lookup,
-// then the claimed predicate.
-public SolverStatus ts_batch_obligation_predicate(uint obligation, uint4 row,
-    uint4 call, uint4 extra, out uint owner, out uint ordinal)
-{
-    owner = TS_INVALID; ordinal = 0u;
-    if (obligation < extra.y || obligation - extra.y >= extra.z || row.z != extra.x)
+    uint4 row; uint4 call;
+    if (!ts_read4(16u, obligation, 0u, row) || !ts_read4(15u, row.x, 4u, call) ||
+        obligation < call.y || obligation - call.y >= call.z)
         return ts_invalid(3u, obligation, row.x);
-    uint4 callee;
-    if (!ts_read4(4u, call.w, 0u, callee)) return ts_invalid(14u, obligation, call.w);
-    owner = callee.y; ordinal = obligation - extra.y;
     return ts_ok();
 }
-public SolverStatus ts_admit_batch_obligation_in(uint obligation, uint4 row,
-    uint4 call, uint4 extra)
+
+// Enumerate the frozen lexical owner's predicates once in order. Every
+// obligation or assumption must name this parent, environment and predicate.
+SolverStatus ts_admit_batch_predicates(uint parent, uint owner, bool is_call,
+    uint first, uint count, uint environment, uint mode)
 {
-    uint owner; uint ordinal; uint predicate;
-    SolverStatus status = ts_batch_obligation_predicate(obligation, row, call, extra, owner, ordinal);
-    if (status.state != TS_VALID) return status;
-    status = ts_applicable_predicate_at(owner, ordinal, predicate);
-    if (status.state != TS_VALID) return status;
-    if (row.y != predicate) return ts_invalid(3u, obligation, row.y);
-    return ts_ok();
-}
-public SolverStatus ts_admit_batch_context(uint context)
-{
-    // Ordinal 0 reads this context's own header; ordinal i > 0 admits
-    // assumption i - 1, whose claimed context header is read at the same site.
-    uint4 row = uint4(0u, 0u, 0u, 0u); uint assumptions = 0u;
+    uint ordinal = 0u;
     [loop]
-    for (uint ordinal = 0u; ordinal <= assumptions; ordinal++)
+    for (uint depth = 0u; owner != TS_INVALID; depth++)
     {
-        uint assumption = row.w + ordinal - 1u;
-        uint header_row = context; uint4 claim = uint4(0u, 0u, 0u, 0u);
-        SolverStatus status;
-        if (ordinal != 0u)
+        if (depth == TS_DEPTH_LIMIT) return ts_limit(6u, parent, depth + 1u, TS_DEPTH_LIMIT);
+        uint4 low; uint4 span;
+        if (!ts_read8(2u, owner, low, span)) return ts_invalid(3u, parent, owner);
+        if (span.w > count - ordinal) return ts_invalid(22u, parent, count);
+        [loop]
+        for (uint i = 0u; i < span.w; i++, ordinal++)
         {
-            status = ts_read_batch_assumption(assumption, claim);
+            uint row = first + ordinal;
+            uint4 claim;
+            SolverStatus status = is_call ? ts_read_batch_obligation(row, claim) :
+                ts_read_batch_assumption(row, claim);
             if (status.state != TS_VALID) return status;
-            header_row = claim.x;
-        }
-        uint4 header; uint4 extra;
-        status = ts_batch_context_header(header_row, header, extra);
-        if (status.state != TS_VALID) return status;
-        if (ordinal == 0u)
-        {
-            row = header;
-            uint count;
-            status = ts_applicable_predicate_count(row.y, count);
-            if (status.state != TS_VALID) return status;
-            if (count != extra.x) return ts_invalid(22u, context, count);
-            if (extra.y == 1u)
+            if (claim.x != parent || claim.y != span.z + i || claim.z != environment)
+                return ts_invalid(3u, row, claim.y);
+            if (!is_call)
             {
-                status = ts_batch_environment_owner(row.z, 0u, context);
+                status = ts_admit_batch_assumption_in(row, claim, mode);
                 if (status.state != TS_VALID) return status;
             }
-            assumptions = extra.x;
-            continue;
         }
-        status = ts_admit_batch_assumption_in(assumption, claim, header, extra);
-        if (status.state != TS_VALID) return status;
-        uint claimed_context;
-        if (!ts_word(14u, assumption, 0u, claimed_context) || claimed_context != context)
-            return ts_invalid(3u, context, assumption);
+        owner = low.w;
     }
-    return ts_ok();
+    return ordinal == count ? ts_ok() : ts_invalid(22u, parent, ordinal);
 }
+
+public SolverStatus ts_admit_batch_context(uint context)
+{
+    uint4 header; uint4 extra;
+    SolverStatus status = ts_batch_context_header(context, header, extra);
+    if (status.state != TS_VALID) return status;
+    if (extra.y == 1u)
+    {
+        status = ts_batch_environment_owner(header.z, 0u, context);
+        if (status.state != TS_VALID) return status;
+    }
+    return ts_admit_batch_predicates(context, header.y, false, header.w, extra.x, header.z, extra.y);
+}
+
 public SolverStatus ts_admit_batch_call(uint call)
 {
-    // Ordinal 0 reads this call's own header; ordinal i > 0 admits obligation
-    // i - 1, whose claimed call header is read at the same site.
-    uint first_obligation = 0u; uint obligations = 0u;
-    [loop]
-    for (uint ordinal = 0u; ordinal <= obligations; ordinal++)
-    {
-        uint obligation = first_obligation + ordinal - 1u;
-        uint header_row = call; uint4 claim = uint4(0u, 0u, 0u, 0u);
-        SolverStatus status;
-        if (ordinal != 0u)
-        {
-            status = ts_read_batch_obligation(obligation, claim);
-            if (status.state != TS_VALID) return status;
-            header_row = claim.x;
-        }
-        uint4 header; uint4 extra;
-        status = ts_batch_call_header(header_row, header, extra);
-        if (status.state != TS_VALID) return status;
-        // The call counts its callee's applicable predicates; an obligation
-        // looks up its own predicate. Both share one lookup site.
-        uint owner; uint predicate_ordinal = 0u;
-        if (ordinal == 0u)
-        {
-            status = ts_batch_environment_owner(extra.x, 1u, call);
-            if (status.state != TS_VALID) return status;
-            uint4 callee;
-            if (!ts_read4(4u, header.w, 0u, callee)) return ts_invalid(14u, call, header.w);
-            owner = callee.y;
-        }
-        else
-        {
-            status = ts_batch_obligation_predicate(obligation, claim, header, extra,
-                owner, predicate_ordinal);
-            if (status.state != TS_VALID) return status;
-        }
-        uint count; uint predicate;
-        status = ts_applicable_predicate_lookup(owner, predicate_ordinal, ordinal == 0u,
-            count, predicate);
-        if (status.state != TS_VALID) return status;
-        if (ordinal == 0u)
-        {
-            if (count != extra.z) return ts_invalid(22u, call, count);
-            first_obligation = extra.y; obligations = extra.z;
-            continue;
-        }
-        if (claim.y != predicate) return ts_invalid(3u, obligation, claim.y);
-        uint claimed_call;
-        if (!ts_word(16u, obligation, 0u, claimed_call) || claimed_call != call)
-            return ts_invalid(3u, call, obligation);
-    }
-    return ts_ok();
+    uint4 header; uint4 extra; uint4 callee;
+    SolverStatus status = ts_batch_call_header(call, header, extra);
+    if (status.state != TS_VALID) return status;
+    if (!ts_read4(4u, header.w, 0u, callee)) return ts_invalid(14u, call, header.w);
+    return ts_admit_batch_predicates(call, callee.y, true, extra.y, extra.z, extra.x, 0u);
 }
 public SolverStatus ts_admit_batch_evidence(uint evidence)
 {

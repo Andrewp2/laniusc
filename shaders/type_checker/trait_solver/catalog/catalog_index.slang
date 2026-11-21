@@ -88,7 +88,7 @@ public uint ts_coarse_implementation_hash(uint trait_atom, uint argument_count)
 // The upper bits of a coarse link's admission word identify the first
 // unification step's type shape. Zero means the matcher must inspect the
 // root. Equal fingerprints still require full unification.
-public uint ts_self_shape<Graph : ITypeIdentityGraph>(uint2 root, uint nodes, uint atoms)
+public uint ts_self_shape<Graph : ITypeIdentityGraph & ITypeNodeFields>(uint2 root, uint nodes, uint atoms)
 {
     if (root.x == 1u && root.y < 128u && ts_scalar_is_valid(root.y))
         return root.y;

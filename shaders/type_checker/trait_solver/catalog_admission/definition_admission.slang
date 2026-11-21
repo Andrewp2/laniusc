@@ -74,9 +74,9 @@ public SolverStatus ts_admit_goal_roots(
     for (uint ordinal = 0u; ordinal <= argument_count; ordinal++)
     {
         // Independent visits/depth budget for every ordered operand.
-        uint visits;
+        bool root_closed;
         SolverStatus result = ts_admit_catalog_definition_root(
-            ordinal == 0u ? subject : first_argument + ordinal - 1u, owner, closed, visits);
+            ordinal == 0u ? subject : first_argument + ordinal - 1u, owner, closed, root_closed);
         if (result.state != TS_VALID) return result;
     }
     return ts_ok();
@@ -98,10 +98,7 @@ public SolverStatus ts_admit_predicate(uint predicate)
 
 // The caller runs these only in the owned-solver pipeline, paired with the
 // complete coarse index, two-sided coherence and retained proof admission.
-// Implementation admission is two dispatches split at head coverage: the
-// head (row shape, owner, prerequisites, ancestors, goal roots), then its
-// members (coverage, required methods). The members dispatch runs only while
-// the catalog is still building, so every implementation has passed its head.
+// The implementation lane checks the head before its coverage and methods.
 public SolverStatus ts_admit_implementation_head(uint implementation)
 {
     uint4 low; uint4 middle; uint4 high;

@@ -6,8 +6,13 @@
 // SE_NEXT_INCREMENT(d), which returns the old next slot and advances it.
 // scoped_type_equality.slang expands it over local arrays;
 // type_checker/trait_solver/scoped_type_scratch.slang expands it over the thread scratch table.
+#ifndef SE_GRAPH
+#define SE_GRAPH IParameterScopedTypeGraph
+#define SE_NODE_FIELDS type_node_step_fields
+#define SE_DEFAULT_GRAPH
+#endif
 public bool SCOPED_TYPE_EQUALITY_WALK<
-    LeftGraph : IParameterScopedTypeGraph, RightGraph : IParameterScopedTypeGraph>(
+    LeftGraph : SE_GRAPH, RightGraph : SE_GRAPH>(
     uint left_tag, uint left_payload, uint left_context,
     uint right_tag, uint right_payload, uint right_context,
     uint left_type_capacity, uint right_type_capacity, uint token_capacity)
@@ -44,9 +49,9 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
         // A node pair (both tag 3, in range) reads each side's fields once per
         // step: the headers when classified, then the child references.
         bool step = classify || SE_NEXT(depth) != SE_COUNT(depth);
-        TypeNodeFields left = type_node_step_fields<LeftGraph>(pair.y,
+        TypeNodeFields left = SE_NODE_FIELDS<LeftGraph>(pair.y,
             step && pair.x == 3u && pair.y < left_type_capacity, classify);
-        TypeNodeFields right = type_node_step_fields<RightGraph>(pair.w,
+        TypeNodeFields right = SE_NODE_FIELDS<RightGraph>(pair.w,
             step && pair.z == 3u && pair.w < right_type_capacity, classify);
         if (classify)
         {
@@ -116,3 +121,9 @@ public bool SCOPED_TYPE_EQUALITY_WALK<
         SE_PUSH(depth, uint4(tag_l, payload_l, tag_r, payload_r), context);
     }
 }
+
+#ifdef SE_DEFAULT_GRAPH
+#undef SE_DEFAULT_GRAPH
+#undef SE_NODE_FIELDS
+#undef SE_GRAPH
+#endif

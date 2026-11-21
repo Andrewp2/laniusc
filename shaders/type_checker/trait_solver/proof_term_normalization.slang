@@ -28,6 +28,12 @@ public interface IProofNormalizationBindings
 // (write, then check what was written) selects the pass from it.
 public interface IProofNormalizationSink
 {
+    static bool reserve_during_walk() { return false; }
+    static SolverStatus reserve(uint edges, uint subject, out uint node, out uint edge)
+    {
+        node = TS_INVALID; edge = TS_INVALID;
+        return ts_invalid(1u, subject, edges);
+    }
     static bool begin_node(uint mode, uint row, uint4 low, uint4 high);
     static bool set_child(uint mode, uint row, uint ordinal, uint2 reference);
 }
@@ -275,11 +281,16 @@ public SolverStatus ts_normalize_proof_root_on_side<
                 uint edge_count = shape.x == 1u ? shape.w : 0u;
                 if (measured.nodes == TS_INVALID || edge_count > TS_INVALID - measured.edges)
                     return ts_limit(64u, input.y, TS_INVALID, TS_INVALID - 1u);
-                if (emit && (measured.nodes >= reservation.node_count ||
+                if (emit && !Sink.reserve_during_walk() && (measured.nodes >= reservation.node_count ||
                     measured.edges > reservation.edge_count || edge_count > reservation.edge_count - measured.edges))
                     return ts_invalid(65u, input.y, measured.nodes);
                 uint output_node = emit ? reservation.first_node + measured.nodes : measured.nodes;
                 uint output_edge = emit ? reservation.first_edge + measured.edges : measured.edges;
+                if (emit && Sink.reserve_during_walk())
+                {
+                    SolverStatus status = Sink.reserve(edge_count, input.y, output_node, output_edge);
+                    if (status.state != TS_VALID) return status;
+                }
                 measured.nodes++; measured.edges += edge_count;
                 meta.w = output_node;
                 links.xy = uint2(constant ? reference.x : 3u, output_node);
@@ -329,7 +340,8 @@ public SolverStatus ts_normalize_proof_root_on_side<
         {
             if (depth == 0u)
             {
-                if (emit && (measured.nodes != reservation.node_count || measured.edges != reservation.edge_count))
+                if (emit && !Sink.reserve_during_walk() &&
+                    (measured.nodes != reservation.node_count || measured.edges != reservation.edge_count))
                     return ts_invalid(65u, input.y, measured.nodes);
                 if (emit) normalized = links.xy;
                 closed = is_closed; return ts_ok();

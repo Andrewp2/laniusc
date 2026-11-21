@@ -222,6 +222,14 @@ fn shader_opt_level() -> Result<String> {
 
 fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
     let default = shader_opt_level()?;
+    // These two proof walkers fit the artifact budget at -O2. The shorter
+    // instruction streams reduce work in the solver's populated waves.
+    if default == "1" && matches!(artifact_key,
+        "type_checker/trait_solver/proof_frontier/build_proof_goals"
+        | "type_checker/trait_solver/proof_frontier/select_proof_implementations")
+    {
+        return Ok("2".to_string());
+    }
     if default != "0" && force_minimum_complex_artifact_optimization(artifact_key) {
         return Ok("0".to_string());
     }
@@ -311,8 +319,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/trait_solver/catalog_admission/admit_catalog_type_edges"
             | "type_checker/trait_solver/catalog_admission/admit_catalog_type_roots"
             | "type_checker/trait_solver/catalog_admission/admit_catalog_predicates"
-            | "type_checker/trait_solver/catalog_admission/admit_catalog_implementation_heads"
-            | "type_checker/trait_solver/catalog_admission/admit_catalog_implementation_members"
             | "type_checker/trait_solver/catalog_admission/admit_catalog_methods"
             | "type_checker/trait_solver/catalog/build_atom_index"
             | "type_checker/trait_solver/catalog/build_implementation_index"
@@ -322,13 +328,9 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/trait_solver/batches/reduce_batch_calls"
             | "type_checker/trait_solver/batches/admit_batch_environments"
             | "type_checker/trait_solver/batches/admit_batch_contexts"
-            | "type_checker/trait_solver/batches/admit_batch_assumptions"
             | "type_checker/trait_solver/batches/admit_batch_calls"
-            | "type_checker/trait_solver/batches/admit_batch_obligations"
             | "type_checker/trait_solver/batches/admit_batch_evidence"
-            | "type_checker/trait_solver/proof_frontier/build_proof_goals"
             | "type_checker/trait_solver/proof_frontier/select_proof_assumptions"
-            | "type_checker/trait_solver/proof_frontier/select_proof_implementations"
             | "type_checker/trait_solver/proof_frontier/write_proof_rows"
             | "type_checker/trait_solver/proof_frontier/publish_proof_roots"
             | "type_checker/trait_solver/native_layout/materialize_proof_value"

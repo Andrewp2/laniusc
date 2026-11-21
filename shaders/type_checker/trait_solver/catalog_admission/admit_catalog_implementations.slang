@@ -13,9 +13,10 @@ void main(uint3 dtid : SV_DispatchThreadID)
     uint row;
     if (!ts_catalog_admission_row(9u, local, row)) return;
     SolverStatus status;
+    // Each implementation owns its head, coverage and method span.
     if (ts_bind_scratch(local, row, status)) status = ts_admit_catalog_implementation_head(row);
-    // A passing head is reported by admit_catalog_implementation_members, which
-    // runs only while every implementation head has passed.
-    if (status.state != TS_VALID) ts_write_status(1u, row, status);
-    ts_catalog_failure(status);
+    bool head_fault = status.state != TS_VALID;
+    if (!head_fault) status = ts_admit_catalog_implementation_members(row);
+    ts_write_status(1u, row, status);
+    if (status.state != TS_VALID) ts_rank_implementation_fault(row, head_fault);
 }

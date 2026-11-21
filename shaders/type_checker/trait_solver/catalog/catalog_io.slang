@@ -9,17 +9,17 @@ public struct SolverOutputTable
 }
 public bool ts_catalog_count(uint table, out uint count)
 {
-    count = 0u; SolverTable desc;
-    if (!ts_descriptor(table, desc)) return false;
-    count = desc.catalog_count; return true;
+    uint directory; uint suffix;
+    return ts_input_table_rows(table, directory, count, suffix);
 }
 public bool ts_bucket_count(uint rows, out uint buckets)
 {
     buckets = 1u;
     if (rows > 0x40000000u) return false;
     uint required = max(1u, rows * 2u);
-    for (uint bit = 0u; bit < 31u && buckets < required; bit++) buckets <<= 1u;
-    return buckets >= required;
+    // firstbithigh(0) is all ones, so the shift for required == 1 is zero.
+    buckets = 1u << (uint(firstbithigh(required - 1u)) + 1u);
+    return true;
 }
 public bool ts_work_counts(out uint rows, out uint buckets)
 {

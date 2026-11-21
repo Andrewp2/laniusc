@@ -1,3 +1,5 @@
+import type_checker.trait_solver.scoped_type_scratch;
+import type_checker.concrete_types.concrete_type_equality;
 import shared.semantics.primitive_types;
 import shared.semantics.constant_value;
 import type_checker.trait_solver.constant_atoms;
@@ -86,7 +88,7 @@ public bool pps_term_child(uint4 low, uint4 high, uint slot,
     { reference = high.xy; return pps_type_reference(reference); }
     return false;
 }
-public struct SolverProofTermGraph : IParameterScopedTypeGraph,
+public struct SolverProofTermGraph : IScopedNodeGraph,
     IConstraintMatchGraph, IProofNormalizationGraph
 {
     public static bool constant_value(uint row, out uint3 value)
@@ -110,6 +112,12 @@ public struct SolverProofTermGraph : IParameterScopedTypeGraph,
         uint4 low; uint4 high;
         bool admitted = pps_read_term_node(instance, low, high);
         return select(admitted, ts_node_row_field(low, high, field), TS_INVALID);
+    }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    {
+        uint4 low = uint4(0u); uint4 high = uint4(0u);
+        bool admitted = read && pps_read_term_node(instance, low, high);
+        return ts_node_row_fields(low, high, admitted, nominal, element);
     }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     {

@@ -5,7 +5,12 @@
 // SH_CLASSIFIED(d, ref) (ref, next = 0, count = 0). scoped_type_hash.slang
 // expands it over local arrays; type_checker/trait_solver/scoped_type_scratch.slang expands it over the
 // thread scratch table.
-public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
+#ifndef SH_GRAPH
+#define SH_GRAPH IParameterScopedTypeGraph
+#define SH_NODE_FIELDS type_node_step_fields
+#define SH_DEFAULT_GRAPH
+#endif
+public bool SCOPED_TYPE_HASH_WALK<Graph : SH_GRAPH>(
     uint tag, uint payload, uint context, uint type_capacity,
     uint token_capacity, out uint result)
 {
@@ -34,7 +39,7 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
         }
         // A node frame (tag 3, in range) reads its fields once per step: its
         // header when classified, then the reference of the child it enters.
-        TypeNodeFields node = type_node_step_fields<Graph>(ref.y, ref.x == 3u && ref.y < type_capacity &&
+        TypeNodeFields node = SH_NODE_FIELDS<Graph>(ref.y, ref.x == 3u && ref.y < type_capacity &&
             (classify || SH_NEXT(depth) != SH_COUNT(depth)), classify);
         if (classify)
         {
@@ -117,3 +122,9 @@ public bool SCOPED_TYPE_HASH_WALK<Graph : IParameterScopedTypeGraph>(
         SH_PUSH(depth, uint3(child_tag, child_payload, ref.z));
     }
 }
+
+#ifdef SH_DEFAULT_GRAPH
+#undef SH_DEFAULT_GRAPH
+#undef SH_NODE_FIELDS
+#undef SH_GRAPH
+#endif

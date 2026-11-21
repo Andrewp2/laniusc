@@ -413,9 +413,18 @@ performs an occurs check. A fixed prerequisite check consumes completed bindings
 it cannot restart inference. Explicit depth, pair, occurs, and substitution work
 limits distinguish resource exhaustion from malformed input and no match.
 
-The catalog admits complete implementation heads and checks coherence. Catalog
-shaders bind only their catalog resources; proof-store resources belong to the
-proof search.
+The catalog admits each implementation's head, parameter coverage and method
+span in one lane, then checks coherence across implementations. Catalog shaders
+bind only their catalog resources. Proof-store resources belong to proof search.
+The following method pass publishes the earliest failing implementation chunk.
+Within that chunk it reports head faults before member faults, then chooses the
+lowest row within the selected fault kind.
+
+Each batch call and context validates its ordered predicates in a single walk
+over its lexical owner chain. The reverse checks for obligations and assumptions
+reject rows outside their parent's span. Environment admission records whether
+the call's bindings are closed while it validates their graphs. Call reduction
+uses that flag and replaces it with the published result row.
 
 The proof search of a check is a queue of Work rows in the proof store
 (`proof_frontier/proof_work.slang`). Row `i` below the root count is source
@@ -427,7 +436,7 @@ A recorded step is `plan_proof_wave` and four lane kernels launched indirectly:
 
 | Kernel | Work of one lane |
 |---|---|
-| `build_proof_goals` | Copies the goal's predicate roots into the proof store. |
+| `build_proof_goals` | Copies each predicate root in one walk, reserving each node and its child span as it visits them. |
 | `select_proof_assumptions` | Tests the ancestors for a cycle and finds a caller assumption. |
 | `select_proof_implementations` | Finds the exact implementation, or the generic one without an assumption. |
 | `write_proof_rows` | Writes the proof, its bindings and one Work per prerequisite. |

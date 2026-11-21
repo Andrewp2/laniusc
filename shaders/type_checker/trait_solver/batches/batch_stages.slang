@@ -81,14 +81,13 @@ public void ts_batch_reduce_calls(uint local)
         }
         hypothesis = hypothesis || state == 2u;
     }
-    bool closed = false; SolverStatus status;
-    if (ts_bind_scratch(local, call, status)) status = ts_environment_is_closed(high.x, low.z, closed);
-    if (status.state != TS_VALID)
+    uint closure;
+    if (!ts_output_read(4u, call, 7u, closure) || closure < 1u || closure > 2u)
     {
-        uint state = status.state == TS_RESOURCE_LIMIT ? 5u : (status.state == TS_UNSUPPORTED ? 6u : 4u);
-        ts_call_status(call, state, status.detail, TS_INVALID, status.required, status.available);
-        ts_batch_failure(status); return;
+        ts_call_status(call, 4u, 1u, TS_INVALID, 0u, 0u);
+        ts_batch_failure(ts_invalid(1u, call, high.x)); return;
     }
+    bool closed = closure == 2u;
     uint caller_owner; bool replay_context;
     if (!ts_context_goal_scope(low.x, caller_owner, replay_context))
     {

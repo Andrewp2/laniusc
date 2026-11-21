@@ -18,7 +18,7 @@ public static const uint OWNED_CONSTRAINT_STACK = 64u;
 public static const uint OWNED_CONSTRAINT_BINDINGS = 128u;
 public static const uint OWNED_CONSTRAINT_CONSTANT = 0x80000000u;
 
-public interface IConstraintMatchGraph : ITypeIdentityGraph
+public interface IConstraintMatchGraph : ITypeIdentityGraph, ITypeNodeFields
 {
     static bool parameter_is_valid(uint reference, bool constant);
 }
@@ -196,6 +196,8 @@ public struct RigidConstraintGoalGraph<Graph : IConstraintMatchGraph> : IOwnedCo
     }
     public static uint metadata(uint instance, uint field)
     { return Graph.metadata(instance, field); }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    { return Graph.node_fields(instance, read, nominal, element); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     { return Graph.argument(instance, slot, tag, payload); }
 }

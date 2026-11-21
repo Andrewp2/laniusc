@@ -271,6 +271,8 @@ public bool term_has_node(uint term)
 // Ranks from the scan.
 public uint rank(uint lane, uint counter) { return rc_scan[lane * 4u + counter / 4u][counter & 3u]; }
 public uint total(uint counter) { return rc_state[RC_S_TOTALS + counter]; }
+uint lane_count(uint lane, uint counter)
+{ return rc_flags[lane * 4u + counter / 4u][counter & 3u]; }
 
 public uint decl_atom(uint decl, uint which)
 {
@@ -1010,10 +1012,10 @@ public void fill_term(uint lane, uint term)
 }
 public void fill_dir(uint lane, uint entry)
 {
-    if (!committed_entry(entry)) return;
-    uint kind = entry_kind(entry);
-    if (!owner_kind(kind)) return;
-    uint decl = dir(entry, 0u).x;
+    if (lane_count(lane, RC_C_OWNER) == 0u) return;
+    uint4 header = dir(entry, 0u);
+    uint4 signature = dir(entry, 1u);
+    uint decl = header.x;
     uint4 key = rt_decl_key[decl];
     uint job = dir(entry, 3u).z;
     uint owner = rank(lane, RC_C_OWNER);
@@ -1024,25 +1026,25 @@ public void fill_dir(uint lane, uint entry)
     uint own = 0u;
     for (uint i = 0u; i < counts.x + counts.y && i < 128u; i++)
     {
-        uint param = rt_binders[dir(entry, 1u).x + i];
+        uint param = rt_binders[signature.x + i];
         if (!valid_param(param) || rt_param_key[param].x != decl) continue;
         bool constant = i >= counts.x;
         put4(3u, params + own, 0u, uint4(owner, param_atom(param), constant ? i - counts.x : i, constant ? 1u : 0u));
         own++;
     }
     uint predicates = own_facts.y == 0u ? 0u : predicate_row(own_facts.x);
-    uint callable = callable_kind(kind) ? rank(lane, RC_C_CALLABLE) : RC_INVALID;
+    uint callable = lane_count(lane, RC_C_CALLABLE) != 0u ? rank(lane, RC_C_CALLABLE) : RC_INVALID;
     put4(2u, owner, 0u, uint4(decl_atom(decl, 1u), job, key.w, parent == RC_INVALID ? RC_INVALID : owner_row(parent)));
     put4(2u, owner, 4u, uint4(first_or_zero(params, own), own, predicates, own_facts.y));
     put(2u, owner, 8u, callable);
     if (callable != RC_INVALID)
         put4(4u, callable, 0u, uint4(decl_atom(decl, 3u), owner, counts.x, counts.y));
-    if (trait_impl(entry))
+    if (lane_count(lane, RC_C_IMPL) != 0u)
     {
-        uint term = impl_trait_term(entry);
+        uint term = rt_sigs[signature.z + 1u];
         uint arity = term_arity(term);
         uint roots = rank(lane, RC_C_ROOT);
-        put_root(roots, rt_sigs[dir(entry, 1u).z]);
+        put_root(roots, rt_sigs[signature.z]);
         for (uint i = 0u; i < arity; i++) put_root(roots + 1u + i, rt_term_arg(term, i));
         uint methods = own_facts.w == 0u ? 0u : rc_impl_first[entry] - 1u;
         uint row = rank(lane, RC_C_IMPL);
@@ -1050,11 +1052,11 @@ public void fill_dir(uint lane, uint entry)
         put4(9u, row, 4u, uint4(first_or_zero(roots + 1u, arity), arity, methods, own_facts.w));
         put4(9u, row, 8u, uint4(predicates, own_facts.y, 0u, 0u));
     }
-    if (callable != RC_INVALID && rc_entry[entry * 2u] != 0u)
+    if (lane_count(lane, RC_C_CONTEXT) != 0u)
     {
         uint context = rank(lane, RC_C_CONTEXT);
         uint assumptions = rank(lane, RC_C_ASSUME);
-        uint count = applicable_count(entry);
+        uint count = lane_count(lane, RC_C_ASSUME);
         put4(13u, context, 0u, uint4(job, owner, RC_INVALID, first_or_zero(assumptions, count)));
         put4(13u, context, 4u, uint4(count, 0u, RC_INVALID, 0u));
         for (uint i = 0u; i < count; i++)
@@ -1098,19 +1100,18 @@ public void fill_trait(uint lane, uint record)
 }
 public void fill_use(uint lane, uint use)
 {
-    if (!use_selected(use)) return;
+    if (lane_count(lane, RC_C_CALL) == 0u) return;
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     uint caller = entry_of(u0.x);
     uint callee = entry_of(u0.w);
-    uint2 counts = binder_counts(callee);
-    uint k = counts.x + counts.y;
+    uint k = lane_count(lane, RC_C_BIND);
     uint call = rank(lane, RC_C_CALL);
     uint env = rank(lane, RC_C_ENV);
     uint bindings = rank(lane, RC_C_BIND);
     uint roots = rank(lane, RC_C_ROOT);
     uint obligations = rank(lane, RC_C_OBLIG);
-    uint count = applicable_count(callee);
+    uint count = lane_count(lane, RC_C_OBLIG);
     uint context = rank(lane_of(RC_R_DIR, caller), RC_C_CONTEXT);
     put4(15u, call, 0u, uint4(context, use, owner_row(caller), callable_row(callee)));
     put4(15u, call, 4u, uint4(env, first_or_zero(obligations, count), count, 0u));

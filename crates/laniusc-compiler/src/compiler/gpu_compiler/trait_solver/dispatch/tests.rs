@@ -249,6 +249,37 @@ pub impl Echo for bool {
     assert_admitted(&compiler, freeze_units(&[&unit]));
 }
 
+#[test]
+fn gpu_catalog_ranks_head_faults_before_member_faults_in_the_same_chunk() {
+    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+    let unit = compile_unit(
+        &compiler,
+        [82, 0],
+        r#"
+module catalog_cases::fault_order;
+pub trait Echo { pub fn copy(self, value:i32)->i32; }
+pub impl Echo for bool { pub fn copy(self, value:i32)->i32 { return value; } }
+pub impl Echo for i32 { pub fn copy(self, value:i32)->i32 { return value; } }
+"#,
+        Vec::new(),
+    );
+    let mut catalog = freeze_units(&[&unit]);
+    assert_eq!(catalog.slices[9].count, 2);
+    let packet = Arc::get_mut(&mut catalog).unwrap();
+    let first_method = packet.tables.row(9, 0).unwrap()[6];
+    set_catalog_word(packet, 10, first_method, 3, 4); // Invalid member form on row 0.
+    set_catalog_word(packet, 9, 1, 11, 1); // Nonzero reserved head word on row 1.
+    let error = expect_gpu_admission_failure(admit_catalog(&compiler, catalog), "head before member", 2, 2);
+    assert!(error.contains("[2, 2, 1,"), "{error}");
+
+    let mut catalog = freeze_units(&[&unit]);
+    let packet = Arc::get_mut(&mut catalog).unwrap();
+    set_catalog_word(packet, 9, 0, 10, 1); // Unsupported head flag on row 0.
+    set_catalog_word(packet, 9, 1, 11, 1);
+    let error = expect_gpu_admission_failure(admit_catalog(&compiler, catalog), "head row order", 4, 11);
+    assert!(error.contains("[4, 11, 0,"), "{error}");
+}
+
 fn compiled_catalog_fixture(compiler: &GpuCompiler<'_>) -> CompiledSourcePackUnit {
     compile_unit(
         compiler,

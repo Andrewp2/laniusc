@@ -50,6 +50,25 @@ public struct WorkGoalBindings : IProofNormalizationBindings
     }
 }
 
+// Each normalized compound owns a node and its own contiguous child span.
+// Allocate them as the walk reaches the compound, so the lane need only
+// normalize each root once. A failed walk leaves its rows unaccepted.
+public struct WorkGoalSink : IProofNormalizationSink
+{
+    public override static bool reserve_during_walk() { return true; }
+    public override static SolverStatus reserve(uint edges, uint subject, out uint node, out uint edge)
+    {
+        edge = 0u;
+        SolverStatus status = pps_reserve(PPS_TERM_NODES, 1u, subject, node);
+        if (status.state != TS_VALID || edges == 0u) return status;
+        return pps_reserve(PPS_TERM_EDGES, edges, subject, edge);
+    }
+    public static bool begin_node(uint mode, uint row, uint4 low, uint4 high)
+    { return SolverProofTermSink.begin_node(mode, row, low, high); }
+    public static bool set_child(uint mode, uint row, uint slot, uint2 reference)
+    { return SolverProofTermSink.set_child(mode, row, slot, reference); }
+}
+
 // A root Work's row, from source obligation `first + work`.
 SolverStatus pps_begin_root_work(uint work, out uint4 key, out uint4 link)
 {
@@ -68,10 +87,6 @@ SolverStatus pps_begin_root_work(uint work, out uint4 key, out uint4 link)
     return ts_ok();
 }
 
-// Each root is counted, then emitted into rows reserved for exactly that
-// count. The counts of the roots wait in the goal's Root2 rows, which the
-// emission then overwrites with the roots. One loop holds the normalizer's
-// one call site and the one reservation site.
 public SolverStatus pps_build_goal(uint work)
 {
     uint4 key; uint4 link; SolverStatus status;
@@ -91,80 +106,41 @@ public SolverStatus pps_build_goal(uint work)
         (arguments.y == 0u && arguments.x != 0u) ||
         !ts_row_span(7u, arguments.x, arguments.y) || !ts_nominal_is_valid(predicate.z))
         return ts_invalid(65u, work, link.y);
-    uint root_count = arguments.y + 1u;
-    uint first_root = 0u; uint goal = 0u; uint node_cursor = 0u; uint edge_cursor = 0u;
-    uint node_count = 0u; uint edge_count = 0u; bool all_closed = true;
+    uint first_root; uint goal;
+    status = pps_reserve(PPS_TERM_ROOTS, arguments.y, work, first_root);
+    if (status.state != TS_VALID) return status;
+    status = pps_reserve(PPS_GOALS, 1u, work, goal);
+    if (status.state != TS_VALID) return status;
+    bool all_closed = true;
     uint2 subject = uint2(0u, TS_INVALID);
-    uint nodes = 0u; uint atoms;
+    uint atoms;
     if (!ts_table_count(1u, atoms)) return ts_invalid(1u, work, 1u);
     uint hash = scoped_type_hash_mix(scoped_type_hash_mix(2166136261u, predicate.z), arguments.y);
     [loop]
-    for (uint step = 0u; step < 2u * root_count; step++)
+    for (uint ordinal = 0u; ordinal <= arguments.y; ordinal++)
     {
-        bool emit = step >= root_count;
-        uint ordinal = emit ? step - root_count : step;
-        if (ordinal == 0u)
-        {
-            // Before counting: the goal and its roots. Before emitting: the
-            // nodes and edges of every root.
-            uint2 reserved = uint2(0u);
-            [loop]
-            for (uint unit = 0u; unit < 2u; unit++)
-            {
-                uint table = emit ? (unit == 0u ? PPS_TERM_NODES : PPS_TERM_EDGES) :
-                    (unit == 0u ? PPS_TERM_ROOTS : PPS_GOALS);
-                uint count = emit ? (unit == 0u ? node_count : edge_count) :
-                    (unit == 0u ? root_count : 1u);
-                uint first;
-                status = pps_reserve(table, count, work, first);
-                if (status.state != TS_VALID) return status;
-                reserved[unit] = first;
-            }
-            if (emit)
-            {
-                node_cursor = reserved.x; edge_cursor = reserved.y;
-                if (!pps_count(PPS_TERM_NODES, nodes)) return ts_invalid(1u, work, PPS_TERM_NODES);
-            }
-            else { first_root = reserved.x; goal = reserved.y; }
-        }
-        uint2 input; uint2 counted = uint2(0u);
-        if (!ts_read_root(ordinal == 0u ? predicate.w : arguments.x + ordinal - 1u, input) ||
-            (emit && !pps_read2(PPS_TERM_ROOTS, first_root + ordinal, 0u, counted)))
+        uint2 input;
+        if (!ts_read_root(ordinal == 0u ? predicate.w : arguments.x + ordinal - 1u, input))
             return ts_invalid(1u, work, ordinal);
         ProofNormalizationReservation reservation = (ProofNormalizationReservation)0;
-        reservation.first_node = counted.x == 0u ? 0u : node_cursor;
-        reservation.node_count = counted.x;
-        reservation.first_edge = counted.y == 0u ? 0u : edge_cursor;
-        reservation.edge_count = counted.y;
         uint2 normalized; bool closed; ProofNormalizationCounts measured;
-        status = ts_normalize_proof_root<WorkGoalGraphs, WorkGoalBindings, SolverProofTermSink>(
+        status = ts_normalize_proof_root<WorkGoalGraphs, WorkGoalBindings, WorkGoalSink>(
             input, link.z, owner, ordinal == 0u ? TS_ADMITTED_DOMAIN_TYPE : TS_ADMITTED_DOMAIN_EITHER,
-            emit, reservation, normalized, closed, measured);
+            true, reservation, normalized, closed, measured);
         if (status.state != TS_VALID) return status;
-        if (!emit)
-        {
-            if (require_closed && !closed) return ts_invalid(10u, work, ordinal);
-            if (measured.nodes > TS_INVALID - node_count || measured.edges > TS_INVALID - edge_count)
-                return ts_limit(64u, work, TS_INVALID, TS_INVALID - 1u);
-            node_count += measured.nodes; edge_count += measured.edges;
-            all_closed = all_closed && closed;
-            if (!pps_write2(PPS_TERM_ROOTS, first_root + ordinal, 0u, uint2(measured.nodes, measured.edges)))
-                return ts_invalid(1u, work, ordinal);
-            continue;
-        }
-        uint root_hash;
-        if (measured.nodes != counted.x || measured.edges != counted.y)
-            return ts_invalid(65u, work, ordinal);
-        if (!pps_write2(PPS_TERM_ROOTS, first_root + ordinal, 0u, normalized))
+        if (require_closed && !closed) return ts_invalid(10u, work, ordinal);
+        all_closed = all_closed && closed;
+        if (ordinal == 0u) subject = normalized;
+        else if (!pps_write2(PPS_TERM_ROOTS, first_root + ordinal - 1u, 0u, normalized))
             return ts_invalid(1u, work, ordinal);
+        uint nodes; uint root_hash;
+        if (!pps_count(PPS_TERM_NODES, nodes)) return ts_invalid(1u, work, PPS_TERM_NODES);
         if (!scoped_type_ref_hash_scratch<SolverProofTermGraph>(normalized.x, normalized.y,
             TS_INVALID, nodes, atoms, root_hash)) return ts_invalid(15u, work, ordinal);
         hash = scoped_type_hash_mix(hash, root_hash);
-        if (ordinal == 0u) subject = normalized;
-        node_cursor += counted.x; edge_cursor += counted.y;
     }
     if (!pps_write8(PPS_GOALS, goal,
-        uint4(predicate.z, subject.x, subject.y, arguments.y == 0u ? 0u : first_root + 1u),
+        uint4(predicate.z, subject.x, subject.y, first_root),
         uint4(arguments.y, hash, all_closed ? 1u : 0u, 0u)) ||
         !pps_write_word(PPS_WORK, work, PPS_WORK_GOAL, goal) ||
         !pps_write_word(PPS_WORK, work, PPS_WORK_STATE, PPS_WORK_BUILT))

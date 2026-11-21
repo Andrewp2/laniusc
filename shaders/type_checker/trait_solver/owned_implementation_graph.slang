@@ -1,3 +1,4 @@
+import type_checker.concrete_types.concrete_type_equality;
 import type_checker.trait_solver.constant_atoms;
 // Exact selected-header ownership for generic trait selection. Inherent method
 // resolution keeps its own contract; this adapter is used only by the program
@@ -21,6 +22,8 @@ public struct CatalogImplementationPatternGraph : IOwnedConstraintPatternGraph
     { return ts_admitted_parameter_has_domain(reference, constant); }
     public static uint metadata(uint instance, uint field)
     { return ts_graph_metadata(instance, field); }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    { return ts_graph_fields(instance, read, nominal, element); }
     public static bool argument(uint instance, uint slot, out uint tag, out uint payload)
     { return ts_graph_argument(instance, slot, tag, payload); }
     public static bool owner_parameter_count(uint owner, bool constant, out uint count)

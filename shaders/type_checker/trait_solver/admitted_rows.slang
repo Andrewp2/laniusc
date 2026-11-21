@@ -1,3 +1,4 @@
+import type_checker.concrete_types.concrete_type_equality;
 // Consumers of complete prior row admission, never bootstrap validators.
 // Catalog dispatches admit atoms/owners/parameters before callable consumers,
 // and nodes/edges/roots before definition graph preflight. Each stage covers
@@ -49,9 +50,9 @@ public bool ts_admitted_constant_reference_shape(uint2 reference)
 public bool ts_read_admitted_owner(uint owner, out uint4 low, out uint4 high)
 {
     low = uint4(TS_INVALID, TS_INVALID, TS_INVALID, TS_INVALID); high = low;
-    SolverTable descriptor;
+    uint directory; uint prefix; uint suffix;
     // Definitions and lexical owners never come from a batch suffix.
-    return ts_descriptor(2u, descriptor) && owner < descriptor.catalog_count &&
+    return ts_input_table_rows(2u, directory, prefix, suffix) && owner < prefix &&
         ts_read8(2u, owner, low, high) && high.y <= 64u &&
         (high.y != 0u || high.x == 0u) && ts_row_span(3u, high.x, high.y);
 }
@@ -141,6 +142,24 @@ public uint ts_node_row_field(uint4 low, uint4 high, uint field)
     uint middle = select(field == 3u, high.x, select(field == 4u, high.y, upper));
     uint lower = select(field == 1u, select(named, low.y, TS_INVALID), select(named, low.w, 0u));
     return select(field == 0u, low.x, select(field <= 2u, lower, middle));
+}
+// A packed node carries its entire header and inline references in one read.
+public TypeNodeFields ts_node_row_fields(uint4 low, uint4 high, bool valid,
+    uint nominal, uint element)
+{
+    bool named = valid && low.x == 1u;
+    bool compound = valid && low.x >= 2u && low.x <= 4u;
+    bool array = compound && low.x == 2u;
+    TypeNodeFields fields = {
+        select(valid, low.x, TS_INVALID),
+        select(named && (nominal & 2u) != 0u, low.y, TS_INVALID),
+        select(named && (nominal & 4u) != 0u, low.w, TS_INVALID),
+        select(compound && (element & TYPE_NODE_ELEMENT) != 0u, high.xy, uint2(TS_INVALID)),
+        select(array && (element & TYPE_NODE_LENGTH) != 0u,
+            uint2(high.z & 0x7fffffffu, high.w), uint2(TS_INVALID)),
+        uint3(TS_INVALID)
+    };
+    return fields;
 }
 // Shape validation happened once for every Node row, including unused nodes.
 // Keep the local bounds required for projections; do not revisit child shapes.

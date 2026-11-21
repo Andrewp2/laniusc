@@ -74,9 +74,10 @@ SolverStatus ts_admit_reference_leaf<Graph : ITsAdmissionGraph>(
 
 SolverStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
     uint root, uint environment, uint visible_owner,
-    bool require_closed, out uint visits)
+    bool require_closed, out bool closed)
 {
-    visits = 0u;
+    closed = true;
+    uint visits = 0u;
     uint2 root_reference; uint node_count;
     if (!ts_read_root(root, root_reference) || !ts_table_count(5u, node_count))
         return ts_invalid(1u, root, TS_INVALID);
@@ -103,6 +104,7 @@ SolverStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
             SolverStatus status = ts_admit_reference_leaf<Graph>(
                 root, visible_owner, require_closed, reference);
             if (status.state != TS_VALID) return status;
+            if (reference.x == 2u || reference.x == (TS_GRAPH_CONSTANT | 2u)) closed = false;
 
             bool constant = reference.x == (TS_GRAPH_CONSTANT | 1u) ||
                 reference.x == (TS_GRAPH_CONSTANT | 2u) ||
@@ -176,18 +178,18 @@ SolverStatus ts_admit_root_with_graph<Graph : ITsAdmissionGraph>(
 // implementation for both graph policies, including every diagnostic/budget.
 public SolverStatus ts_admit_root(
     uint root, uint environment, uint visible_owner,
-    bool require_closed, out uint visits)
+    bool require_closed, out bool closed)
 {
     return ts_admit_root_with_graph<TraitSolverTypeGraph>(
-        root, environment, visible_owner, require_closed, visits);
+        root, environment, visible_owner, require_closed, closed);
 }
 
 // Catalog callers cannot supply an environment. Symbolic predicate leaves still
 // require exact identity and lexical visibility; closed implementations reject
 // them through the same shared walker.
 public SolverStatus ts_admit_catalog_definition_root(
-    uint root, uint visible_owner, bool require_closed, out uint visits)
+    uint root, uint visible_owner, bool require_closed, out bool closed)
 {
     return ts_admit_root_with_graph<CatalogTraitSolverTypeGraph>(
-        root, TS_INVALID, visible_owner, require_closed, visits);
+        root, TS_INVALID, visible_owner, require_closed, closed);
 }

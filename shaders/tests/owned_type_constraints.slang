@@ -1,3 +1,4 @@
+import type_checker.concrete_types.concrete_type_equality;
 import shared.semantics.primitive_types;
 // Shared bounded interpreter and exact graph fixtures for the static matcher
 // operation-family entries. This file has no entrypoint. The selected family's
@@ -157,6 +158,8 @@ struct LeftGraph : IOwnedConstraintPatternGraph
     static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { scalar = 0u; child = uint2(0u, INVALID); return false; }
     static uint metadata(uint node, uint field) { return probe_metadata(0u, node, field); }
+    static TypeNodeFields node_fields(uint node, bool read, uint nominal, uint element)
+    { return type_node_fields<LeftGraph>(node, read, nominal, element); }
     static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { return probe_argument(0u, node, slot, tag, payload); }
     static bool parameter_is_valid(uint atom, bool constant) { return parameter_valid(atom, constant); }
@@ -174,6 +177,8 @@ struct RightGraph : IOwnedConstraintPatternGraph
     static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { scalar = 0u; child = uint2(0u, INVALID); return false; }
     static uint metadata(uint node, uint field) { return probe_metadata(1u, node, field); }
+    static TypeNodeFields node_fields(uint node, bool read, uint nominal, uint element)
+    { return type_node_fields<RightGraph>(node, read, nominal, element); }
     static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { return probe_argument(1u, node, slot, tag, payload); }
     static bool parameter_is_valid(uint atom, bool constant) { return parameter_valid(atom, constant); }
@@ -191,6 +196,8 @@ struct GoalGraph : IConstraintMatchGraph
     static bool constant_projection(uint row, out uint scalar, out uint2 child)
     { scalar = 0u; child = uint2(0u, INVALID); return false; }
     static uint metadata(uint node, uint field) { return probe_metadata(2u, node, field); }
+    static TypeNodeFields node_fields(uint node, bool read, uint nominal, uint element)
+    { return type_node_fields<GoalGraph>(node, read, nominal, element); }
     static bool argument(uint node, uint slot, out uint tag, out uint payload)
     { return probe_argument(2u, node, slot, tag, payload); }
     static bool parameter_is_valid(uint atom, bool constant) { return parameter_valid(atom, constant); }

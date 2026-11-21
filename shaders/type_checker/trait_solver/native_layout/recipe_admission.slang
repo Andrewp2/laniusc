@@ -73,8 +73,8 @@ public SolverStatus plr_admit_group(uint group)
         uint2 reference;
         if (!ts_read_root(row.y + i, reference) || !ts_admitted_type_reference_shape(reference))
             return ts_invalid(166u, group, row.y + i);
-        uint visits;
-        SolverStatus result = ts_admit_catalog_definition_root(row.y + i, recipe.y, false, visits);
+        bool root_closed;
+        SolverStatus result = ts_admit_catalog_definition_root(row.y + i, recipe.y, false, root_closed);
         if (result.state != TS_VALID) return result;
     }
     return ts_ok();

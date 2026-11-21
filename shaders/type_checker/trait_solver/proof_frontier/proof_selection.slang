@@ -34,19 +34,21 @@ public SolverStatus pps_find_implementation(uint goal, bool coarse,
     out uint selected, out OwnedConstraintState selected_state)
 {
     selected = TS_INVALID; selected_state = (OwnedConstraintState)0;
-    uint4 low; uint4 high; uint implementations; uint rows; uint buckets;
+    uint4 low; uint4 high; uint implementations; uint directory; uint catalog_atoms; uint batch_atoms; uint buckets;
     uint candidate; uint table = coarse ? 11u : 6u;
     if (!pps_read8(PPS_GOALS, goal, low, high) ||
-        !ts_catalog_count(9u, implementations) || !ts_work_counts(rows, buckets))
+        !ts_catalog_count(9u, implementations) ||
+        !ts_input_table_rows(1u, directory, catalog_atoms, batch_atoms) ||
+        !ts_bucket_count(max(implementations, catalog_atoms), buckets))
         return ts_invalid(1u, goal, table);
     uint hash = coarse ? ts_coarse_implementation_hash(low.x, high.x) : high.y;
     if (!ts_output_read(coarse ? 12u : 7u, hash & (buckets - 1u), 0u, candidate))
         return ts_invalid(1u, goal, table);
     uint shape = 0u;
-    uint nodes; uint atoms;
+    uint nodes;
     if (coarse && candidate != TS_INVALID && high.x <= 32u && high.z <= 1u && high.w == 0u &&
-        pps_count(PPS_TERM_NODES, nodes) && ts_table_count(1u, atoms))
-        shape = ts_self_shape<SolverProofTermGraph>(low.yz, nodes, atoms);
+        pps_count(PPS_TERM_NODES, nodes))
+        shape = ts_self_shape<SolverProofTermGraph>(low.yz, nodes, catalog_atoms + batch_atoms);
 
     // The directory is fixed throughout the chain. Check it once before
     // using the bounded links in the catalog arena.

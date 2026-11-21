@@ -7,8 +7,9 @@ import type_checker.scoped_types.scoped_type_hash;
 import type_checker.trait_solver.scoped_type_scratch;
 
 public SolverStatus ts_admit_environment(
-    uint environment, uint expected_owner, uint caller_owner, uint form)
+    uint environment, uint expected_owner, uint caller_owner, uint form, out bool closed)
 {
+    closed = true;
     SolverStatus status = ts_admit_environment_header(environment, expected_owner, form);
     if (status.state != TS_VALID) return status;
     uint4 env;
@@ -17,12 +18,13 @@ public SolverStatus ts_admit_environment(
     {
         uint root;
         if (!ts_word(12u, env.y + index, 2u, root)) return ts_invalid(1u, environment, index);
-        uint visits;
+        bool root_closed;
         // Even parameters unused by a predicate must have admitted values.
         // A concrete body environment requires closed roots; call bindings may
         // retain exact parameters of the actual caller's lexical owner chain.
-        status = ts_admit_root(root, TS_INVALID, caller_owner, form == 0u, visits);
+        status = ts_admit_root(root, TS_INVALID, caller_owner, form == 0u, root_closed);
         if (status.state != TS_VALID) return status;
+        closed = closed && root_closed;
     }
     return ts_ok();
 }
@@ -34,8 +36,8 @@ public SolverStatus ts_hash_root(
     uint root, uint environment, uint visible_owner, bool require_closed, out uint hash)
 {
     hash = 0u;
-    uint visits;
-    SolverStatus status = ts_admit_root(root, environment, visible_owner, require_closed, visits);
+    bool root_closed;
+    SolverStatus status = ts_admit_root(root, environment, visible_owner, require_closed, root_closed);
     if (status.state != TS_VALID) return status;
     uint2 reference; uint nodes; uint atoms;
     if (!ts_read_root(root, reference) || !ts_table_count(5u, nodes) || !ts_table_count(1u, atoms))
@@ -52,11 +54,11 @@ public SolverStatus ts_equal_roots(
     out bool equal)
 {
     equal = false;
-    uint visits;
+    bool root_closed;
     SolverStatus status = ts_admit_root(
-        left_root, left_environment, left_visible_owner, left_closed, visits);
+        left_root, left_environment, left_visible_owner, left_closed, root_closed);
     if (status.state != TS_VALID) return status;
-    status = ts_admit_root(right_root, right_environment, right_visible_owner, right_closed, visits);
+    status = ts_admit_root(right_root, right_environment, right_visible_owner, right_closed, root_closed);
     if (status.state != TS_VALID) return status;
     uint2 left; uint2 right; uint nodes; uint atoms;
     if (!ts_read_root(left_root, left) || !ts_read_root(right_root, right) ||

@@ -1,3 +1,5 @@
+import type_checker.concrete_types.concrete_type_equality;
+import type_checker.trait_solver.scoped_type_scratch;
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.constant_atoms;
@@ -88,7 +90,7 @@ public bool plm_child(uint4 low, uint4 high, uint ordinal, out uint2 reference, 
     else return false;
     return plm_reference_of_kind(reference, !constant_child, !type_child);
 }
-public struct NativeLayoutTypeGraph : IParameterScopedTypeGraph, IProofNormalizationGraph
+public struct NativeLayoutTypeGraph : IScopedNodeGraph, IProofNormalizationGraph
 {
     public static bool constant_value(uint row, out uint3 value)
     { return plm_constant_value(row, value); }
@@ -111,6 +113,8 @@ public struct NativeLayoutTypeGraph : IParameterScopedTypeGraph, IProofNormaliza
         bool read = plm_node(instance, false, low, high);
         return select(read & (low.x <= 4u), ts_node_row_field(low, high, field), TS_INVALID);
     }
+    public static TypeNodeFields node_fields(uint instance, bool read, uint nominal, uint element)
+    { return type_node_fields<NativeLayoutTypeGraph>(instance, read, nominal, element); }
     public static bool argument(uint instance, uint ordinal, out uint tag, out uint payload)
     {
         tag = 0u; payload = TS_INVALID;
