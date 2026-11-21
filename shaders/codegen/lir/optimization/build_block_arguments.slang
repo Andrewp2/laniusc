@@ -23,11 +23,7 @@ struct AccessKey : IStepProgramRadixKey
 {
     static uint digit(uint row, uint step)
     {
-        uint subject_capacity = max(access_params.declaration_capacity, access_params.semantic_capacity);
-        uint bits = uint(firstbithigh(max(1u, subject_capacity - 1u)) + 1);
-        return radix_packed_u32x2_variable_bit_key(
-            opt_ir_accesses[row].subject, opt_ir_access_domain(opt_ir_access_kinds[row]),
-            bits, 1u, step);
+        return radix_byte_key(opt_ir_accesses[row].subject, step);
     }
 };
 
@@ -78,62 +74,34 @@ bool construct_declaration_accesses(inout StepProgram program, bool validate)
             validate_local_accesses(row, accesses, nodes, blocks, functions, parameters, locals);
     }
 
-    uint subjects = max(access_params.declaration_capacity, access_params.semantic_capacity);
-    uint bits = uint(firstbithigh(max(1u, subjects - 1u)) + 1);
-    uint digits = (bits + 8u) / 8u;
+    uint digits = (width(access_params.declaration_capacity) + 7u) / 8u;
     if (!step_program_radix_sort<AccessKey>(program, accesses, digits, opt_ir_access_order,
-            access_order_temporary, access_histogram, access_bucket_total)) return false;
+            access_order_temporary, access_histogram, access_bucket_total, true)) return false;
     if (!step_barrier(program)) return false;
 
     for (uint row = program.lane; row < accesses; row += program.lanes)
     {
         if (validate) validate_sorted_accesses(row, accesses);
-        mark_access_groups(row, accesses);
+        mark_access_declaration_blocks(row, accesses);
     }
     if (!step_barrier(program)) return false;
 
-    uint declarations = min(opt_ir_declaration_access_total[0u], accesses);
     if (!step_program_prefix_scan(program, accesses, opt_ir_access_group_start_flag,
-            opt_ir_access_group_prefix, opt_ir_access_group_total, scan_group_sums)) return false;
-    if (!step_barrier(program)) return false;
-
-    uint groups = min(opt_ir_access_group_total[0u], access_params.declaration_capacity);
-    for (uint row = program.lane; row < accesses; row += program.lanes)
-        scatter_access_groups(row, accesses);
-    if (!step_barrier(program)) return false;
-
-    for (uint row = program.lane; row < groups; row += program.lanes)
-        finalize_access_groups(row, groups, accesses, declarations);
-    for (uint row = program.lane; row < declarations; row += program.lanes)
-        mark_access_declaration_blocks(row, declarations);
-    if (!step_barrier(program)) return false;
-
-    for (uint row = program.lane; row < groups; row += program.lanes)
-        find_short_access_local_definitions(row, accesses);
-    for (uint row = (program.lane / STEP_PROGRAM_GROUP_LANES); row < groups; row += program.groups)
-    {
-        find_access_local_definitions(row, (program.lane % STEP_PROGRAM_GROUP_LANES), groups, accesses);
-        GroupMemoryBarrierWithGroupSync();
-    }
-    if (!step_program_prefix_scan(program, declarations, opt_ir_access_group_start_flag,
             opt_ir_access_group_prefix, opt_ir_declaration_block_total, scan_group_sums)) return false;
     if (!step_barrier(program)) return false;
 
     uint declaration_blocks = min(opt_ir_declaration_block_total[0u], access_params.access_capacity);
-    if (validate)
-    {
-        for (uint row = program.lane; row < accesses; row += program.lanes)
-            validate_access_local_definitions(row, accesses);
-    }
-    for (uint row = program.lane; row < declarations; row += program.lanes)
-        scatter_access_declaration_blocks(row, declarations, accesses);
+    for (uint row = program.lane; row < accesses; row += program.lanes)
+        scatter_access_declaration_blocks(row, accesses);
     if (!step_barrier(program)) return false;
 
     for (uint row = program.lane; row < declaration_blocks; row += program.lanes)
+        finalize_access_declaration_blocks(row, declaration_blocks, accesses);
+    if (validate)
     {
-        finalize_access_declaration_blocks(row, declaration_blocks, declarations, accesses);
-        if (validate)
-            validate_access_declaration_blocks(row, declaration_blocks, declarations, accesses);
+        if (!step_barrier(program)) return false;
+        for (uint row = program.lane; row < accesses; row += program.lanes)
+            validate_access_local_definitions(row, accesses);
     }
     return true;
 }
@@ -157,7 +125,7 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
     uint raw_seeds = opt_ir_ssa_demand_total[0u];
     uint seeds = min(raw_seeds, demand_params.demand_capacity);
     for (uint row = program.lane; row < declaration_rows; row += program.lanes)
-        scatter_value_demand_seeds(row, declaration_rows, accesses);
+        scatter_value_demand_seeds(row, declaration_rows, accesses, seeds);
     if (!step_barrier(program)) return false;
 
     if (validate)
@@ -166,17 +134,13 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
             validate_value_demand_seeds(row, declaration_rows, min(raw_seeds, demand_params.access_capacity));
     }
     for (uint row = program.lane; row < seeds; row += program.lanes)
-        publish_value_demand_seeds(row, seeds);
-    if (!step_barrier(program)) return false;
-
-    for (uint row = program.lane; row < seeds; row += program.lanes)
         close_value_demands(row, seeds, blocks, edges, accesses, declaration_blocks);
     if (!step_barrier(program)) return false;
 
     uint demands = min(opt_ir_ssa_demand_total[0u], demand_params.demand_capacity);
     uint digits = (width(demand_params.block_capacity) + width(demand_params.declaration_capacity) + 7u) / 8u;
     if (!step_program_radix_sort<DemandKey>(program, demands, digits, opt_ir_ssa_demand_order,
-            demand_order_temporary, demand_histogram, demand_bucket_total)) return false;
+            demand_order_temporary, demand_histogram, demand_bucket_total, true)) return false;
     if (!step_barrier(program)) return false;
 
     for (uint row = program.lane; row < demands; row += program.lanes)

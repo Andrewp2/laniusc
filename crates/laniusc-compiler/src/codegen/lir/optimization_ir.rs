@@ -131,19 +131,6 @@ pub struct OptIrAccessCore {
     pub block_id: u32,
 }
 
-/// One contiguous declaration group in the stable access ordering. Memory
-/// accesses use a separate domain and are not represented here. A declaration
-/// therefore owns at most one group and group capacity follows declaration
-/// capacity rather than instruction capacity.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
-pub struct OptIrAccessGroup {
-    pub subject: u32,
-    pub start: u32,
-    pub count: u32,
-    pub flags: u32,
-}
-
 /// One declaration's accesses within one basic block. Rows are ordered first
 /// by declaration and then by block. `access_start` addresses the stable
 /// declaration-access ordering; the next row's start (or the declaration
@@ -158,14 +145,14 @@ pub struct OptIrDeclarationBlock {
 }
 
 /// Incoming reaching-definition state for one [`OptIrDeclarationBlock`].
-/// Local and outgoing definitions are derived from the block's final ordered
-/// access and `local_definition_by_access`; storing those values again would
-/// double the mandatory SSA workspace. Reserved high values distinguish an
+/// The declaration/block lane records its final definition so predecessor
+/// queries read it directly during demand closure. Reserved high values distinguish an
 /// unused entry from an unresolved incoming value and, later, a merge value.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
 pub struct OptIrReachingDefinitionState {
     pub incoming_definition: u32,
+    pub outgoing_definition: u32,
 }
 
 /// One memoized reaching-definition request used by demand-driven SSA
@@ -224,32 +211,14 @@ pub struct OptIrIncomingValue {
     pub value: u32,
 }
 
-/// One compact group in the stable value-use ordering. `start/count` address
-/// the canonical use columns; values with no users own no group row.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
-pub struct OptIrUseGroup {
-    pub value: u32,
-    pub start: u32,
-    pub count: u32,
-}
-
 /// One immediate-dominator identity per dense basic block. This is optimizer
 /// workspace rather than a backend artifact: structured SSA consumes it to
 /// place block arguments and validate rewritten uses.
 ///
 /// Entry blocks dominate themselves. Blocks with no forward predecessor are
-/// marked unreachable. Genuine forward joins remain unresolved until the
-/// dominance-construction rounds establish their common ancestor.
+/// marked unreachable. Joins use the common ancestor of their live forward
+/// predecessors.
 pub type OptIrImmediateDominator = u32;
-
-/// Binary-lifting workspace used while deriving a dominator range.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
-pub struct OptIrDominatorJump {
-    pub ancestor: u32,
-    pub distance: u32,
-}
 
 /// One directed-arc link in the dominator-tree Euler tour. Parallel list
 /// ranking replaces `previous` by progressively earlier predecessors while
@@ -279,15 +248,12 @@ mod tests {
         assert_eq!(std::mem::size_of::<OptIrFunction>(), 32);
         assert_eq!(std::mem::size_of::<OptIrRegion>(), 16);
         assert_eq!(std::mem::size_of::<OptIrAccessCore>(), 8);
-        assert_eq!(std::mem::size_of::<OptIrAccessGroup>(), 16);
         assert_eq!(std::mem::size_of::<OptIrDeclarationBlock>(), 12);
-        assert_eq!(std::mem::size_of::<OptIrReachingDefinitionState>(), 4);
+        assert_eq!(std::mem::size_of::<OptIrReachingDefinitionState>(), 8);
         assert_eq!(std::mem::size_of::<OptIrSsaDemand>(), 8);
         assert_eq!(std::mem::size_of::<OptIrBlockArgument>(), 16);
         assert_eq!(std::mem::size_of::<OptIrBlockArgumentIncoming>(), 8);
         assert_eq!(std::mem::size_of::<OptIrIncomingValue>(), 8);
-        assert_eq!(std::mem::size_of::<OptIrUseGroup>(), 12);
-        assert_eq!(std::mem::size_of::<OptIrDominatorJump>(), 8);
         assert_eq!(std::mem::size_of::<OptIrDominatorTourLink>(), 8);
     }
 

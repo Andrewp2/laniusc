@@ -71,15 +71,8 @@ public uint opt_ir_outgoing_local_definition_in(
     if (key.declaration != declaration || key.block != block)
         return SSA_DEMAND_INVALID;
 
-    uint order_end = row + 1u < declaration_block_total
-        ? opt_ir_declaration_blocks[row + 1u].access_start
-        : access_total;
-    if (order_end == 0u || order_end > access_total)
-        return SSA_DEMAND_INVALID;
-    uint access_id = opt_ir_access_order[order_end - 1u];
-    return access_id < access_total
-        ? opt_ir_local_definition_by_access[access_id]
-        : SSA_DEMAND_INVALID;
+    uint definition = opt_ir_reaching_definition_states[row].outgoing_definition;
+    return definition < access_total ? definition : SSA_DEMAND_INVALID;
 }
 
 public uint opt_ir_outgoing_local_definition(
@@ -224,7 +217,42 @@ void scatter_value_demand_seeds_structure_failure(uint row)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
 }
 
-public void scatter_value_demand_seeds(uint canonical_row, uint total, uint access_total)
+void publish_value_demand_seeds_capacity(uint required, uint available)
+{
+    InterlockedOr(lowering_status[0u].flags,
+        LOWERING_STATUS_OPTIMIZATION_CAPACITY);
+    InterlockedMax(lowering_status[0u].required_capacity, required);
+    lowering_status[0u].available_capacity = available;
+}
+
+void publish_value_demand_seeds_structure_failure(uint row)
+{
+    uint ignored;
+    InterlockedCompareExchange(
+        lowering_status[0u].diagnostic_reason, 0u, 101u, ignored);
+    InterlockedOr(lowering_status[0u].flags,
+        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
+    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
+}
+
+void publish_value_demand_seed(OptIrSsaDemand demand, uint row)
+{
+    uint hash_capacity = demand_params.demand_capacity * 2u + 1u;
+    uint hash_slot = 0xffffffffu;
+    uint result = ssa_sparse_insert_key(
+        demand.declaration,
+        demand.block,
+        hash_capacity,
+        opt_ir_ssa_sparse_declaration,
+        opt_ir_ssa_sparse_block,
+        hash_slot);
+    if (result == SSA_SPARSE_INSERT_FULL)
+        publish_value_demand_seeds_capacity(hash_capacity + 1u, hash_capacity);
+    else if (result != SSA_SPARSE_INSERTED)
+        publish_value_demand_seeds_structure_failure(row);
+}
+
+public void scatter_value_demand_seeds(uint canonical_row, uint total, uint access_total, uint seeds)
 {
     if (canonical_row >= total ||
         opt_ir_ssa_demand_seed_flag[canonical_row] == 0u)
@@ -245,6 +273,7 @@ public void scatter_value_demand_seeds(uint canonical_row, uint total, uint acce
         demand.declaration = access.subject;
         demand.block = access.block_id;
         opt_ir_ssa_demands[dense_row] = demand;
+        if (dense_row < seeds) publish_value_demand_seed(demand, dense_row);
     }
 }
 
@@ -304,44 +333,6 @@ public void validate_value_demand_seeds(uint row, uint row_total, uint demand_to
 
 // Publishes the canonical seed prefix into the exact sparse set. Each seed row
 // is the root of one lane of the following closure dispatch.
-
-void publish_value_demand_seeds_capacity(uint required, uint available)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_CAPACITY);
-    InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = available;
-}
-
-void publish_value_demand_seeds_structure_failure(uint row)
-{
-    uint ignored;
-    InterlockedCompareExchange(
-        lowering_status[0u].diagnostic_reason, 0u, 101u, ignored);
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
-}
-
-public void publish_value_demand_seeds(uint row, uint seed_total)
-{
-    if (row >= seed_total) return;
-
-    OptIrSsaDemand demand = opt_ir_ssa_demands[row];
-    uint hash_capacity = demand_params.demand_capacity * 2u + 1u;
-    uint hash_slot = 0xffffffffu;
-    uint result = ssa_sparse_insert_key(
-        demand.declaration,
-        demand.block,
-        hash_capacity,
-        opt_ir_ssa_sparse_declaration,
-        opt_ir_ssa_sparse_block,
-        hash_slot);
-    if (result == SSA_SPARSE_INSERT_FULL)
-        publish_value_demand_seeds_capacity(hash_capacity + 1u, hash_capacity);
-    else if (result != SSA_SPARSE_INSERTED)
-        publish_value_demand_seeds_structure_failure(row);
-}
 
 // Computes the sparse backward block-entry-demand closure without host
 // iteration, one lane per seed demand. A lane walks backward from its seed

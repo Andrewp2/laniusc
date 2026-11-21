@@ -124,14 +124,6 @@ struct OptIrAccessCore
     uint block_id;
 };
 
-struct OptIrAccessGroup
-{
-    uint subject;
-    uint start;
-    uint count;
-    uint flags;
-};
-
 struct OptIrDeclarationBlock
 {
     uint access_start;
@@ -142,6 +134,7 @@ struct OptIrDeclarationBlock
 struct OptIrReachingDefinitionState
 {
     uint incoming_definition;
+    uint outgoing_definition;
 };
 
 struct OptIrSsaDemand
@@ -174,57 +167,6 @@ struct OptIrIncomingValue
 {
     uint predecessor;
     uint value;
-};
-
-struct OptIrUseGroup
-{
-    uint value;
-    uint start;
-    uint count;
-};
-
-static const uint OPT_IR_USE_FIXED = 0u;
-static const uint OPT_IR_USE_CALL_ARGUMENT = 1u;
-static const uint OPT_IR_USE_AGGREGATE_ELEMENT = 2u;
-static const uint OPT_IR_USE_BLOCK_ARGUMENT_INCOMING = 3u;
-static const uint OPT_IR_USE_KIND_SHIFT = 30u;
-static const uint OPT_IR_USE_FIXED_ORDINAL_SHIFT = 28u;
-static const uint OPT_IR_USE_FIXED_NODE_MASK = 0x0fffffffu;
-static const uint OPT_IR_USE_ROW_MASK = 0x3fffffffu;
-
-uint opt_ir_pack_fixed_use(uint node, uint ordinal)
-{
-    return (min(ordinal, 3u) << OPT_IR_USE_FIXED_ORDINAL_SHIFT) |
-        (node & OPT_IR_USE_FIXED_NODE_MASK);
-}
-
-uint opt_ir_pack_side_use(uint kind, uint row)
-{
-    return (min(kind, OPT_IR_USE_BLOCK_ARGUMENT_INCOMING) <<
-        OPT_IR_USE_KIND_SHIFT) | (row & OPT_IR_USE_ROW_MASK);
-}
-
-uint opt_ir_use_kind(uint packed)
-{
-    return packed >> OPT_IR_USE_KIND_SHIFT;
-}
-
-uint opt_ir_use_row(uint packed)
-{
-    return opt_ir_use_kind(packed) == OPT_IR_USE_FIXED
-        ? packed & OPT_IR_USE_FIXED_NODE_MASK
-        : packed & OPT_IR_USE_ROW_MASK;
-}
-
-uint opt_ir_use_fixed_ordinal(uint packed)
-{
-    return (packed >> OPT_IR_USE_FIXED_ORDINAL_SHIFT) & 3u;
-}
-
-struct OptIrDominatorJump
-{
-    uint ancestor;
-    uint distance;
 };
 
 struct OptIrDominatorTourLink

@@ -1,8 +1,6 @@
 import codegen.lir.lowering_ir;
 import codegen.lir.optimization_ir;
 import codegen.lir.optimization.argument_tables;
-import radix.radix_digits;
-import shared.collectives.prefix_scan;
 
 bool opt_ir_node_has_cfg_owner(uint node, uint node_total)
 {
@@ -16,16 +14,15 @@ bool opt_ir_node_is_executable(uint node, uint node_total)
         opt_ir_reachable[opt_ir_control[node].block_id] != 0u;
 }
 
-static const uint WORKGROUP_SIZE = 256u;
-static const uint MAX_GROUPS_X = 65535u;
 
 public void mark_local_accesses(uint position, uint total)
 {
     if (position >= total) return;
 
     uint node = semantic_schedule_order[position];
+    uint kind = node < total ? opt_ir_access_kind(opt_ir_core[node]) : OPT_IR_ACCESS_INVALID;
     opt_ir_access_flag[position] = opt_ir_node_is_executable(node, total) &&
-        opt_ir_access_kind(opt_ir_core[node]) != OPT_IR_ACCESS_INVALID ? 1u : 0u;
+        kind != OPT_IR_ACCESS_INVALID && opt_ir_access_domain(kind) == 0u ? 1u : 0u;
 }
 
 public void scatter_local_accesses(uint position, uint total, uint metadata_total)
@@ -56,7 +53,6 @@ public void scatter_local_accesses(uint position, uint total, uint metadata_tota
 }
 
 static const uint INVALID = 0xffffffffu;
-static const uint WG_SIZE = 256u;
 
 uint saturating_add(uint lhs, uint rhs)
 {
@@ -109,9 +105,6 @@ public void local_access_layout(
         uint active_total = min(final_total, access_params.access_capacity);
         opt_ir_metadata_access_total[0u] = min(metadata_total, active_total);
         opt_ir_access_total[0u] = active_total;
-        // The group-mark pass lowers this to the first memory-domain row with
-        // an atomic min after the stable radix ordering.
-        opt_ir_declaration_access_total[0u] = active_total;
         if (final_total > access_params.access_capacity)
             local_access_layout_capacity(final_total);
     }
@@ -266,41 +259,6 @@ public void validate_sorted_accesses(uint order_i, uint total)
 // excluded from declaration SSA. Their source schedule remains authoritative;
 // no memory-version graph or cross-effect load reuse is implemented here.
 
-public void mark_access_groups(uint order_i, uint total)
-{
-    if (order_i >= total) return;
-
-    uint access_id = opt_ir_access_order[order_i];
-    if (access_id >= total)
-    {
-        opt_ir_access_group_start_flag[order_i] = 0u;
-        return;
-    }
-
-    opt_ir_local_definition_by_access[access_id] = INVALID;
-    uint kind = opt_ir_access_kinds[access_id];
-    if (opt_ir_access_domain(kind) != 0u)
-    {
-        opt_ir_access_group_start_flag[order_i] = 0u;
-        InterlockedMin(opt_ir_declaration_access_total[0u], order_i);
-        return;
-    }
-
-    bool starts_group = order_i == 0u;
-    if (!starts_group)
-    {
-        uint previous_id = opt_ir_access_order[order_i - 1u];
-        starts_group = previous_id >= total ||
-            opt_ir_access_domain(opt_ir_access_kinds[previous_id]) != 0u ||
-            opt_ir_accesses[previous_id].subject !=
-                opt_ir_accesses[access_id].subject;
-    }
-    opt_ir_access_group_start_flag[order_i] = starts_group ? 1u : 0u;
-}
-
-// Reuses the declaration-group flag storage after group construction to mark
-// the first ordered access in each populated `(declaration, basic block)`.
-
 public void mark_access_declaration_blocks(uint order_i, uint total)
 {
     if (order_i >= total) return;
@@ -319,37 +277,6 @@ public void mark_access_declaration_blocks(uint order_i, uint total)
     opt_ir_access_group_start_flag[order_i] = starts ? 1u : 0u;
 }
 
-// Compacts declaration group starts from the stable access ordering.
-
-void scatter_access_groups_capacity(uint required)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_CAPACITY);
-    InterlockedMax(lowering_status[0u].required_capacity, required);
-    lowering_status[0u].available_capacity = access_params.declaration_capacity;
-}
-
-public void scatter_access_groups(uint order_i, uint total)
-{
-    if (order_i >= total || opt_ir_access_group_start_flag[order_i] == 0u)
-        return;
-
-    uint access_id = opt_ir_access_order[order_i];
-    uint group_id = opt_ir_access_group_prefix[order_i];
-    if (access_id >= total || group_id >= access_params.declaration_capacity)
-    {
-        scatter_access_groups_capacity(group_id + 1u);
-        return;
-    }
-
-    OptIrAccessGroup group;
-    group.subject = opt_ir_accesses[access_id].subject;
-    group.start = order_i;
-    group.count = 0u;
-    group.flags = 0u;
-    opt_ir_access_groups[group_id] = group;
-}
-
 // Compacts one row per `(declaration, basic block)` present in the stable
 // declaration-access ordering. This relation is sparse by construction: a
 // declaration allocates no persistent state for blocks that do not access it.
@@ -362,7 +289,7 @@ void scatter_access_declaration_blocks_capacity(uint required)
     lowering_status[0u].available_capacity = access_params.access_capacity;
 }
 
-public void scatter_access_declaration_blocks(uint order_i, uint total, uint access_total)
+public void scatter_access_declaration_blocks(uint order_i, uint total)
 {
     if (order_i >= total ||
         opt_ir_access_group_start_flag[order_i] == 0u)
@@ -370,7 +297,7 @@ public void scatter_access_declaration_blocks(uint order_i, uint total, uint acc
 
     uint access_id = opt_ir_access_order[order_i];
     uint row = opt_ir_access_group_prefix[order_i];
-    if (access_id >= access_total || row >= access_params.access_capacity)
+    if (access_id >= total || row >= access_params.access_capacity)
     {
         scatter_access_declaration_blocks_capacity(row + 1u);
         return;
@@ -382,195 +309,6 @@ public void scatter_access_declaration_blocks(uint order_i, uint total, uint acc
     declaration_block.declaration = access.subject;
     declaration_block.block = access.block_id;
     opt_ir_declaration_blocks[row] = declaration_block;
-}
-
-// Finalizes compact declaration group ranges and produces one indirect
-// workgroup per group for block-local definition resolution.
-
-void finalize_access_groups_structure_failure(uint access_id)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, access_id);
-}
-
-public void finalize_access_groups(
-    uint group_id,
-    uint group_total,
-    uint access_total,
-    uint declaration_total)
-{
-    if (group_id >= group_total) return;
-
-    OptIrAccessGroup group = opt_ir_access_groups[group_id];
-    uint end = group_id + 1u < group_total
-        ? opt_ir_access_groups[group_id + 1u].start
-        : declaration_total;
-    bool valid = group.start < end && end <= declaration_total;
-    if (valid)
-    {
-        uint first_id = opt_ir_access_order[group.start];
-        uint last_id = opt_ir_access_order[end - 1u];
-        valid = first_id < access_total && last_id < access_total &&
-            opt_ir_access_domain(opt_ir_access_kinds[first_id]) == 0u &&
-            opt_ir_access_domain(opt_ir_access_kinds[last_id]) == 0u &&
-            opt_ir_accesses[first_id].subject == group.subject &&
-            opt_ir_accesses[last_id].subject == group.subject;
-        if (group_id > 0u)
-            valid = valid && opt_ir_access_groups[group_id - 1u].subject <
-                group.subject;
-    }
-    if (!valid)
-    {
-        finalize_access_groups_structure_failure(group.start);
-        return;
-    }
-
-    group.count = end - group.start;
-    opt_ir_access_groups[group_id] = group;
-}
-
-// Resolves the nearest preceding definition for declaration reads within one
-// basic block. Each workgroup owns one declaration; its lanes own contiguous
-// slices so the carry between slices is a small associative scan rather than a
-// serial function walk. Reads unresolved at a block entry remain INVALID for
-// the cross-CFG propagation stage.
-
-public struct DefinitionSummary
-{
-    uint first_block;
-    uint last_block;
-    uint last_definition;
-    uint valid;
-};
-
-public struct DefinitionSummaryScan : IPrefixScanOp<DefinitionSummary>
-{
-    public static DefinitionSummary identity()
-    {
-        DefinitionSummary result;
-        result.first_block = INVALID;
-        result.last_block = INVALID;
-        result.last_definition = INVALID;
-        result.valid = 0u;
-        return result;
-    }
-
-    public static DefinitionSummary combine(
-        DefinitionSummary left,
-        DefinitionSummary right)
-    {
-        if (left.valid == 0u) return right;
-        if (right.valid == 0u) return left;
-
-        DefinitionSummary result;
-        result.first_block = left.first_block;
-        result.last_block = right.last_block;
-        result.last_definition = right.last_definition;
-        if (result.last_definition == INVALID &&
-            right.first_block == right.last_block &&
-            left.last_block == right.first_block)
-            result.last_definition = left.last_definition;
-        result.valid = 1u;
-        return result;
-    }
-};
-
-groupshared DefinitionSummary lane_summaries[256];
-
-bool find_access_local_definitions_is_definition(uint kind)
-{
-    return kind == OPT_IR_ACCESS_PARAMETER_DEFINITION ||
-        kind == OPT_IR_ACCESS_DECLARATION_WRITE;
-}
-
-// One lane processes a short declaration range. The cooperative scan is
-// reserved for ranges that can use more than one warp of lanes.
-public void find_short_access_local_definitions(uint group_id, uint access_total)
-{
-    OptIrAccessGroup group = opt_ir_access_groups[group_id];
-    if (group.count > 32u) return;
-
-    uint block = INVALID;
-    uint definition = INVALID;
-    for (uint order_i = group.start; order_i < group.start + group.count; ++order_i)
-    {
-        uint access_id = opt_ir_access_order[order_i];
-        if (access_id >= access_total) continue;
-        OptIrAccessCore access = opt_ir_accesses[access_id];
-        uint kind = opt_ir_access_kinds[access_id];
-        if (access.block_id != block)
-        {
-            block = access.block_id;
-            definition = INVALID;
-        }
-        bool defines = find_access_local_definitions_is_definition(kind);
-        if (defines) definition = access_id;
-        opt_ir_local_definition_by_access[access_id] =
-            kind == OPT_IR_ACCESS_DECLARATION_READ || defines ? definition : INVALID;
-    }
-}
-
-public void find_access_local_definitions(uint group_id, uint lane, uint group_total, uint access_total)
-{
-    if (group_id >= group_total) return;
-
-    OptIrAccessGroup group = opt_ir_access_groups[group_id];
-    if (group.count <= 32u) return;
-    uint rows_per_lane = group.count / WG_SIZE;
-    if (group.count % WG_SIZE != 0u) rows_per_lane += 1u;
-    uint begin = min(group.start + lane * rows_per_lane,
-        group.start + group.count);
-    uint end = min(begin + rows_per_lane, group.start + group.count);
-
-    DefinitionSummary summary = DefinitionSummaryScan.identity();
-    uint block = INVALID;
-    uint definition = INVALID;
-    for (uint order_i = begin; order_i < end; ++order_i)
-    {
-        uint access_id = opt_ir_access_order[order_i];
-        if (access_id >= access_total) continue;
-        OptIrAccessCore access = opt_ir_accesses[access_id];
-        uint kind = opt_ir_access_kinds[access_id];
-        if (summary.valid == 0u)
-        {
-            summary.first_block = access.block_id;
-            summary.valid = 1u;
-        }
-        if (access.block_id != block)
-        {
-            block = access.block_id;
-            definition = INVALID;
-        }
-        if (find_access_local_definitions_is_definition(kind)) definition = access_id;
-        opt_ir_local_definition_by_access[access_id] =
-            kind == OPT_IR_ACCESS_DECLARATION_READ ? definition :
-            find_access_local_definitions_is_definition(kind) ? access_id : INVALID;
-        summary.last_block = block;
-        summary.last_definition = definition;
-    }
-
-    prefix_scan_inclusive<
-        DefinitionSummary, DefinitionSummaryScan, 256>(
-            lane, summary, lane_summaries);
-    DefinitionSummary prior = lane == 0u
-        ? DefinitionSummaryScan.identity()
-        : lane_summaries[lane - 1u];
-    uint carry = prior.valid != 0u && summary.valid != 0u &&
-        prior.last_block == summary.first_block
-        ? prior.last_definition : INVALID;
-    uint first_block = summary.first_block;
-    for (uint order_i = begin; order_i < end && carry != INVALID; ++order_i)
-    {
-        uint access_id = opt_ir_access_order[order_i];
-        if (access_id >= access_total) continue;
-        OptIrAccessCore access = opt_ir_accesses[access_id];
-        if (access.block_id != first_block) break;
-        uint kind = opt_ir_access_kinds[access_id];
-        if (find_access_local_definitions_is_definition(kind)) break;
-        if (kind == OPT_IR_ACCESS_DECLARATION_READ)
-            opt_ir_local_definition_by_access[access_id] = carry;
-    }
 }
 
 // Validates the block-local definition relation without requiring block-entry
@@ -648,8 +386,8 @@ public void validate_access_local_definitions(uint order_i, uint total)
     if (!valid) validate_access_local_definitions_structure_failure(access_id);
 }
 
-// Finalizes sparse declaration/block ranges and initializes the compact state
-// consumed by cross-CFG reaching-definition propagation.
+// Each lane resolves a declaration within one block in schedule order.
+// Reads before the first local definition seed the backward CFG walk.
 
 void finalize_access_declaration_blocks_structure_failure(uint access_id)
 {
@@ -658,16 +396,16 @@ void finalize_access_declaration_blocks_structure_failure(uint access_id)
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, access_id);
 }
 
-public void finalize_access_declaration_blocks(uint row, uint row_total, uint declaration_total, uint access_total)
+public void finalize_access_declaration_blocks(uint row, uint row_total, uint access_total)
 {
     if (row >= row_total) return;
 
     OptIrDeclarationBlock declaration_block = opt_ir_declaration_blocks[row];
     uint end = row + 1u < row_total
         ? opt_ir_declaration_blocks[row + 1u].access_start
-        : declaration_total;
+        : access_total;
     bool valid = declaration_block.access_start < end &&
-        end <= declaration_total;
+        end <= access_total;
     uint first_access_id = valid
         ? opt_ir_access_order[declaration_block.access_start]
         : INVALID;
@@ -677,6 +415,8 @@ public void finalize_access_declaration_blocks(uint row, uint row_total, uint de
     uint block_id = valid
         ? opt_ir_accesses[first_access_id].block_id : INVALID;
     bool needs_incoming = false;
+    uint definition = INVALID;
+    uint outgoing = INVALID;
 
     for (uint order_i = declaration_block.access_start;
          valid && order_i < end; ++order_i)
@@ -689,9 +429,13 @@ public void finalize_access_declaration_blocks(uint row, uint row_total, uint de
         valid = access.subject == declaration_id &&
             access.block_id == block_id &&
             opt_ir_access_domain(kind) == 0u;
-        if (kind == OPT_IR_ACCESS_DECLARATION_READ &&
-            opt_ir_local_definition_by_access[access_id] == INVALID)
-            needs_incoming = true;
+        bool defines = kind == OPT_IR_ACCESS_PARAMETER_DEFINITION ||
+            kind == OPT_IR_ACCESS_DECLARATION_WRITE;
+        bool reads = kind == OPT_IR_ACCESS_DECLARATION_READ;
+        if (defines) definition = access_id;
+        outgoing = reads || defines ? definition : INVALID;
+        opt_ir_local_definition_by_access[access_id] = outgoing;
+        needs_incoming = needs_incoming || (reads && definition == INVALID);
     }
 
     if (!valid)
@@ -704,76 +448,6 @@ public void finalize_access_declaration_blocks(uint row, uint row_total, uint de
     state.incoming_definition = needs_incoming
         ? OPT_IR_REACHING_DEFINITION_UNRESOLVED
         : OPT_IR_REACHING_DEFINITION_UNUSED;
+    state.outgoing_definition = outgoing;
     opt_ir_reaching_definition_states[row] = state;
-}
-
-// Validates the sparse declaration/block relation and its initialized local
-// reaching-definition state independently from the construction shader.
-
-void validate_access_declaration_blocks_structure_failure(uint access_id)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, access_id);
-}
-
-public void validate_access_declaration_blocks(uint row, uint row_total, uint declaration_total, uint access_total)
-{
-    if (row >= row_total) return;
-
-    OptIrDeclarationBlock declaration_block = opt_ir_declaration_blocks[row];
-    OptIrReachingDefinitionState state =
-        opt_ir_reaching_definition_states[row];
-    uint end = row + 1u < row_total
-        ? opt_ir_declaration_blocks[row + 1u].access_start
-        : declaration_total;
-    bool valid = declaration_block.access_start < end &&
-        end <= declaration_total;
-    uint first_access_id = valid
-        ? opt_ir_access_order[declaration_block.access_start]
-        : INVALID;
-    valid = valid && first_access_id < access_total;
-    uint declaration_id = valid
-        ? opt_ir_accesses[first_access_id].subject : INVALID;
-    uint block_id = valid
-        ? opt_ir_accesses[first_access_id].block_id : INVALID;
-    bool expected_incoming = false;
-
-    if (row > 0u)
-    {
-        OptIrDeclarationBlock previous = opt_ir_declaration_blocks[row - 1u];
-        uint previous_access_id =
-            opt_ir_access_order[previous.access_start];
-        valid = valid && previous_access_id < access_total;
-        if (valid)
-        {
-            OptIrAccessCore previous_access =
-                opt_ir_accesses[previous_access_id];
-            valid = previous_access.subject < declaration_id ||
-                (previous_access.subject == declaration_id &&
-                 previous_access.block_id < block_id);
-        }
-    }
-
-    for (uint order_i = declaration_block.access_start;
-         valid && order_i < end; ++order_i)
-    {
-        uint access_id = opt_ir_access_order[order_i];
-        valid = access_id < access_total;
-        if (!valid) break;
-        OptIrAccessCore access = opt_ir_accesses[access_id];
-        uint kind = opt_ir_access_kinds[access_id];
-        valid = access.subject == declaration_id &&
-            access.block_id == block_id &&
-            opt_ir_access_domain(kind) == 0u;
-        if (kind == OPT_IR_ACCESS_DECLARATION_READ &&
-            opt_ir_local_definition_by_access[access_id] == INVALID)
-            expected_incoming = true;
-    }
-
-    uint expected_state = expected_incoming
-        ? OPT_IR_REACHING_DEFINITION_UNRESOLVED
-        : OPT_IR_REACHING_DEFINITION_UNUSED;
-    valid = valid && state.incoming_definition == expected_state;
-    if (!valid) validate_access_declaration_blocks_structure_failure(declaration_block.access_start);
 }

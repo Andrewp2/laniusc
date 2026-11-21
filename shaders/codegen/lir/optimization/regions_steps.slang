@@ -59,6 +59,27 @@ uint matching_owner_local_close(uint opener, uint total)
     return STRUCTURE_INVALID;
 }
 
+// Adds every half-open region interval to a range-max segment tree. Dense
+// region IDs follow opening position, so the maximum active ID is exactly the
+// innermost region at a point. Closing labels are excluded and therefore
+// inherit their parent region.
+
+void write_region_ownership_ranges(uint region_id, OptIrRegion region, uint nodes)
+{
+    uint left = min(region.position_start, nodes) + nodes;
+    uint right = min(region.position_end, nodes) + nodes;
+    uint encoded = region_id + 1u;
+    while (left < right)
+    {
+        if ((left & 1u) != 0u)
+            InterlockedMax(opt_ir_region_ownership_tree[left++], encoded);
+        if ((right & 1u) != 0u)
+            InterlockedMax(opt_ir_region_ownership_tree[--right], encoded);
+        left >>= 1u;
+        right >>= 1u;
+    }
+}
+
 public void scatter_control_flow_regions(uint position, uint total, uint region_total, uint block_total)
 {
     if (position >= total || opt_ir_block_start_flag[position] == 0u) return;
@@ -82,94 +103,63 @@ public void scatter_control_flow_regions(uint position, uint total, uint region_
     region.position_start = position;
     region.position_end = close_position;
     opt_ir_regions[region_id] = region;
+    write_region_ownership_ranges(region_id, region, total);
 
     OptIrNodeControl control = opt_ir_control[node];
     control.region_id = region_id;
     opt_ir_control[node] = control;
 }
 
-// Starts the previous-greater interval relation from the immediately preceding
-// region in opening order. Pointer jumping skips closed siblings in parallel.
+// Assigns the innermost active structured region to every scheduled OptIR
+// node with one logarithmic segment-tree point query per invocation.
 
-public void seed_region_parents(uint region_id, uint total)
-{
-    if (region_id >= total) return;
-    opt_ir_region_parent_link_a[region_id] = region_id > 0u &&
-        opt_ir_regions[region_id - 1u].function_id ==
-            opt_ir_regions[region_id].function_id
-        ? region_id - 1u : STRUCTURE_INVALID;
-}
-
-// One pointer-jump round for the previous enclosing interval relation.
-
-static const uint REGION_PARENT_HOPS = 32u;
-
-public void propagate_region_parents(
-    uint region_id,
-    uint total,
-    RWStructuredBuffer<uint> in_links,
-    RWStructuredBuffer<uint> out_links)
-{
-    if (region_id >= total) return;
-
-    // A candidate that does not enclose this region ends before it starts,
-    // and so do the regions its own link skipped; following links never
-    // passes the parent. Once a candidate's link has converged to its parent
-    // a round climbs only one level, so a later sibling of a deeply nested
-    // chain would need one round per level: each round walks a bounded
-    // number of links instead.
-    OptIrRegion child = opt_ir_regions[region_id];
-    uint candidate = in_links[region_id];
-    bool encloses = false;
-    for (uint hop = 0u; hop < REGION_PARENT_HOPS && candidate < total && !encloses; hop += 1u)
-    {
-        OptIrRegion possible_parent = opt_ir_regions[candidate];
-        encloses = possible_parent.function_id == child.function_id &&
-            possible_parent.position_start < child.position_start &&
-            possible_parent.position_end > child.position_end;
-        if (!encloses) candidate = in_links[candidate];
-    }
-    out_links[region_id] = candidate < total ? candidate : STRUCTURE_INVALID;
-}
-
-// Publishes parent identities and reduces contiguous function region ranges.
-
-void finalize_control_flow_regions_structure_failure(uint region_id)
+void assign_nodes_to_regions_structure_failure(uint node)
 {
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, region_id);
+    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, node);
 }
 
-public void finalize_control_flow_regions(uint region_id, uint total, uint function_total)
+uint region_for_position(uint position, uint nodes)
 {
-    if (region_id >= total) return;
+    uint cursor = nodes + position;
+    uint encoded = 0u;
+    while (cursor != 0u)
+    {
+        encoded = max(encoded, opt_ir_region_ownership_tree[cursor]);
+        cursor >>= 1u;
+    }
+    return encoded == 0u ? STRUCTURE_INVALID : encoded - 1u;
+}
 
-    OptIrRegion region = opt_ir_regions[region_id];
-    uint parent = opt_ir_region_parent_link_a[region_id];
-    bool valid = region.function_id < function_total &&
-        region.position_start < region.position_end;
+// The parent covers the position before the opener. The ownership tree
+// excludes closing labels, so a preceding sibling has already closed.
+public void link_control_flow_region(uint row, uint regions, uint nodes, uint functions)
+{
+    OptIrRegion region = opt_ir_regions[row];
+    uint parent = region.position_start > 0u
+        ? region_for_position(region.position_start - 1u, nodes) : STRUCTURE_INVALID;
+    bool valid = region.function_id < functions && region.position_start < region.position_end;
     if (parent != STRUCTURE_INVALID)
     {
-        valid = valid && parent < region_id && parent < total;
+        valid = valid && parent < row && parent < regions;
         if (valid)
         {
-            OptIrRegion parent_region = opt_ir_regions[parent];
-            valid = parent_region.function_id == region.function_id &&
-                parent_region.position_start < region.position_start &&
-                parent_region.position_end > region.position_end;
+            if (opt_ir_regions[parent].function_id != region.function_id)
+                parent = STRUCTURE_INVALID;
+            else
+                valid = opt_ir_regions[parent].position_end > region.position_end;
         }
     }
     if (!valid)
     {
-        finalize_control_flow_regions_structure_failure(region_id);
+        scatter_control_flow_regions_structure_failure(region.position_start);
         return;
     }
 
-    region.parent_region = parent;
-    opt_ir_regions[region_id] = region;
-    InterlockedMin(opt_ir_functions[region.function_id].region_start, region_id);
-    InterlockedMax(opt_ir_functions[region.function_id].region_count, region_id + 1u);
+    opt_ir_regions[row].parent_region = parent;
+    InterlockedMin(opt_ir_functions[region.function_id].region_start, row);
+    InterlockedMax(opt_ir_functions[region.function_id].region_count, row + 1u);
 }
 
 // Converts temporary region ends into counts and validates per-function
@@ -208,52 +198,6 @@ public void finalize_function_region_ranges(uint function_id, uint function_tota
     else
         function.region_count = end - function.region_start;
     opt_ir_functions[function_id] = function;
-}
-
-// Adds every half-open region interval to a range-max segment tree. Dense
-// region IDs follow opening position, so the maximum active ID is exactly the
-// innermost region at a point. Closing labels are excluded and therefore
-// inherit their parent region.
-
-public void write_region_ownership_ranges(uint region_id, uint total, uint nodes)
-{
-    if (region_id >= total) return;
-
-    OptIrRegion region = opt_ir_regions[region_id];
-    uint left = min(region.position_start, nodes) + nodes;
-    uint right = min(region.position_end, nodes) + nodes;
-    uint encoded = region_id + 1u;
-    while (left < right)
-    {
-        if ((left & 1u) != 0u)
-            InterlockedMax(opt_ir_region_ownership_tree[left++], encoded);
-        if ((right & 1u) != 0u)
-            InterlockedMax(opt_ir_region_ownership_tree[--right], encoded);
-        left >>= 1u;
-        right >>= 1u;
-    }
-}
-
-// Assigns the innermost active structured region to every scheduled OptIR
-// node with one logarithmic segment-tree point query per invocation.
-
-void assign_nodes_to_regions_structure_failure(uint node)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, node);
-}
-
-uint region_for_position(uint position, uint nodes)
-{
-    uint cursor = nodes + position;
-    uint encoded = 0u;
-    while (cursor != 0u)
-    {
-        encoded = max(encoded, opt_ir_region_ownership_tree[cursor]);
-        cursor >>= 1u;
-    }
-    return encoded == 0u ? STRUCTURE_INVALID : encoded - 1u;
 }
 
 public void assign_nodes_to_regions(uint position, uint total, uint block_total, uint region_total)

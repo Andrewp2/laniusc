@@ -641,9 +641,6 @@ public void invert_dominator_preorder(uint block, uint total)
 
 // Validates exact preorder inversion and parent/child subtree containment.
 
-// Depth pointer jumping starts from each block's immediate dominator. This
-// pass seeds the link at the block's own row; the validation never reads it.
-
 void validate_dominator_preorder_structure_failure(uint block)
 {
     InterlockedOr(lowering_status[0u].flags,
@@ -656,10 +653,6 @@ public void validate_dominator_preorder(uint block, uint block_total, uint funct
     if (block >= block_total) return;
 
     uint parent = opt_ir_immediate_dominator[block];
-    OptIrDominatorJump link;
-    link.ancestor = parent;
-    link.distance = parent == block ? 0u : parent < block_total ? 1u : STRUCTURE_INVALID;
-    opt_ir_dominator_depth_link_a[block] = link;
     uint preorder = opt_ir_dominator_preorder[block];
     uint subtree_end = opt_ir_dominator_subtree_end[block];
     if (parent == OPT_IR_DOMINATOR_UNREACHABLE)
@@ -689,98 +682,4 @@ public void validate_dominator_preorder(uint block, uint block_total, uint funct
             parent_preorder != preorder;
     }
     if (!valid) validate_dominator_preorder_structure_failure(block);
-}
-
-// Multiplies the immediate-dominator distance represented by each compact
-// link by up to STRUCTURE_POINTER_JUMP_HOPS: a round follows that many input links
-// (`pointer_jump_hop_pairs` in lowering_ir.rs).
-
-public void propagate_dominator_depths(
-    uint block_id,
-    uint total,
-    RWStructuredBuffer<OptIrDominatorJump> in_links,
-    RWStructuredBuffer<OptIrDominatorJump> out_links)
-{
-    if (block_id >= total) return;
-
-    OptIrDominatorJump link = in_links[block_id];
-    uint current = block_id;
-    for (uint hop = 1u; hop < STRUCTURE_POINTER_JUMP_HOPS; ++hop)
-    {
-        if (link.ancestor >= total || link.ancestor == current)
-            break;
-        current = link.ancestor;
-        OptIrDominatorJump parent = in_links[current];
-        link.ancestor = parent.ancestor;
-        link.distance = link.distance == STRUCTURE_INVALID || parent.distance == STRUCTURE_INVALID ||
-            link.distance > STRUCTURE_INVALID - 1u - parent.distance
-            ? STRUCTURE_INVALID : link.distance + parent.distance;
-    }
-    out_links[block_id] = link;
-}
-
-// Materializes one compact depth word per block. Dominance queries later use
-// this depth to align sparse candidate pairs before batched parent jumping;
-// no source-order or dominator-preorder assumption is required.
-
-void publish_dominator_depths_structure_failure(uint block_id)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block_id);
-}
-
-public void publish_dominator_depths(uint block_id, uint total)
-{
-    if (block_id >= total) return;
-
-    OptIrDominatorJump link = opt_ir_dominator_depth_link_a[block_id];
-    OptIrBlock block = opt_ir_blocks[block_id];
-    OptIrFunction function = opt_ir_functions[block.function_id];
-    bool reachable = link.ancestor < total &&
-        opt_ir_immediate_dominator[link.ancestor] == link.ancestor &&
-        link.distance != STRUCTURE_INVALID;
-    uint depth = reachable ? link.distance : STRUCTURE_INVALID;
-    opt_ir_dominator_depth[block_id] = depth;
-
-    bool valid = block_id == function.entry_block
-        ? link.ancestor == block_id && depth == 0u
-        : depth == STRUCTURE_INVALID || (link.ancestor == function.entry_block &&
-            depth > 0u);
-    if (!valid)
-        publish_dominator_depths_structure_failure(block_id);
-}
-
-// Checks the materialized depth relation independently of the binary-lifting
-// pass. Unreachable chains remain explicit; every reachable non-entry block
-// must be exactly one level below its immediate dominator.
-
-void validate_dominator_depths_structure_failure(uint block_id)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, block_id);
-}
-
-public void validate_dominator_depths(uint block_id, uint total)
-{
-    if (block_id >= total) return;
-
-    OptIrBlock block = opt_ir_blocks[block_id];
-    OptIrFunction function = opt_ir_functions[block.function_id];
-    uint parent = opt_ir_immediate_dominator[block_id];
-    uint depth = opt_ir_dominator_depth[block_id];
-    bool valid;
-    if (block_id == function.entry_block)
-        valid = parent == block_id && depth == 0u;
-    else if (depth == STRUCTURE_INVALID)
-        valid = parent == OPT_IR_DOMINATOR_UNREACHABLE ||
-            (parent < total && opt_ir_dominator_depth[parent] == STRUCTURE_INVALID);
-    else
-        valid = parent < total &&
-            opt_ir_blocks[parent].function_id == block.function_id &&
-            opt_ir_dominator_depth[parent] != STRUCTURE_INVALID &&
-            opt_ir_dominator_depth[parent] + 1u == depth;
-
-    if (!valid) validate_dominator_depths_structure_failure(block_id);
 }

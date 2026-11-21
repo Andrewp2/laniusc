@@ -91,7 +91,6 @@ struct SsaValueParams {
     access_capacity: u32,
     incoming_capacity: u32,
     hir_capacity: u32,
-    use_capacity: u32,
     reserved1: u32,
 }
 
@@ -305,7 +304,6 @@ impl GpuOptimizationStage {
         let demand_capacity = capacities.optimization_ssa_demand_capacity();
         let incoming_capacity = capacities.optimization_ssa_incoming_capacity();
         let value_capacity = capacities.optimization_value_capacity();
-        let use_capacity = capacities.optimization_use_capacity();
         let count = workspace
             .alias(graph, resource("lir.opt.total")?, 1)
             .map_err(anyhow::Error::msg)?;
@@ -414,7 +412,6 @@ impl GpuOptimizationStage {
                 access_capacity,
                 incoming_capacity,
                 hir_capacity: capacities.hir_nodes.max(1),
-                use_capacity,
                 reserved1: 0,
             },
         );
@@ -549,15 +546,13 @@ impl GpuOptimizationStage {
             timer.stamp(encoder, "optimization.structure.done");
         }
         let argument_rows = capacities.optimization_ssa_walk_capacity()
-            .max(capacities.optimization_ssa_incoming_capacity())
-            .max(capacities.optimization_access_group_capacity());
+            .max(capacities.optimization_ssa_incoming_capacity());
         // Hardware fills clear the full sparse tables before the program's
         // resident workgroups start walking the active demand rows.
         self.clear_sparse_demands.record(encoder);
         self.block_arguments[step_program_group_variant(u64::from(argument_rows))][validate]
             .record(encoder)?;
-        let value_rows = capacities.optimization_value_capacity()
-            .max(capacities.optimization_use_capacity());
+        let value_rows = capacities.optimization_value_capacity();
         self.ssa_values[step_program_group_variant(u64::from(value_rows))][validate].record(encoder)
     }
 

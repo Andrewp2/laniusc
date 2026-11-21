@@ -188,24 +188,6 @@ bool analyze_control_flow(inout StepProgram program, bool validate)
             validate_dominator_preorder(row, blocks, functions);
         if (!step_barrier(program)) return false;
 
-        uint depth_pairs = jump_hop_pairs(blocks);
-        for (uint pair = 0u; pair < depth_pairs; ++pair)
-        {
-            for (uint row = program.lane; row < blocks; row += program.lanes)
-                propagate_dominator_depths(row, blocks,
-                    opt_ir_dominator_depth_link_a, opt_ir_dominator_depth_link_b);
-            if (!step_barrier(program)) return false;
-            for (uint row = program.lane; row < blocks; row += program.lanes)
-                propagate_dominator_depths(row, blocks,
-                    opt_ir_dominator_depth_link_b, opt_ir_dominator_depth_link_a);
-            if (!step_barrier(program)) return false;
-        }
-
-        for (uint row = program.lane; row < blocks; row += program.lanes)
-            publish_dominator_depths(row, blocks);
-        if (!step_barrier(program)) return false;
-        for (uint row = program.lane; row < blocks; row += program.lanes)
-            validate_dominator_depths(row, blocks);
         for (uint row = program.lane; row < nodes; row += program.lanes)
             mark_control_flow_regions(row, nodes);
         for (uint row = program.lane; row < functions; row += program.lanes)
@@ -225,28 +207,7 @@ bool analyze_control_flow(inout StepProgram program, bool validate)
         if (!step_barrier(program)) return false;
 
         for (uint row = program.lane; row < regions; row += program.lanes)
-            seed_region_parents(row, regions);
-        if (!step_barrier(program)) return false;
-
-        // Use the same capacity bound as the previous fixed schedule.
-        uint region_pairs = uint(firstbithigh(max(1u, gParams.block_capacity)) + 2) / 2u;
-        for (uint pair = 0u; pair < region_pairs; ++pair)
-        {
-            for (uint row = program.lane; row < regions; row += program.lanes)
-                propagate_region_parents(row, regions,
-                    opt_ir_region_parent_link_a, opt_ir_region_parent_link_b);
-            if (!step_barrier(program)) return false;
-            for (uint row = program.lane; row < regions; row += program.lanes)
-                propagate_region_parents(row, regions,
-                    opt_ir_region_parent_link_b, opt_ir_region_parent_link_a);
-            if (!step_barrier(program)) return false;
-        }
-
-        for (uint row = program.lane; row < regions; row += program.lanes)
-        {
-            finalize_control_flow_regions(row, regions, functions);
-            write_region_ownership_ranges(row, regions, nodes);
-        }
+            link_control_flow_region(row, regions, nodes, functions);
         if (!step_barrier(program)) return false;
 
         for (uint row = program.lane; row < functions; row += program.lanes)

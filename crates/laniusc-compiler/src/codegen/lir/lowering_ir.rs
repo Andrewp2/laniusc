@@ -6,15 +6,13 @@ use encase::ShaderType;
 
 use super::optimization_ir::{
     OptIrAccessCore,
-    OptIrAccessGroup,
     OptIrBlock,
     OptIrBlockArgument,
     OptIrBlockArgumentIncoming,
     OptIrDeclarationBlock,
-    OptIrDominatorJump,
-    OptIrDominatorTourLink,
     OptIrEdge,
     OptIrFunction,
+    OptIrDominatorTourLink,
     OptIrImmediateDominator,
     OptIrIncomingValue,
     OptIrNodeControl,
@@ -24,7 +22,6 @@ use super::optimization_ir::{
     OptIrReachingDefinitionState,
     OptIrRegion,
     OptIrSsaDemand,
-    OptIrUseGroup,
     OptIrValueDefinition,
 };
 use crate::gpu::{
@@ -891,10 +888,6 @@ impl LoweringCapacities {
     /// Stable access groups are declaration-keyed. Parameters, locals, and
     /// instruction accesses for one declaration share one group; memory
     /// subjects remain outside this relation.
-    pub(crate) fn optimization_access_group_capacity(self) -> u32 {
-        self.declaration_capacity()
-    }
-
     /// Sparse `(declaration, basic block)` rows used by SSA construction.
     /// Every row contains at least one declaration access, so the access
     /// capacity is a hard upper bound without allocating a declaration by
@@ -973,15 +966,6 @@ impl LoweringCapacities {
     /// Compact value-use rows. An ordinary node has at most three fixed value
     /// operands; call arguments, aggregate elements, and block-argument
     /// incoming values each contribute at most one additional use row.
-    pub(crate) fn optimization_use_capacity(self) -> u32 {
-        self.semantic_instructions
-            .saturating_mul(3)
-            .saturating_add(self.call_arguments)
-            .saturating_add(self.aggregate_elements)
-            .saturating_add(self.optimization_ssa_incoming_capacity())
-            .max(1)
-    }
-
     pub(crate) fn execution_rank_jump_pairs(self) -> u32 {
         pointer_jump_hop_pairs(self.hir_nodes)
     }
@@ -3678,16 +3662,6 @@ fn lowering_compiler_graph_builder(
         bytes: LoweringCapacities::bytes::<OptIrRegion>(capacities.optimization_region_capacity()),
         usage: WorkspaceUsageClass::Storage,
     })?;
-    let opt_region_parent_link_a = graph.add_resource(workspace(
-        "lir.opt.region_parent_link_a",
-        ResourceDomain::OptimizationRegions,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_region_capacity()),
-    ))?;
-    let opt_region_parent_link_b = graph.add_resource(workspace(
-        "lir.opt.region_parent_link_b",
-        ResourceDomain::OptimizationRegions,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_region_capacity()),
-    ))?;
     let opt_region_ownership_tree = graph.add_resource(workspace(
         "lir.opt.region_ownership_tree",
         ResourceDomain::OptimizationNodes,
@@ -3793,21 +3767,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::OptimizationBlocks,
         LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
     ))?;
-    let opt_dominator_depth_link_a = graph.add_resource(workspace(
-        "lir.opt.dominator_depth_link_a",
-        ResourceDomain::OptimizationBlocks,
-        LoweringCapacities::bytes::<OptIrDominatorJump>(capacities.optimization_block_capacity()),
-    ))?;
-    let opt_dominator_depth_link_b = graph.add_resource(workspace(
-        "lir.opt.dominator_depth_link_b",
-        ResourceDomain::OptimizationBlocks,
-        LoweringCapacities::bytes::<OptIrDominatorJump>(capacities.optimization_block_capacity()),
-    ))?;
-    let opt_dominator_depth = graph.add_resource(workspace(
-        "lir.opt.dominator_depth",
-        ResourceDomain::OptimizationBlocks,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_block_capacity()),
-    ))?;
     let opt_functions = graph.add_resource(ResourceDesc {
         name: "lir.opt.functions",
         domain: ResourceDomain::OptimizationFunctions,
@@ -3837,11 +3796,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let opt_access_total = graph.add_resource(workspace(
         "lir.opt.access_total",
-        ResourceDomain::OptimizationAccesses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_declaration_access_total = graph.add_resource(workspace(
-        "lir.opt.declaration_access_total",
         ResourceDomain::OptimizationAccesses,
         LoweringCapacities::bytes::<u32>(1),
     ))?;
@@ -3885,18 +3839,6 @@ fn lowering_compiler_graph_builder(
         "lir.opt.access_group_prefix",
         ResourceDomain::OptimizationAccesses,
         LoweringCapacities::bytes::<u32>(capacities.optimization_access_capacity()),
-    ))?;
-    let opt_access_group_total = graph.add_resource(workspace(
-        "lir.opt.access_group_total",
-        ResourceDomain::OptimizationAccessGroups,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_access_groups = graph.add_resource(workspace(
-        "lir.opt.access_groups",
-        ResourceDomain::OptimizationAccessGroups,
-        LoweringCapacities::bytes::<OptIrAccessGroup>(
-            capacities.optimization_access_group_capacity(),
-        ),
     ))?;
     let opt_local_definition_by_access = graph.add_resource(workspace(
         "lir.opt.local_definition_by_access",
@@ -4119,77 +4061,6 @@ fn lowering_compiler_graph_builder(
         LoweringCapacities::bytes::<OptIrIncomingValue>(
             capacities.optimization_ssa_incoming_capacity(),
         ),
-    ))?;
-    let opt_ssa_node_use_count = graph.add_resource(workspace(
-        "lir.opt.ssa.node_use_count",
-        ResourceDomain::OptimizationNodes,
-        LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
-    ))?;
-    let opt_ssa_node_use_total = graph.add_resource(workspace(
-        "lir.opt.ssa.node_use_total",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_ssa_call_use_flag = graph.add_resource(workspace(
-        "lir.opt.ssa.call_use_flag",
-        ResourceDomain::CallArguments,
-        LoweringCapacities::bytes::<u32>(capacities.call_arguments),
-    ))?;
-    let opt_ssa_call_use_total = graph.add_resource(workspace(
-        "lir.opt.ssa.call_use_total",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_ssa_aggregate_use_flag = graph.add_resource(workspace(
-        "lir.opt.ssa.aggregate_use_flag",
-        ResourceDomain::AggregateElements,
-        LoweringCapacities::bytes::<u32>(capacities.aggregate_elements),
-    ))?;
-    let opt_ssa_aggregate_use_total = graph.add_resource(workspace(
-        "lir.opt.ssa.aggregate_use_total",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_ssa_use_total = graph.add_resource(workspace(
-        "lir.opt.ssa.use_total",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_ssa_use_values = graph.add_resource(workspace(
-        "lir.opt.ssa.use_values",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_use_capacity()),
-    ))?;
-    let opt_ssa_use_users = graph.add_resource(workspace(
-        "lir.opt.ssa.use_users",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_use_capacity()),
-    ))?;
-    let opt_ssa_use_radix = add_step_radix_resources(
-        &mut graph,
-        ResourceDomain::OptimizationUses,
-        capacities.optimization_use_capacity(),
-        [
-            "lir.opt.ssa.use_order",
-            "lir.opt.ssa.use_order_tmp",
-            "lir.opt.ssa.use_radix_histogram",
-            "lir.opt.ssa.use_radix_bucket_total",
-        ],
-    )?;
-    let opt_ssa_use_group_start_flag = graph.add_resource(workspace(
-        "lir.opt.ssa.use_group_start_flag",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(capacities.optimization_use_capacity()),
-    ))?;
-    let opt_ssa_use_group_total = graph.add_resource(workspace(
-        "lir.opt.ssa.use_group_total",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
-    let opt_ssa_use_groups = graph.add_resource(workspace(
-        "lir.opt.ssa.use_groups",
-        ResourceDomain::OptimizationUses,
-        LoweringCapacities::bytes::<OptIrUseGroup>(capacities.optimization_value_capacity()),
     ))?;
     // The status, then the job's semantic and target row totals.
     let lowering_status_readback = graph.add_storage(
@@ -5320,25 +5191,8 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_block_by_dominator_preorder",
                 opt_block_by_dominator_preorder,
             ),
-            PassAccess::initialize_read_write(
-                "opt_ir_dominator_depth_link_a",
-                opt_dominator_depth_link_a,
-            ),
-            PassAccess::initialize_read_write(
-                "opt_ir_dominator_depth_link_b",
-                opt_dominator_depth_link_b,
-            ),
-            PassAccess::initialize_read_write("opt_ir_dominator_depth", opt_dominator_depth),
             PassAccess::initialize_read_write("opt_ir_region_total", opt_region_total),
             PassAccess::initialize_read_write("opt_ir_regions", opt_regions),
-            PassAccess::initialize_read_write(
-                "opt_ir_region_parent_link_a",
-                opt_region_parent_link_a,
-            ),
-            PassAccess::initialize_read_write(
-                "opt_ir_region_parent_link_b",
-                opt_region_parent_link_b,
-            ),
             PassAccess::initialize_read_write(
                 "opt_ir_region_ownership_tree",
                 opt_region_ownership_tree,
@@ -5394,10 +5248,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("semantic_locals", semantic_locals),
             PassAccess::read("opt_ir_functions", opt_functions),
             PassAccess::initialize_read_write("opt_ir_access_total", opt_access_total),
-            PassAccess::initialize_read_write(
-                "opt_ir_declaration_access_total",
-                opt_declaration_access_total,
-            ),
             PassAccess::read("opt_ir_position_by_node", opt_position_by_node),
             PassAccess::read("opt_ir_blocks", opt_blocks),
             PassAccess::initialize_read_write("opt_ir_access_order", opt_access_radix.order),
@@ -5413,9 +5263,7 @@ fn lowering_compiler_graph_builder(
                 "opt_ir_access_group_prefix",
                 opt_access_group_prefix,
             ),
-            PassAccess::initialize_read_write("opt_ir_access_groups", opt_access_groups),
             PassAccess::initialize_read_write("opt_ir_declaration_blocks", opt_declaration_blocks),
-            PassAccess::initialize_read_write("opt_ir_access_group_total", opt_access_group_total),
             PassAccess::initialize_read_write(
                 "opt_ir_declaration_block_total",
                 opt_declaration_block_total,
@@ -5580,23 +5428,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
             PassAccess::read("opt_ir_ssa_block_arguments", opt_ssa_block_arguments),
             PassAccess::read("semantic_lir_call_arg_total", semantic_call_arg_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_node_use_count", opt_ssa_node_use_count),
-            PassAccess::initialize_read_write("opt_ir_ssa_call_use_flag", opt_ssa_call_use_flag),
-            PassAccess::initialize_read_write("opt_ir_ssa_aggregate_use_flag", opt_ssa_aggregate_use_flag),
-            PassAccess::initialize_read_write("opt_ir_ssa_node_use_total", opt_ssa_node_use_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_call_use_total", opt_ssa_call_use_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_aggregate_use_total", opt_ssa_aggregate_use_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_total", opt_ssa_use_total),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_values", opt_ssa_use_values),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_users", opt_ssa_use_users),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_order", opt_ssa_use_radix.order),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_group_start_flag", opt_ssa_use_group_start_flag),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_groups", opt_ssa_use_groups),
-            PassAccess::initialize_read_write("opt_ir_ssa_use_group_total", opt_ssa_use_group_total),
             PassAccess::initialize_read_write("opt_ir_ssa_value_link_b", opt_ssa_value_link_b),
-            PassAccess::initialize_read_write("use_order_temporary", opt_ssa_use_radix.temporary_order),
-            PassAccess::initialize_read_write("use_histogram", opt_ssa_use_radix.histogram),
-            PassAccess::initialize_read_write("use_bucket_total", opt_ssa_use_radix.bucket_total),
             PassAccess::initialize_read_write("scan_group_sums", opt_scan_group_sums),
             PassAccess::read_write("step_program_sync", step_program_sync),
         ],
