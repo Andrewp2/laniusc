@@ -1,55 +1,44 @@
 import shared.collectives.step_program;
 import type_checker.retention.discovery.discovery_workspace;
-// Compare in the same order as the height buckets: height, then head,
-// then children. Closed terms and their declaration keys are exactly
-// interned, so the first unequal child determines the result.
-int compare_environment(uint a, uint b)
+// Complete structural order, without hashes or a recursive per-lane walk.
+// Children have smaller heights and already have deterministic ranks.
+int compare_term(uint a, uint b)
 {
-    while (a != b)
+    if (a == b) return 0;
+    if (a == RT_INVALID) return 1; if (b == RT_INVALID) return -1;
+    uint4 x = rt_term_head[a]; uint4 y = rt_term_head[b];
+    int c = dg_cmp(x.x,y.x); if(c != 0) return c;
+    uint kind = x.x & 255u;
+    if(kind == RT_KIND_NAMED || kind == RT_KIND_ENV) c = dg_decl_cmp(x.y,y.y);
+    else c = dg_cmp(x.y,y.y);
+    if(c != 0) return c;
+    c = dg_cmp(x.z,y.z); if(c != 0) return c;
+    c = dg_cmp(x.w,y.w); if(c != 0) return c;
+    uint arity = rt_term_arity(a);
+    for(uint i=0u;i<arity;i++)
     {
-        if (!rt_is_stored_term(a) || !rt_is_stored_term(b)) return dg_cmp(a, b);
-        int c = dg_cmp(rt_term_height(a), rt_term_height(b));
-        if (c != 0) return c;
-        uint4 x = rt_term_head[a];
-        uint4 y = rt_term_head[b];
-        c = dg_cmp(x.x, y.x);
-        if (c != 0) return c;
-        uint kind = x.x & 255u;
-        c = kind == RT_KIND_NAMED || kind == RT_KIND_ENV
-            ? dg_decl_cmp(x.y, y.y) : dg_cmp(x.y, y.y);
-        if (c != 0) return c;
-        c = dg_cmp(x.z, y.z);
-        if (c != 0) return c;
-        c = dg_cmp(x.w, y.w);
-        if (c != 0) return c;
-        uint arity = rt_term_arity(a);
-        bool descend = false;
-        for (uint i = 0u; i < arity; ++i)
-        {
-            uint left = rt_term_arg(a, i);
-            uint right = rt_term_arg(b, i);
-            if (left == right) continue;
-            a = left;
-            b = right;
-            descend = true;
-            break;
-        }
-        if (!descend) return 0;
+        uint left = rt_term_arg(a,i); uint right = rt_term_arg(b,i);
+        left = left < RT_FIRST_TERM ? left : dg_term_rank[left];
+        right = right < RT_FIRST_TERM ? right : dg_term_rank[right];
+        c = dg_cmp(left,right); if(c != 0) return c;
     }
     return 0;
 }
-
-int compare_instance(uint a, uint b)
+public struct TermOrder : IDgCompare
 {
-    if (a == b) return 0;
-    if (a == RT_INVALID) return 1;
-    if (b == RT_INVALID) return -1;
-    uint4 x = dg_instances[2u * a];
-    uint4 y = dg_instances[2u * b];
-    int c = dg_decl_cmp(x.x, y.x);
-    return c != 0 ? c : compare_environment(x.y, y.y);
+    public uint base;
+    int compare(uint a, uint b) { return compare_term(a, b); }
+    uint load(uint index) { return dg_term_order[base + index]; }
+    void store(uint index, uint value) { dg_term_order[base + index] = value; }
 }
-
+int compare_instance(uint a,uint b)
+{
+    if(a==b) return 0;
+    if(a==RT_INVALID) return 1; if(b==RT_INVALID) return -1;
+    uint4 x=dg_instances[2u*a]; uint4 y=dg_instances[2u*b];
+    int c=dg_decl_cmp(x.x,y.x);
+    return c!=0 ? c : dg_cmp(dg_term_rank[x.y],dg_term_rank[y.y]);
+}
 public struct InstanceOrder : IDgCompare
 {
     int compare(uint a, uint b) { return compare_instance(a, b); }

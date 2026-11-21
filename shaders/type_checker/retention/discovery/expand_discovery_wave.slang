@@ -1,12 +1,11 @@
 import shared.collectives.step_program;
 import type_checker.retention.discovery.discovery_workspace;
 import type_checker.retention.discovery.collect_discovery_requests_step;
+import type_checker.retention.discovery.collect_retained_requests_program;
 import type_checker.retention.discovery.resolve_discovery_requests_step;
 import type_checker.retention.discovery.discovery_request_status;
 import type_checker.retention.substitution.retained_substitution_workspace;
 import type_checker.retention.substitution.run_retained_substitution;
-import type_checker.retention.substitution.begin_retained_substitution_step;
-import type_checker.retention.substitution.finalize_retained_substitution_step;
 
 struct WaveRequests : ISubstitutionRequests
 {
@@ -21,35 +20,10 @@ struct WaveRequests : ISubstitutionRequests
 }
 
 
-// Each request can produce several substitution tasks. Size the working
-// grid from the live requests and proof nodes instead of their capacities.
-public uint discovery_wave_groups(uint bound, uint nodes)
+public bool expand_discovery_wave(
+    inout StepProgram program, DiscoveryFrontier frontier, uint run, uint depth, uint options)
 {
-    uint rows = max(sb_request_count[0u], nodes);
-    return rows == 0u ? 1u : min(bound, max(4u, (rows - 1u) / 64u + 1u));
-}
-
-public bool substitute_discovery_requests(
-    inout StepProgram program, uint run, uint depth, uint options)
-{
-    uint requests = sb_request_count[0u];
-    if (program.lane == 0u)
-    {
-        dg_status[7u] = requests;
-        finish_discovery_requests();
-    }
-
-    if (requests == 0u && sb_counts[SB_C_SYNC_FAILED] == 0u)
-    {
-        if (program.lane == 0u)
-        {
-            begin_retained_substitution(0u, WaveRequests().capacity(), run);
-            sb_counts[SB_C_PHASE] = SB_PHASE_DONE;
-            finalize_retained_substitution();
-            if (sb_counts[SB_C_STATE] != SB_STATE_PUBLISHED) note_unpublished_requests();
-        }
-        return step_barrier(program);
-    }
+    if (!collect_retained_requests(program, frontier)) return false;
     if (!step_barrier(program)) return false;
     if (!run_retained_substitution(program, options, run, WaveRequests())) return false;
     if (!step_barrier(program)) return false;

@@ -14,8 +14,38 @@ public DiscoveryFrontier configured_frontier()
     return { dg_config[1], dg_config[2], dg_config[3] };
 }
 
-void collect_discovery_use(uint root, uint lane, uint use, uint owner)
+public void collect_discovery_requests(uint lane, DiscoveryFrontier frontier)
 {
+    uint root = dg_config[4]; uint use = lane; uint owner = RT_INVALID;
+    if (lane == 0u && (rt_counts[RT_C_READY] == 0u || rt_counts[RT_C_GENERATION] != dg_config[15]))
+        dg_status[10] = 1u;
+    if (lane == 0u && dg_proof_identity[0] != 0u && !dg_proofs_current()) dg_status[10] = 8u;
+    if (root != 0u)
+    {
+        if (lane >= rt_counts[RT_A_USES]) return;
+        dg_roots[lane] = uint4(0u,0u,0u,0u);
+        uint e = dg_entry(rt_uses[use * RT_USE_WORDS].x);
+        if (e == RT_INVALID || dg_generic(e)) return;
+    }
+    else
+    {
+        if (lane >= dg_status[2] - frontier.edge) return;
+        uint lo = 0u; uint hi = frontier.hi - frontier.lo;
+        while (lo < hi)
+        {
+            uint mid = lo + (hi - lo) / 2u;
+            if (dg_scan(mid) <= lane) lo = mid + 1u; else hi = mid;
+        }
+        owner = frontier.lo + lo;
+        uint4 i1 = dg_instances[2u * owner + 1u];
+        uint entry = dg_entry(dg_instances[2u * owner].x);
+        uint edge = frontier.edge + lane;
+        use = rt_dir[entry * RT_DIR_WORDS + 2u].w + edge - i1.x;
+        dg_edge_owner[edge] = uint2(owner, use);
+        dg_edges[edge] = uint4(0u,0u,0u,0u);
+        dg_targets[edge]=uint2(0u,RT_NONE);
+        lane = edge;
+    }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     uint form = u0.z & 0xffu;
@@ -75,6 +105,7 @@ void collect_discovery_use(uint root, uint lane, uint use, uint owner)
     if (!bound && rt_dir[callee * RT_DIR_WORDS + 2u].x == RT_INVALID)
     { dg_fail(root,lane,use,2u,u0.w); return; }
     uint request; InterlockedAdd(sb_request_count[0],1u,request);
+    InterlockedMax(dg_status[7],request+1u);
     uint capacity; uint stride; sb_requests.GetDimensions(capacity,stride);
     if (request >= capacity) { InterlockedOr(dg_status[3],4u); return; }
     uint decl = root != 0u ? u0.w : dg_instances[2u * owner].x;
@@ -82,44 +113,4 @@ void collect_discovery_use(uint root, uint lane, uint use, uint owner)
     sb_requests[request] = uint4(decl,env,u1.x,use);
     dg_req_meta[request] = uint4(root,lane,use,owner);
     if (root != 0u) InterlockedAdd(dg_status[9],1u);
-}
-
-// One lane owns a new instance, including the entire edge range for its
-// body. Reserve that range once, then classify and enqueue its calls.
-public void collect_instance_requests(uint owner)
-{
-    uint4 instance = dg_instances[2u * owner];
-    uint entry = dg_entry(instance.x);
-    if (entry == RT_INVALID) return;
-    uint4 directory = rt_dir[entry * RT_DIR_WORDS + 3u];
-    uint base;
-    InterlockedAdd(dg_status[2u], directory.x, base);
-    uint end = base + directory.x;
-    InterlockedMax(dg_status[5u], end);
-    uint capacity; uint stride;
-    dg_edges.GetDimensions(capacity, stride);
-    if (end > capacity || end < base)
-    {
-        InterlockedOr(dg_status[3u], 2u);
-        return;
-    }
-    uint depth = dg_instances[2u * owner + 1u].z;
-    dg_instances[2u * owner + 1u] = uint4(base, directory.x, depth, 0u);
-    uint first = rt_dir[entry * RT_DIR_WORDS + 2u].w;
-    for (uint edge = base; edge < end; ++edge)
-    {
-        uint use = first + (edge - base);
-        dg_edge_owner[edge] = uint2(owner, use);
-        dg_edges[edge] = uint4(0u);
-        dg_targets[edge] = uint2(0u, RT_NONE);
-        collect_discovery_use(0u, edge, use, owner);
-    }
-}
-
-public void collect_root_request(uint use)
-{
-    dg_roots[use] = uint4(0u);
-    uint entry = dg_entry(rt_uses[use * RT_USE_WORDS].x);
-    if (entry == RT_INVALID || dg_generic(entry)) return;
-    collect_discovery_use(1u, use, use, RT_INVALID);
 }
