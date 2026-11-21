@@ -85,9 +85,9 @@ fn run(groups: u32, rounds: u32, rows_per_lane: u32) -> Outcome {
     for _ in 0..5 {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.clear_buffer(&sync, 0, None);
-        encoder.clear_buffer(&cells, 0, None);
-        encoder.clear_buffer(&wrong_cells, 0, None);
+        sync.clear(&mut encoder, 0, None);
+        cells.clear(&mut encoder, 0, None);
+        wrong_cells.clear(&mut encoder, 0, None);
         {
             let mut compute = passes_core::begin_counted_compute_pass(
                 &mut encoder,
@@ -633,7 +633,10 @@ fn benchmark_step_program_collectives() {
         let record_probe = |encoder: &mut wgpu::CommandEncoder,
                             pass: &passes_core::PassData,
                             bind: &wgpu::BindGroup| {
-            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            let mut compute = passes_core::begin_counted_compute_pass(
+                encoder,
+                &wgpu::ComputePassDescriptor::default(),
+            );
             compute.set_pipeline(&pass.pipeline);
             compute.set_bind_group(0, bind, &[]);
             compute.dispatch_workgroups(groups, 1, 1);

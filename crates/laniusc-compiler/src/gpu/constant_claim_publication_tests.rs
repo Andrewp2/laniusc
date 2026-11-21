@@ -309,7 +309,8 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     // HirTypeArg rows (five words). 03a8 reads them only to place an operand
     // diagnostic; unknown operands fall back to the application anchor.
     put("compact_type_args", vec![INVALID; TOKENS * 5]);
-    put("status", vec![1, INVALID, 0, 0]);
+    // Word 4 keeps a failed step program wait, as in the compiler's status.
+    put("status", vec![1, INVALID, 0, 0, 0]);
     let mut inference = vec![0; 8];
     inference[0] = u32::from(case.provisional);
     put("call_inference_state", inference);
@@ -338,6 +339,16 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_const_claim_lookup_next", vec![0; capacity]);
     put("call_const_claim_slot_mask", vec![0; TOKENS]);
     put("call_const_env_binding", vec![0; capacity * 4]);
+    // build_call_claim_indexes builds both claim indexes in one program. This
+    // fixture has no generic claims, and the program runs as one group.
+    put("call_generic_claim_count_out", vec![0]);
+    put("call_generic_claim_callee", vec![INVALID]);
+    put("call_generic_claim_slot", vec![INVALID]);
+    put("call_generic_claim_lookup_head", vec![0]);
+    put("call_generic_claim_lookup_next", vec![0]);
+    put("call_generic_claim_slot_mask", vec![0; TOKENS]);
+    put("inference_program_args", vec![1, 1, 1]);
+    put("step_program_sync", vec![0; 4]);
 
     let mut atoms = vec![0; 128 * 4];
     for (row, atom) in [
@@ -521,25 +532,13 @@ fn group(
                     pass.shader_id
                 );
             }
-            let binding = if name == "gParams" {
+            let binding = if matches!(name, "gParams" | "program_launch") {
                 params.as_entire_binding()
             } else {
-                let resource_name = match name {
-                    "claim_count_in" => "call_const_claim_count_out",
-                    "claim_callee" => "call_const_claim_callee",
-                    "claim_slot" => "call_const_claim_slot",
-                    "claim_slot_mask" => "call_const_claim_slot_mask",
-                    "claim_lookup_head" => "call_const_claim_lookup_head",
-                    "claim_lookup_next" => "call_const_claim_lookup_next",
-                    other => other,
-                };
                 resources
-                    .get(resource_name)
+                    .get(name)
                     .unwrap_or_else(|| {
-                        panic!(
-                            "{} requires missing fixture buffer {resource_name}",
-                            pass.shader_id
-                        )
+                        panic!("{} requires missing fixture buffer {name}", pass.shader_id)
                     })
                     .as_entire_binding()
             };
@@ -630,17 +629,16 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         "this regression requires a physical GPU",
     );
     let gpu = device::global();
-    const INDEX: usize = 0;
-    const EXPLICIT_ADMIT: usize = 1;
-    const PUBLISH: usize = 2;
-    const CONTEXT_ADMIT: usize = 3;
-    const VALIDATE: usize = 4;
-    const MIRROR: usize = 5;
-    const PROBE: usize = 6;
+    const EXPLICIT_ADMIT: usize = 0;
+    // One step program: build the claim index, then publish each binding.
+    const INDEX_AND_PUBLISH: usize = 1;
+    const CONTEXT_ADMIT: usize = 2;
+    const VALIDATE: usize = 3;
+    const MIRROR: usize = 4;
+    const PROBE: usize = 5;
     let keys = [
-        "type_checker/calls/claims/build_claim_lookup",
         "type_checker/calls/claims/validate_explicit_constants",
-        "type_checker/calls/claims/publish_call_environment",
+        "type_checker/calls/claims/build_call_claim_indexes",
         "type_checker/calls/claims/admit_context_constants",
         "type_checker/calls/claims/validate_const_claims",
         "type_checker/calls/claims/validate_explicit_applications",
@@ -664,11 +662,12 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
         assert!(case.claims.len() <= 256);
         let resources = fixture(&gpu.device, &gpu.queue, &case);
         let capacity = case.claims.len().max(1);
-        let index_params = uniform_from_val(
+        // The program's launch: one group, sync slot 0.
+        let launch_params = uniform_from_val(
             &gpu.device,
-            "claim_publication.index_params",
+            "claim_publication.launch_params",
             &Params {
-                first: capacity as u32,
+                first: 1,
                 second: 0,
                 third: 0,
                 fourth: 0,
@@ -692,8 +691,8 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
                     &gpu.device,
                     pass,
                     &resources,
-                    if index == INDEX {
-                        &index_params
+                    if index == INDEX_AND_PUBLISH {
+                        &launch_params
                     } else {
                         &source_params
                     },
@@ -715,7 +714,7 @@ fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_expli
                 label: Some(case.name),
             });
         // Producers' admissions precede every binding reader, as in resident.rs.
-        for stage in [INDEX, EXPLICIT_ADMIT, PUBLISH, CONTEXT_ADMIT, VALIDATE, PROBE] {
+        for stage in [EXPLICIT_ADMIT, INDEX_AND_PUBLISH, CONTEXT_ADMIT, VALIDATE, PROBE] {
             dispatch(&mut encoder, &passes[stage], &groups[stage]);
         }
         resources["results"].copy_to(&mut encoder, 0, &readback, 0, 64);

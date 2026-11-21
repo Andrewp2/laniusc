@@ -53,7 +53,7 @@ StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_param_row;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_const_claim_count_out;
-// Emission also clears both claim indexes (build_claim_lookup builds them).
+// Emission also clears both claim indexes (build_call_claim_indexes builds them).
 RWStructuredBuffer<uint> call_generic_claim_lookup_head;
 RWStructuredBuffer<uint> call_const_claim_lookup_head;
 StructuredBuffer<uint> call_generic_claim_scan_input;
