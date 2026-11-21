@@ -110,7 +110,7 @@ pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
 const GROUP_SLOT_KERNELS: &[&str] = &["type_checker/trait_solver/catalog/check_implementation_coherence"];
 const COHERENCE_CHECKERS: u32 = 8;
 /// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/shared/buffers/thread_scratch.slang.
-pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
+pub(super) const THREAD_SCRATCH_CELLS: u32 = 1792;
 
 /// Each dispatch has immutable parameters. A separate compute pass is a WGPU
 /// synchronization boundary; no following phase can observe a partially built
@@ -538,20 +538,18 @@ const PLAN_PHASE: u32 = 80;
 const LANE_THREADS: u32 = 64;
 // Literal artifact inventory, in the order of one step and then the finish:
 // phase, key, workgroup threads.
-const PROOF_KEYS: [(u32, &str, u32); 8] = [
+const PROOF_KEYS: [(u32, &str, u32); 6] = [
     (PLAN_PHASE, "type_checker/trait_solver/proof_frontier/plan_proof_wave", 1),
     (82, "type_checker/trait_solver/proof_frontier/build_proof_goals", LANE_THREADS),
-    (83, "type_checker/trait_solver/proof_frontier/select_proof_assumptions", LANE_THREADS),
-    (84, "type_checker/trait_solver/proof_frontier/select_proof_implementations", LANE_THREADS),
-    (85, "type_checker/trait_solver/proof_frontier/write_proof_rows", LANE_THREADS),
+    (84, "type_checker/trait_solver/proof_frontier/resolve_proof_work", LANE_THREADS),
     (86, "type_checker/trait_solver/proof_frontier/publish_proof_roots", 256),
     // The finish's batch stages: call reduction, then the receipt.
     (18, "type_checker/trait_solver/batches/reduce_batch_calls", 256),
     (19, "type_checker/trait_solver/batches/finalize_trait_batch", 256),
 ];
 const PLANNER: usize = 0;
-const LANES: std::ops::Range<usize> = 1..5;
-const FINISH: std::ops::Range<usize> = 5..8;
+const LANES: std::ops::Range<usize> = 1..3;
+const FINISH: std::ops::Range<usize> = 3..6;
 
 /// State words and values of the recorded steps (proof_work.slang, PSW_*).
 pub(super) mod wave {
@@ -601,7 +599,7 @@ struct WaveDispatch {
 /// The dispatches of one attempt over one packet's arenas.
 pub(super) struct WaveProgram {
     state: LaniusBuffer<u32>,
-    /// The planner, then the four lane kernels.
+    /// The planner, then the two lane kernels.
     step: Vec<WaveDispatch>,
     /// The planner's finish, the root publication and the batch stages.
     finish: Vec<WaveDispatch>,

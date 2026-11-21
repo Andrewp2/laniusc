@@ -432,14 +432,12 @@ obligation `first + i`. Every later row is one prerequisite of an
 implementation that a proof applied. One lane owns one row from its goal to its
 proof.
 
-A recorded step is `plan_proof_wave` and four lane kernels launched indirectly:
+A recorded step is `plan_proof_wave` and two lane kernels launched indirectly:
 
 | Kernel | Work of one lane |
 |---|---|
-| `build_proof_goals` | Copies each predicate root in one walk, reserving each node and its child span as it visits them. |
-| `select_proof_assumptions` | Tests the ancestors for a cycle and finds a caller assumption. |
-| `select_proof_implementations` | Finds the exact implementation, or the generic one without an assumption. |
-| `write_proof_rows` | Writes the proof, its bindings and one Work per prerequisite. |
+| `build_proof_goals` | Copies and hashes each predicate root, checks the ancestors for a cycle, and finds a caller assumption. |
+| `resolve_proof_work` | Selects the implementation, then writes the proof, its bindings and one Work per prerequisite. |
 
 Selection order is the exact implementation, then a caller assumption, then the
 generic implementation.

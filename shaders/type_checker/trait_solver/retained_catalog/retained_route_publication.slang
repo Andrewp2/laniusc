@@ -79,7 +79,7 @@ public void publish_route(uint o)
         { fault(RP_E_PROOF, o); return; }
         // Kind (impl/assumption) and classification (closed/conditional)
         // are distinct. An impl whose child proof uses a template bound is
-        // kind 1 with classification 2, just as write_proof_rows publishes
+        // kind 1 with classification 2, just as resolve_proof_work publishes
         // it. The output result carries the classification.
         uint kind = rp_proof[at];
         if ((kind != 1u && kind != 2u) || rp_proof[at+7u] != state || out_word(evidence) != state)

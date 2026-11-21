@@ -16,10 +16,7 @@
 // walker re-enters itself (shaders cannot recurse, and no specialization of a
 // walker calls another specialization of the same walker), so one region per
 // walker suffices. Every region is written before it is read; the table is
-// never cleared. Each region is private to one dispatch, except that
-// select_proof_implementations hands SCRATCH_PPS_HANDOFF, tagged with its
-// Work, serial and implementation, and the owned state frame it names on to
-// write_proof_rows (proof_selection.slang).
+// never cleared. Each region is private to one dispatch.
 public RWStructuredBuffer<uint4> thread_scratch;
 
 static uint g_thread_scratch_base = 0u;
@@ -46,11 +43,7 @@ public static const uint SCRATCH_SCOPED_EQUALITY = 1408u;
 public static const uint SCRATCH_NATIVE_MATERIALIZE = 1536u;
 // Concrete value layout stack: 2 cells per depth.
 public static const uint SCRATCH_VALUE_LAYOUT = 1664u;
-// Proof lane handoff: the tag cell, then 15 cells of the matched state.
-// Unlike the regions above it outlives one dispatch: a step's selection hands
-// it to the same lane of the step's row writer (proof_selection.slang).
-public static const uint SCRATCH_PPS_HANDOFF = 1792u;
-public static const uint THREAD_SCRATCH_CELLS = 1808u;
+public static const uint THREAD_SCRATCH_CELLS = 1792u;
 public static const uint THREAD_SCRATCH_GROUP = 32u;
 
 // Bind this thread to its slot and return the bound table's slot count. The

@@ -1,14 +1,11 @@
 // The proof search of one batch. PPS_WORK is a queue of goals. Row i below
 // the root count is source obligation `first + i`. Every later row is one
-// prerequisite of an implementation that a proof applied. One lane owns one
-// row from its goal to its proof.
+// prerequisite of an implementation that a proof applied.
 //
-// A recorded step runs the rows [cursor, cursor + count) through four lane
-// kernels: build_proof_goals, select_proof_assumptions,
-// select_proof_implementations and write_proof_rows. The rows a step appends
-// run in a later step, so a step is one nesting level of obligations at
-// most. plan_proof_wave chooses each step's rows on the GPU, and the host
-// reads the state back once after the recorded steps.
+// The planner chooses the rows of a step. One lane builds the row's goal
+// and checks the ancestors and assumptions. The same lane of the next
+// dispatch selects the implementation and writes the proof and its children.
+// The rows of those children run in a later step.
 //
 // Rows are not shared between obligations: two obligations with the same
 // goal prove it twice. A goal equal to one of its ancestors is a cycle.
@@ -41,7 +38,6 @@ public static const uint PPS_WORK_OBLIGATION = 13u; // roots only
 
 public static const uint PPS_WORK_PENDING = 0u;
 public static const uint PPS_WORK_BUILT = 1u;    // the goal row exists
-public static const uint PPS_WORK_SELECTED = 2u; // implementation and assumption words are final
 public static const uint PPS_WORK_PROVEN = 3u;
 public static const uint PPS_WORK_REFUTED = 4u;
 

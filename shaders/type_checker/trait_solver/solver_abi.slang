@@ -67,6 +67,13 @@ public RWStructuredBuffer<uint> trait_solver_catalog;
 public StructuredBuffer<uint> trait_solver_batch;
 public RWStructuredBuffer<uint> trait_solver_output;
 
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+// The proof frontier starts only after the input and output directories were admitted.
+static bool g_ts_use_admitted_layout = false;
+public void ts_use_admitted_layout() { g_ts_use_admitted_layout = true; }
+public bool ts_uses_admitted_layout() { return g_ts_use_admitted_layout; }
+#endif
+
 public struct SolverTable
 {
     public uint catalog_offset; public uint catalog_count; public uint batch_offset;
@@ -159,12 +166,22 @@ public bool ts_input_table_rows(uint table, out uint directory,
     out uint catalog_count, out uint batch_count)
 {
     directory = TS_INVALID; catalog_count = 0u; batch_count = 0u;
+    if (table >= TS_TABLES) return false;
+    uint start = TS_DIRECTORY_WORD + table * 6u;
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+    if (g_ts_use_admitted_layout)
+    {
+        directory = start;
+        catalog_count = trait_solver_batch[start + 1u];
+        batch_count = trait_solver_batch[start + 3u];
+        return true;
+    }
+#endif
     uint actual_batch; uint stride;
     trait_solver_batch.GetDimensions(actual_batch, stride);
     uint batch_words = trait_solver_params.batch_word_count;
-    if (!((table < TS_TABLES) & (batch_words >= TS_BATCH_FIXED_WORDS) &
+    if (!((batch_words >= TS_BATCH_FIXED_WORDS) &
         (batch_words <= actual_batch))) return false;
-    uint start = TS_DIRECTORY_WORD + table * 6u;
     uint prefix = trait_solver_batch[start + 1u];
     uint suffix = trait_solver_batch[start + 3u];
     if (!((suffix != TS_INVALID) & (prefix <= TS_INVALID - 1u - suffix))) return false;
@@ -195,6 +212,24 @@ public bool ts_read_address(uint table, uint row, uint first_field, uint fields,
     out uint arena, out uint address)
 {
     arena = TS_INVALID; address = TS_INVALID;
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+    if (g_ts_use_admitted_layout)
+    {
+        if (table >= TS_TABLES) return false;
+        uint start = TS_DIRECTORY_WORD + table * 6u;
+        uint width = ts_expected_width(table);
+        bool catalog_only = ((0x71Du >> table) & 1u) != 0u;
+        uint catalog_count = table < 11u ? trait_solver_batch[start + 1u] : 0u;
+        bool in_catalog = catalog_only || row < catalog_count;
+        uint local = select(in_catalog, row, row - catalog_count);
+        bool within = catalog_only ? row < catalog_count : in_catalog | (local < trait_solver_batch[start + 3u]);
+        if (!((fields != 0u) & (first_field < width) & (fields <= width - first_field) &
+            within)) return false;
+        arena = select(in_catalog, 0u, 1u);
+        address = trait_solver_batch[start + select(in_catalog, 0u, 2u)] + local * width + first_field;
+        return true;
+    }
+#endif
     uint actual_catalog; uint actual_batch; uint stride;
     trait_solver_catalog.GetDimensions(actual_catalog, stride);
     trait_solver_batch.GetDimensions(actual_batch, stride);

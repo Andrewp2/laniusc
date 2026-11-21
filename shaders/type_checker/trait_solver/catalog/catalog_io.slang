@@ -41,6 +41,19 @@ public uint ts_output_width(uint table)
 public bool ts_output_descriptor(uint table, out SolverOutputTable desc)
 {
     desc = (SolverOutputTable)0;
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+    if (ts_uses_admitted_layout())
+    {
+        if (table >= TS_OUTPUT_TABLES) return false;
+        uint start = TS_OUTPUT_DIRECTORY_WORD + table * 5u;
+        desc.arena = select(((0x18C3u >> table) & 1u) != 0u, 0u, 1u);
+        desc.offset = trait_solver_batch[start + 1u];
+        desc.count = trait_solver_batch[start + 2u];
+        desc.capacity = trait_solver_batch[start + 3u];
+        desc.width = ts_output_width(table);
+        return true;
+    }
+#endif
     // The descriptor has a fixed ABI location. Validate its physical/logical
     // batch extent before reading it, independent of protocol admission.
     uint batch_words; uint batch_stride;

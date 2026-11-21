@@ -29,6 +29,13 @@ public struct ProofStoreParams
 public ConstantBuffer<ProofStoreParams> proof_store_params;
 public RWStructuredBuffer<uint> trait_solver_proof_store;
 
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+// Set only after the frontier's entry gate has checked the building receipt.
+// The initializer admitted the layout and reservations can change only counts.
+static bool g_pps_use_admitted_layout = false;
+public void pps_use_admitted_layout() { g_pps_use_admitted_layout = true; }
+#endif
+
 // Directory6: physical offset, reserved logical rows, physical row capacity,
 // admitted logical prefix, accepted logical prefix, fixed row width.
 // A lane reserves its rows and writes them in one dispatch, and readers of a
@@ -139,6 +146,14 @@ public SolverStatus pps_admit_layout_group(uint lane)
 public bool pps_count(uint table, out uint count)
 {
     count = 0u;
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+    if (g_pps_use_admitted_layout)
+    {
+        if (table >= PPS_TABLES) return false;
+        count = trait_solver_proof_store[PPS_DIRECTORY + table * 6u + 1u];
+        return true;
+    }
+#endif
     if (!((table < PPS_TABLES) & pps_physical_header())) return false;
     uint directory = PPS_DIRECTORY + table * 6u;
     uint admitted = trait_solver_proof_store[directory + 3u];
@@ -158,6 +173,20 @@ public bool pps_address(uint table, uint row, uint field, uint fields, bool writ
     out uint address)
 {
     address = TS_INVALID;
+#ifdef LANIUS_ADMITTED_PROOF_LAYOUT
+    if (g_pps_use_admitted_layout)
+    {
+        if (table >= PPS_TABLES) return false;
+        uint width = pps_width(table);
+        uint directory = PPS_DIRECTORY + table * 6u;
+        uint logical = trait_solver_proof_store[directory + 1u];
+        if (fields == 0u || field >= width || fields > width - field || row >= logical ||
+            (write && table < PPS_PERSISTENT_TABLES && row < trait_solver_proof_store[directory + 3u]))
+            return false;
+        address = trait_solver_proof_store[directory] + row * width + field;
+        return true;
+    }
+#endif
     // The directory guard makes the six fixed directory reads safe.
     if (!((table < PPS_TABLES) & pps_physical_header())) return false;
     uint width = pps_width(table);

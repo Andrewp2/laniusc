@@ -81,7 +81,16 @@ fn main() -> Result<()> {
                 .with_context(|| format!("create shader artifact dir {}", parent.display()))?;
         }
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
-        let extra_args = slangc_extra_args(&extra)?;
+        let mut extra_args = slangc_extra_args(&extra)?;
+        let admitted_proof_layout = uses_admitted_proof_layout(&artifact_key);
+        if admitted_proof_layout {
+            extra_args.push("-DLANIUS_ADMITTED_PROOF_LAYOUT=1".to_string());
+        }
+        let extra = if admitted_proof_layout {
+            format!("{extra} -DLANIUS_ADMITTED_PROOF_LAYOUT=1")
+        } else {
+            extra
+        };
         let opt_level = shader_opt_level_for_artifact(&artifact_key)?;
         let minimum_slang_opt = shader_minimum_slang_optimization();
         let source_digest = shader_source_digest(&shader_root, &ep)?;
@@ -224,9 +233,7 @@ fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
     let default = shader_opt_level()?;
     // These two proof walkers fit the artifact budget at -O2. The shorter
     // instruction streams reduce work in the solver's populated waves.
-    if default == "1" && matches!(artifact_key,
-        "type_checker/trait_solver/proof_frontier/build_proof_goals"
-        | "type_checker/trait_solver/proof_frontier/select_proof_implementations")
+    if default == "1" && uses_admitted_proof_layout(artifact_key)
     {
         return Ok("2".to_string());
     }
@@ -234,6 +241,12 @@ fn shader_opt_level_for_artifact(artifact_key: &str) -> Result<String> {
         return Ok("0".to_string());
     }
     Ok(default)
+}
+
+fn uses_admitted_proof_layout(artifact_key: &str) -> bool {
+    matches!(artifact_key,
+        "type_checker/trait_solver/proof_frontier/build_proof_goals"
+        | "type_checker/trait_solver/proof_frontier/resolve_proof_work")
 }
 
 fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
@@ -330,8 +343,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/trait_solver/batches/admit_batch_contexts"
             | "type_checker/trait_solver/batches/admit_batch_calls"
             | "type_checker/trait_solver/batches/admit_batch_evidence"
-            | "type_checker/trait_solver/proof_frontier/select_proof_assumptions"
-            | "type_checker/trait_solver/proof_frontier/write_proof_rows"
             | "type_checker/trait_solver/proof_frontier/publish_proof_roots"
             | "type_checker/trait_solver/native_layout/materialize_proof_value"
     )

@@ -1,9 +1,6 @@
 // Selection of one Work's proof: the exact implementation, then a caller
-// assumption, then the generic implementation. The search and the proof rows
-// are separate kernels because a kernel that inlines both exceeds the size
-// budget. A Work's thread-scratch slot hands the matched constraint state
-// from select_proof_implementations to write_proof_rows: both run the same
-// rows of one step, so a row has the same slot in both.
+// assumption, then the generic implementation. Resolution materializes the
+// proof and substitution directly from the lane's matched constraint state.
 import type_checker.trait_solver.solver_abi;
 import type_checker.trait_solver.catalog.catalog_io;
 import type_checker.trait_solver.catalog.catalog_index;
@@ -18,7 +15,6 @@ import type_checker.trait_solver.proof_term_graph;
 import type_checker.trait_solver.owned_type_constraint_contract;
 import type_checker.trait_solver.owned_type_constraint_engine;
 import type_checker.scoped_types.scoped_type_hash;
-import shared.buffers.thread_scratch;
 
 public OwnedConstraintLimits pps_matching_limits()
 {
@@ -30,14 +26,13 @@ public OwnedConstraintLimits pps_matching_limits()
 
 // The coherent catalog admits at most one matching implementation. Complete
 // every bounded chain anyway: malformed links and exhausted work are errors.
-public SolverStatus pps_find_implementation(uint goal, bool coarse,
+public SolverStatus pps_find_implementation(uint goal, uint4 low, uint4 high, bool coarse,
     out uint selected, out OwnedConstraintState selected_state)
 {
     selected = TS_INVALID; selected_state = (OwnedConstraintState)0;
-    uint4 low; uint4 high; uint implementations; uint directory; uint catalog_atoms; uint batch_atoms; uint buckets;
+    uint implementations; uint directory; uint catalog_atoms; uint batch_atoms; uint buckets;
     uint candidate; uint table = coarse ? 11u : 6u;
-    if (!pps_read8(PPS_GOALS, goal, low, high) ||
-        !ts_catalog_count(9u, implementations) ||
+    if (!ts_catalog_count(9u, implementations) ||
         !ts_input_table_rows(1u, directory, catalog_atoms, batch_atoms) ||
         !ts_bucket_count(max(implementations, catalog_atoms), buckets))
         return ts_invalid(1u, goal, table);
@@ -72,7 +67,7 @@ public SolverStatus pps_find_implementation(uint goal, bool coarse,
             bool matches; OwnedConstraintState current;
             uint frame = owned_constraint_frame(
                 selected != TS_INVALID && selected_state.frame == owned_constraint_frame(0u) ? 1u : 0u);
-            SolverStatus status = ts_match_implementation_goal(candidate, goal,
+            SolverStatus status = ts_match_implementation_goal(candidate, goal, low, high,
                 pps_matching_limits(), frame, matches, current);
             if (status.state != TS_VALID) return status;
             if (matches)
@@ -131,9 +126,9 @@ public SolverStatus pps_find_assumption(uint context, uint goal, out uint select
 public SolverStatus pps_write_substitution(uint implementation, uint goal, uint context,
     inout OwnedConstraintState state, out uint substitution)
 {
-    substitution = TS_INVALID; uint4 head; uint4 owner;
+    substitution = TS_INVALID; uint4 head;
     uint4 span;
-    if (!ts_read4(9u, implementation, 0u, head) || !ts_read4(2u, head.y, 0u, owner) ||
+    if (!ts_read4(9u, implementation, 0u, head) ||
         !ts_read4(2u, head.y, 4u, span) || span.y != state.counts.x + state.counts.y || span.y > 64u)
         return ts_invalid(68u, implementation, goal);
     uint visible_owner; bool require_closed;
@@ -199,54 +194,6 @@ public SolverStatus pps_write_substitution(uint implementation, uint goal, uint 
         uint4(implementation, bindings, span.y, goal)) ? ts_ok() : ts_invalid(1u, substitution, implementation);
 }
 
-// The matched state of a Work's implementation in its scratch slot: a tag
-// cell (Work, proof-store serial, implementation), then the state in 8
-// cells. The state's frame stays in place.
-static const uint PPS_MATCH_TAG_CELL = SCRATCH_PPS_HANDOFF;
-static const uint PPS_MATCH_STATE_CELL = SCRATCH_PPS_HANDOFF + 1u;
-static const uint PPS_MATCH_TAG = 0x4d544348u;
-void pps_save_match(uint work, uint implementation, OwnedConstraintState state)
-{
-    scratch_set_cell(PPS_MATCH_TAG_CELL,
-        uint4(work, proof_store_params.serial, implementation, PPS_MATCH_TAG));
-    uint cell = PPS_MATCH_STATE_CELL;
-    scratch_set_cell(cell, uint4(state.status.state, state.status.detail,
-        state.status.required, state.status.available));
-    scratch_set_cell(cell + 1u, uint4(state.limits.depth, state.limits.pair_visits,
-        state.limits.occurs_visits, state.limits.substitution_steps));
-    scratch_set_cell(cell + 2u, uint4(state.work.pair_visits, state.work.occurs_visits,
-        state.work.substitution_steps, state.identity_capacity));
-    scratch_set_cell(cell + 3u, state.counts);
-    scratch_set_cell(cell + 4u, state.bound);
-    scratch_set_cell(cell + 5u, state.seen);
-    scratch_set_cell(cell + 6u, uint4(state.owners, state.node_capacities));
-    scratch_set_cell(cell + 7u, uint4(state.overlap, state.finished, state.frame, 0u));
-}
-// False when this slot does not hold the match of `work`.
-bool pps_load_match(uint work, uint implementation, out OwnedConstraintState state)
-{
-    uint4 tag = scratch_cell(PPS_MATCH_TAG_CELL);
-    scratch_set_word(PPS_MATCH_TAG_CELL, 3u, 0u);
-    uint cell = PPS_MATCH_STATE_CELL;
-    uint4 value = scratch_cell(cell);
-    state.status.state = value.x; state.status.detail = value.y;
-    state.status.required = value.z; state.status.available = value.w;
-    value = scratch_cell(cell + 1u);
-    state.limits.depth = value.x; state.limits.pair_visits = value.y;
-    state.limits.occurs_visits = value.z; state.limits.substitution_steps = value.w;
-    value = scratch_cell(cell + 2u);
-    state.work.pair_visits = value.x; state.work.occurs_visits = value.y;
-    state.work.substitution_steps = value.z; state.identity_capacity = value.w;
-    state.counts = scratch_cell(cell + 3u);
-    state.bound = scratch_cell(cell + 4u);
-    state.seen = scratch_cell(cell + 5u);
-    value = scratch_cell(cell + 6u);
-    state.owners = value.xy; state.node_capacities = value.zw;
-    value = scratch_cell(cell + 7u);
-    state.overlap = value.x; state.finished = value.y; state.frame = value.z;
-    return all(tag == uint4(work, proof_store_params.serial, implementation, PPS_MATCH_TAG));
-}
-
 // A goal equal to the goal of one of its ancestors has no finite proof.
 // Otherwise the caller assumption of the goal, if any, is recorded.
 public SolverStatus pps_select_assumption(uint work)
@@ -274,53 +221,39 @@ public SolverStatus pps_select_assumption(uint work)
         ts_invalid(1u, work, PPS_WORK);
 }
 
-// The exact implementation, or the generic one when the goal has neither an
-// exact implementation nor an assumption.
-public SolverStatus pps_select_implementation(uint work)
-{
-    uint4 key; uint4 extra;
-    if (!pps_read4(PPS_WORK, work, 0u, key) || !pps_read4(PPS_WORK, work, 12u, extra))
-        return ts_invalid(1u, work, PPS_WORK);
-    if (key.z != PPS_WORK_BUILT) return ts_ok();
-    uint implementation = TS_INVALID; OwnedConstraintState state = (OwnedConstraintState)0;
-    [loop]
-    for (uint pass = 0u; pass < 2u; pass++)
-    {
-        if (pass == 1u && (implementation != TS_INVALID || extra.x != TS_INVALID)) break;
-        SolverStatus status = pps_find_implementation(key.y, pass == 1u, implementation, state);
-        if (status.state != TS_VALID) return status;
-    }
-    if (implementation != TS_INVALID) pps_save_match(work, implementation, state);
-    if (!pps_write_word(PPS_WORK, work, PPS_WORK_IMPLEMENTATION, implementation) ||
-        !pps_write_word(PPS_WORK, work, PPS_WORK_STATE, PPS_WORK_SELECTED))
-        return ts_invalid(1u, work, PPS_WORK);
-    return ts_ok();
-}
-
-// The proof row of a selected Work, the substitution of its implementation
-// and one child Work per prerequisite. A proof names its children through
-// its ProofEdge rows, and each child writes its proof into its edge when it
-// is proven. A child's proof row follows its parent's.
-public SolverStatus pps_write_proof(uint work)
+// Select a proof, then write its substitution and one child Work per
+// prerequisite. Each child writes its proof into its parent's ProofEdge.
+public SolverStatus pps_resolve_work(uint work)
 {
     uint4 key; uint4 link; uint4 result; uint4 extra;
     if (!pps_read4(PPS_WORK, work, 0u, key) || !pps_read4(PPS_WORK, work, 4u, link) ||
         !pps_read4(PPS_WORK, work, 8u, result) || !pps_read4(PPS_WORK, work, 12u, extra))
         return ts_invalid(1u, work, PPS_WORK);
-    if (key.z != PPS_WORK_SELECTED) return ts_ok();
-    uint implementation = result.y; uint assumption = extra.x;
+    if (key.z != PPS_WORK_BUILT) return ts_ok();
+    uint4 goal; uint4 goal_extra;
+    if (!pps_read8(PPS_GOALS, key.y, goal, goal_extra)) return ts_invalid(1u, work, key.y);
+    uint implementation = TS_INVALID; uint assumption = extra.x;
+    OwnedConstraintState state = (OwnedConstraintState)0;
+    [loop]
+    for (uint pass = 0u; pass < 2u; pass++)
+    {
+        if (pass == 1u && (implementation != TS_INVALID || assumption != TS_INVALID)) break;
+        SolverStatus status = pps_find_implementation(key.y, goal, goal_extra, pass == 1u,
+            implementation, state);
+        if (status.state != TS_VALID) return status;
+    }
+    if (!pps_write_word(PPS_WORK, work, PPS_WORK_IMPLEMENTATION, implementation))
+        return ts_invalid(1u, work, PPS_WORK);
     if (implementation == TS_INVALID && assumption == TS_INVALID)
         return pps_refute_work(work, key.w, link.x, PPS_VERDICT_MISSING);
-    uint4 goal; uint4 goal_extra; uint4 context_extra;
-    if (!pps_read8(PPS_GOALS, key.y, goal, goal_extra) || !ts_read4(13u, key.x, 4u, context_extra))
+    uint4 context_extra;
+    if (!ts_read4(13u, key.x, 4u, context_extra))
         return ts_invalid(1u, work, key.y);
     uint kind = 2u; uint source = assumption; uint substitution = TS_INVALID;
     uint4 prerequisites = uint4(0u);
     bool closed = context_extra.y == 1u;
     if (implementation != TS_INVALID)
     {
-        OwnedConstraintState state;
-        if (!pps_load_match(work, implementation, state)) return ts_invalid(191u, work, implementation);
         SolverStatus written = pps_write_substitution(implementation, key.y, key.x, state, substitution);
         if (written.state != TS_VALID) return written;
         if (!ts_read4(9u, implementation, 8u, prerequisites) || prerequisites.z != 0u ||

@@ -550,7 +550,7 @@ impl GpuTraitSolver {
     }
 
     /// Records the solver's steps and reads its state back. A step runs up
-    /// to 4096 Work rows through the four lane kernels, and the rows it
+    /// to 4096 Work rows through the two lane kernels, and the rows it
     /// appends run in a later step, so a solve takes one step per nesting
     /// level of its obligations or more (proof_work.slang). The planner
     /// chooses each step's rows on the GPU, and the finish publishes the
