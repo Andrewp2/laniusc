@@ -1113,6 +1113,9 @@ impl RetainedDiscovery {
                 // No config slot of this submit is rewritten.
                 self.record(encoder, guard, ATTACH_METHOD_ROUTES, config, &bound, request_lanes, report)?;
                 self.record(encoder, guard, PUBLISH_WAVE, config, extra, 1, report)?;
+                // Substitution owns this encoder and only flushes its own
+                // work. Record these discovery dispatches before it submits.
+                self.flush(encoder);
                 Ok(())
             };
             let mut reads = vec![(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)];
