@@ -444,10 +444,6 @@ public void finalize_access_declaration_blocks(uint row, uint row_total, uint ac
         return;
     }
 
-    OptIrReachingDefinitionState state;
-    state.incoming_definition = needs_incoming
-        ? OPT_IR_REACHING_DEFINITION_UNRESOLVED
-        : OPT_IR_REACHING_DEFINITION_UNUSED;
-    state.outgoing_definition = outgoing;
-    opt_ir_reaching_definition_states[row] = state;
+    opt_ir_ssa_demand_seed_flag[row] = needs_incoming ? 1u : 0u;
+    opt_ir_outgoing_definition_by_declaration_block[row] = outgoing;
 }

@@ -71,7 +71,7 @@ public uint opt_ir_outgoing_local_definition_in(
     if (key.declaration != declaration || key.block != block)
         return SSA_DEMAND_INVALID;
 
-    uint definition = opt_ir_reaching_definition_states[row].outgoing_definition;
+    uint definition = opt_ir_outgoing_definition_by_declaration_block[row];
     return definition < access_total ? definition : SSA_DEMAND_INVALID;
 }
 
@@ -176,28 +176,6 @@ public uint opt_ir_ssa_block_argument_incoming_end(
     return end < argument.incoming_start ? 0xffffffffu : end;
 }
 
-// Marks declaration/block rows whose first read needs a value from the CFG.
-// These rows seed backward, demand-driven SSA construction; they are not a
-// completed live-in relation.
-
-void mark_value_demand_seeds_structure_failure(uint row)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
-}
-
-public void mark_value_demand_seeds(uint row, uint row_total)
-{
-    if (row >= row_total) return;
-
-    uint state = opt_ir_reaching_definition_states[row].incoming_definition;
-    bool upward_use = state == OPT_IR_REACHING_DEFINITION_UNRESOLVED;
-    bool valid = upward_use || state == OPT_IR_REACHING_DEFINITION_UNUSED;
-    opt_ir_ssa_demand_seed_flag[row] = upward_use ? 1u : 0u;
-    if (!valid) mark_value_demand_seeds_structure_failure(row);
-}
-
 // Materializes the canonical `(declaration, block)` relation that seeds
 // demand-driven SSA construction. Later fixed-point rounds use the same record
 // type for transparent blocks that have no declaration-access row.
@@ -276,63 +254,6 @@ public void scatter_value_demand_seeds(uint canonical_row, uint total, uint acce
         if (dense_row < seeds) publish_value_demand_seed(demand, dense_row);
     }
 }
-
-// Independently validates the sparse seeds for demand-driven SSA: each
-// canonical row has the expected mark and prefix mapping, and the resulting
-// `(declaration, block)` relation is strictly ordered.
-
-void validate_value_demand_seeds_structure_failure(uint row)
-{
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
-}
-
-bool demand_less(OptIrSsaDemand left, OptIrSsaDemand right)
-{
-    return left.declaration < right.declaration ||
-        (left.declaration == right.declaration && left.block < right.block);
-}
-
-public void validate_value_demand_seeds(uint row, uint row_total, uint demand_total)
-{
-    if (row >= row_total) return;
-
-    bool expected =
-        opt_ir_reaching_definition_states[row].incoming_definition ==
-            OPT_IR_REACHING_DEFINITION_UNRESOLVED;
-    bool valid = opt_ir_ssa_demand_seed_flag[row] == (expected ? 1u : 0u);
-    if (expected)
-    {
-        uint access_total = min(opt_ir_access_total[0u],
-            demand_params.access_capacity);
-        uint access_start = opt_ir_declaration_blocks[row].access_start;
-        uint access_id = access_start < access_total
-            ? opt_ir_access_order[access_start] : demand_params.access_capacity;
-        uint dense_row = opt_ir_ssa_demand_seed_prefix[row];
-        valid = valid && access_id < access_total && dense_row < demand_total;
-        if (valid)
-        {
-            OptIrAccessCore access = opt_ir_accesses[access_id];
-            OptIrSsaDemand demand = opt_ir_ssa_demands[dense_row];
-            valid = demand.declaration == access.subject &&
-                demand.block == access.block_id;
-        }
-    }
-
-    if (row < demand_total)
-    {
-        OptIrSsaDemand demand = opt_ir_ssa_demands[row];
-        valid = valid && demand.declaration < demand_params.declaration_capacity &&
-            demand.block < demand_params.block_capacity &&
-            (row == 0u || demand_less(opt_ir_ssa_demands[row - 1u], demand));
-    }
-
-    if (!valid) validate_value_demand_seeds_structure_failure(row);
-}
-
-// Publishes the canonical seed prefix into the exact sparse set. Each seed row
-// is the root of one lane of the following closure dispatch.
 
 // Computes the sparse backward block-entry-demand closure without host
 // iteration, one lane per seed demand. A lane walks backward from its seed
@@ -484,108 +405,19 @@ public void close_value_demands(
     }
 }
 
-// Independently validates the completed sparse demand closure and its
-// capacity-derived canonical ordering.
-
-void validate_value_demands_structure_failure(uint row)
+// Validates the order consumed by the later binary searches. Closure and
+// reaching-definition checks run when claiming demands and resolving uses.
+public void validate_value_demand_order(uint row, uint blocks)
 {
-    InterlockedOr(lowering_status[0u].flags,
-        LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
-    InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
-}
-
-OptIrSsaDemand ordered_demand(uint dense_row, uint total)
-{
-    OptIrSsaDemand invalid;
-    invalid.declaration = INVALID;
-    invalid.block = INVALID;
-    return dense_row < total ? opt_ir_ssa_canonical_demands_tmp[dense_row] : invalid;
-}
-
-uint lower_bound_demand(uint declaration, uint block, uint total)
-{
-    OptIrSsaDemand needle;
-    needle.declaration = declaration;
-    needle.block = block;
-    uint lo = 0u;
-    uint hi = total;
-    while (lo < hi)
+    OptIrSsaDemand demand = opt_ir_ssa_canonical_demands_tmp[row];
+    bool valid = demand.declaration < demand_params.declaration_capacity &&
+        demand.block < blocks &&
+        (row == 0u || opt_ir_ssa_demand_less(opt_ir_ssa_canonical_demands_tmp[row - 1u], demand));
+    if (!valid)
     {
-        uint mid = lo + (hi - lo) / 2u;
-        if (opt_ir_ssa_demand_less(ordered_demand(mid, total), needle))
-            lo = mid + 1u;
-        else
-            hi = mid;
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
+        InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
     }
-    return lo;
-}
-
-bool contains_demand(uint declaration, uint block, uint total)
-{
-    uint row = lower_bound_demand(declaration, block, total);
-    OptIrSsaDemand found = ordered_demand(row, total);
-    return found.declaration == declaration && found.block == block;
-}
-
-public void validate_value_demands(
-    uint row,
-    uint total,
-    uint seed_total,
-    uint block_total,
-    uint edge_total,
-    uint access_total,
-    uint declaration_block_total)
-{
-    bool valid = true;
-
-    if (row < total)
-    {
-        OptIrSsaDemand demand = ordered_demand(row, total);
-        valid = demand.declaration < demand_params.declaration_capacity &&
-            demand.block < block_total &&
-            (row == 0u || opt_ir_ssa_demand_less(
-                ordered_demand(row - 1u, total), demand));
-        if (valid)
-        {
-            uint predecessor_start = opt_ir_predecessor_prefix[demand.block];
-            uint predecessor_end = demand.block + 1u < block_total
-                ? opt_ir_predecessor_prefix[demand.block + 1u]
-                : edge_total;
-            valid = predecessor_start <= predecessor_end &&
-                predecessor_end <= edge_total;
-            for (uint predecessor_i = predecessor_start;
-                 valid && predecessor_i < predecessor_end;
-                 ++predecessor_i)
-            {
-                uint edge_id = opt_ir_predecessor_edge_ids[predecessor_i];
-                valid = edge_id < edge_total;
-                if (!valid) break;
-                OptIrEdge edge = opt_ir_edges[edge_id];
-                valid = opt_ir_edge_to_block(edge.packed_target) ==
-                    demand.block &&
-                    edge.from_block < block_total;
-                if (valid &&
-                    opt_ir_reachable[edge.from_block] == 0u)
-                    continue;
-                if (valid && opt_ir_outgoing_local_definition(
-                        demand.declaration,
-                        edge.from_block,
-                        declaration_block_total,
-                        access_total) == INVALID)
-                    valid = contains_demand(
-                        demand.declaration, edge.from_block, total);
-            }
-        }
-    }
-
-    // Initial upward-exposed reads must remain members after closure and sort.
-    if (valid && row < seed_total)
-    {
-        OptIrSsaDemand seed = opt_ir_ssa_demands[row];
-        valid = contains_demand(seed.declaration, seed.block, total);
-    }
-
-    if (!valid) validate_value_demands_structure_failure(row);
 }
 
 // Materializes the radix permutation into one physically canonical sparse
@@ -613,8 +445,7 @@ public void materialize_value_demands(uint row, uint total)
     opt_ir_ssa_canonical_demands_tmp[row] = demand;
 }
 
-// Commits physically ordered demand rows to the canonical relation after its
-// publication-order contents have been validated and are no longer needed.
+// Commits physically ordered demand rows to the canonical relation.
 
 public void commit_value_demands(uint row, uint total)
 {

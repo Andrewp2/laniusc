@@ -131,12 +131,6 @@ struct OptIrDeclarationBlock
     uint block;
 };
 
-struct OptIrReachingDefinitionState
-{
-    uint incoming_definition;
-    uint outgoing_definition;
-};
-
 struct OptIrSsaDemand
 {
     uint declaration;
@@ -175,9 +169,6 @@ struct OptIrDominatorTourLink
     uint down_count;
 };
 
-static const uint OPT_IR_REACHING_DEFINITION_UNUSED = 0xffffffffu;
-static const uint OPT_IR_REACHING_DEFINITION_UNRESOLVED = 0xfffffffeu;
-static const uint OPT_IR_REACHING_DEFINITION_MERGE = 0xfffffffdu;
 
 static const uint OPT_IR_SSA_SOURCE_INVALID = 0u;
 static const uint OPT_IR_SSA_SOURCE_LOCAL_DEFINITION = 1u;

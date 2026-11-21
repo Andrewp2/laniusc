@@ -114,10 +114,6 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
     uint blocks = min(opt_ir_block_total[0u], demand_params.block_capacity);
     uint edges = min(opt_ir_edge_total[0u], demand_params.edge_capacity);
     uint accesses = min(opt_ir_access_total[0u], demand_params.access_capacity);
-    for (uint row = program.lane; row < declaration_rows; row += program.lanes)
-        mark_value_demand_seeds(row, declaration_rows);
-    if (!step_barrier(program)) return false;
-
     if (!step_program_prefix_scan(program, declaration_rows, opt_ir_ssa_demand_seed_flag,
             opt_ir_ssa_demand_seed_prefix, opt_ir_ssa_demand_total, scan_group_sums)) return false;
     if (!step_barrier(program)) return false;
@@ -128,11 +124,6 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
         scatter_value_demand_seeds(row, declaration_rows, accesses, seeds);
     if (!step_barrier(program)) return false;
 
-    if (validate)
-    {
-        for (uint row = program.lane; row < declaration_rows; row += program.lanes)
-            validate_value_demand_seeds(row, declaration_rows, min(raw_seeds, demand_params.access_capacity));
-    }
     for (uint row = program.lane; row < seeds; row += program.lanes)
         close_value_demands(row, seeds, blocks, edges, accesses, declaration_blocks);
     if (!step_barrier(program)) return false;
@@ -147,20 +138,11 @@ bool construct_block_arguments(inout StepProgram program, bool validate)
         materialize_value_demands(row, demands);
     if (!step_barrier(program)) return false;
 
-    if (validate)
-    {
-        // Validate closure against the materialized order while the original
-        // table still contains the seed rows.
-        for (uint row = program.lane; row < demands; row += program.lanes)
-            validate_value_demands(row, demands, min(seeds, demands), blocks, edges,
-                accesses, declaration_blocks);
-        if (!step_barrier(program)) return false;
-    }
-
     // Marking the block argument reads only the demand just committed by
     // this lane. The predecessor lists are inputs of this program.
     for (uint row = program.lane; row < demands; row += program.lanes)
     {
+        if (validate) validate_value_demand_order(row, blocks);
         commit_value_demands(row, demands);
         mark_block_arguments(row, demands, blocks, edges);
     }

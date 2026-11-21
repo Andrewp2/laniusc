@@ -19,7 +19,6 @@ use super::optimization_ir::{
     OptIrNodeCore,
     OptIrNodeOperands,
     OptIrNodeResults,
-    OptIrReachingDefinitionState,
     OptIrRegion,
     OptIrSsaDemand,
     OptIrValueDefinition,
@@ -3857,10 +3856,10 @@ fn lowering_compiler_graph_builder(
             capacities.optimization_declaration_block_capacity(),
         ),
     ))?;
-    let opt_reaching_definition_states = graph.add_resource(workspace(
-        "lir.opt.reaching_definition_states",
+    let opt_outgoing_definition_by_declaration_block = graph.add_resource(workspace(
+        "lir.opt.outgoing_definition_by_declaration_block",
         ResourceDomain::OptimizationAccessGroups,
-        LoweringCapacities::bytes::<OptIrReachingDefinitionState>(
+        LoweringCapacities::bytes::<u32>(
             capacities.optimization_declaration_block_capacity(),
         ),
     ))?;
@@ -5269,8 +5268,8 @@ fn lowering_compiler_graph_builder(
                 opt_declaration_block_total,
             ),
             PassAccess::initialize_read_write(
-                "opt_ir_reaching_definition_states",
-                opt_reaching_definition_states,
+                "opt_ir_outgoing_definition_by_declaration_block",
+                opt_outgoing_definition_by_declaration_block,
             ),
             PassAccess::initialize_read_write(
                 "access_order_temporary",

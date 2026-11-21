@@ -144,17 +144,6 @@ pub struct OptIrDeclarationBlock {
     pub block: u32,
 }
 
-/// Incoming reaching-definition state for one [`OptIrDeclarationBlock`].
-/// The declaration/block lane records its final definition so predecessor
-/// queries read it directly during demand closure. Reserved high values distinguish an
-/// unused entry from an unresolved incoming value and, later, a merge value.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
-pub struct OptIrReachingDefinitionState {
-    pub incoming_definition: u32,
-    pub outgoing_definition: u32,
-}
-
 /// One memoized reaching-definition request used by demand-driven SSA
 /// construction. Initial rows come from upward-exposed reads. Propagation can
 /// add transparent predecessor blocks that have no declaration access row, so
@@ -249,7 +238,6 @@ mod tests {
         assert_eq!(std::mem::size_of::<OptIrRegion>(), 16);
         assert_eq!(std::mem::size_of::<OptIrAccessCore>(), 8);
         assert_eq!(std::mem::size_of::<OptIrDeclarationBlock>(), 12);
-        assert_eq!(std::mem::size_of::<OptIrReachingDefinitionState>(), 8);
         assert_eq!(std::mem::size_of::<OptIrSsaDemand>(), 8);
         assert_eq!(std::mem::size_of::<OptIrBlockArgument>(), 16);
         assert_eq!(std::mem::size_of::<OptIrBlockArgumentIncoming>(), 8);

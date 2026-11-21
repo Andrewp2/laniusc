@@ -61,7 +61,7 @@ public RWStructuredBuffer<uint> opt_ir_local_definition_by_access;
 public RWStructuredBuffer<uint> opt_ir_access_group_prefix;
 public RWStructuredBuffer<OptIrDeclarationBlock> opt_ir_declaration_blocks;
 public RWStructuredBuffer<uint> opt_ir_declaration_block_total;
-public RWStructuredBuffer<OptIrReachingDefinitionState> opt_ir_reaching_definition_states;
+public RWStructuredBuffer<uint> opt_ir_outgoing_definition_by_declaration_block;
 public RWStructuredBuffer<uint> access_order_temporary;
 public RWStructuredBuffer<uint> access_histogram;
 public RWStructuredBuffer<uint> access_bucket_total;
