@@ -127,6 +127,11 @@ pub(crate) fn with_uniform_buffer_arena<T>(
     value
 }
 
+/// Whether `uniform_from_val` on this thread packs into an open arena.
+pub(crate) fn uniform_buffer_arena_is_open() -> bool {
+    UNIFORM_BUFFER_ARENA.with(|arena| arena.borrow().is_some())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ResettableRowDomain(u32);
 
@@ -1183,6 +1188,56 @@ impl CapacityBufferCache {
             .lock()
             .expect("capacity buffer cache poisoned")
             .clear();
+    }
+}
+
+/// Uniform buffers that are never written after creation, keyed by their
+/// encoded contents.
+///
+/// A kernel owns one (`PassData::resident_uniform`). An operation that is
+/// built again for every job asks for its parameters here and gets the
+/// buffer an earlier job created for the same value. The reflected bind
+/// group cache then finds the bind group that binds it, so the job creates
+/// neither. Two values are two buffers: operations recorded into one encoder
+/// with different parameters each keep their own, which a queue write into
+/// one shared buffer would not give them.
+///
+/// No buffer is evicted. An owner must ask for a bounded set of values.
+#[derive(Default)]
+pub(crate) struct ResidentUniforms {
+    buffers: Mutex<HashMap<Vec<u8>, LaniusBuffer<u8>>>,
+}
+
+impl ResidentUniforms {
+    pub(crate) fn uniform<T>(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        value: &T,
+    ) -> LaniusBuffer<T>
+    where
+        T: encase::ShaderType + encase::internal::WriteInto,
+    {
+        let mut encoded = encase::UniformBuffer::new(Vec::<u8>::new());
+        encoded
+            .write(value)
+            .expect("failed to write value into UniformBuffer");
+        let bytes = encoded.into_inner();
+        let mut buffers = self.buffers.lock().expect("resident uniforms poisoned");
+        if let Some(buffer) = buffers.get(&bytes) {
+            return buffer.clone().reinterpret(1);
+        }
+        // Not a range of the open uniform arena: the arena's buffers stay
+        // mapped until it closes, and this buffer outlives its builder.
+        let raw = create_buffer_init_checked(
+            device,
+            label,
+            &bytes,
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        );
+        let buffer = LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label);
+        buffers.insert(bytes, buffer.clone());
+        buffer.reinterpret(1)
     }
 }
 

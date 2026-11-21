@@ -1811,6 +1811,25 @@ pub struct PassData {
     /// Parsed Slang reflection used for bind groups.
     pub reflection: Arc<SlangReflection>,
     _reflected_bind_groups: SharedReflectedBindGroupCache,
+    resident_uniforms: Arc<crate::gpu::buffers::ResidentUniforms>,
+}
+
+impl PassData {
+    /// The kernel's resident uniform buffer that holds `value`: the same
+    /// buffer for the same value for as long as the pipeline lives. An
+    /// operation built for every job binds it in place of a new buffer, and
+    /// `create_or_reuse_buffer_bind_group` then finds its bind group.
+    pub(crate) fn resident_uniform<T>(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        value: &T,
+    ) -> LaniusBuffer<T>
+    where
+        T: encase::ShaderType + encase::internal::WriteInto,
+    {
+        self.resident_uniforms.uniform(device, label, value)
+    }
 }
 
 #[derive(Debug)]
@@ -2510,6 +2529,7 @@ fn make_pass_data_with_dynamic_uniforms(
         thread_group_size: tgs,
         reflection: Arc::new(reflection),
         _reflected_bind_groups: reflected_bind_groups,
+        resident_uniforms: Arc::default(),
     })
 }
 

@@ -5,7 +5,7 @@ use encase::ShaderType;
 
 use super::{ComputeGraph, ComputeOperation};
 use crate::gpu::{
-    buffers::{LaniusBuffer, uniform_from_val},
+    buffers::{LaniusBuffer, uniform_buffer_arena_is_open, uniform_from_val},
     passes_core::{self, PassData},
     resource_registry::ResourceMap,
 };
@@ -51,6 +51,32 @@ pub(crate) fn step_program_group_variant(rows: u64) -> usize {
     usize::from(rows > SINGLE_GROUP_ROWS)
 }
 
+/// The resident uniform of `pass` that holds a launch with `groups`
+/// workgroups: the same buffer for the same launch values in every job, so
+/// the reflected cache finds the bind group that binds it.
+///
+/// The uniforms of the other group counts of `step_program_group_counts` are
+/// created with it. A later job whose row count selects another count then
+/// binds a buffer that exists.
+fn resident_launch_uniform(
+    device: &wgpu::Device,
+    name: &str,
+    pass: &PassData,
+    groups: u32,
+    slot: u32,
+    options: u32,
+) -> LaniusBuffer<Launch> {
+    let uniform = |groups| {
+        pass.resident_uniform(device, name, &Launch { groups, slot, options, reserved: 0 })
+    };
+    for other in step_program_group_counts() {
+        if other != groups {
+            uniform(other);
+        }
+    }
+    uniform(groups)
+}
+
 enum ProgramDispatch {
     Graph(ComputeOperation),
     Reflected {
@@ -90,16 +116,23 @@ impl StepProgramOperation {
                 && binding.byte_size == sync.byte_size as u64,
             "{name} must clear the buffer bound as step_program_sync",
         );
-        let launch = uniform_from_val(
-            device,
-            name,
-            &Launch {
-                groups,
-                slot,
-                options,
-                reserved: 0,
-            },
-        );
+        // A stage that builds its programs once inside a uniform arena keeps
+        // the packed arena range. A caller outside one may build the
+        // operation again for every job, so it binds the resident uniform.
+        let launch = if uniform_buffer_arena_is_open() {
+            uniform_from_val(
+                device,
+                name,
+                &Launch {
+                    groups,
+                    slot,
+                    options,
+                    reserved: 0,
+                },
+            )
+        } else {
+            resident_launch_uniform(device, name, pass, groups, slot, options)
+        };
         let operation = ComputeOperation::direct_with_named_uniform(
             device,
             graph,
@@ -148,6 +181,10 @@ impl StepProgramOperation {
 
     /// Binds a program over stage-owned storage with no graph slot reuse.
     /// The sync and launch bindings are owned by the operation.
+    ///
+    /// Callers build the operation for every job. The launch is the pass's
+    /// resident uniform, so a job with the same buffers and launch values
+    /// creates no buffer and no bind group.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_reflected(
         device: &wgpu::Device,
@@ -159,11 +196,7 @@ impl StepProgramOperation {
         groups: u32,
         options: u32,
     ) -> Result<Self> {
-        let launch = uniform_from_val(
-            device,
-            name,
-            &Launch { groups, slot, options, reserved: 0 },
-        );
+        let launch = resident_launch_uniform(device, name, pass, groups, slot, options);
         let mut operation = Self::new_reflected_with_launch(
             device, name, pass, resources, sync, slot, groups, launch.as_entire_binding(),
         )?;
