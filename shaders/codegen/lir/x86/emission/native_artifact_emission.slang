@@ -53,16 +53,8 @@ void store_byte(uint pos, uint value)
     if (pos >= gParams.artifact_capacity) return;
     uint word_i = pos >> 2u;
     uint shift = (pos & 3u) * 8u;
-    uint mask = 0xffu << shift;
-    uint old_value = artifact_bytes[word_i];
-    for (;;)
-    {
-        uint next = (old_value & ~mask) | ((value & 0xffu) << shift);
-        uint prior;
-        InterlockedCompareExchange(artifact_bytes[word_i], old_value, next, prior);
-        if (prior == old_value) return;
-        old_value = prior;
-    }
+    // The artifact starts clear and each byte has one writer.
+    InterlockedOr(artifact_bytes[word_i], (value & 0xffu) << shift);
 }
 
 void emit_u8(inout uint cursor, uint value) { store_byte(cursor++, value); }

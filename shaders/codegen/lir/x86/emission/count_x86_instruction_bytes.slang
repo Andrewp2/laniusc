@@ -10,6 +10,7 @@ import codegen.lir.x86.allocation.native_frame_layout;
 import codegen.lir.x86.allocation.native_parameter_value_layout;
 import codegen.lir.x86.emission.native_instruction_encoding;
 import codegen.lir.x86.emission.native_instruction_encoding_plan;
+import codegen.lir.x86.emission.native_safety_checks;
 import shared.buffers.gpu_index;
 
 struct Params
@@ -28,6 +29,7 @@ StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<X86LirCore> target_lir_core;
 StructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<X86LirLocations> target_lir_locations;
+StructuredBuffer<uint> target_lir_flags;
 StructuredBuffer<uint> target_semantic_origin;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> opt_ir_semantic_row;
@@ -150,6 +152,20 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     return bytes;
 }
 
+uint add_guard_bytes(uint page_row, uint bytes, X86LirCore core,
+                     X86LirOperands operands, X86LirLocations locations)
+{
+    if ((target_lir_flags[page_row] & TARGET_LIR_FLAG_UNSUPPORTED) != 0u)
+        return bytes;
+    uint guard = x86_safety_guard_bytes(core, operands, locations);
+    if (guard > gParams.artifact_capacity || bytes > gParams.artifact_capacity - guard)
+    {
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_ARTIFACT_CAPACITY);
+        return bytes;
+    }
+    return bytes + guard;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -159,8 +175,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = gParams.target_start + page_row;
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
     if (row >= gParams.target_capacity) return;
-    target_byte_length[row] = 0u;
-    if (row >= total) return;
+    if (row >= total)
+    {
+        target_byte_length[row] = 0u;
+        return;
+    }
     X86LirCore core = target_lir_core[page_row];
     X86LirOperands operands = target_lir_operands[page_row];
     X86LirLocations locations = target_lir_locations[page_row];
@@ -172,6 +191,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (function_index >= function_count)
     {
         report_unsupported(page_row, core.source_hir);
+        target_byte_length[row] = add_guard_bytes(page_row, 0u, core, operands, locations);
         return;
     }
     TargetLirFunction function = target_functions[function_index];
@@ -305,5 +325,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row + 1u == function.instruction_start + function.instruction_count &&
         !final_explicit_return)
         bytes += implicit_footer_bytes(function, semantic_function, saved_mask);
-    target_byte_length[row] = bytes;
+    target_byte_length[row] = add_guard_bytes(page_row, bytes, core, operands, locations);
 }

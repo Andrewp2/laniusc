@@ -25,6 +25,7 @@ StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<uint> opt_ir_region_total;
 StructuredBuffer<OptIrRegion> opt_ir_regions;
 RWStructuredBuffer<uint> x86_position_by_semantic;
@@ -51,9 +52,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     OptIrNodeCore core = opt_ir_core[row];
     OptIrNodeOperands operands = opt_ir_operands[row];
+    uint function_total = min(gParams.function_capacity, semantic_lir_function_total[0u]);
     uint op = opt_ir_op(core);
     bool executable = opt_ir_node_is_executable(row, total);
-    if (executable && op == SEMANTIC_LIR_OP_CALL && operands.a < gParams.function_capacity)
+    if (executable && op == SEMANTIC_LIR_OP_CALL && operands.a < function_total)
     {
         uint ignored;
         // A function named as a value (a CALL row from a name whose callee is
@@ -112,7 +114,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = opt_ir_source_hir[row];
     if (owner >= gParams.function_capacity) return;
     uint function_id = semantic_function_id_by_hir[owner];
-    if (function_id >= gParams.function_capacity) return;
+    if (function_id >= function_total) return;
     uint ignored;
     InterlockedMin(x86_function_start[function_id], position, ignored);
     InterlockedMax(x86_function_end[function_id], position + 1u, ignored);

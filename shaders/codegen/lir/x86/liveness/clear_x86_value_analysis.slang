@@ -13,11 +13,11 @@ struct Params
     uint reserved2;
 };
 ConstantBuffer<Params> gParams;
+StructuredBuffer<uint> opt_ir_total;
+StructuredBuffer<uint> semantic_lir_function_total;
 RWStructuredBuffer<uint> x86_position_by_semantic;
-RWStructuredBuffer<uint> x86_next_rax_clobber_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_live_by_semantic;
-RWStructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_function_start;
 RWStructuredBuffer<uint> x86_function_end;
@@ -39,17 +39,14 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (row < gParams.semantic_capacity)
+    // Value facts are fully seeded after indexing. The remaining node
+    // defaults cover the current OptIR and the function defaults cover its
+    // dense function table. Declaration IDs use the token address space.
+    if (row < min(gParams.semantic_capacity, opt_ir_total[0u]))
     {
         x86_position_by_semantic[row] = INVALID;
-        x86_next_rax_clobber_by_semantic[row] = INVALID;
         x86_last_use_by_semantic[row] = 0u;
         x86_live_by_semantic[row] = 0u;
-        X86ValueAnalysis value_analysis;
-        value_analysis.value = 0u;
-        value_analysis.known = 0u;
-        value_analysis.replacement = row;
-        x86_value_by_semantic[row] = value_analysis;
         x86_location_by_semantic[row] = INVALID;
     }
     if (row < gParams.token_capacity)
@@ -63,7 +60,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         analysis.read_count = 0u;
         x86_decl_analysis_by_token[row] = analysis;
     }
-    if (row < gParams.function_capacity)
+    if (row < min(gParams.function_capacity, semantic_lir_function_total[0u]))
     {
         x86_function_start[row] = INVALID;
         x86_function_end[row] = 0u;

@@ -7,14 +7,12 @@
 #include "native_register_allocator.slang"
 
 RWStructuredBuffer<X86AllocationPrepared> x86_allocation_prepared;
+RWStructuredBuffer<uint2> x86_allocation_boundary_masks;
+groupshared uint call_masks[8];
+groupshared uint label_masks[8];
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+uint prepare_position(uint position, uint total)
 {
-    uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
-    if (position >= total) return;
     uint function_total = min(gParams.function_capacity,
         semantic_lir_function_total[0u]);
     X86AllocationPrepared prepared;
@@ -65,4 +63,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     x86_allocation_prepared[position] = prepared;
     x86_stack_words_by_position[position] = INVALID;
+    return prepared.flags;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID, uint lane: SV_GroupIndex)
+{
+    uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
+    uint group_start = position - lane;
+    if (group_start >= total) return;
+    if (lane < 8u)
+    {
+        call_masks[lane] = 0u;
+        label_masks[lane] = 0u;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (position < total)
+    {
+        uint flags = prepare_position(position, total);
+        uint bit = 1u << (lane & 31u);
+        if ((flags & PREPARED_CALL) != 0u) InterlockedOr(call_masks[lane >> 5u], bit);
+        if ((flags & PREPARED_CONTROL_LABEL) != 0u) InterlockedOr(label_masks[lane >> 5u], bit);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (lane < 8u && group_start + lane * 32u < total)
+        x86_allocation_boundary_masks[(group_start >> 5u) + lane] =
+            uint2(call_masks[lane], label_masks[lane]);
 }

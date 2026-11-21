@@ -1,39 +1,23 @@
-// One lane per output word from the start of .text to the end of .rodata:
-// gathers the copied text of each object, zero import text, and rodata.
-// The dynamic writer and the relocations patch these words afterwards.
+// One lane per output word. Copy the interval that overlaps each object
+// section, including words that straddle sections. The import text starts
+// clear for the dynamic writer, and relocations patch the copied words.
 
 import codegen.x86.link.resident_linking.resident_link_layout;
-import shared.buffers.byte_packing;
 
-uint section_byte(uint position, uint lanius_text, uint text_total, uint rodata_total)
+uint section_fragment(StructuredBuffer<uint> source, uint source_start,
+                      uint section_start, uint section_end, uint position)
 {
-    if (position < TEXT_OFFSET)
-        return 0u;
-    uint p = position - TEXT_OFFSET;
-    if (p < lanius_text)
-    {
-        for (uint k = 0u; k < gRL.object_count; k += 1u)
-        {
-            uint start = object_word(k, OB_TEXT_OUT);
-            uint len = object_word(k, OB_COPY_END) - object_word(k, OB_COPY_START);
-            if (p >= start && p - start < len)
-                return object_text_byte(k, object_word(k, OB_COPY_START) + (p - start));
-        }
-        return 0u;
-    }
-    if (p < text_total)
-        return 0u;
-    p -= text_total;
-    if (p < rodata_total)
-    {
-        for (uint k = 0u; k < gRL.object_count; k += 1u)
-        {
-            uint start = object_word(k, OB_RODATA_OUT);
-            if (p >= start && p - start < object_word(k, OB_RODATA_LEN))
-                return object_rodata_byte(k, p - start);
-        }
-    }
-    return 0u;
+    uint first = max(section_start, position);
+    uint end = min(section_end, position + 4u);
+    if (first >= end) return 0u;
+    uint count = end - first;
+    uint offset = source_start + first - section_start;
+    uint shift = (offset & 3u) * 8u;
+    uint packed = source[offset >> 2u] >> shift;
+    if ((offset & 3u) + count > 4u)
+        packed |= source[(offset >> 2u) + 1u] << (32u - shift);
+    return (packed & (0xffffffffu >> ((4u - count) * 8u))) <<
+        ((first - position) * 8u);
 }
 
 [shader("compute")]
@@ -41,14 +25,34 @@ uint section_byte(uint position, uint lanius_text, uint text_total, uint rodata_
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint word = gRL.output_word_begin + rl_lane(tid);
-    if (word >= gRL.output_word_end)
-        return;
-    uint lanius_text = rl_status[ST_TEXT_LEN];
-    uint rodata_total = rl_status[ST_RODATA_LEN];
+    if (word >= gRL.output_word_end) return;
     uint position = word * 4u;
-    rl_out[word] = pack_u8x4(
-        section_byte(position, lanius_text, gRL.text_len_total, rodata_total),
-        section_byte(position + 1u, lanius_text, gRL.text_len_total, rodata_total),
-        section_byte(position + 2u, lanius_text, gRL.text_len_total, rodata_total),
-        section_byte(position + 3u, lanius_text, gRL.text_len_total, rodata_total));
+    uint rodata_start = TEXT_OFFSET + gRL.text_len_total;
+    uint packed = 0u;
+    if (position + 4u > TEXT_OFFSET && position < TEXT_OFFSET + rl_status[ST_TEXT_LEN])
+    {
+        for (uint object = 0u; object < gRL.object_count; object += 1u)
+        {
+            uint start = TEXT_OFFSET + object_word(object, OB_TEXT_OUT);
+            if (start >= position + 4u) break;
+            uint copy_start = object_word(object, OB_COPY_START);
+            uint end = start + object_word(object, OB_COPY_END) - copy_start;
+            packed |= section_fragment(st_text, slot_word(object, 8u) + copy_start,
+                start, end, position);
+            if (end >= position + 4u) break;
+        }
+    }
+    if (position + 4u > rodata_start && position < rodata_start + rl_status[ST_RODATA_LEN])
+    {
+        for (uint object = 0u; object < gRL.object_count; object += 1u)
+        {
+            uint start = rodata_start + object_word(object, OB_RODATA_OUT);
+            if (start >= position + 4u) break;
+            uint end = start + object_word(object, OB_RODATA_LEN);
+            packed |= section_fragment(st_rodata, slot_word(object, 9u),
+                start, end, position);
+            if (end >= position + 4u) break;
+        }
+    }
+    rl_out[word] = packed;
 }

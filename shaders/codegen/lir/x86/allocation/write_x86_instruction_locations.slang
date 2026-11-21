@@ -27,6 +27,7 @@ StructuredBuffer<uint> semantic_to_target_start;
 StructuredBuffer<uint> x86_location_by_semantic;
 StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
+StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<uint> x86_decl_location_by_token;
 StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
@@ -45,9 +46,10 @@ uint stack_location(uint slot)
 
 uint value_location(uint semantic_row)
 {
-    if (semantic_row >= gParams.semantic_capacity) return X86_LOCATION_INVALID;
+    uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
+    if (semantic_row >= total) return X86_LOCATION_INVALID;
     uint replacement = x86_value_by_semantic[semantic_row].replacement;
-    if (replacement < gParams.semantic_capacity)
+    if (replacement < total)
         semantic_row = replacement;
     OptIrNodeCore core = opt_ir_core[semantic_row];
     uint allocated = x86_location_by_semantic[semantic_row];

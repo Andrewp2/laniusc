@@ -25,14 +25,12 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint target_value(uint semantic_row, uint total)
 {
-    if (semantic_row < gParams.semantic_capacity)
-    {
-        uint replacement = x86_value_by_semantic[semantic_row].replacement;
-        if (replacement < gParams.semantic_capacity)
-            semantic_row = replacement;
-    }
-    uint target_row = semantic_row < gParams.semantic_capacity
-        ? semantic_to_target_start[semantic_row] : INVALID;
+    uint semantic_count = min(gParams.semantic_capacity, opt_ir_total[0u]);
+    if (semantic_row >= semantic_count) return INVALID;
+    uint replacement = x86_value_by_semantic[semantic_row].replacement;
+    if (replacement < semantic_count)
+        semantic_row = replacement;
+    uint target_row = semantic_to_target_start[semantic_row];
     return target_row < total ? target_row : INVALID;
 }
 

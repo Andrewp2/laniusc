@@ -49,7 +49,6 @@ pub(crate) struct GpuX86ArtifactObjectView<'a> {
 pub(crate) struct GpuX86ArtifactStage {
     artifact_capacity: u32,
     byte_counts: Vec<ComputeOperation>,
-    integer_byte_counts: Vec<ComputeOperation>,
     target_capacity: u32,
     plan_layout: [StepProgramOperation; 2],
     clear: ComputeOperation,
@@ -140,7 +139,6 @@ impl GpuX86ArtifactStage {
         let fixed_params = &params[0];
 
         let byte_count_pass = load(kernels, "lir.x86.byte_count", "codegen/lir/x86/emission/count_x86_instruction_bytes")?;
-        let integer_byte_count_pass = load(kernels, "lir.x86.integer_byte_count", "codegen/lir/x86/emission/count_x86_integer_literal_bytes")?;
         let clear_pass = load(
             kernels,
             "lir.x86.artifact.clear",
@@ -184,25 +182,6 @@ impl GpuX86ArtifactStage {
                     &resources,
                     "lir.x86.byte_count",
                     &byte_count_pass,
-                    params,
-                    target_capacity
-                        .saturating_sub(target_start)
-                        .min(TARGET_LIR_PAGE_ROWS),
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let integer_byte_counts = params
-            .iter()
-            .enumerate()
-            .take(target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS) as usize)
-            .map(|(page_id, params)| {
-                let target_start = page_id as u32 * TARGET_LIR_PAGE_ROWS;
-                ComputeOperation::direct_with_uniform(
-                    device,
-                    &context,
-                    &resources,
-                    "lir.x86.integer_byte_count",
-                    &integer_byte_count_pass,
                     params,
                     target_capacity
                         .saturating_sub(target_start)
@@ -322,7 +301,6 @@ impl GpuX86ArtifactStage {
         Ok(Self {
             artifact_capacity,
             byte_counts,
-            integer_byte_counts,
             target_capacity,
             plan_layout,
             clear,
@@ -349,10 +327,6 @@ impl GpuX86ArtifactStage {
         self.byte_counts
             .get(page_id)
             .context("x86 target page has no byte-count operation")?
-            .record(encoder)?;
-        self.integer_byte_counts
-            .get(page_id)
-            .context("x86 target page has no integer byte-count operation")?
             .record(encoder)
     }
 

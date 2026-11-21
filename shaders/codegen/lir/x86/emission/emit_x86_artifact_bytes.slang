@@ -98,20 +98,17 @@ void emit_header_and_wrapper(X86ArtifactLayout layout)
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
 }
 
-// Body lanes can meet at the edge of a word. Update the bytes this
-// lane owns together while preserving both neighboring fragments.
+// The clear pass zeroes the artifact. Each lane owns a disjoint byte range,
+// so only the partial words at its edges need atomic operations.
 void store_fragment(uint word, uint shift, uint bytes, uint value)
 {
-    uint mask = (0xffffffffu >> ((4u - bytes) * 8u)) << shift;
-    uint old = artifact_bytes[word];
-    for (;;)
+    if (bytes == 4u)
     {
-        uint next = (old & ~mask) | ((value << shift) & mask);
-        uint prior;
-        InterlockedCompareExchange(artifact_bytes[word], old, next, prior);
-        if (prior == old) return;
-        old = prior;
+        artifact_bytes[word] = value;
+        return;
     }
+    uint mask = 0xffffffffu >> ((4u - bytes) * 8u);
+    InterlockedOr(artifact_bytes[word], (value & mask) << shift);
 }
 
 void store_packed(uint pos, uint bytes, uint value)
@@ -221,6 +218,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (core.op == X86_LIR_OP_STRING_ADDR || core.op == X86_LIR_OP_STRING_LEN) &&
         operands.a >= min(gParams.token_capacity, semantic_lir_string_total[0u]);
 
+    // Accumulate across micro-ops so a body writes each of its words once.
+    uint fragment_start = cursor;
+    uint fragment = 0u;
     for (uint step = 0u; ; step += 1u)
     {
         X86PlanOp op = x86_plan(input, step);
@@ -240,10 +240,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint i = 0u; i < code.length; i += 4u)
         {
             uint packed = i == 0u ? code.w0 : i == 4u ? code.w1 : i == 8u ? code.w2 : code.w3;
-            store_packed(cursor + i, min(4u, code.length - i), packed);
+            uint position = cursor + i;
+            uint count = min(4u, code.length - i);
+            uint within = position & 3u;
+            uint available = 4u - within;
+            packed &= 0xffffffffu >> ((4u - count) * 8u);
+            fragment |= packed << (within * 8u);
+            if (count >= available)
+            {
+                uint end = position + available;
+                store_packed(fragment_start, end - fragment_start,
+                    fragment >> ((fragment_start & 3u) * 8u));
+                fragment_start = end;
+                fragment = within == 0u ? 0u : packed >> (available * 8u);
+            }
         }
         cursor += code.length;
     }
+    if (cursor > fragment_start)
+        store_packed(fragment_start, cursor - fragment_start, fragment >> ((fragment_start & 3u) * 8u));
     if (record_runtime_reference && runtime_reference.x != 0u)
     {
         x86_runtime_reference[row] = runtime_reference;

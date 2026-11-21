@@ -3,7 +3,7 @@
 // over the values' [definition, last use] intervals; see walk_function. Large
 // functions use independent, bounded schedule segments; see walk_segment.
 // Both walks read each position's row facts from gather_x86_register_allocation_inputs.slang, so the
-// serial loops wait on one record load per position. Between a walk's
+// serial loops wait on one record load per position. Between a small function's
 // backward and forward passes, a position's stack-words word holds the
 // distances (or, at a loop label, the farthest back-edge position) that the
 // forward pass reads before it writes the position's spill width; prepare
@@ -17,6 +17,7 @@ RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 
 StructuredBuffer<X86AllocationPrepared> x86_allocation_prepared;
+StructuredBuffer<uint2> x86_allocation_boundary_masks;
 
 // The record at `position` when it lies in [start, end), otherwise one that no
 // function owns. The walks load records two positions ahead of the one they
@@ -41,8 +42,7 @@ uint pending_in(uint position, uint end)
     return position < end ? x86_stack_words_by_position[position] : INVALID;
 }
 
-void walk_function(uint function_id, uint start, uint end, uint total,
-                   uint function_total)
+void walk_function(uint function_id, uint start, uint end, uint total)
 {
     // Backward pass. Each non-label row's location word temporarily holds the
     // distances to the next call and the next back-edge target after it; a
@@ -209,6 +209,31 @@ void walk_function(uint function_id, uint start, uint end, uint total,
     }
 }
 
+// Find the next event in the segment from masks built in parallel by the
+// gather. A scan of a segment reads at most nine masks. Check ownership only
+// for event positions because a tile can straddle a function boundary.
+uint segment_boundary(uint start, uint end, uint function_id, bool label)
+{
+    uint tile = start >> 5u;
+    uint last_tile = (end - 1u) >> 5u;
+    uint keep = 0xffffffffu << (start & 31u);
+    for (; tile <= last_tile; tile += 1u)
+    {
+        uint2 masks = x86_allocation_boundary_masks[tile];
+        uint bits = (label ? masks.y : masks.x) & keep;
+        while (bits != 0u)
+        {
+            uint position = (tile << 5u) + uint(firstbitlow(bits));
+            if (position >= end) return INVALID;
+            if (x86_allocation_prepared[position].function_id == function_id)
+                return position;
+            bits &= bits - 1u;
+        }
+        keep = 0xffffffffu;
+    }
+    return INVALID;
+}
+
 // Independent segments bound the allocation critical path for large functions.
 // Declaration homes are reserved for the entire function exactly as in the
 // serial allocator. Temporary intervals may use a register only when they end
@@ -222,26 +247,8 @@ void walk_function(uint function_id, uint start, uint end, uint total,
 // seed_x86_value_facts.slang has already published loop-weighted declaration reads. Every
 // segment makes the same slice-header decision from immutable function
 // analysis, so its three registers stay reserved for the entire function.
-void walk_segment(uint function_id, uint start, uint end, uint total,
-                  uint function_total)
+void walk_segment(uint function_id, uint start, uint end)
 {
-    uint next_call = INVALID;
-    uint next_label = INVALID;
-    X86AllocationPrepared ahead1 = prepared_in(end - 1u, start, end);
-    X86AllocationPrepared ahead2 = prepared_in(end - 2u, start, end);
-    for (uint cursor = end; cursor > start; )
-    {
-        cursor -= 1u;
-        X86AllocationPrepared prepared = ahead1;
-        ahead1 = ahead2;
-        ahead2 = prepared_in(cursor - 2u, start, end);
-        if (prepared.function_id != function_id) continue;
-        x86_stack_words_by_position[cursor] = near_distance(cursor, next_call) |
-            (near_distance(cursor, next_label) << 16u);
-        if ((prepared.flags & PREPARED_CALL) != 0u) next_call = cursor;
-        if ((prepared.flags & PREPARED_CONTROL_LABEL) != 0u) next_label = cursor;
-    }
-
     X86FunctionRegisterAnalysis analysis = x86_register_analysis_by_function[function_id];
     bool has_call = analysis.first_call != INVALID;
     bool has_loop = (analysis.flags & X86_ALLOCATION_HAS_LOOP) != 0u;
@@ -260,16 +267,13 @@ void walk_segment(uint function_id, uint start, uint end, uint total,
 
     X86AllocationPrepared forward1 = prepared_in(start, start, end);
     X86AllocationPrepared forward2 = prepared_in(start + 1u, start, end);
-    uint pending1 = pending_in(start, end);
-    uint pending2 = pending_in(start + 1u, end);
+    uint next_call = start;
+    uint next_label = start;
     for (uint position = start; position < end; position += 1u)
     {
         X86AllocationPrepared prepared = forward1;
         forward1 = forward2;
         forward2 = prepared_in(position + 2u, start, end);
-        uint pending = pending1;
-        pending1 = pending2;
-        pending2 = pending_in(position + 2u, end);
         if (prepared.function_id != function_id) continue;
         uint row = prepared.row;
         uint location = INVALID;
@@ -278,13 +282,19 @@ void walk_segment(uint function_id, uint start, uint end, uint total,
         {
             bool label = (prepared.flags & PREPARED_CONTROL_LABEL) != 0u;
             uint last = prepared.last;
+            if (next_label <= position)
+                next_label = position + 1u < end
+                    ? segment_boundary(position + 1u, end, function_id, true) : INVALID;
             bool contained = last < end &&
-                !event_inside(position, pending >> 16u, last, true);
+                !event_inside(position, near_distance(position, next_label), last, true);
             // Outside this segment, either a call or a loop back edge may
             // reach the parameter's last use. Keep its ordinary stack copy
             // unless convert_x86_branches_to_selects.slang already proved the read a coalesced alias.
+            if (has_call && contained && next_call <= position)
+                next_call = position + 1u < end
+                    ? segment_boundary(position + 1u, end, function_id, false) : INVALID;
             bool across = has_call && (!contained ||
-                event_inside(position, pending & NEAR_MASK, last, false));
+                event_inside(position, near_distance(position, next_call), last, false));
             bool gpr = (prepared.flags & PREPARED_GPR) != 0u;
             bool argument = (prepared.flags & PREPARED_ARGUMENT) != 0u;
             location = prepared.location;
@@ -329,10 +339,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint position = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (position >= total) return;
-    uint row = semantic_schedule_order[position];
+    X86AllocationPrepared prepared = x86_allocation_prepared[position];
+    uint row = prepared.row;
     uint function_total = min(gParams.function_capacity,
         semantic_lir_function_total[0u]);
-    uint function_id = row < total ? function_for_node(row) : INVALID;
+    uint function_id = prepared.function_id;
     if (function_id < function_total)
     {
         uint start = x86_function_start[function_id];
@@ -341,22 +352,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             if ((position - start) % X86_ALLOCATION_SEGMENT_SIZE == 0u)
                 walk_segment(function_id, position,
-                    min(position + X86_ALLOCATION_SEGMENT_SIZE, end), total, function_total);
+                    min(position + X86_ALLOCATION_SEGMENT_SIZE, end));
         }
         else if (start == position && start < end)
-            walk_function(function_id, start, end, total, function_total);
+            walk_function(function_id, start, end, total);
         return;
     }
     uint words = 0u;
-    if (row < total && x86_live_by_semantic[row] != 0u)
+    if ((prepared.flags & PREPARED_LIVE) != 0u)
     {
-        bool gpr;
-        bool argument;
-        uint location = parallel_register_location(row, position, total, gpr, argument);
-        if (location != INVALID)
-            x86_location_by_semantic[row] = location;
+        if (prepared.location != INVALID)
+            x86_location_by_semantic[row] = prepared.location;
         else
-            words = spill_word_count(row, total, function_total);
+            words = prepared.words;
     }
     x86_stack_words_by_position[position] = words;
 }

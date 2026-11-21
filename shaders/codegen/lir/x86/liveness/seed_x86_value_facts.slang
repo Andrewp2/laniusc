@@ -28,6 +28,7 @@ StructuredBuffer<OptIrRegion> opt_ir_regions;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
+StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<uint> x86_position_by_semantic;
 StructuredBuffer<uint> x86_function_start;
 StructuredBuffer<uint> x86_function_end;
@@ -98,7 +99,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner = opt_ir_source_hir[row];
     if (owner >= gParams.function_capacity) return;
     uint function_id = semantic_function_id_by_hir[owner];
-    if (function_id >= gParams.function_capacity) return;
+    if (function_id >= min(gParams.function_capacity, semantic_lir_function_total[0u])) return;
     uint start = x86_function_start[function_id];
     uint end = min(x86_function_end[function_id], total);
     // Small functions still add their loop weights in walk_function. This
