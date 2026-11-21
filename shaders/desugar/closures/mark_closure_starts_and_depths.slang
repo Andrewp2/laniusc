@@ -1,6 +1,6 @@
 // Per token: the nesting depth change and whether a closure starts here.
 // The inclusive prefix sum of the two gives each token its depth and the
-// number of the closure that starts at it (read_closure_records.slang).
+// number of the closure that starts at it (collect_closure_edits.slang).
 import shared.buffers.gpu_index;
 import shared.buffers.byte_packing;
 import shared.syntax.generated_token_ids;

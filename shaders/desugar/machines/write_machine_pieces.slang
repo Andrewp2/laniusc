@@ -1,4 +1,4 @@
-// Per token: the pieces of generated text the token stands for, in each
+// Per token of a machine: the pieces of generated text it stands for, in each
 // section of its machine. The kernel runs twice with the same control flow:
 // first it counts the pieces of each section, then it writes them at the
 // positions the prefix sums of those counts give.
@@ -15,9 +15,9 @@ import desugar.tokens.desugaring_layout;
 
 struct PieceParams
 {
-    uint token_count;
+    uint edit_tokens;
     uint write;
-    uint reserved0;
+    uint machine_count;
     uint reserved1;
 };
 
@@ -42,6 +42,7 @@ StructuredBuffer<uint> transitions;
 StructuredBuffer<uint> arms;
 StructuredBuffer<uint> fields;
 StructuredBuffer<uint> arguments;
+StructuredBuffer<uint4> span_scan;
 // Inclusive prefix sums of the piece counts, read by the writing run.
 StructuredBuffer<uint4> count_scan0;
 StructuredBuffer<uint4> count_scan1;
@@ -733,35 +734,46 @@ uint component(uint4 v, uint index)
     return v.w;
 }
 
+// How many compact rows lie at or before the given source token.
+uint edit_rows_through(uint t)
+{
+    uint machines_through = scan_a[t].x;
+    if (machines_through == 0u)
+        return 0u;
+    uint k = machines_through - 1u;
+    uint before = k == 0u ? 0u : span_scan[k - 1u].x;
+    return min(span_scan[k].x, before + t - machines[k] + 1u);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint t = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
-    if (t >= gPieces.token_count)
+    uint index = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
+    if (index >= gPieces.edit_tokens)
         return;
+    uint lo = 0u;
+    uint hi = gPieces.machine_count;
+    while (lo < hi)
+    {
+        uint mid = lo + ((hi - lo) >> 1u);
+        if (span_scan[mid].x <= index)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    uint first = lo == 0u ? 0u : span_scan[lo - 1u].x;
+    uint head = machines[lo];
+    uint t = head + index - first;
     bool write = gPieces.write != 0u;
     uint4 sums = scan_a[t];
-    uint head = sums.x > 0u ? machines[sums.x - 1u] : MC_NONE;
-    bool in_machine = head != MC_NONE && t < rec(head, REC_END);
-
-    if (!in_machine)
-    {
-        if (!write)
-        {
-            counts0[t] = uint4(0u, 0u, 0u, 0u);
-            counts1[t] = uint4(0u, 0u, 0u, 0u);
-            // The `pub` of a public machine belongs to its item.
-            bool public_head = t + 1u < gPieces.token_count && rec(t + 1u, REC_ROLE) == ROLE_MACHINE &&
-                               (rec(t + 1u, REC_FLAGS) & FLAG_PUBLIC) != 0u;
-            drop[t] = public_head ? 1u : 0u;
-        }
-        return;
-    }
-    if (!write)
-        drop[t] = 1u;
-
     Machine m = machine_at(head);
+    if (!write)
+    {
+        InterlockedOr(drop[t], 1u);
+        if (t == head && (m.flags & FLAG_PUBLIC) != 0u)
+            InterlockedOr(drop[t - 1u], 1u);
+    }
     uint state_head_token = sums.y > 0u ? states[sums.y - 1u] : MC_NONE;
     uint role = rec(t, REC_ROLE);
 
@@ -772,17 +784,18 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint4 base1 = uint4(0u, 0u, 0u, 0u);
     if (write)
     {
-        uint4 head0 = scan0_before(head);
-        uint4 head1 = scan1_before(head);
-        uint4 width0 = count_scan0[m.close] - head0;
-        uint4 width1 = count_scan1[m.close] - head1;
+        uint4 head0 = scan0_before(first);
+        uint4 head1 = scan1_before(first);
+        uint end = edit_rows_through(m.close);
+        uint4 width0 = scan0_before(end) - head0;
+        uint4 width1 = scan1_before(end) - head1;
         uint before = sum4(head0) + sum4(head1);
         uint4 earlier0 = uint4(0u, width0.x, width0.x + width0.y, width0.x + width0.y + width0.z);
         uint first1 = sum4(width0);
         uint4 earlier1 = uint4(first1, first1 + width1.x, first1 + width1.x + width1.y,
                                first1 + width1.x + width1.y + width1.z);
-        base0 = before + earlier0 + (scan0_before(t) - head0);
-        base1 = before + earlier1 + (scan1_before(t) - head1);
+        base0 = before + earlier0 + (scan0_before(index) - head0);
+        base1 = before + earlier1 + (scan1_before(index) - head1);
     }
 
     uint n0 = 0u;
@@ -819,7 +832,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
     if (!write)
     {
-        counts0[t] = uint4(n0, n1, n2, n3);
-        counts1[t] = uint4(n4, n5, n6, n7);
+        counts0[index] = uint4(n0, n1, n2, n3);
+        counts1[index] = uint4(n4, n5, n6, n7);
     }
 }

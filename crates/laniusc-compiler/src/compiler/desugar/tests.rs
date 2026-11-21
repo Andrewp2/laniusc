@@ -714,6 +714,51 @@ fn a_closure_becomes_a_struct_and_impls() {
     }
 }
 
+#[test]
+fn closure_appendices_at_tile_boundaries_keep_source_order() {
+    let _one = one_at_a_time();
+    let mut source = "fn f(x: i32) -> i32 { return call(|| x + x) + call(|| x); }".to_string();
+    let first = format!("__lanius_closure_{:010}", source.find("||").unwrap());
+    let second = format!("__lanius_closure_{:010}", source.rfind("||").unwrap());
+    let padding = SPLICE_TILE_ROWS - lexed(&[&source]).len();
+    source.push_str(&";".repeat(padding));
+    let next_file = "fn g() -> i32 { return 7; }";
+    assert_eq!(lexed(&[&source]).len(), SPLICE_TILE_ROWS);
+
+    for files in [&[source.as_str()][..], &[source.as_str(), next_file][..]] {
+        let desugared = desugar_pack(files).unwrap_or_else(|verdict| panic!("{verdict}"));
+        let sites = desugared.region.find(&first).unwrap() < desugared.region.find(&second).unwrap();
+        assert!(sites, "closure sites are out of order");
+        let mut appendices = desugared.tokens.windows(2).filter_map(|pair| {
+            (pair[0].1 == "struct").then_some((pair[1].1.as_str(), pair[1].2))
+        });
+        assert_eq!(appendices.next(), Some((first.as_str(), 0)));
+        assert_eq!(appendices.next(), Some((second.as_str(), 0)));
+        assert_eq!(appendices.next(), None);
+        assert_eq!(
+            desugared.region.matches("let x:i32 =self.x;").count(),
+            2,
+            "each closure must capture x once",
+        );
+        if files.len() == 2 {
+            let next = lexed(&["", next_file]);
+            assert_eq!(&desugared.tokens[desugared.tokens.len() - next.len()..], &next);
+        }
+    }
+}
+
+#[test]
+fn captures_across_body_chunks_keep_first_use_order() {
+    let _one = one_at_a_time();
+    let padding = " + 0".repeat(140);
+    let source = format!("fn f(y: i32, x: i32) -> i32 {{ return call(|| x{padding} + x + y); }}");
+    let region = region_text(&source);
+    assert!(region.contains("{x:x,y:y,}.borrow()"), "{region}");
+    assert!(region.contains("{x:i32,y:i32,}"), "{region}");
+    assert_eq!(region.matches("let x:i32 =self.x;").count(), 1);
+    assert_eq!(region.matches("let y:i32 =self.y;").count(), 1);
+}
+
 /// A source name may not have the prefix of generated names; the closure
 /// round's own names are not source names.
 #[test]

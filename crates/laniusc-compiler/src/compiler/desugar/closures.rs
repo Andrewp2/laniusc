@@ -85,9 +85,7 @@ fn keyword(_word: &str) -> Option<TokenKind> {
 const MARK: &str = "desugar/closures/mark_closure_starts_and_depths";
 const DEPTH_BLOCKS: &str = "desugar/closures/build_closure_depth_block_heaps";
 const DEPTH_TREE: &str = "desugar/closures/build_closure_depth_top_heap";
-const ROLES: &str = "desugar/closures/classify_closure_binders";
-const RECORDS: &str = "desugar/closures/read_closure_records";
-const CAPTURES: &str = "desugar/closures/find_closure_captures";
+const EDITS: &str = "desugar/closures/collect_closure_edits";
 const PIECES: &str = "desugar/closures/write_closure_pieces";
 
 const RECORD_WORDS: usize = 12;
@@ -95,6 +93,8 @@ const NO_ERROR: u32 = u32::MAX;
 
 // The plan mode and the closure layout of shaders/desugar/tokens/plan_desugaring_dispatches.slang.
 const PLAN_PIECES: u32 = 11;
+const PLAN_SCAN_EDITS: u32 = 12;
+const PLAN_CAPTURES: u32 = 13;
 const A_TOKENS: u32 = 16;
 const A_SCAN: u32 = 17;
 const A_SCAN_ONE: u32 = 18;
@@ -104,6 +104,10 @@ const P_TOKENS: u32 = 16;
 const P_SCAN: u32 = 17;
 const P_TREE: u32 = 20;
 const P_WRITE: u32 = 23;
+const P_EDIT_SCAN: u32 = 24;
+const A_EDIT_SCAN: u32 = 23;
+const A_EDIT_SCAN_ONE: u32 = 24;
+const A_CAPTURES: u32 = 25;
 /// The steps of the depth heap the plan sizes: enough for 2^24 blocks.
 const TREE_STEPS: usize = 3;
 /// The bytes of one step's `HeapTreeParams`.
@@ -151,29 +155,23 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
     let leaf_base = leaf_base(rows);
     let steps = crate::gpu::scan::heap_build_levels(leaf_base);
     anyhow::ensure!(steps.len() <= TREE_STEPS, "the closure depth heap has {} steps", steps.len());
-    // Per token: the depth change and the closure start, then the piece count.
+    // Per token: the depth change and the closure start.
     let marks = storage("marks", rows, 4);
     let depth_work = round.scan_work(&label("depth"), rows);
     let local_min = storage("depth.local_min", rows.div_ceil(256).max(1) * 256, 1);
     let min_tree = storage("depth.min_tree", leaf_base as usize * 2, 1);
-    let roles = storage("roles", rows, 1);
     // A closure takes three tokens at least: the one before it, its `|` or
     // `||` and its body.
     let records = storage("records", rows / 2 + 1, RECORD_WORDS);
-    let capture_marks = storage("capture_marks", rows, 4);
-    let capture_work = round.scan_work(&label("captures.scan"), rows);
     let captures = storage("captures", rows, 4);
-    let count_work = round.scan_work(&label("counts"), rows);
+    let counts = storage("counts", rows / 2 + 1, 4);
+    let count_work = round.scan_work(&label("offsets"), rows / 2 + 1);
     let status = gpu.fixed_words_from(&label("status"), &[NO_ERROR]);
     let role_params = gpu.fixed_uniform(&label("roles.params"), &RoleParams { leaf_base });
     let constants = closure_constants(gpu);
     let none = &shared.fpieces;
     let depth_scan = &depth_work[0];
-    let capture_scan = &capture_work[0];
     let count_scan = &count_work[0];
-    let scan = |encoder: &mut wgpu::CommandEncoder, input: &LaniusBuffer<u8>, work: &[LaniusBuffer<u8>; 2]| {
-        round.scan(encoder, input, work, P_SCAN, A_SCAN, A_SCAN_ONE)
-    };
 
     round.plan(encoder, PLAN_START, [none; 4])?;
     round.indirect(
@@ -188,9 +186,9 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
         ],
         A_TOKENS,
     )?;
-    scan(encoder, &marks, &depth_work)?;
+    round.scan(encoder, &marks, &depth_work, P_SCAN, A_SCAN, A_SCAN_ONE)?;
 
-    // The heap of minimum depths, then the binders of the tokens.
+    // The heap of minimum depths used to locate a matching parameter binder.
     round.indirect(
         encoder,
         DEPTH_BLOCKS,
@@ -213,82 +211,48 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
             A_TREE + step,
         )?;
     }
+    round.clear(encoder, &shared.drop, P_TOKENS, A_TOKENS)?;
+    round.plan(encoder, PLAN_CAPTURES, [depth_scan, none, none, none])?;
     round.indirect(
         encoder,
-        ROLES,
+        EDITS,
         &[
             ("gRoles", role_params.as_entire_binding()),
             ("token_count", round.sizes()),
             ("tokens_out", bufs.tokens_out.as_entire_binding()),
             ("token_file_id", bufs.token_file_id.as_entire_binding()),
+            ("in_bytes", bufs.in_bytes.as_entire_binding()),
             ("depth_scan", depth_scan.as_entire_binding()),
             ("depth_local_min", local_min.as_entire_binding()),
             ("depth_min_tree", min_tree.as_entire_binding()),
-            ("roles", roles.as_entire_binding()),
-        ],
-        A_TOKENS,
-    )?;
-
-    // The records and the rules, then the captures.
-    round.indirect(
-        encoder,
-        RECORDS,
-        &[
-            ("token_count", round.sizes()),
-            ("tokens_out", bufs.tokens_out.as_entire_binding()),
-            ("token_file_id", bufs.token_file_id.as_entire_binding()),
-            ("depth_scan", depth_scan.as_entire_binding()),
             ("records", records.as_entire_binding()),
+            ("captures", captures.as_entire_binding()),
+            ("counts", counts.as_entire_binding()),
+            ("drop", shared.drop.as_entire_binding()),
             ("status", status.as_entire_binding()),
         ],
-        A_TOKENS,
+        A_CAPTURES,
     )?;
+    round.plan(encoder, PLAN_SCAN_EDITS, [none, none, none, &status])?;
+    round.scan(encoder, &counts, &count_work, P_EDIT_SCAN, A_EDIT_SCAN, A_EDIT_SCAN_ONE)?;
+    round.plan(encoder, PLAN_PIECES, [none, count_scan, none, none])?;
     round.indirect(
         encoder,
-        CAPTURES,
+        PIECES,
         &[
-            ("token_count", round.sizes()),
-            ("tokens_out", bufs.tokens_out.as_entire_binding()),
+            ("gPieces", round.block(P_WRITE)),
             ("token_file_id", bufs.token_file_id.as_entire_binding()),
-            ("in_bytes", bufs.in_bytes.as_entire_binding()),
-            ("roles", roles.as_entire_binding()),
+            ("tokens_out", bufs.tokens_out.as_entire_binding()),
+            ("source_file_start", bufs.source_file_start.as_entire_binding()),
             ("depth_scan", depth_scan.as_entire_binding()),
+            ("count_scan", count_scan.as_entire_binding()),
             ("records", records.as_entire_binding()),
-            ("capture_marks", capture_marks.as_entire_binding()),
-            ("status", status.as_entire_binding()),
+            ("captures", captures.as_entire_binding()),
+            ("pieces", shared.fpieces.as_entire_binding()),
+            ("piece_owner", shared.fpiece_owner.as_entire_binding()),
         ],
-        A_TOKENS,
+        A_WRITE,
     )?;
-    scan(encoder, &capture_marks, &capture_work)?;
-
-    // The pieces: counted per token, then written per piece.
-    let record_pieces = |encoder: &mut wgpu::CommandEncoder, block: u32, triple: u32| {
-        round.indirect(
-            encoder,
-            PIECES,
-            &[
-                ("gPieces", round.block(block)),
-                ("tokens_out", bufs.tokens_out.as_entire_binding()),
-                ("token_file_id", bufs.token_file_id.as_entire_binding()),
-                ("source_file_start", bufs.source_file_start.as_entire_binding()),
-                ("depth_scan", depth_scan.as_entire_binding()),
-                ("capture_marks", capture_marks.as_entire_binding()),
-                ("capture_scan", capture_scan.as_entire_binding()),
-                ("count_scan", count_scan.as_entire_binding()),
-                ("records", records.as_entire_binding()),
-                ("captures", captures.as_entire_binding()),
-                ("counts", marks.as_entire_binding()),
-                ("pieces", shared.fpieces.as_entire_binding()),
-                ("piece_owner", shared.fpiece_owner.as_entire_binding()),
-                ("drop", shared.drop.as_entire_binding()),
-            ],
-            triple,
-        )
-    };
-    record_pieces(encoder, P_TOKENS, A_TOKENS)?;
-    scan(encoder, &marks, &count_work)?;
-    round.plan(encoder, PLAN_PIECES, [depth_scan, count_scan, none, &status])?;
-    record_pieces(encoder, P_WRITE, A_WRITE)?;
     round.finish(encoder, &constants)?;
     Ok(Run { status })
 }

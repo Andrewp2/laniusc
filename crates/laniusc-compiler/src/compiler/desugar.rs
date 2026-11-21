@@ -378,6 +378,7 @@ const BLOCK_BYTES: u64 = 256;
 const SIZE_BYTES: u64 = SIZE_WORDS as u64 * 4;
 const ARG_BYTES: u64 = ARG_TRIPLES as u64 * 12;
 const SCAN_TILE_ROWS: usize = 2048;
+const SPLICE_TILE_ROWS: usize = 256;
 const PLAN_START: u32 = 0;
 const PLAN_PLACE: u32 = 1;
 const PLAN_REGION: u32 = 2;
@@ -392,8 +393,7 @@ const EXPAND: &str = "desugar/tokens/expand_token_range_pieces";
 const EMIT: &str = "desugar/tokens/emit_generated_text";
 const TEXT_MARKS: &str = "desugar/tokens/mark_generated_text";
 const TEXT_TOKENS: &str = "desugar/tokens/build_generated_tokens";
-const SPLICE_MARKS: &str = "desugar/tokens/mark_tokens_for_splicing";
-const SPLICE_INSERTED: &str = "desugar/tokens/count_inserted_tokens";
+const SPLICE_TILES: &str = "desugar/tokens/count_kept_tokens_by_tile";
 const SPLICE_KEPT: &str = "desugar/tokens/splice_kept_tokens";
 const SPLICE_GENERATED: &str = "desugar/tokens/splice_generated_tokens";
 const COPY_BACK: &str = "desugar/tokens/publish_spliced_tokens";
@@ -821,7 +821,8 @@ struct Shared {
     generated: LaniusBuffer<u8>,
     generated_file: LaniusBuffer<u8>,
     generated_owner: LaniusBuffer<u8>,
-    splice_marks: LaniusBuffer<u8>,
+    splice_tiles: LaniusBuffer<u8>,
+    insert_kept_prefix: LaniusBuffer<u8>,
     splice_work: [LaniusBuffer<u8>; 2],
     spliced: LaniusBuffer<u8>,
     spliced_file: LaniusBuffer<u8>,
@@ -1110,16 +1111,6 @@ impl<'a> Round<'a> {
         self.plan(encoder, PLAN_SPLICE, none)?;
         self.indirect(
             encoder,
-            SPLICE_MARKS,
-            &[
-                ("sizes", self.sizes()),
-                ("drop", shared.drop.as_entire_binding()),
-                ("splice_marks", shared.splice_marks.as_entire_binding()),
-            ],
-            A_SPLICE,
-        )?;
-        self.indirect(
-            encoder,
             TEXT_TOKENS,
             &[
                 ("sizes", self.sizes()),
@@ -1137,17 +1128,18 @@ impl<'a> Round<'a> {
         )?;
         self.indirect(
             encoder,
-            SPLICE_INSERTED,
+            SPLICE_TILES,
             &[
                 ("sizes", self.sizes()),
+                ("drop", shared.drop.as_entire_binding()),
                 ("generated_owner", shared.generated_owner.as_entire_binding()),
-                ("splice_marks", shared.splice_marks.as_entire_binding()),
+                ("splice_tiles", shared.splice_tiles.as_entire_binding()),
             ],
-            A_GENERATED,
+            A_SPLICE,
         )?;
         self.scan(
             encoder,
-            &shared.splice_marks,
+            &shared.splice_tiles,
             &shared.splice_work,
             P_SPLICE_SCAN,
             A_SPLICE_SCAN,
@@ -1161,8 +1153,11 @@ impl<'a> Round<'a> {
                 ("sizes", self.sizes()),
                 ("tokens_out", bufs.tokens_out.as_entire_binding()),
                 ("token_file_id", bufs.token_file_id.as_entire_binding()),
-                ("splice_marks", shared.splice_marks.as_entire_binding()),
+                ("drop", shared.drop.as_entire_binding()),
+                ("generated_owner", shared.generated_owner.as_entire_binding()),
+                ("splice_tiles", shared.splice_tiles.as_entire_binding()),
                 ("splice_scan", shared.splice_work[0].as_entire_binding()),
+                ("insert_kept_prefix", shared.insert_kept_prefix.as_entire_binding()),
                 ("spliced", shared.spliced.as_entire_binding()),
                 ("spliced_file", shared.spliced_file.as_entire_binding()),
             ],
@@ -1176,8 +1171,7 @@ impl<'a> Round<'a> {
                 ("generated", shared.generated.as_entire_binding()),
                 ("generated_file", shared.generated_file.as_entire_binding()),
                 ("generated_owner", shared.generated_owner.as_entire_binding()),
-                ("splice_marks", shared.splice_marks.as_entire_binding()),
-                ("splice_scan", shared.splice_work[0].as_entire_binding()),
+                ("insert_kept_prefix", shared.insert_kept_prefix.as_entire_binding()),
                 ("spliced", shared.spliced.as_entire_binding()),
                 ("spliced_file", shared.spliced_file.as_entire_binding()),
             ],
@@ -1297,8 +1291,9 @@ pub(crate) fn record(
         generated: storage("desugar.generated", region_rows, 3),
         generated_file: storage("desugar.generated_file", region_rows, 1),
         generated_owner: storage("desugar.generated_owner", region_rows, 1),
-        splice_marks: storage("desugar.splice_marks", rows, 4),
-        splice_work: scan_work(&gpu, "desugar.splice_scan", rows),
+        splice_tiles: storage("desugar.splice_tiles", rows.div_ceil(SPLICE_TILE_ROWS), 4),
+        insert_kept_prefix: storage("desugar.insert_kept_prefix", rows, 1),
+        splice_work: scan_work(&gpu, "desugar.splice_scan", rows.div_ceil(SPLICE_TILE_ROWS)),
         spliced: storage("desugar.spliced", caps.out, 3),
         spliced_file: storage("desugar.spliced_file", caps.out, 1),
     };

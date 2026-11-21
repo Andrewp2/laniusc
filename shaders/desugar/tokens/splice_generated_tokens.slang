@@ -1,5 +1,5 @@
-// Per generated token: its row at its owner's place in the new stream,
-// before the owner itself.
+// A generated token's ordinal plus the kept source tokens before its
+// owner gives its position in the merged stream.
 import shared.buffers.gpu_index;
 import desugaring_layout;
 
@@ -7,8 +7,7 @@ StructuredBuffer<uint> sizes;
 StructuredBuffer<TokenRow> generated;
 StructuredBuffer<uint> generated_file;
 StructuredBuffer<uint> generated_owner;
-StructuredBuffer<uint4> splice_marks;
-StructuredBuffer<uint4> splice_scan;
+StructuredBuffer<uint> insert_kept_prefix;
 RWStructuredBuffer<TokenRow> spliced;
 RWStructuredBuffer<uint> spliced_file;
 
@@ -19,11 +18,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint g = linear_dispatch_thread_id_2d(tid, DESUGAR_DISPATCH_X_STRIDE);
     if (g >= sizes[S_GENERATED] || sizes[S_OUT] == 0u)
         return;
-    uint owner = generated_owner[g];
-    uint4 row = splice_marks[owner];
-    uint4 through = splice_scan[owner];
-    uint base = through.x + through.y - row.x - row.y;
-    uint at = base + (g - row.z);
+    uint at = g + insert_kept_prefix[generated_owner[g]];
     spliced[at] = generated[g];
     spliced_file[at] = generated_file[g];
 }

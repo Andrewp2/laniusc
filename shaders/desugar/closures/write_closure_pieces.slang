@@ -1,16 +1,5 @@
-// The pieces of the closure round (desugaring_layout.slang). Every token emits
-// its pieces in stream order:
-//
-//   the `|` that starts a closure: its site, a struct literal, owned by the
-//     closure's first token, and every token of the closure is dropped;
-//   the last token of a file with a closure: the appendix of each of the
-//     file's closures, owned by the token after it.
-//
-// Mode 0 runs per token: it counts the pieces of each token, drops the
-// tokens of the closures, compacts the captures into one list in token
-// order and gives each closure its range of that list. Mode 1 runs per
-// piece and writes it; `count_scan.x` is the inclusive prefix sum of the
-// counts, so the token that emits a piece is the first whose sum passes it.
+// One lane writes the site and appendix of its closure. The compact scan
+// gives their offsets, with sites preceding appendices within each file.
 import shared.buffers.gpu_index;
 import shared.syntax.generated_token_ids;
 import desugar.tokens.desugaring_layout;
@@ -19,8 +8,8 @@ import closure_layout;
 struct PieceParams
 {
     uint token_count;
-    uint mode;
-    uint piece_count;
+    uint closure_count;
+    uint reserved1;
     uint reserved0;
 };
 
@@ -30,15 +19,11 @@ StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> source_file_start;
 // Per token: the depth after it (x) and the closures that start through it (y).
 StructuredBuffer<uint4> depth_scan;
-StructuredBuffer<uint4> capture_marks;
-StructuredBuffer<uint4> capture_scan;
 StructuredBuffer<uint4> count_scan;
-RWStructuredBuffer<uint> records;
-RWStructuredBuffer<uint4> captures;
-RWStructuredBuffer<uint4> counts;
+StructuredBuffer<uint> records;
+StructuredBuffer<uint4> captures;
 RWStructuredBuffer<uint4> pieces;
 RWStructuredBuffer<uint> piece_owner;
-RWStructuredBuffer<uint> drop;
 
 static const uint SITE_PIECES = SITE_FIXED;
 
@@ -50,11 +35,6 @@ uint rec(uint k, uint word)
 uint closures_before(uint token)
 {
     return token > 0u ? depth_scan[token - 1u].y : 0u;
-}
-
-uint captures_before(uint token)
-{
-    return token > 0u ? capture_scan[token - 1u].x : 0u;
 }
 
 // The first token of file `file` or a later one.
@@ -71,34 +51,6 @@ uint first_of(uint file)
             hi = mid;
     }
     return lo;
-}
-
-struct FileSpan
-{
-    uint first;
-    uint last;
-    uint closures;
-    uint captures;
-};
-
-FileSpan file_span(uint file)
-{
-    FileSpan span;
-    span.first = first_of(file);
-    span.last = first_of(file + 1u) - 1u;
-    span.closures = depth_scan[span.last].y - closures_before(span.first);
-    span.captures = capture_scan[span.last].x - captures_before(span.first);
-    return span;
-}
-
-bool last_in_file(uint t, uint file)
-{
-    return t + 1u == gPieces.token_count || token_file_id[t + 1u] != file;
-}
-
-bool starts_closure(uint t)
-{
-    return depth_scan[t].y != closures_before(t);
 }
 
 uint4 constant(uint id, uint anchor)
@@ -119,59 +71,6 @@ uint4 span(uint first, uint last)
 uint4 nothing(uint anchor)
 {
     return uint4(0u, PIECE_RANGE, 0u, anchor);
-}
-
-void count_token(uint t)
-{
-    uint file = token_file_id[t];
-    uint4 mark = capture_marks[t];
-    if (mark.x == 1u)
-        captures[capture_scan[t].x - 1u] = uint4(mark.w, t, mark.y, mark.z);
-
-    uint n = 0u;
-    if (starts_closure(t))
-    {
-        uint k = depth_scan[t].y - 1u;
-        uint body_first = rec(k, REC_BODY_FIRST);
-        uint body_last = rec(k, REC_BODY_LAST);
-        uint first = 0u;
-        uint count = 0u;
-        if (body_last >= body_first)
-        {
-            first = captures_before(body_first);
-            count = capture_scan[body_last].x - first;
-        }
-        records[k * REC_WORDS + REC_CAP_FIRST] = first;
-        records[k * REC_WORDS + REC_CAP_COUNT] = count;
-        n += SITE_PIECES + SITE_PER_CAPTURE * count;
-    }
-    if (last_in_file(t, file))
-    {
-        FileSpan span = file_span(file);
-        if (span.closures > 0u)
-            n += APPENDIX_FIXED * span.closures + APPENDIX_PER_CAPTURE * span.captures;
-    }
-    counts[t] = uint4(n, 0u, 0u, 0u);
-
-    // The closure that starts last at or before this token.
-    uint lo = 0u;
-    uint hi = depth_scan[gPieces.token_count - 1u].y;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        if (rec(mid, REC_START) <= t)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    bool inside = false;
-    if (lo > 0u)
-    {
-        uint body_first = rec(lo - 1u, REC_BODY_FIRST);
-        uint body_last = rec(lo - 1u, REC_BODY_LAST);
-        inside = body_last >= body_first && t <= body_last;
-    }
-    drop[t] = inside ? 1u : 0u;
 }
 
 // Piece `r` of the site of closure `k`.
@@ -327,70 +226,36 @@ uint4 closure_id(uint k, uint file)
     return uint4(1u, PIECE_ID, tokens_out[start].start - source_file_start[file], start);
 }
 
-void write_piece(uint q)
+uint2 pieces_before(uint closure)
 {
-    uint lo = 0u;
-    uint hi = gPieces.token_count;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        if (count_scan[mid].x <= q)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    uint t = lo;
-    if (t >= gPieces.token_count)
-        return;
-    uint r = q - (count_scan[t].x - counts[t].x);
-    uint file = token_file_id[t];
-
-    if (starts_closure(t))
-    {
-        uint k = depth_scan[t].y - 1u;
-        uint site = SITE_PIECES + SITE_PER_CAPTURE * rec(k, REC_CAP_COUNT);
-        if (r < site)
-        {
-            pieces[q] = site_piece(k, r, closure_id(k, file));
-            piece_owner[q] = rec(k, REC_START);
-            return;
-        }
-        r -= site;
-    }
-
-    // The appendix of the file's closures, after its last token.
-    FileSpan span = file_span(file);
-    uint k0 = closures_before(span.first);
-    uint cap_base = rec(k0, REC_CAP_FIRST);
-    uint low = 0u;
-    uint high = span.closures;
-    for (uint guard = 0u; guard < 32u && low < high; guard += 1u)
-    {
-        uint mid = low + ((high - low) >> 1u);
-        uint before = mid * APPENDIX_FIXED + (rec(k0 + mid, REC_CAP_FIRST) - cap_base) * APPENDIX_PER_CAPTURE;
-        if (before <= r)
-            low = mid + 1u;
-        else
-            high = mid;
-    }
-    uint m = low - 1u;
-    uint k = k0 + m;
-    r -= m * APPENDIX_FIXED + (rec(k, REC_CAP_FIRST) - cap_base) * APPENDIX_PER_CAPTURE;
-    pieces[q] = appendix_piece(k, r, closure_id(k, file));
-    piece_owner[q] = t + 1u;
+    return closure == 0u ? uint2(0u) : count_scan[closure - 1u].xy;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint index = linear_dispatch_thread_id_2d(tid, DESUGAR_DISPATCH_X_STRIDE);
-    if (gPieces.mode == 0u)
-    {
-        if (index < gPieces.token_count)
-            count_token(index);
+    uint k = linear_dispatch_thread_id_2d(tid, DESUGAR_DISPATCH_X_STRIDE);
+    if (k >= gPieces.closure_count)
         return;
+    uint file = rec(k, REC_FILE);
+    uint end = first_of(file + 1u);
+    uint first_closure = closures_before(first_of(file));
+    uint end_closure = closures_before(end);
+    uint2 first = pieces_before(first_closure);
+    uint2 before = pieces_before(k);
+    uint2 through = count_scan[k].xy;
+    uint site_base = before.x + first.y;
+    uint appendix_base = pieces_before(end_closure).x + before.y;
+    uint4 id = closure_id(k, file);
+    for (uint r = 0u; r < through.x - before.x; r += 1u)
+    {
+        pieces[site_base + r] = site_piece(k, r, id);
+        piece_owner[site_base + r] = rec(k, REC_START);
     }
-    if (index < gPieces.piece_count)
-        write_piece(index);
+    for (uint r = 0u; r < through.y - before.y; r += 1u)
+    {
+        pieces[appendix_base + r] = appendix_piece(k, r, id);
+        piece_owner[appendix_base + r] = end;
+    }
 }

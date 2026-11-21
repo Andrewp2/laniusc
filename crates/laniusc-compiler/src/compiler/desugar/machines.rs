@@ -120,11 +120,13 @@ const RESOLVE: &str = "desugar/machines/resolve_machine_references";
 const ARMS: &str = "desugar/machines/classify_machine_arm_events";
 const REACH: &str = "desugar/machines/extend_machine_state_reachability";
 const STATES: &str = "desugar/machines/check_machine_state_rules";
+const SPANS: &str = "desugar/machines/measure_machine_spans";
 const PIECES: &str = "desugar/machines/write_machine_pieces";
 
 // Plan modes and the machine layout of shaders/desugar/tokens/plan_desugaring_dispatches.slang.
 const PLAN_MACHINES: u32 = 8;
 const PLAN_PIECES: u32 = 9;
+const PLAN_EDIT_TOKENS: u32 = 14;
 const A_TOKENS: u32 = 16;
 const A_TOKEN_SCAN: u32 = 17;
 const A_TOKEN_SCAN_ONE: u32 = 18;
@@ -136,6 +138,12 @@ const A_INFO_WORDS: u32 = 23;
 const A_STATES: u32 = 24;
 const A_STATE_WORDS: u32 = 25;
 const A_WRITE: u32 = 26;
+const A_SPANS: u32 = 27;
+const A_SPAN_SCAN: u32 = 28;
+const A_SPAN_SCAN_ONE: u32 = 29;
+const A_EDITS: u32 = 30;
+const A_EDIT_SCAN: u32 = 31;
+const A_EDIT_SCAN_ONE: u32 = 32;
 const P_TOKENS: u32 = 16;
 const P_CLEAR_RECORDS: u32 = 17;
 const P_SCAN_TOKENS: u32 = 18;
@@ -151,6 +159,8 @@ const P_STATES: u32 = 31;
 const P_STATE_CHECK: u32 = 32;
 const P_COUNT: u32 = 33;
 const P_WRITE: u32 = 34;
+const P_SPAN_SCAN: u32 = 35;
+const P_EDIT_SCAN: u32 = 38;
 
 /// The buffers the rules of the machine round read and wrote, kept for the
 /// explanation of a broken rule.
@@ -222,6 +232,8 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
         storage("reach.0", machine_rows, STATE_ROW_WORDS),
         storage("reach.1", machine_rows, STATE_ROW_WORDS),
     ];
+    let spans = storage("spans", machine_rows, 4);
+    let span_work = round.scan_work(&label("span_scan"), machine_rows);
     let counts = [storage("counts0", rows, 4), storage("counts1", rows, 4)];
     let count_work = [
         round.scan_work(&label("counts0"), rows),
@@ -276,6 +288,7 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
             ("tokens_out", bufs.tokens_out.as_entire_binding()),
             ("records", records.as_entire_binding()),
             ("marks", marks.as_entire_binding()),
+            ("drop", shared.drop.as_entire_binding()),
         ],
         A_TOKENS,
     )?;
@@ -411,7 +424,20 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
         A_STATES,
     )?;
 
-    // The pieces of every machine's text.
+    // Only tokens owned by machines contribute to the piece scans.
+    round.indirect(
+        encoder,
+        SPANS,
+        &[
+            ("sizes", round.sizes()),
+            ("machines", machines.as_entire_binding()),
+            ("records", records.as_entire_binding()),
+            ("spans", spans.as_entire_binding()),
+        ],
+        A_SPANS,
+    )?;
+    round.scan(encoder, &spans, &span_work, P_SPAN_SCAN, A_SPAN_SCAN, A_SPAN_SCAN_ONE)?;
+    round.plan(encoder, PLAN_EDIT_TOKENS, [&span_work[0], none, none, none])?;
     let record_pieces = |encoder: &mut wgpu::CommandEncoder, params: u32, triple: u32| {
         round.indirect(
             encoder,
@@ -429,6 +455,7 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
                 ("arms", arms.as_entire_binding()),
                 ("fields", fields.as_entire_binding()),
                 ("arguments", arguments.as_entire_binding()),
+                ("span_scan", span_work[0].as_entire_binding()),
                 ("count_scan0", count_work[0][0].as_entire_binding()),
                 ("count_scan1", count_work[1][0].as_entire_binding()),
                 ("counts0", counts[0].as_entire_binding()),
@@ -440,15 +467,15 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
             triple,
         )
     };
-    record_pieces(encoder, P_COUNT, A_LIVE)?;
+    record_pieces(encoder, P_COUNT, A_EDITS)?;
     for (counts, work) in counts.iter().zip(&count_work) {
         round.scan(
             encoder,
             counts,
             work,
-            P_SCAN_LIVE,
-            A_LIVE_SCAN,
-            A_LIVE_SCAN_ONE,
+            P_EDIT_SCAN,
+            A_EDIT_SCAN,
+            A_EDIT_SCAN_ONE,
         )?;
     }
     round.plan(

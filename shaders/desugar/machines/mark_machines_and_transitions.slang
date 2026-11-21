@@ -24,6 +24,7 @@ ConstantBuffer<MarkParams> gMarks;
 StructuredBuffer<TokenOut> tokens_out;
 StructuredBuffer<uint> records;
 RWStructuredBuffer<uint4> marks;
+RWStructuredBuffer<uint> drop;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -34,6 +35,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint token = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     if (token >= gMarks.token_count)
         return;
+    drop[token] = 0u;
     uint role = records[token * REC_WORDS + REC_ROLE];
     uint kind = tokens_out[token].kind;
     bool opens = kind == TK_LPAREN || kind == TK_CALL_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_LBRACKET ||

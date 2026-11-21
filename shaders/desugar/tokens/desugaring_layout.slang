@@ -96,6 +96,21 @@ public static const uint DESUGAR_NO_ERROR = 0xffffffffu;
 public static const uint DESUGAR_DISPATCH_X_STRIDE = 16776960u;
 public static const uint DESUGAR_MAX_GROUPS_X = 65535u;
 public static const uint DESUGAR_SCAN_TILE_ROWS = 2048u;
+public static const uint DESUGAR_SPLICE_TILE_ROWS = 256u;
+
+// The lower bound of an owner in the ordered generated stream.
+public uint first_owner_at_least(StructuredBuffer<uint> owners, uint lo, uint hi, uint owner)
+{
+    while (lo < hi)
+    {
+        uint mid = lo + ((hi - lo) >> 1u);
+        if (owners[mid] < owner)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    return lo;
+}
 
 // Piece kinds. A piece row is `(count, kind, value, anchor)` as a feature
 // writes it and `(length, kind, value, anchor)` after the expansion. Its

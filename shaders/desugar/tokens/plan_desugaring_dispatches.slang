@@ -60,10 +60,13 @@ static const uint PLAN_FINISH = 4u;
 // Machines.
 static const uint PLAN_M_MACHINES = 8u;
 static const uint PLAN_M_PIECES = 9u;
+static const uint PLAN_M_EDIT_TOKENS = 14u;
 // Generators.
 static const uint PLAN_G_PIECES = 10u;
 // Closures.
 static const uint PLAN_C_PIECES = 11u;
+static const uint PLAN_C_SCAN_EDITS = 12u;
+static const uint PLAN_C_CAPTURES = 13u;
 
 // Machine layout: dispatches and parameter blocks from A_FEATURE and
 // P_FEATURE (desugar.rs mirrors them).
@@ -78,6 +81,12 @@ static const uint MA_INFO_WORDS = 23u;
 static const uint MA_STATES = 24u;
 static const uint MA_STATE_WORDS = 25u;
 static const uint MA_WRITE = 26u;
+static const uint MA_SPANS = 27u;
+static const uint MA_SPAN_SCAN = 28u;
+static const uint MA_SPAN_SCAN_ONE = 29u;
+static const uint MA_EDITS = 30u;
+static const uint MA_EDIT_SCAN = 31u;
+static const uint MA_EDIT_SCAN_ONE = 32u;
 static const uint MP_TOKENS = 16u;
 static const uint MP_CLEAR_RECORDS = 17u;
 static const uint MP_SCAN_TOKENS = 18u;
@@ -93,6 +102,8 @@ static const uint MP_STATES = 31u;
 static const uint MP_STATE_CHECK = 32u;
 static const uint MP_COUNT = 33u;
 static const uint MP_WRITE = 34u;
+static const uint MP_SPAN_SCAN = 35u;
+static const uint MP_EDIT_SCAN = 38u;
 // Generator layout (desugar/generators.rs mirrors it).
 static const uint GA_TOKENS = 16u;
 static const uint GA_RECORD_WORDS = 17u;
@@ -114,10 +125,14 @@ static const uint CA_SCAN = 17u;
 static const uint CA_SCAN_ONE = 18u;
 static const uint CA_TREE = 19u; // one per level of the depth heap
 static const uint CA_WRITE = 22u;
+static const uint CA_EDIT_SCAN = 23u;
+static const uint CA_EDIT_SCAN_ONE = 24u;
+static const uint CA_CAPTURES = 25u;
 static const uint CP_TOKENS = 16u;
 static const uint CP_SCAN = 17u;
 static const uint CP_TREE = 20u; // one per level of the depth heap
 static const uint CP_WRITE = 23u;
+static const uint CP_EDIT_SCAN = 24u;
 static const uint C_TREE_STEPS = 3u;
 static const uint C_STATUS_WORDS = 1u;
 static const uint G_REC_WORDS = 7u;
@@ -285,30 +300,43 @@ void start_closures()
     }
 }
 
-// feat_a: the inclusive prefix sums of depth and closure starts. feat_b: of
-// the piece counts.
-void plan_closure_pieces()
+// feat_a has the depth and ordinal of the last closure through each token.
+void plan_closure_captures()
 {
-    uint live = sizes[gPlan.slot * SIZE_WORDS + S_LIVE];
-    if (live == 0u)
+    uint at = gPlan.slot * SIZE_WORDS;
+    uint tokens = sizes[at + S_TOKENS];
+    if (tokens == 0u)
+        return;
+    uint closures = feat_a[tokens - 1u].y;
+    sizes[at + S_F0] = closures;
+    set_groups(CA_CAPTURES, closures);
+}
+
+void plan_closure_scan()
+{
+    uint at = gPlan.slot * SIZE_WORDS;
+    uint closures = sizes[at + S_F0];
+    if (closures == 0u)
         return;
     if (status_failed(C_STATUS_WORDS))
     {
+        sizes[at + S_F0] = 0u;
         raise_flag(DESUGAR_RULE_ERROR);
         return;
     }
-    uint closures = feat_a[live - 1u].y;
-    uint fpieces = feat_b[live - 1u].x;
-    if (closures == 0u || fpieces == 0u)
+    scan(CP_EDIT_SCAN, CA_EDIT_SCAN, CA_EDIT_SCAN_ONE, closures);
+}
+
+// feat_b has the prefix sums of site and appendix piece counts.
+void plan_closure_pieces()
+{
+    uint closures = sizes[gPlan.slot * SIZE_WORDS + S_F0];
+    if (closures == 0u)
         return;
-    if (fpieces > gPlan.piece_cap)
-    {
-        overflow(S_NEED_PIECES, fpieces);
-        return;
-    }
-    sizes[gPlan.slot * SIZE_WORDS + S_F0] = closures;
-    block(CP_WRITE, live, 1u, fpieces, 0u);
-    set_lanes(CA_WRITE, fpieces);
+    uint4 pieces = feat_b[closures - 1u];
+    uint fpieces = pieces.x + pieces.y;
+    block(CP_WRITE, sizes[gPlan.slot * SIZE_WORDS + S_TOKENS], closures, 0u, 0u);
+    set_lanes(CA_WRITE, fpieces > gPlan.piece_cap ? 0u : closures);
     expand(fpieces);
 }
 
@@ -403,28 +431,47 @@ void plan_machines()
     block(MP_CHECK, live, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
     block(MP_STATES, state_count, 0u, 0u, 0u);
     block(MP_STATE_CHECK, state_count, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
-    block(MP_COUNT, live, 0u, 0u, 0u);
     set_lanes(MA_LIVE, live);
     set_lanes(MA_INFO_WORDS, max(machine_count, 1u) * M_INFO_WORDS);
     set_lanes(MA_STATES, state_count);
     set_lanes(MA_STATE_WORDS, max(state_count, 1u) * M_STATE_ROW_WORDS);
     scan(MP_SCAN_LIVE, MA_LIVE_SCAN, MA_LIVE_SCAN_ONE, live);
+    set_lanes(MA_SPANS, machine_count);
+    scan(MP_SPAN_SCAN, MA_SPAN_SCAN, MA_SPAN_SCAN_ONE, machine_count);
+}
+
+// feat_a: the prefix sum of machine span lengths.
+void plan_machine_edits()
+{
+    uint at = gPlan.slot * SIZE_WORDS;
+    uint machines = sizes[at + S_F0];
+    if (machines == 0u)
+        return;
+    uint edits = feat_a[machines - 1u].x;
+    sizes[at + S_F3] = edits;
+    block(MP_COUNT, edits, 0u, machines, 0u);
+    set_lanes(MA_EDITS, edits);
+    scan(MP_EDIT_SCAN, MA_EDIT_SCAN, MA_EDIT_SCAN_ONE, edits);
 }
 
 // feat_b and feat_c: the inclusive prefix sums of the piece counts.
 void plan_machine_pieces()
 {
-    uint live = sizes[gPlan.slot * SIZE_WORDS + S_LIVE];
-    if (live == 0u)
+    uint at = gPlan.slot * SIZE_WORDS;
+    if (sizes[at + S_LIVE] == 0u)
         return;
     if (status_failed(M_STATUS_WORDS))
     {
         raise_flag(DESUGAR_RULE_ERROR);
         return;
     }
-    uint fpieces = sum4(feat_b[live - 1u]) + sum4(feat_c[live - 1u]);
-    block(MP_WRITE, live, 1u, 0u, 0u);
-    set_lanes(MA_WRITE, fpieces == 0u || fpieces > gPlan.piece_cap ? 0u : live);
+    uint machines = sizes[at + S_F0];
+    if (machines == 0u)
+        return;
+    uint edits = sizes[at + S_F3];
+    uint fpieces = sum4(feat_b[edits - 1u]) + sum4(feat_c[edits - 1u]);
+    block(MP_WRITE, edits, 1u, machines, 0u);
+    set_lanes(MA_WRITE, fpieces == 0u || fpieces > gPlan.piece_cap ? 0u : edits);
     expand(fpieces);
 }
 
@@ -461,6 +508,16 @@ void main(uint lane: SV_GroupIndex)
             start_generators();
         return;
     }
+    if (mode == PLAN_C_CAPTURES)
+    {
+        plan_closure_captures();
+        return;
+    }
+    if (mode == PLAN_C_SCAN_EDITS)
+    {
+        plan_closure_scan();
+        return;
+    }
     if (mode == PLAN_C_PIECES)
     {
         plan_closure_pieces();
@@ -474,6 +531,11 @@ void main(uint lane: SV_GroupIndex)
     if (mode == PLAN_M_MACHINES)
     {
         plan_machines();
+        return;
+    }
+    if (mode == PLAN_M_EDIT_TOKENS)
+    {
+        plan_machine_edits();
         return;
     }
     if (mode == PLAN_M_PIECES)
@@ -528,9 +590,11 @@ void main(uint lane: SV_GroupIndex)
         sizes[gPlan.slot * SIZE_WORDS + S_GENERATED] = generated;
         sizes[gPlan.slot * SIZE_WORDS + S_SPLICED] = tokens;
         set_lanes(A_GENERATED, generated);
-        set_lanes(A_SPLICE, tokens + 1u);
-        set_lanes(A_KEPT, tokens);
-        scan(P_SPLICE_SCAN_0, A_SPLICE_SCAN, A_SPLICE_SCAN_ONE, tokens + 1u);
+        // Include the owner at the end of the stream.
+        uint tiles = tokens / DESUGAR_SPLICE_TILE_ROWS + 1u;
+        set_groups(A_SPLICE, tiles);
+        set_groups(A_KEPT, tiles);
+        scan(P_SPLICE_SCAN_0, A_SPLICE_SCAN, A_SPLICE_SCAN_ONE, tiles);
         return;
     }
     if (mode == PLAN_FINISH)
@@ -538,8 +602,8 @@ void main(uint lane: SV_GroupIndex)
         uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_SPLICED];
         if (sizes[gPlan.slot * SIZE_WORDS + S_GENERATED] == 0u)
             return;
-        uint4 through = splice_scan[tokens];
-        uint out = through.x + through.y;
+        uint kept = splice_scan[tokens / DESUGAR_SPLICE_TILE_ROWS].x;
+        uint out = kept + sizes[gPlan.slot * SIZE_WORDS + S_GENERATED];
         if (out > gPlan.out_cap)
         {
             overflow(S_NEED_OUT, out);
