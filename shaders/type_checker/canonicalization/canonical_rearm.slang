@@ -13,6 +13,12 @@
 import type_checker.canonicalization.canonical_api;
 import type_checker.constants.constant_atoms;
 
+// A sweep gives each candidate to one lane. No lane reads a candidate
+// another lane changes, so these views can use the cache.
+RWStructuredBuffer<uint> canonical_row_rearm;
+RWStructuredBuffer<uint> canonical_atom_rearm;
+RWStructuredBuffer<uint> canonical_projection_rearm;
+
 public StructuredBuffer<uint> type_instance_kind;
 // The allocation counters that bound a later sweep (canonical_live_rearm).
 // Not coherent, so each wave's load is served from L1. A load of the
@@ -35,26 +41,11 @@ bool candidate_empty(uint candidate, uint rows, uint atoms)
     return !checked_constant_projection(candidate - rows - atoms, target, child);
 }
 
-// Re-arms `candidate` (below ct_candidate_count()). True when it is left
-// pending for the rounds. `may_hold` false: the candidate is past the
-// allocation counters (canonical_live_rearm_holds), so it is empty without
-// reading it.
-public bool canonical_rearm_candidate(uint candidate, bool may_hold = true)
+// Entries that may have acquired a key since the previous stage.
+bool rearm_eligible(uint state, bool rearm_interned)
 {
-    uint state = ct_candidate_state(candidate);
-    bool rearm_interned = ct_counts[CT_COUNT_EARLY_REARM] != 0u;
-    if (state != CT_PENDING && state != CT_NONE && state != CT_UNKNOWN &&
-        !(rearm_interned && ct_is_resolved(state))) return false;
-    uint rows = ct_row_capacity();
-    uint atoms = ct_atom_capacity();
-    uint next = !may_hold || candidate_empty(candidate, rows, atoms) ? CT_NONE : CT_PENDING;
-    if (next != state)
-    {
-        if (candidate < rows) canonical_row[candidate] = next;
-        else if (candidate - rows < atoms) canonical_atom[candidate - rows] = next;
-        else canonical_projection[candidate - rows - atoms] = next;
-    }
-    return next == CT_PENDING;
+    return state == CT_PENDING || state == CT_NONE || state == CT_UNKNOWN ||
+        (rearm_interned && ct_is_resolved(state));
 }
 
 // The candidates a re-arm sweep after the early stage visits
@@ -71,9 +62,11 @@ public struct LiveRearm
 {
     public uint rows;     // row capacity: the first constant candidate
     public uint atoms;    // atom capacity: the first projection past it
+    public uint projections;
     public uint constants;  // live atoms, and live projections
     public uint source;   // live source rows, from row 0
     public uint generated;  // live generated rows, from `source`
+    public bool rearm_interned;
 }
 
 // Every lane of a wave gets the same value; the counters are loaded once
@@ -81,24 +74,28 @@ public struct LiveRearm
 public LiveRearm canonical_live_rearm()
 {
     LiveRearm live;
-    live.rows = ct_row_capacity();
-    live.atoms = ct_atom_capacity();
-    uint projections = ct_projection_capacity();
+    uint stride;
+    canonical_row_rearm.GetDimensions(live.rows, stride);
+    canonical_atom_rearm.GetDimensions(live.atoms, stride);
+    canonical_projection_rearm.GetDimensions(live.projections, stride);
     uint4 storage = uint4(0u, 0u, 0u, 1u);
     uint generated = 0u;
+    uint rearm_interned = 0u;
     if (WaveIsFirstLane())
     {
         storage = checked_constant_storage_state[0u];
         generated = type_application_count[0u];
+        rearm_interned = ct_counts[CT_COUNT_EARLY_REARM];
     }
     storage = WaveReadLaneFirst(storage);
     generated = WaveReadLaneFirst(generated);
+    live.rearm_interned = WaveReadLaneFirst(rearm_interned) != 0u;
     // A failed storage plan bounds nothing.
     bool bounded = storage.w == 0u && storage.x <= storage.y;
     uint constants = storage.x + min(storage.z, storage.y - storage.x);
-    uint capacity = min(live.atoms, projections);
+    uint capacity = min(live.atoms, live.projections);
     live.constants = bounded ? min(constants, capacity) : capacity;
-    uint token_rows; uint stride;
+    uint token_rows;
     type_generic_param_slot_by_token.GetDimensions(token_rows, stride);
     live.source = min(token_rows, live.rows);
     live.generated = min(generated, live.rows - live.source);
@@ -132,15 +129,39 @@ public uint canonical_live_rearm_candidate(LiveRearm live, uint index)
     return index < 2u * live.constants ? constant : row;
 }
 
+// The early sweep alone visits the capacity tail. Nothing can have
+// published a reference there, so an empty entry needs no state load.
+public bool canonical_rearm_candidate(LiveRearm live, uint candidate, bool may_hold = true)
+{
+    uint atom = candidate - live.rows;
+    uint projection = atom - live.atoms;
+    uint state = CT_PENDING;
+    if (may_hold)
+    {
+        if (candidate < live.rows) state = canonical_row_rearm[candidate];
+        else if (atom < live.atoms) state = canonical_atom_rearm[atom];
+        else state = canonical_projection_rearm[projection];
+        if (!rearm_eligible(state, live.rearm_interned)) return false;
+    }
+    uint next = may_hold && !candidate_empty(candidate, live.rows, live.atoms) ? CT_PENDING : CT_NONE;
+    if (next != state)
+    {
+        if (candidate < live.rows) canonical_row_rearm[candidate] = next;
+        else if (atom < live.atoms) canonical_atom_rearm[atom] = next;
+        else canonical_projection_rearm[projection] = next;
+    }
+    return next == CT_PENDING;
+}
+
 // Lanes every re-arm sweep launches (canonical_passes.rs,
 // CANONICAL_REARM_LANES). A sweep strides its candidates by this count, so
 // its grid does not scale with the table's capacity.
 public static const uint CANONICAL_REARM_LANES = 1u << 19u;
 
 // Resets the round state for the rounds that follow (one lane).
-public void canonical_rearm_reset_rounds()
+public void canonical_rearm_reset_rounds(LiveRearm live)
 {
-    ct_counts[CT_COUNT_PENDING] = ct_candidate_count();
+    ct_counts[CT_COUNT_PENDING] = live.rows + live.atoms + live.projections;
     ct_counts[CT_COUNT_ROUND] = 0u;
     ct_counts[CT_COUNT_FRONTIER] = 0u;
     ct_counts[CT_COUNT_FRONTIER + 1u] = 0u;

@@ -13,6 +13,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     LiveRearm live = canonical_live_rearm();
     uint count = canonical_live_rearm_count(live);
     for (uint i = lane; i < count; i += CANONICAL_REARM_LANES)
-        canonical_rearm_candidate(canonical_live_rearm_candidate(live, i));
-    if (lane == 0u) canonical_rearm_reset_rounds();
+        canonical_rearm_candidate(live, canonical_live_rearm_candidate(live, i));
+    if (lane == 0u) canonical_rearm_reset_rounds(live);
 }

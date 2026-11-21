@@ -110,7 +110,7 @@ void expression_ref(uint node, out uint tag, out uint payload)
     payload = semantic_expr_ref_payload_by_hir[node];
 }
 
-// A value of type never fits any expected type (see validate_statement_types.slang).
+// A value of type never fits any expected type (see statement_type_checks.slang).
 bool never_value(uint node)
 {
     return valid_hir(node) &&

@@ -499,15 +499,8 @@ void validate_direct_range(uint node, HirCore core, HirPayload statement)
         validate_range_endpoint(range.c, expected, node);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void validate_expression_condition(uint node, HirCore core, HirPayload payload)
 {
-    uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (!valid_hir(node)) return;
-
-    HirCore core = compact_hir_core[node];
-    HirPayload payload = compact_hir_payload[node];
     validate_loop_control(node, core);
     validate_integer_literal(node, core, payload);
     validate_float_literal(node, core, payload);

@@ -394,6 +394,15 @@ pub(super) fn register_canonical_passes(
     storage(graph, "canonical_row", workspace, type_rows * 4)?;
     storage(graph, "canonical_atom", workspace, constant_rows * 4)?;
     storage(graph, "canonical_projection", workspace, constant_rows * 4)?;
+    // Rearm sweeps own disjoint entries and do not require coherent views.
+    for (view, table) in [
+        ("canonical_row_rearm", "canonical_row"),
+        ("canonical_atom_rearm", "canonical_atom"),
+        ("canonical_projection_rearm", "canonical_projection"),
+    ] {
+        let target = resource(graph, table)?;
+        graph.add_resource_alias(view, target)?;
+    }
     storage(graph, "canonical_dependency_type", workspace, dependency_rows.max(1) * 4)?;
     // Two lists, each bounded by the candidates or by one page's nodes.
     let frontier_rows = canonical_scaled_capacity(

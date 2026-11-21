@@ -24,9 +24,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (i < count)
         {
             candidate = canonical_live_rearm_candidate(live, i);
-            pending = canonical_rearm_candidate(candidate);
+            pending = canonical_rearm_candidate(live, candidate);
         }
         rearm_list_append(candidate, pending);
     }
-    if (lane == 0u) canonical_rearm_reset_rounds();
+    if (lane == 0u) canonical_rearm_reset_rounds(live);
 }

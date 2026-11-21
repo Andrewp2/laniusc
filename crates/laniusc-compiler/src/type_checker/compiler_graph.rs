@@ -142,8 +142,8 @@ macro_rules! reflected_bindings {
 }
 
 pub(super) const INIT_PASS: &str = "type_check.expression_types.init";
-pub(super) const CONDITIONS_COMPACT_EXPR_PASS: &str = "type_check.conditions.compact_expr";
-pub(super) const CONDITIONS_COMPACT_STMT_PASS: &str = "type_check.conditions.compact_stmt";
+pub(super) const CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS: &str =
+    "type_check.conditions.expression_and_statement_types";
 pub(super) const CONDITIONS_COMPACT_DISTINCT_PASS: &str = "type_check.conditions.compact_distinct";
 pub(super) const CONDITIONS_COMPACT_DISTINCT_NODES_PASS: &str = "type_check.conditions.compact_distinct_nodes";
 pub(super) const CONDITIONS_COMPACT_EXCLUSIVE_PASS: &str = "type_check.conditions.compact_exclusive";
@@ -4764,20 +4764,16 @@ fn build_graph(
                 ],
             )?;
             graph.add_kernel_pass_by_name(
-                CONDITIONS_COMPACT_EXPR_PASS,
+                CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS,
                 CompilerPhase::TypeCheck,
                 ResourceDomain::HirNodes,
                 kernels,
-                "type_checker/conditions/validate_expression_conditions",
+                "type_checker/conditions/validate_expression_and_statement_types",
                 reflected_bindings!["compact_expr_scalar_type" => final_scalar],
             )?;
-            graph.add_kernel_pass_by_name(
-                CONDITIONS_COMPACT_STMT_PASS,
-                CompilerPhase::TypeCheck,
-                ResourceDomain::HirNodes,
-                kernels,
-                "type_checker/conditions/validate_statement_types",
-                reflected_bindings!["compact_expr_scalar_type" => final_scalar],
+            graph.add_indirect_dispatch(
+                CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS,
+                "hir_active_dispatch_args",
             )?;
             let distinct_hir_node_by_token = graph.add_storage(
                 "distinct_hir_node_by_token", ResourceDomain::Tokens,
@@ -8277,8 +8273,7 @@ mod tests {
         );
         assert!(graph.pass_id(FEATURES_COLLECT_PASS).is_some());
         assert!(graph.pass_id(FEATURES_DISPATCH_PASS).is_some());
-        assert!(graph.pass_id(CONDITIONS_COMPACT_EXPR_PASS).is_some());
-        assert!(graph.pass_id(CONDITIONS_COMPACT_STMT_PASS).is_some());
+        assert!(graph.pass_id(CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS).is_some());
         assert!(
             graph
                 .pass_id(CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS)
@@ -8378,7 +8373,7 @@ mod tests {
             "final structural comparison must consume compact aggregate requests",
         );
         assert!(
-            graph.pass_id(CONDITIONS_COMPACT_STMT_PASS).unwrap().index()
+            graph.pass_id(CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS).unwrap().index()
                 < aggregate_request_pass.index(),
             "scalar statement validation must precede structural aggregate validation",
         );

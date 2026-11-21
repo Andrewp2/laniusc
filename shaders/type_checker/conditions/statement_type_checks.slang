@@ -1,82 +1,33 @@
-import shared.semantics.primitive_types;
+// Scalar initializer, assignment and return rules. Aggregate structure is
+// checked after the scalar and category checks.
 import type_checker.constants.constant_parameter_slots;
-import type_checker.expression_rules.operator_operand_rules;
-// Validate declaration initializers, assignments, and returns from dense
-// compact HIR. Scalar compatibility is checked here. Aggregate structure stays
-// in the type-instance passes, while this boundary rejects a definite
-// aggregate/non-aggregate category mismatch.
 
-import shared.syntax.hir_records;
-import shared.buffers.gpu_index;
-import shared.buffers.status;
-
-struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
-ConstantBuffer<Params> gParams;
-StructuredBuffer<uint> compact_hir_count;
-StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<HirPayload> compact_hir_payload;
-StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_fn_return_type;
-StructuredBuffer<uint> compact_expr_scalar_type;
-StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_dependency_library_id;
-StructuredBuffer<uint> decl_type_ref_tag;
-StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> call_inference_result_tag;
 StructuredBuffer<uint> call_inference_result_payload;
-StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
-StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
-RWStructuredBuffer<uint> status;
-
-static const uint INVALID = 0xffffffffu;
-static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ASSIGN_EXPR = 15u;
-static const uint HIR_CALL_EXPR = 19u;
-static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_PATH_EXPR = 33u;
-static const uint HIR_EXPR = 14u;
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_STMT_ASSIGN = 5u;
-static const uint HIR_EXPR_INT = 3u;
-static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
-static const uint TY_INT = 3u;
-static const uint TY_UINT = 4u;
-static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
-static const uint TY_STRING = 7u;
-static const uint TY_POINTER = 8u;
-static const uint TY_ARRAY_BASE = 128u;
-static const uint TY_GENERIC_BASE = 8192u;
-static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_INVALID = 0u;
-static const uint TYPE_REF_SCALAR = 1u;
-static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_INVALID_ASSIGNMENT_TARGET = 21u;
-static const uint DISPATCH_X_STRIDE = 16776960u;
 
-[ForceInline]
-uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
-bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
-uint scalar_type(uint node)
-{
-    return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
-}
 bool known_scalar(uint ty) { return scalar_is_known(ty); }
 bool legacy_aggregate_type(uint ty)
 {
@@ -154,13 +105,6 @@ bool never_value(uint node)
 {
     return valid_hir(node) &&
         type_ref_is_never(call_inference_result_tag[node], call_inference_result_payload[node]);
-}
-
-bool null_pointer_constant(uint node)
-{
-    return valid_hir(node) && compact_hir_core[node].kind == HIR_LITERAL_EXPR &&
-        compact_hir_payload[node].a == HIR_EXPR_INT &&
-        compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 
 bool assignable(uint dst, uint src, uint source_node)
@@ -363,14 +307,8 @@ void validate_return(uint node, HirCore core, HirPayload stmt)
     validate_pair(expected, scalar_type(stmt.b), stmt.b, expression_token(stmt.b));
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void validate_statement_type(uint node, HirCore core, HirPayload payload)
 {
-    uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (!valid_hir(node)) return;
-    HirCore core = compact_hir_core[node];
-    HirPayload payload = compact_hir_payload[node];
     if (core.kind != HIR_STMT && core.kind != HIR_LET_STMT &&
         core.kind != HIR_RETURN_STMT && core.kind != HIR_ASSIGN_EXPR)
         return;

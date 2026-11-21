@@ -87,8 +87,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) struct_literal_refs_early: ComputeInvocation,
     pub(in crate::type_checker) array_index_refs: ComputeOperation,
     pub(in crate::type_checker) operator_refs: ComputeOperation,
-    pub(in crate::type_checker) compact_expr: ComputeOperation,
-    pub(in crate::type_checker) compact_stmt: ComputeOperation,
+    pub(in crate::type_checker) validate_expression_and_statement_types: ComputeOperation,
     /// Distinct-type brands (`type M = distinct T;`); recorded only when the
     /// source has a type alias.
     pub(in crate::type_checker) compact_distinct_nodes: ComputeOperation,
@@ -464,13 +463,13 @@ impl SemanticProjectionOperations {
                 compiler_graph::SEMANTIC_OPERATOR_REFS_PROJECT_PASS,
                 "type_checker/semantics/project_checked_operator_references",
             )?,
-            compact_expr: direct(
-                compiler_graph::CONDITIONS_COMPACT_EXPR_PASS,
-                "type_checker/conditions/validate_expression_conditions",
-            )?,
-            compact_stmt: direct(
-                compiler_graph::CONDITIONS_COMPACT_STMT_PASS,
-                "type_checker/conditions/validate_statement_types",
+            validate_expression_and_statement_types: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CONDITIONS_EXPRESSION_AND_STATEMENT_TYPES_PASS,
+                &passes.kernel("type_checker/conditions/validate_expression_and_statement_types"),
+                &typed_buffer_from_resources(resources, "hir_active_dispatch_args")?,
             )?,
             compact_distinct_nodes: direct(
                 compiler_graph::CONDITIONS_COMPACT_DISTINCT_NODES_PASS,

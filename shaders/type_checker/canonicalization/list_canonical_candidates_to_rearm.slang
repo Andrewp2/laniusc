@@ -18,9 +18,9 @@ RWStructuredBuffer<uint> canonical_pending;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = dtid.x + dtid.y * 16776960u;
-    uint count = ct_candidate_count();
     LiveRearm live = canonical_live_rearm();
-    uint constants = count - ct_row_capacity();
+    uint constants = live.atoms + live.projections;
+    uint count = live.rows + constants;
     // The lanes of a wave step together, so each step appends with one
     // atomic per wave.
     for (uint first = lane - WaveGetLaneIndex(); first < count; first += CANONICAL_REARM_LANES)
@@ -33,9 +33,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             candidate = i < constants ? count - constants + i : count - 1u - i;
             // Past the allocation counters a candidate is empty
             // (canonical_live_rearm): it gets CT_NONE without reading it.
-            pending = canonical_rearm_candidate(candidate, canonical_live_rearm_holds(live, candidate));
+            pending = canonical_rearm_candidate(live, candidate, canonical_live_rearm_holds(live, candidate));
         }
         rearm_list_append(candidate, pending);
     }
-    if (lane == 0u) canonical_rearm_reset_rounds();
+    if (lane == 0u) canonical_rearm_reset_rounds(live);
 }

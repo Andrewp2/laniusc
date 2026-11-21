@@ -2580,11 +2580,7 @@ impl GpuTypeChecker {
                 .record(encoder)?;
             bind_groups
                 .semantic_projection
-                .compact_expr
-                .record(encoder)?;
-            bind_groups
-                .semantic_projection
-                .compact_stmt
+                .validate_expression_and_statement_types
                 .record(encoder)?;
             if type_alias_passes_required(parser_feature_flags) {
                 bind_groups
