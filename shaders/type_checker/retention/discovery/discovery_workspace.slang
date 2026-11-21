@@ -7,10 +7,6 @@ public globallycoherent RWStructuredBuffer<uint4> dg_instances;
 // (environment key, dense instance row). Resolution records the slot, and
 // publish_discovery_wave reads its row after the dispatch that claimed it has finished.
 public globallycoherent RWStructuredBuffer<uint2> dg_slots;
-public RWStructuredBuffer<uint> dg_scan_a;
-public RWStructuredBuffer<uint> dg_scan_b;
-// Per 256-lane block of the use scan: its total, then its exclusive prefix.
-public RWStructuredBuffer<uint> dg_scan_blocks;
 public RWStructuredBuffer<uint4> dg_edges;
 public RWStructuredBuffer<uint2> dg_targets;
 public RWStructuredBuffer<uint2> dg_edge_owner;
@@ -19,12 +15,8 @@ public RWStructuredBuffer<uint4> dg_errors;
 public RWStructuredBuffer<uint4> dg_req_meta;
 public RWStructuredBuffer<uint> dg_order;
 public RWStructuredBuffer<uint> dg_rank;
-public RWStructuredBuffer<uint> dg_term_order;
-public RWStructuredBuffer<uint> dg_term_rank;
-public globallycoherent RWStructuredBuffer<uint> dg_levels;
-// Workgroups of the wave's request pass, written by the scan.
 // config: mode, lo, hi, edge base, root phase, subst run, depth, hash mask,
-//         unused, scan input (0: dg_scan_a), sort k, sort j, sort base, sort count,
+//         wave index, reserved, receipt gate, reserved, wave range or sort size,
 //         level, generation.
 // status: allocated instances, live instances, edges, overflow bits,
 //         instance demand, edge demand, first error+1 (INVALID when none),
@@ -97,7 +89,6 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
     return dg_insert_at_depth(decl, env, root, index, use, dg_config[6]);
 }
 
-public uint dg_scan(uint index) { return dg_scan_a[index]; }
 public uint4 dg_native(uint decl)
 {
     uint4 key = rt_decl_key[decl];

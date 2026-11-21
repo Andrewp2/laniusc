@@ -3,7 +3,6 @@ import type_checker.retention.retention_launch;
 import type_checker.retention.discovery.discovery_workspace;
 import type_checker.retention.discovery.discovery_frontier;
 import type_checker.retention.discovery.expand_discovery_wave;
-import type_checker.retention.discovery.collect_discovery_requests_step;
 import type_checker.retention.discovery.collect_retained_requests_program;
 import type_checker.retention.discovery.attach_discovered_method_route_step;
 import type_checker.retention.discovery.discovery_request_status;
@@ -33,16 +32,18 @@ struct CurrentMethods : IMethodResults
 [numthreads(STEP_PROGRAM_GROUP_LANES, 1, 1)]
 void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
 {
-    StepProgram program = step_program_begin(group, local, program_launch.groups, program_launch.slot);
     uint producer = dg_receipt[31u];
     bool solved = producer == 0u && dg_receipt[64u] == 2u;
     bool route_methods = solved && dg_status[10u] == 0u && dg_status[12u] == 0u;
+    uint groups = discovery_wave_groups(program_launch.groups, route_methods ? mr_config[3u] : 0u);
+    if (group.x >= groups) return;
+    StepProgram program = step_program_begin(group, local, groups, program_launch.slot);
     if (program.lane == 0u && producer != 16u && !solved && dg_status[10u] == 0u)
         dg_status[10u] = 12u;
     if (!step_barrier(program)) return;
 
     uint depth = dg_config[6u];
-    if (!expand_discovery_wave(program, discovery_frontier(), dg_config[5u], depth, program_launch.options)) return;
+    if (!substitute_discovery_requests(program, dg_config[5u], depth, program_launch.options)) return;
     if (!step_barrier(program)) return;
     if (route_methods)
     {
@@ -71,7 +72,7 @@ void main(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID)
     {
         finish_discovery_requests();
         if (dg_config[12u] != 0u)
-            advance_discovery_frontier(dg_config[8u], true);
+            advance_discovery_frontier(dg_config[8u], dg_config[12u] == 2u);
     }
     step_program_end(program);
 }
